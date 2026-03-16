@@ -23,10 +23,7 @@ cd server && npm run dev
 cd client && npm run dev
 ```
 
-### Login
-- **URL**: http://localhost:5173
-- **Email**: admin@securecreditlines.com
-- **Password**: admin123
+
 
 ### Architecture
 - **Backend**: Node.js + Express + TypeScript + Prisma + BullMQ

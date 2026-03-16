@@ -1,0 +1,679 @@
+// Twilio SMS Platform - Database Schema
+// Designed for high-volume SMS operations (10k-20k+ messages/day)
+// PostgreSQL with optimized indexes for bulk operations
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTH & USERS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  REP
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  role          UserRole  @default(REP)
+  isActive      Boolean   @default(true)
+  avatarUrl     String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  assignedLeads     Lead[]
+  conversations     Conversation[]
+  sentMessages      Message[]
+  campaigns         Campaign[]
+  numberAssignments NumberAssignment[]
+  activityLogs      ActivityLog[]
+
+  @@index([email])
+  @@index([role, isActive])
+  @@map("users")
+}
+
+// ============================================
+// PHONE NUMBER MANAGEMENT
+// ============================================
+
+enum NumberStatus {
+  ACTIVE
+  WARMING
+  COOLING
+  SUSPENDED
+  RETIRED
+}
+
+model PhoneNumber {
+  id                  String       @id @default(cuid())
+  twilioSid           String       @unique
+  phoneNumber         String       @unique  // E.164 format
+  friendlyName        String?
+  messagingServiceSid String?
+  status              NumberStatus @default(ACTIVE)
+  
+  // Twilio capabilities & metadata
+  smsCapable          Boolean      @default(true)
+  mmsCapable          Boolean      @default(false)
+  voiceCapable        Boolean      @default(false)
+  numberType          String?      // local, toll-free, short-code, mobile
+  locality            String?      // City / State
+  
+  // Health & Reputation Tracking
+  dailySentCount      Int          @default(0)
+  dailyLimit          Int          @default(350)
+  totalSent           Int          @default(0)
+  totalDelivered      Int          @default(0)
+  totalFailed         Int          @default(0)
+  totalBlocked        Int          @default(0)
+  deliveryRate        Float        @default(100.0)
+  lastSentAt          DateTime?
+  lastErrorAt         DateTime?
+  errorStreak         Int          @default(0)
+  
+  // Ramp-up tracking
+  rampDay             Int          @default(1)      // Day in ramp-up schedule
+  rampStartDate       DateTime?
+  isRamping           Boolean      @default(false)
+  
+  // Cooling
+  coolingUntil        DateTime?
+  cooldownReason      String?
+
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  // Relations
+  assignments         NumberAssignment[]
+  messages            Message[]
+  poolMemberships     NumberPoolMembership[]
+  stickyConversations Conversation[]
+
+  @@index([status])
+  @@index([dailySentCount])
+  @@index([deliveryRate])
+  @@index([messagingServiceSid])
+  @@map("phone_numbers")
+}
+
+model NumberAssignment {
+  id            String   @id @default(cuid())
+  userId        String
+  phoneNumberId String
+  assignedDate  DateTime @default(now()) // Date-based assignment
+  isActive      Boolean  @default(true)
+  
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber   PhoneNumber @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phoneNumberId, assignedDate])
+  @@index([userId, isActive])
+  @@index([assignedDate])
+  @@map("number_assignments")
+}
+
+// Number Pools for reputation grouping
+model NumberPool {
+  id          String   @id @default(cuid())
+  name        String   // e.g., "Primary", "Warm-up", "Re-engagement"
+  description String?
+  dailyLimit  Int      @default(300)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     NumberPoolMembership[]
+  campaigns   Campaign[]
+
+  @@map("number_pools")
+}
+
+model NumberPoolMembership {
+  id            String      @id @default(cuid())
+  phoneNumberId String
+  poolId        String
+  addedAt       DateTime    @default(now())
+
+  phoneNumber   PhoneNumber @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+  pool          NumberPool  @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@unique([phoneNumberId, poolId])
+  @@map("number_pool_memberships")
+}
+
+// ============================================
+// LEADS
+// ============================================
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  REPLIED
+  INTERESTED
+  DOCS_REQUESTED
+  SUBMITTED
+  FUNDED
+  NOT_INTERESTED
+  DNC              // Do Not Contact
+}
+
+model Lead {
+  id              String     @id @default(cuid())
+  firstName       String
+  lastName        String?
+  phone           String     // E.164 format, primary identifier
+  email           String?
+  company         String?
+  state           String?    // US state
+  source          String?    // Lead source
+  status          LeadStatus @default(NEW)
+  
+  // Soft-delete for compliance
+  deletedAt       DateTime?
+  
+  // Assignment
+  assignedRepId   String?
+  assignedRep     User?      @relation(fields: [assignedRepId], references: [id], onDelete: SetNull)
+  
+  // Suppression & Compliance
+  isSuppressed    Boolean    @default(false)
+  suppressedAt    DateTime?
+  suppressReason  String?
+  optedOut        Boolean    @default(false)
+  optedOutAt      DateTime?
+  
+  // Tracking
+  lastContactedAt DateTime?
+  lastRepliedAt   DateTime?
+  contactCount    Int        @default(0)
+  
+  // Custom fields stored as JSON
+  customFields    Json?
+  notes           String?
+  
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  tags            LeadTag[]
+  conversations   Conversation[]
+  campaignLeads   CampaignLead[]
+  automationRuns  AutomationRun[]
+  pipelineCards   PipelineCard[]
+
+  @@unique([phone])
+  @@index([status])
+  @@index([assignedRepId])
+  @@index([isSuppressed, optedOut])
+  @@index([lastContactedAt])
+  @@index([createdAt])
+  @@index([source])
+  @@index([deletedAt])
+  @@map("leads")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  color     String    @default("#6366f1") // Hex color
+  createdAt DateTime  @default(now())
+
+  leads     LeadTag[]
+
+  @@map("tags")
+}
+
+model LeadTag {
+  id     String @id @default(cuid())
+  leadId String
+  tagId  String
+
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId, tagId])
+  @@map("lead_tags")
+}
+
+// ============================================
+// CONVERSATIONS & MESSAGES
+// ============================================
+
+model Conversation {
+  id              String    @id @default(cuid())
+  leadId          String
+  assignedRepId   String?
+  
+  // Sticky sender - maintain continuity
+  stickyNumberId  String?   // Preferred phone number for this conversation
+  lastMessageAt   DateTime?
+  lastDirection   String?   // "inbound" | "outbound"
+  unreadCount     Int       @default(0)
+  isActive        Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  stickyNumber    PhoneNumber? @relation(fields: [stickyNumberId], references: [id], onDelete: SetNull)
+  lead            Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedRep     User?        @relation(fields: [assignedRepId], references: [id], onDelete: SetNull)
+  messages        Message[]
+
+  @@unique([leadId])
+  @@index([assignedRepId, lastMessageAt])
+  @@index([assignedRepId])
+  @@index([lastMessageAt])
+  @@index([unreadCount])
+  @@map("conversations")
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum MessageStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+  UNDELIVERED
+  BLOCKED
+  RECEIVED    // For inbound
+}
+
+model Message {
+  id              String           @id @default(cuid())
+  conversationId  String
+  twilioMessageSid String?         @unique
+  
+  direction       MessageDirection
+  status          MessageStatus    @default(QUEUED)
+  
+  fromNumber      String
+  toNumber        String
+  body            String
+  
+  // Twilio metadata
+  errorCode       String?
+  errorMessage    String?
+  
+  // Tracking
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  failedAt        DateTime?
+  
+  // Source tracking
+  campaignId      String?
+  automationRunId String?
+  sentByUserId    String?
+  phoneNumberId   String?
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  conversation    Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sentByUser      User?            @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+  phoneNumber     PhoneNumber?     @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  campaign        Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@index([status])
+  @@index([twilioMessageSid])
+  @@index([campaignId])
+  @@index([sentAt])
+  @@index([direction, createdAt])
+  @@index([phoneNumberId])
+  @@index([sentByUserId])
+  @@index([automationRunId])
+  @@map("messages")
+}
+
+// ============================================
+// CAMPAIGNS
+// ============================================
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+model Campaign {
+  id                String         @id @default(cuid())
+  name              String
+  description       String?
+  status            CampaignStatus @default(DRAFT)
+  
+  // Message template
+  messageTemplate   String         // Supports {{firstName}}, {{company}} etc.
+  
+  // Scheduling
+  scheduledAt       DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  
+  // Sending config
+  numberPoolId      String?
+  sendingSpeed      Int            @default(60)   // Messages per minute
+  dailyLimit        Int?                           // Per-campaign daily cap
+  
+  // Stats (denomalized for performance)
+  totalLeads        Int            @default(0)
+  totalSent         Int            @default(0)
+  totalDelivered    Int            @default(0)
+  totalFailed       Int            @default(0)
+  totalBlocked      Int            @default(0)
+  totalReplied      Int            @default(0)
+  totalOptedOut     Int            @default(0)
+  
+  createdById       String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  createdBy         User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  numberPool        NumberPool?    @relation(fields: [numberPoolId], references: [id], onDelete: SetNull)
+  leads             CampaignLead[]
+  messages          Message[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([scheduledAt])
+  @@map("campaigns")
+}
+
+enum CampaignLeadStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  REPLIED
+  OPTED_OUT
+  SKIPPED
+}
+
+model CampaignLead {
+  id           String             @id @default(cuid())
+  campaignId   String
+  leadId       String
+  status       CampaignLeadStatus @default(PENDING)
+  
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  repliedAt    DateTime?
+  
+  // Track which number sent to this lead
+  fromNumber   String?
+  errorCode    String?
+  
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  campaign     Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead         Lead               @relation(fields: [leadId], references: [id])
+
+  @@unique([campaignId, leadId])
+  @@index([campaignId, status])
+  @@index([leadId])
+  @@map("campaign_leads")
+}
+
+// ============================================
+// PIPELINE
+// ============================================
+
+model PipelineStage {
+  id            String         @id @default(cuid())
+  name          String
+  order         Int
+  color         String         @default("#6366f1")
+  isDefault     Boolean        @default(false)
+  mappedStatus  LeadStatus?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  cards         PipelineCard[]
+
+  @@index([order])
+  @@map("pipeline_stages")
+}
+
+model PipelineCard {
+  id          String        @id @default(cuid())
+  leadId      String
+  stageId     String
+  position    Int           @default(0)
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  lead        Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  stage       PipelineStage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+
+  @@unique([leadId])
+  @@index([stageId, position])
+  @@map("pipeline_cards")
+}
+
+// ============================================
+// AUTOMATION
+// ============================================
+
+enum AutomationType {
+  LEAD_CREATED
+  STATUS_CHANGED
+  KEYWORD_RECEIVED
+  NO_REPLY
+  MANUAL
+  TAG_RULE
+  FOLLOW_UP_SEQUENCE
+}
+
+model AutomationRule {
+  id            String         @id @default(cuid())
+  name          String
+  type          AutomationType
+  isActive      Boolean        @default(true)
+  
+  // Trigger config (JSON)
+  triggerConfig Json           
+  // e.g., { "type": "no_reply", "delayDays": 3, "maxAttempts": 3 }
+  // e.g., { "type": "keyword", "keywords": ["info", "interested"] }
+  
+  // Action config (JSON)
+  actionConfig  Json           
+  // e.g., { "type": "send_template", "templateId": "...", "moveToStage": "..." }
+  // e.g., { "type": "tag_lead", "tagId": "...", "assignRep": "..." }
+  
+  // Schedule constraints
+  sendAfterHour   Int          @default(9)   // Don't send before 9am
+  sendBeforeHour  Int          @default(20)  // Don't send after 8pm
+  sendOnWeekends  Boolean      @default(false)
+  
+  priority        Int          @default(0)
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  runs            AutomationRun[]
+  templates       AutomationTemplate[]
+
+  @@index([type, isActive])
+  @@map("automation_rules")
+}
+
+model AutomationTemplate {
+  id               String         @id @default(cuid())
+  automationRuleId String
+  sequenceOrder    Int            @default(1)  // Order in follow-up sequence
+  delayDays        Int            @default(1)  // Days to wait before sending
+  messageTemplate  String                      // Supports variable substitution
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  automationRule   AutomationRule @relation(fields: [automationRuleId], references: [id], onDelete: Cascade)
+
+  @@index([automationRuleId, sequenceOrder])
+  @@map("automation_templates")
+}
+
+model AutomationRun {
+  id               String         @id @default(cuid())
+  automationRuleId String
+  leadId           String
+  
+  currentStep      Int            @default(0)
+  isActive         Boolean        @default(true)
+  isPaused         Boolean        @default(false)
+  pauseReason      String?        // "reply_detected", "opted_out", "manual"
+  
+  nextRunAt        DateTime?
+  lastRunAt        DateTime?
+  completedAt      DateTime?
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  automationRule   AutomationRule @relation(fields: [automationRuleId], references: [id], onDelete: Cascade)
+  lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([isActive, nextRunAt])
+  @@index([leadId])
+  @@index([automationRuleId])
+  @@index([automationRuleId, isActive])
+  @@map("automation_runs")
+}
+
+// ============================================
+// SUPPRESSION LIST
+// ============================================
+
+model SuppressionEntry {
+  id          String   @id @default(cuid())
+  phone       String   @unique  // E.164
+  reason      String   // "STOP", "manual", "bounce", "complaint"
+  source      String?  // Where the suppression came from
+  createdAt   DateTime @default(now())
+
+  @@map("suppression_list")
+}
+
+// ============================================
+// ACTIVITY LOG
+// ============================================
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String   // "lead.created", "message.sent", "campaign.started" etc.
+  entityType  String?  // "lead", "campaign", "message"
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@map("activity_logs")
+}
+
+// ============================================
+// SYSTEM SETTINGS
+// ============================================
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+// ============================================
+// MESSAGE QUEUE (for high-volume processing)
+// ============================================
+
+enum QueueItemStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model MessageQueue {
+  id            String          @id @default(cuid())
+  campaignId    String?
+  leadId        String
+  phoneNumberId String?
+  
+  toNumber      String
+  messageBody   String
+  
+  status        QueueItemStatus @default(PENDING)
+  priority      Int             @default(0)
+  attempts      Int             @default(0)
+  maxAttempts   Int             @default(3)
+  
+  scheduledFor  DateTime        @default(now())
+  processedAt   DateTime?
+  failedAt      DateTime?
+  errorMessage  String?
+  
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([status, scheduledFor, priority])
+  @@index([campaignId, status])
+  @@index([leadId])
+  @@map("message_queue")
+}
+
+// ============================================
+// DAILY NUMBER STATS (for monitoring)
+// ============================================
+
+model DailyNumberStats {
+  id            String   @id @default(cuid())
+  phoneNumberId String
+  date          DateTime @db.Date
+  
+  sent          Int      @default(0)
+  delivered     Int      @default(0)
+  failed        Int      @default(0)
+  blocked       Int      @default(0)
+  replies       Int      @default(0)
+  optOuts       Int      @default(0)
+  deliveryRate  Float    @default(100.0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([phoneNumberId, date])
+  @@index([date])
+  @@map("daily_number_stats")
+}

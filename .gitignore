@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment files (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# SSL certificates
+ssl/
+certbot/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# PDF и скриншоты (не код)
+*.pdf
+*.jpg
+*.jpeg
+*.png

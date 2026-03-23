@@ -441,11 +441,11 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const [csvImported, setCsvImported] = useState<{ ids: string[]; count: number } | null>(null);
   const [csvListName, setCsvListName] = useState('');
 
-  // Load available tags/lists for filtering
+  // Load available import lists for selection
   const { data: tagsData } = useQuery({
-    queryKey: ['tags'],
+    queryKey: ['import-lists'],
     queryFn: async () => {
-      const { data } = await api.get('/settings/tags');
+      const { data } = await api.get('/settings/tags?type=importList');
       return data;
     },
   });

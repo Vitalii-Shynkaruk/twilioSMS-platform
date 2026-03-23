@@ -229,17 +229,19 @@ model Lead {
 }
 
 model Tag {
-  id          String    @id @default(cuid())
-  name        String
-  color       String    @default("#6366f1") // Hex color
-  createdAt   DateTime  @default(now())
-  createdById String?
+  id           String    @id @default(cuid())
+  name         String
+  color        String    @default("#6366f1") // Hex color
+  createdAt    DateTime  @default(now())
+  createdById  String?
+  isImportList Boolean   @default(false)
 
   createdBy   User?     @relation(fields: [createdById], references: [id])
   leads       LeadTag[]
 
   @@unique([name, createdById])
   @@index([createdById])
+  @@index([isImportList])
   @@map("tags")
 }
 

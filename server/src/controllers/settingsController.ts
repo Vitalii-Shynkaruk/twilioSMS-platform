@@ -88,6 +88,10 @@ export class SettingsController {
     if (req.user?.role !== 'ADMIN') {
       where.createdById = req.user!.id;
     }
+    // Filter by type: importList returns only CSV import lists
+    if (req.query.type === 'importList') {
+      where.isImportList = true;
+    }
     const tags = await prisma.tag.findMany({
       where,
       orderBy: { createdAt: 'desc' },

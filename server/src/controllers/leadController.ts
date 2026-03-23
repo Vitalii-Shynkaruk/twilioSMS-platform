@@ -393,7 +393,7 @@ export class LeadController {
       const userId = req.user!.id;
       const tag = await prisma.tag.upsert({
         where: { name_createdById: { name: tagName, createdById: userId } },
-        create: { name: tagName, color: '#3b82f6', createdById: userId },
+        create: { name: tagName, color: '#3b82f6', createdById: userId, isImportList: true },
         update: {},
       });
       await prisma.leadTag.createMany({
@@ -617,7 +617,7 @@ export class LeadController {
       const userId = req.user!.id;
       const tag = await prisma.tag.upsert({
         where: { name_createdById: { name: tagName, createdById: userId } },
-        create: { name: tagName, color: '#3b82f6', createdById: userId },
+        create: { name: tagName, color: '#3b82f6', createdById: userId, isImportList: true },
         update: {},
       });
       await prisma.leadTag.createMany({

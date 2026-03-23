@@ -177,6 +177,15 @@ export default function LeadsPage() {
     },
   });
   const allTags = tagsData?.tags || [];
+
+  const { data: importListsData } = useQuery({
+    queryKey: ['import-lists'],
+    queryFn: async () => {
+      const { data } = await api.get('/settings/tags?type=importList');
+      return data;
+    },
+  });
+  const importLists = importListsData?.tags || [];
   const { user } = useAuthStore();
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
@@ -241,7 +250,7 @@ export default function LeadsPage() {
           }}
         >
           <option value="">All Lists</option>
-          {allTags.map((t: any) => (
+          {importLists.map((t: any) => (
             <option key={t.id} value={t.id}>
               {t.name} ({t._count?.leads || 0})
             </option>
@@ -414,7 +423,7 @@ export default function LeadsPage() {
       ) : (
         /* Default: grouped by lists */
         <div className="space-y-3">
-          {allTags.length === 0 && !isLoading && (
+          {importLists.length === 0 && !isLoading && (
             <div className="card p-12 text-center">
               <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center mx-auto mb-3">
                 <FileSpreadsheet className="w-7 h-7 text-dark-500" />
@@ -431,7 +440,7 @@ export default function LeadsPage() {
               )}
             </div>
           )}
-          {allTags.map((tag: any) => (
+          {importLists.map((tag: any) => (
             <LeadListGroup
               key={tag.id}
               tag={tag}

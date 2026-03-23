@@ -363,7 +363,17 @@ export default function LeadsPage() {
                 <tr
                   key={lead.id}
                   className="border-b border-dark-800/50 hover:bg-dark-800/30 transition-colors cursor-pointer"
-                  onClick={() => setDetailLeadId(lead.id)}
+                  onClick={(e) => {
+                    // Don't open detail drawer when clicking checkbox, buttons, or menu items
+                    const target = e.target as HTMLElement;
+                    if (
+                      target.closest('input[type="checkbox"]') ||
+                      target.closest('button') ||
+                      target.closest('[role="menu"]')
+                    )
+                      return;
+                    setDetailLeadId(lead.id);
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setCtxMenu({ x: e.clientX, y: e.clientY, lead });

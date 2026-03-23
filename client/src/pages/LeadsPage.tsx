@@ -901,16 +901,6 @@ function LeadListGroup({
         </div>
       )}
 
-      {/* Collapsed summary */}
-      {!isExpanded && (
-        <div className="px-4 pb-3">
-          <span className="text-xs text-dark-500">
-            {leadCount} leads
-            {tag.createdBy ? ` · ${tag.createdBy.firstName} ${tag.createdBy.lastName}` : ' · csv_import'} ·{' '}
-            {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

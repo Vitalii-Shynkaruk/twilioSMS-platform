@@ -46,6 +46,7 @@ export default function LeadsPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
+  const [listFilter, setListFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showImport, setShowImport] = useState(false);
@@ -81,13 +82,14 @@ export default function LeadsPage() {
   }, [openMenuId, ctxMenu]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['leads', debouncedSearch, statusFilter, page],
+    queryKey: ['leads', debouncedSearch, statusFilter, listFilter, page],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('page', page.toString());
       params.set('limit', '50');
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
+      if (listFilter) params.set('tags', listFilter);
       const { data } = await api.get(`/leads?${params}`);
       return data;
     },
@@ -224,6 +226,21 @@ export default function LeadsPage() {
           {STATUSES.map((s) => (
             <option key={s} value={s}>
               {s}
+            </option>
+          ))}
+        </select>
+        <select
+          className="input w-auto"
+          value={listFilter}
+          onChange={(e) => {
+            setListFilter(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All Lists</option>
+          {allTags.map((t: any) => (
+            <option key={t.id} value={t.id}>
+              {t.name} ({t._count?.leads || 0})
             </option>
           ))}
         </select>
@@ -815,6 +832,8 @@ function ImportModal({ onClose }: { onClose: () => void }) {
       setPreviewData(null);
       setMapping({});
       setImportResult(null);
+      // Auto-fill list name from filename
+      if (!listName) setListName(f.name.replace(/\.csv$/i, ''));
     } else {
       toast.error('Please upload a .csv file');
     }

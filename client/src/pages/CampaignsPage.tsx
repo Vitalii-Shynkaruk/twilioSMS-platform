@@ -432,7 +432,8 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const [leadFilter, setLeadFilter] = useState({ status: '', search: '', source: '', state: '', tag: '' });
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
-  const [leadSource, setLeadSource] = useState<'select' | 'csv'>('select');
+  const [leadSource, setLeadSource] = useState<'lists' | 'select' | 'csv'>('lists');
+  const [selectedLists, setSelectedLists] = useState<Set<string>>(new Set());
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<any>(null);
   const [csvMapping, setCsvMapping] = useState<Record<string, string>>({});
@@ -448,7 +449,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
       return data;
     },
   });
-  const availableTags = tagsData || [];
+  const availableTags = tagsData?.tags || [];
 
   // Load available leads for selection
   const { data: leadsData } = useQuery({
@@ -498,6 +499,11 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
         ...payload,
         leadIds: csvImported.ids,
       });
+    } else if (leadSource === 'lists' && selectedLists.size > 0) {
+      createMutation.mutate({
+        ...payload,
+        filterTags: Array.from(selectedLists),
+      });
     } else if (selectAll) {
       // Server-side filtering — no 200-lead cap
       createMutation.mutate({
@@ -518,6 +524,8 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const handleCsvSelect = async (file: File) => {
     setCsvFile(file);
     setCsvImported(null);
+    // Auto-fill list name from filename (without .csv extension)
+    if (!csvListName) setCsvListName(file.name.replace(/\.csv$/i, ''));
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -570,7 +578,27 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const leadCount = leadSource === 'csv' ? csvImported?.count || 0 : selectAll ? totalAvailable : selectedLeadIds.size;
+  const toggleList = (tagId: string) => {
+    setSelectedLists((prev) => {
+      const next = new Set(prev);
+      if (next.has(tagId)) next.delete(tagId);
+      else next.add(tagId);
+      return next;
+    });
+  };
+
+  const selectedListsLeadCount = availableTags
+    .filter((t: any) => selectedLists.has(t.id))
+    .reduce((sum: number, t: any) => sum + (t._count?.leads || 0), 0);
+
+  const leadCount =
+    leadSource === 'csv'
+      ? csvImported?.count || 0
+      : leadSource === 'lists'
+        ? selectedListsLeadCount
+        : selectAll
+          ? totalAvailable
+          : selectedLeadIds.size;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
@@ -616,8 +644,15 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
               <Users className="w-4 h-4" />
               Leads ({leadCount} selected)
             </label>
-            {/* Tabs: Select / Upload CSV */}
+            {/* Tabs: Lists / Select / Upload CSV */}
             <div className="flex gap-1 mb-2">
+              <button
+                type="button"
+                onClick={() => setLeadSource('lists')}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'lists' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+              >
+                Select Lists
+              </button>
               <button
                 type="button"
                 onClick={() => setLeadSource('select')}
@@ -634,7 +669,35 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
 
-            {leadSource === 'select' ? (
+            {leadSource === 'lists' ? (
+              <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-2">
+                {availableTags.length === 0 ? (
+                  <p className="text-sm text-dark-500 text-center py-4">
+                    No lists yet. Import a CSV with a list name to create one.
+                  </p>
+                ) : (
+                  <div className="max-h-[250px] overflow-y-auto space-y-1">
+                    {availableTags.map((tag: any) => (
+                      <label
+                        key={tag.id}
+                        className="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-dark-700/50 cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedLists.has(tag.id)}
+                          onChange={() => toggleList(tag.id)}
+                          className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+                        />
+                        <div className="flex-1">
+                          <span className="text-sm text-dark-200 font-medium">{tag.name}</span>
+                        </div>
+                        <span className="text-xs text-dark-500">{tag._count?.leads || 0} leads</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : leadSource === 'select' ? (
               <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-3">
                 {/* Lead filters */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -812,7 +875,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
                         </div>
                         <div>
                           <label className="text-xs text-dark-400 mb-1 block">
-                            List Name (optional — groups leads for reuse)
+                            List Name (will appear in &quot;Select Lists&quot; tab)
                           </label>
                           <input
                             type="text"

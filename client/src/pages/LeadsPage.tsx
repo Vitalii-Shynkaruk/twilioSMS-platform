@@ -924,7 +924,6 @@ function LeadListGroup({
           )}
         </div>
       )}
-
     </div>
   );
 }
@@ -1290,7 +1289,7 @@ function ImportModal({ onClose }: { onClose: () => void }) {
                 </div>
                 <div className="text-center p-3 bg-dark-800/50 rounded-lg">
                   <p className="text-lg font-bold text-yellow-400">{importResult.duplicates}</p>
-                  <p className="text-xs text-dark-400">Duplicates</p>
+                  <p className="text-xs text-dark-400">Already Exist</p>
                 </div>
                 <div className="text-center p-3 bg-dark-800/50 rounded-lg">
                   <p className="text-lg font-bold text-red-400">{importResult.errors}</p>

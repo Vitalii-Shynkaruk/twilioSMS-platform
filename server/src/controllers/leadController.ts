@@ -354,31 +354,44 @@ export class LeadController {
 
       // Batch upsert leads using a transaction
       if (leadsToUpsert.length > 0) {
+        // Check which phones already exist to distinguish new vs duplicate
+        const phones = leadsToUpsert.map((l) => l.phone);
+        const existingLeads = await prisma.lead.findMany({
+          where: { phone: { in: phones } },
+          select: { id: true, phone: true, deletedAt: true },
+        });
+        const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
+
         const results = await prisma.$transaction(
           leadsToUpsert.map((lead) =>
             prisma.lead.upsert({
               where: { phone: lead.phone },
               create: lead,
-              update: {
-                lastName: { set: lead.lastName || undefined },
-                email: lead.email || undefined,
-                company: lead.company || undefined,
-              },
+              update: { deletedAt: null },
             }),
           ),
         );
 
-        allLeadIds.push(...results.map((r) => r.id));
+        const newLeadIds: string[] = [];
+        for (const result of results) {
+          const existing = existingPhoneMap.get(result.phone);
+          if (!existing) {
+            newLeadIds.push(result.id);
+            imported++;
+          } else if (existing.deletedAt !== null) {
+            newLeadIds.push(result.id);
+            imported++;
+          } else {
+            duplicates++;
+          }
+        }
 
-        // Create pipeline cards for new leads in batch
-        const newLeads = results.filter((r) => r.createdAt.getTime() > Date.now() - 10000);
-        imported += newLeads.length;
-        duplicates += results.length - newLeads.length;
+        allLeadIds.push(...newLeadIds);
 
-        if (defaultStage && newLeads.length > 0) {
+        if (defaultStage && newLeadIds.length > 0) {
           await prisma.pipelineCard.createMany({
-            data: newLeads.map((lead) => ({
-              leadId: lead.id,
+            data: newLeadIds.map((leadId) => ({
+              leadId,
               stageId: defaultStage.id,
             })),
             skipDuplicates: true,
@@ -560,49 +573,44 @@ export class LeadController {
       }
 
       if (leadsToUpsert.length > 0) {
+        // Check which phones already exist to distinguish new vs duplicate
+        const phones = leadsToUpsert.map((l) => l.phone);
+        const existingLeads = await prisma.lead.findMany({
+          where: { phone: { in: phones } },
+          select: { id: true, phone: true, deletedAt: true },
+        });
+        const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
+
         const results = await prisma.$transaction(
           leadsToUpsert.map((lead) =>
             prisma.lead.upsert({
               where: { phone: lead.phone },
               create: lead,
-              update: {
-                firstName: lead.firstName,
-                lastName: lead.lastName,
-                email: lead.email,
-                company: lead.company,
-                state: lead.state,
-                source: lead.source,
-                deletedAt: null,
-                status: 'NEW',
-              },
+              update: { deletedAt: null },
             }),
           ),
         );
 
-        const newOrRestored = results.filter(
-          (r) => r.createdAt.getTime() > Date.now() - 10000 || r.updatedAt.getTime() > Date.now() - 10000,
-        );
-        // Count truly new (just created) vs restored/updated
-        const justCreated = results.filter((r) => r.createdAt.getTime() > Date.now() - 10000);
-        imported += justCreated.length;
-        // Leads that existed but were soft-deleted get restored — count as imported too
-        const restored = results.filter(
-          (r) =>
-            r.createdAt.getTime() <= Date.now() - 10000 &&
-            r.deletedAt === null &&
-            r.updatedAt.getTime() > Date.now() - 10000,
-        );
-        imported += restored.length;
-        duplicates += results.length - justCreated.length - restored.length;
+        const newLeadIds: string[] = [];
+        for (const result of results) {
+          const existing = existingPhoneMap.get(result.phone);
+          if (!existing) {
+            newLeadIds.push(result.id);
+            imported++;
+          } else if (existing.deletedAt !== null) {
+            newLeadIds.push(result.id);
+            imported++;
+          } else {
+            duplicates++;
+          }
+        }
 
-        // Collect all lead IDs (new, restored, and existing duplicates)
-        allLeadIds.push(...results.map((r) => r.id));
+        allLeadIds.push(...newLeadIds);
 
-        // Create pipeline cards for ALL imported/restored leads (skipDuplicates handles existing)
-        if (defaultStage) {
+        if (defaultStage && newLeadIds.length > 0) {
           await prisma.pipelineCard.createMany({
-            data: results.map((lead) => ({
-              leadId: lead.id,
+            data: newLeadIds.map((leadId) => ({
+              leadId,
               stageId: defaultStage.id,
             })),
             skipDuplicates: true,

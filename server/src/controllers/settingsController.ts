@@ -173,6 +173,7 @@ export class SettingsController {
 
   /**
    * DELETE /settings/tags/:id — Delete a tag (and its lead associations)
+   * For import lists, also soft-deletes the associated leads.
    */
   static async deleteTag(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
@@ -182,11 +183,31 @@ export class SettingsController {
       throw new AppError('Tag not found', 404);
     }
 
+    // Non-admin can only delete their own tags
+    if (req.user?.role !== 'ADMIN' && tag.createdById !== req.user?.id) {
+      throw new AppError('You can only delete your own lists', 403);
+    }
+
+    // For import lists, soft-delete associated leads
+    if (tag.isImportList) {
+      const leadTags = await prisma.leadTag.findMany({
+        where: { tagId: id },
+        select: { leadId: true },
+      });
+      const leadIds = leadTags.map((lt) => lt.leadId);
+      if (leadIds.length > 0) {
+        await prisma.lead.updateMany({
+          where: { id: { in: leadIds } },
+          data: { deletedAt: new Date() },
+        });
+      }
+    }
+
     // Remove associations first, then tag
     await prisma.leadTag.deleteMany({ where: { tagId: id } });
     await prisma.tag.delete({ where: { id } });
 
-    logger.info('Tag deleted', { tagId: id, tagName: tag.name, userId: req.user?.id });
+    logger.info('Tag deleted', { tagId: id, tagName: tag.name, isImportList: tag.isImportList, userId: req.user?.id });
 
     res.json({ message: 'Tag deleted' });
   }

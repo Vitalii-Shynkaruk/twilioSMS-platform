@@ -11,7 +11,7 @@ router.use(authenticate);
 router.get('/tags', asyncHandler(SettingsController.listTags));
 router.post('/tags', requireRole('ADMIN', 'MANAGER'), asyncHandler(SettingsController.createTag));
 router.put('/tags/:id', requireRole('ADMIN', 'MANAGER'), asyncHandler(SettingsController.updateTag));
-router.delete('/tags/:id', requireRole('ADMIN'), asyncHandler(SettingsController.deleteTag));
+router.delete('/tags/:id', requireRole('ADMIN', 'MANAGER'), asyncHandler(SettingsController.deleteTag));
 
 // ── System Settings ──
 router.get('/settings', requireRole('ADMIN'), asyncHandler(SettingsController.getSettings));

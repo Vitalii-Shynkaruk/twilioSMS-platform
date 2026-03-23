@@ -803,6 +803,7 @@ function LeadListGroup({
   statusFilter,
   ...rowProps
 }: any) {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['list-leads', tag.id, searchFilter, statusFilter],
     queryFn: async () => {
@@ -819,6 +820,17 @@ function LeadListGroup({
 
   const groupLeads = data?.leads || [];
   const leadCount = tag._count?.leads ?? 0;
+
+  const deleteListMutation = useMutation({
+    mutationFn: () => api.delete(`/settings/tags/${tag.id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['import-lists'] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
+      toast.success(`List "${tag.name}" deleted`);
+    },
+    onError: () => toast.error('Failed to delete list'),
+  });
 
   const allGroupSelected = isExpanded && groupLeads.length > 0 && groupLeads.every((l: any) => selected.has(l.id));
   const toggleGroupSelect = () => {
@@ -857,7 +869,19 @@ function LeadListGroup({
           {leadCount} leads{tag.createdBy ? ` · ${tag.createdBy.firstName} ${tag.createdBy.lastName}` : ''} ·{' '}
           {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
         </span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm(`Delete list "${tag.name}" and all ${leadCount} leads in it?`)) {
+                deleteListMutation.mutate();
+              }
+            }}
+            className="p-1.5 rounded hover:bg-red-500/10 text-dark-500 hover:text-red-400 transition-colors"
+            title="Delete list and leads"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
           {isExpanded ? (
             <ChevronUp className="w-4 h-4 text-dark-500" />
           ) : (

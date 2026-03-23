@@ -85,7 +85,7 @@ export const leadListQuery = z.object({
   status: z.string().optional().default(''),
   source: z.string().optional().default(''),
   state: z.string().optional().default(''),
-  tag: z.string().optional().default(''),
+  tags: z.string().optional().default(''),
   assignedRepId: z.string().optional().default(''),
 });
 

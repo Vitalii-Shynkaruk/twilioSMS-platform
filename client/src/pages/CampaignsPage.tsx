@@ -22,6 +22,7 @@ import {
   Users,
   Copy,
   Eye,
+  Upload,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -431,6 +432,12 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const [leadFilter, setLeadFilter] = useState({ status: '', search: '', source: '', state: '' });
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [leadSource, setLeadSource] = useState<'select' | 'csv'>('select');
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<any>(null);
+  const [csvMapping, setCsvMapping] = useState<Record<string, string>>({});
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvImported, setCsvImported] = useState<{ ids: string[]; count: number } | null>(null);
 
   // Load available leads for selection
   const { data: leadsData } = useQuery({
@@ -467,7 +474,12 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
       dailyLimit: formData.dailyLimit || null,
       scheduledAt: formData.scheduledAt || null,
     };
-    if (selectAll) {
+    if (leadSource === 'csv' && csvImported) {
+      createMutation.mutate({
+        ...payload,
+        leadIds: csvImported.ids,
+      });
+    } else if (selectAll) {
       // Server-side filtering — no 200-lead cap
       createMutation.mutate({
         ...payload,
@@ -480,6 +492,39 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
         ...payload,
         leadIds: Array.from(selectedLeadIds),
       });
+    }
+  };
+
+  const handleCsvSelect = async (file: File) => {
+    setCsvFile(file);
+    setCsvImported(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const { data } = await api.post('/leads/preview', fd);
+      setCsvPreview(data);
+      setCsvMapping(data.mappingSuggestions || {});
+    } catch {
+      toast.error('Failed to parse CSV');
+    }
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvFile || !csvMapping.phone) return;
+    setCsvUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', csvFile);
+      fd.append('mapping', JSON.stringify(csvMapping));
+      const { data } = await api.post('/leads/import-mapped', fd);
+      const ids = data.leadIds || [];
+      setCsvImported({ ids, count: ids.length });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      toast.success(`${data.imported} leads imported, ${data.duplicates} duplicates updated`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Import failed');
+    } finally {
+      setCsvUploading(false);
     }
   };
 
@@ -504,7 +549,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const leadCount = selectAll ? totalAvailable : selectedLeadIds.size;
+  const leadCount = leadSource === 'csv' ? csvImported?.count || 0 : selectAll ? totalAvailable : selectedLeadIds.size;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
@@ -548,95 +593,221 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="label flex items-center gap-2">
               <Users className="w-4 h-4" />
-              Select Leads ({leadCount} selected)
+              Leads ({leadCount} selected)
             </label>
-            <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-3">
-              {/* Lead filters */}
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  className="input py-1.5 text-sm flex-1 min-w-[140px]"
-                  placeholder="Search leads..."
-                  value={leadFilter.search}
-                  onChange={(e) => setLeadFilter((f) => ({ ...f, search: e.target.value }))}
-                />
-                <select
-                  className="input py-1.5 text-sm w-auto"
-                  value={leadFilter.status}
-                  onChange={(e) => setLeadFilter((f) => ({ ...f, status: e.target.value }))}
-                >
-                  <option value="">All Statuses</option>
-                  <option value="NEW">NEW</option>
-                  <option value="CONTACTED">CONTACTED</option>
-                  <option value="REPLIED">REPLIED</option>
-                  <option value="INTERESTED">INTERESTED</option>
-                  <option value="DOCS_REQUESTED">DOCS_REQUESTED</option>
-                  <option value="SUBMITTED">SUBMITTED</option>
-                  <option value="FUNDED">FUNDED</option>
-                  <option value="NOT_INTERESTED">NOT_INTERESTED</option>
-                  <option value="DNC">DNC</option>
-                </select>
-                <input
-                  type="text"
-                  className="input py-1.5 text-sm w-[120px]"
-                  placeholder="Source..."
-                  value={leadFilter.source}
-                  onChange={(e) => setLeadFilter((f) => ({ ...f, source: e.target.value }))}
-                />
-                <input
-                  type="text"
-                  className="input py-1.5 text-sm w-[80px]"
-                  placeholder="State..."
-                  value={leadFilter.state}
-                  onChange={(e) => setLeadFilter((f) => ({ ...f, state: e.target.value }))}
-                />
-              </div>
-              {/* Select all toggle */}
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-dark-300 cursor-pointer">
+            {/* Tabs: Select / Upload CSV */}
+            <div className="flex gap-1 mb-2">
+              <button
+                type="button"
+                onClick={() => setLeadSource('select')}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'select' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+              >
+                Select Leads
+              </button>
+              <button
+                type="button"
+                onClick={() => setLeadSource('csv')}
+                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'csv' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+              >
+                Upload CSV
+              </button>
+            </div>
+
+            {leadSource === 'select' ? (
+              <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-3">
+                {/* Lead filters */}
+                <div className="flex flex-wrap items-center gap-2">
                   <input
-                    type="checkbox"
-                    checked={selectAll}
-                    onChange={(e) => {
-                      setSelectAll(e.target.checked);
-                      if (e.target.checked) setSelectedLeadIds(new Set());
-                    }}
-                    className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+                    type="text"
+                    className="input py-1.5 text-sm flex-1 min-w-[140px]"
+                    placeholder="Search leads..."
+                    value={leadFilter.search}
+                    onChange={(e) => setLeadFilter((f) => ({ ...f, search: e.target.value }))}
                   />
-                  Select all {totalAvailable} matching leads
-                </label>
-                {!selectAll && (
-                  <button type="button" onClick={toggleAllVisible} className="text-xs text-scl-400 hover:text-scl-300">
-                    {selectedLeadIds.size === availableLeads.length ? 'Deselect all' : 'Select visible'}
-                  </button>
-                )}
-              </div>
-              {/* Lead list */}
-              {!selectAll && (
-                <div className="max-h-[200px] overflow-y-auto space-y-1">
-                  {availableLeads.map((lead: any) => (
-                    <label
-                      key={lead.id}
-                      className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-dark-700/50 cursor-pointer"
+                  <select
+                    className="input py-1.5 text-sm w-auto"
+                    value={leadFilter.status}
+                    onChange={(e) => setLeadFilter((f) => ({ ...f, status: e.target.value }))}
+                  >
+                    <option value="">All Statuses</option>
+                    <option value="NEW">NEW</option>
+                    <option value="CONTACTED">CONTACTED</option>
+                    <option value="REPLIED">REPLIED</option>
+                    <option value="INTERESTED">INTERESTED</option>
+                    <option value="DOCS_REQUESTED">DOCS_REQUESTED</option>
+                    <option value="SUBMITTED">SUBMITTED</option>
+                    <option value="FUNDED">FUNDED</option>
+                    <option value="NOT_INTERESTED">NOT_INTERESTED</option>
+                    <option value="DNC">DNC</option>
+                  </select>
+                  <input
+                    type="text"
+                    className="input py-1.5 text-sm w-[120px]"
+                    placeholder="Source..."
+                    value={leadFilter.source}
+                    onChange={(e) => setLeadFilter((f) => ({ ...f, source: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    className="input py-1.5 text-sm w-[80px]"
+                    placeholder="State..."
+                    value={leadFilter.state}
+                    onChange={(e) => setLeadFilter((f) => ({ ...f, state: e.target.value }))}
+                  />
+                </div>
+                {/* Select all toggle */}
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm text-dark-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectAll}
+                      onChange={(e) => {
+                        setSelectAll(e.target.checked);
+                        if (e.target.checked) setSelectedLeadIds(new Set());
+                      }}
+                      className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+                    />
+                    Select all {totalAvailable} matching leads
+                  </label>
+                  {!selectAll && (
+                    <button
+                      type="button"
+                      onClick={toggleAllVisible}
+                      className="text-xs text-scl-400 hover:text-scl-300"
                     >
-                      <input
-                        type="checkbox"
-                        checked={selectedLeadIds.has(lead.id)}
-                        onChange={() => toggleLead(lead.id)}
-                        className="w-3.5 h-3.5 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
-                      />
-                      <span className="text-sm text-dark-200 flex-1">
-                        {lead.firstName} {lead.lastName || ''}
-                      </span>
-                      <span className="text-xs text-dark-500 font-mono">{lead.phone}</span>
-                    </label>
-                  ))}
-                  {availableLeads.length === 0 && (
-                    <p className="text-sm text-dark-500 text-center py-4">No leads found</p>
+                      {selectedLeadIds.size === availableLeads.length ? 'Deselect all' : 'Select visible'}
+                    </button>
                   )}
                 </div>
-              )}
-            </div>
+                {/* Lead list */}
+                {!selectAll && (
+                  <div className="max-h-[200px] overflow-y-auto space-y-1">
+                    {availableLeads.map((lead: any) => (
+                      <label
+                        key={lead.id}
+                        className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-dark-700/50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedLeadIds.has(lead.id)}
+                          onChange={() => toggleLead(lead.id)}
+                          className="w-3.5 h-3.5 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+                        />
+                        <span className="text-sm text-dark-200 flex-1">
+                          {lead.firstName} {lead.lastName || ''}
+                        </span>
+                        <span className="text-xs text-dark-500 font-mono">{lead.phone}</span>
+                      </label>
+                    ))}
+                    {availableLeads.length === 0 && (
+                      <p className="text-sm text-dark-500 text-center py-4">No leads found</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-3">
+                {!csvImported ? (
+                  <>
+                    {/* File drop zone */}
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-dark-600 rounded-lg p-4 cursor-pointer hover:border-scl-500/50 transition-colors">
+                      <Upload className="w-6 h-6 text-dark-500 mb-2" />
+                      <span className="text-sm text-dark-400">
+                        {csvFile ? csvFile.name : 'Drop CSV file here or click to browse'}
+                      </span>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) handleCsvSelect(f);
+                        }}
+                      />
+                    </label>
+
+                    {/* Column mapping */}
+                    {csvPreview && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-dark-400">{csvPreview.totalRows} rows found. Map columns:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['phone', 'firstName', 'lastName', 'email', 'company', 'state'].map((field) => (
+                            <div key={field} className="flex items-center gap-2">
+                              <span className="text-xs text-dark-400 w-20 shrink-0 capitalize">
+                                {field === 'firstName' ? 'First Name' : field === 'lastName' ? 'Last Name' : field}
+                                {field === 'phone' ? ' *' : ''}
+                              </span>
+                              <select
+                                className="input py-1 text-xs flex-1"
+                                value={csvMapping[field] || ''}
+                                onChange={(e) => setCsvMapping((m) => ({ ...m, [field]: e.target.value }))}
+                              >
+                                <option value="">-- skip --</option>
+                                {csvPreview.columns.map((col: string) => (
+                                  <option key={col} value={col}>
+                                    {col}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Preview table */}
+                        <div className="max-h-[120px] overflow-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b border-dark-700">
+                                {csvPreview.columns.slice(0, 5).map((col: string) => (
+                                  <th key={col} className="px-2 py-1 text-left text-dark-500 font-medium">
+                                    {col}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {csvPreview.previewRows.slice(0, 3).map((row: any, i: number) => (
+                                <tr key={i} className="border-b border-dark-700/30">
+                                  {csvPreview.columns.slice(0, 5).map((col: string) => (
+                                    <td key={col} className="px-2 py-1 text-dark-300 truncate max-w-[120px]">
+                                      {row[col]}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleCsvImport}
+                          disabled={!csvMapping.phone || csvUploading}
+                          className="btn-primary w-full text-sm"
+                        >
+                          {csvUploading ? 'Importing...' : `Import ${csvPreview.totalRows} Leads`}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-4">
+                    <CheckCircle className="w-8 h-8 text-green-400 mx-auto mb-2" />
+                    <p className="text-sm text-dark-200 font-medium">{csvImported.count} leads ready</p>
+                    <p className="text-xs text-dark-500 mt-1">Leads imported and will be added to this campaign</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCsvImported(null);
+                        setCsvFile(null);
+                        setCsvPreview(null);
+                      }}
+                      className="text-xs text-scl-400 hover:text-scl-300 mt-2"
+                    >
+                      Upload different file
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-4">

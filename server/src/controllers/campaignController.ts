@@ -109,6 +109,7 @@ export class CampaignController {
     let leadQuery: any = {
       optedOut: false,
       isSuppressed: false,
+      deletedAt: null,
     };
 
     if (leadIds && leadIds.length > 0) {

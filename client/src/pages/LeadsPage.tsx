@@ -23,6 +23,7 @@ import {
   ArrowRightLeft,
   Play,
   Zap,
+  Pencil,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -60,6 +61,7 @@ export default function LeadsPage() {
   const [tagPickerLead, setTagPickerLead] = useState<any | null>(null);
   const tagPickerRef = useRef<HTMLDivElement>(null);
   const [detailLeadId, setDetailLeadId] = useState<string | null>(null);
+  const [editLead, setEditLead] = useState<any | null>(null);
 
   // Close menu on outside click
   useEffect(() => {
@@ -481,6 +483,15 @@ export default function LeadsPage() {
                           <button
                             onClick={() => {
                               setOpenMenuId(null);
+                              setEditLead(lead);
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+                          >
+                            <Pencil className="w-3.5 h-3.5" /> Edit Lead
+                          </button>
+                          <button
+                            onClick={() => {
+                              setOpenMenuId(null);
                               statusMutation.mutate({ id: lead.id, status: 'CONTACTED' });
                             }}
                             className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
@@ -544,6 +555,15 @@ export default function LeadsPage() {
             className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
           >
+            <button
+              onClick={() => {
+                setEditLead(ctxMenu.lead);
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit Lead
+            </button>
             <button
               onClick={() => {
                 navigate(`/inbox?lead=${ctxMenu.lead.id}`);
@@ -646,6 +666,9 @@ export default function LeadsPage() {
 
       {/* Create Modal */}
       {showCreate && <CreateLeadModal onClose={() => setShowCreate(false)} />}
+
+      {/* Edit Lead Modal */}
+      {editLead && <EditLeadModal lead={editLead} onClose={() => setEditLead(null)} />}
 
       {/* Enroll Automation Modal */}
       {showEnroll && (
@@ -1168,6 +1191,127 @@ function CreateLeadModal({ onClose }: { onClose: () => void }) {
             </button>
             <button type="submit" disabled={createMutation.isPending} className="btn-primary">
               {createMutation.isPending ? 'Creating...' : 'Create Lead'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Edit Lead Modal ─── */
+function EditLeadModal({ lead, onClose }: { lead: any; onClose: () => void }) {
+  const [form, setForm] = useState({
+    firstName: lead.firstName || '',
+    lastName: lead.lastName || '',
+    email: lead.email || '',
+    company: lead.company || '',
+    state: lead.state || '',
+    source: lead.source || '',
+    notes: lead.notes || '',
+  });
+  const queryClient = useQueryClient();
+
+  const updateMutation = useMutation({
+    mutationFn: (data: typeof form) => api.put(`/leads/${lead.id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['lead-detail', lead.id] });
+      toast.success('Lead updated');
+      onClose();
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Update failed'),
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.firstName) return;
+    updateMutation.mutate(form);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="card w-full max-w-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-dark-50">Edit Lead</h3>
+          <button onClick={onClose} className="btn-ghost p-1">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">First Name *</label>
+              <input
+                className="input"
+                value={form.firstName}
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Last Name</label>
+              <input
+                className="input"
+                value={form.lastName}
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Phone</label>
+            <input className="input opacity-50" value={lead.phone} disabled />
+            <p className="text-xs text-dark-500 mt-1">Phone number cannot be changed</p>
+          </div>
+          <div>
+            <label className="label">Email</label>
+            <input
+              className="input"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Company</label>
+              <input
+                className="input"
+                value={form.company}
+                onChange={(e) => setForm({ ...form, company: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">State</label>
+              <input
+                className="input"
+                value={form.state}
+                onChange={(e) => setForm({ ...form, state: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Source</label>
+            <input
+              className="input"
+              value={form.source}
+              onChange={(e) => setForm({ ...form, source: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="label">Notes</label>
+            <textarea
+              className="input min-h-[60px] resize-y"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-ghost">
+              Cancel
+            </button>
+            <button type="submit" disabled={updateMutation.isPending} className="btn-primary">
+              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>

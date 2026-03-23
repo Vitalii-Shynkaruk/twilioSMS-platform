@@ -145,6 +145,46 @@ export class LeadController {
     });
 
     if (existing) {
+      // If lead was soft-deleted, restore it with updated info
+      if (existing.deletedAt) {
+        const restored = await prisma.lead.update({
+          where: { id: existing.id },
+          data: {
+            firstName,
+            lastName: lastName || existing.lastName,
+            email: email || existing.email,
+            company: company || existing.company,
+            state: state || existing.state,
+            source: source || existing.source,
+            status: 'NEW',
+            deletedAt: null,
+            assignedRepId: assignedRepId || (req.user?.role === 'REP' ? req.user.id : undefined),
+          },
+        });
+
+        // Recreate pipeline card
+        const defaultStage =
+          (await prisma.pipelineStage.findFirst({ where: { isDefault: true } })) ||
+          (await prisma.pipelineStage.findFirst({ orderBy: { order: 'asc' } }));
+        if (defaultStage) {
+          await prisma.pipelineCard.upsert({
+            where: { leadId: restored.id },
+            create: { leadId: restored.id, stageId: defaultStage.id },
+            update: {},
+          });
+        }
+
+        // Add tags if provided
+        if (tags && tags.length > 0) {
+          await prisma.leadTag.createMany({
+            data: tags.map((tagId: string) => ({ leadId: restored.id, tagId })),
+            skipDuplicates: true,
+          });
+        }
+
+        res.status(201).json({ lead: restored });
+        return;
+      }
       throw new AppError('Lead with this phone number already exists', 409);
     }
 
@@ -453,6 +493,7 @@ export class LeadController {
     let duplicates = 0;
     let errors = 0;
     const errorDetails: string[] = [];
+    const allLeadIds: string[] = [];
 
     const defaultStage =
       (await prisma.pipelineStage.findFirst({
@@ -534,6 +575,9 @@ export class LeadController {
         imported += restored.length;
         duplicates += results.length - justCreated.length - restored.length;
 
+        // Collect all lead IDs (new, restored, and existing duplicates)
+        allLeadIds.push(...results.map((r) => r.id));
+
         // Create pipeline cards for ALL imported/restored leads (skipDuplicates handles existing)
         if (defaultStage) {
           await prisma.pipelineCard.createMany({
@@ -552,6 +596,7 @@ export class LeadController {
       duplicates,
       errors,
       total: records.length,
+      leadIds: allLeadIds,
       errorDetails: errorDetails.slice(0, 10),
     });
   }

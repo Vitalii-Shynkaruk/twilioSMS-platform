@@ -41,6 +41,7 @@ model User {
   campaigns         Campaign[]
   numberAssignments NumberAssignment[]
   activityLogs      ActivityLog[]
+  tags              Tag[]
 
   @@index([email])
   @@index([role, isActive])
@@ -228,13 +229,17 @@ model Lead {
 }
 
 model Tag {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  color     String    @default("#6366f1") // Hex color
-  createdAt DateTime  @default(now())
+  id          String    @id @default(cuid())
+  name        String
+  color       String    @default("#6366f1") // Hex color
+  createdAt   DateTime  @default(now())
+  createdById String?
 
-  leads     LeadTag[]
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  leads       LeadTag[]
 
+  @@unique([name, createdById])
+  @@index([createdById])
   @@map("tags")
 }
 

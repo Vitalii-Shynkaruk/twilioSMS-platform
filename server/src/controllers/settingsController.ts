@@ -83,10 +83,17 @@ export class SettingsController {
    * GET /settings/tags — List all tags with lead counts
    */
   static async listTags(req: AuthRequest, res: Response): Promise<void> {
+    const where: any = {};
+    // Per-user isolation: each user sees only their own tags/lists
+    if (req.user?.role !== 'ADMIN') {
+      where.createdById = req.user!.id;
+    }
     const tags = await prisma.tag.findMany({
-      orderBy: { name: 'asc' },
+      where,
+      orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { leads: true } },
+        createdBy: { select: { firstName: true, lastName: true } },
       },
     });
     res.json({ tags });
@@ -106,9 +113,9 @@ export class SettingsController {
       throw new AppError('Tag name must be 50 characters or fewer', 400);
     }
 
-    // Check for duplicate tag name (MySQL is case-insensitive by default)
+    // Check for duplicate tag name scoped to user
     const existing = await prisma.tag.findFirst({
-      where: { name: { equals: name.trim() } },
+      where: { name: { equals: name.trim() }, createdById: req.user!.id },
     });
     if (existing) {
       throw new AppError('A tag with this name already exists', 409);
@@ -118,6 +125,7 @@ export class SettingsController {
       data: {
         name: name.trim(),
         color: color || '#6366f1',
+        createdById: req.user!.id,
       },
     });
 

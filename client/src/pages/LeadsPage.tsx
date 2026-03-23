@@ -845,7 +845,8 @@ function LeadListGroup({
         <FileSpreadsheet className="w-4 h-4 text-scl-400" />
         <span className="text-sm font-semibold text-dark-100">{tag.name}</span>
         <span className="text-xs text-dark-500">
-          {leadCount} leads · {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
+          {leadCount} leads{tag.createdBy ? ` · ${tag.createdBy.firstName} ${tag.createdBy.lastName}` : ''} ·{' '}
+          {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
         </span>
         <div className="ml-auto">
           {isExpanded ? (
@@ -895,7 +896,9 @@ function LeadListGroup({
       {!isExpanded && (
         <div className="px-4 pb-3">
           <span className="text-xs text-dark-500">
-            {leadCount} leads · csv_import · {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
+            {leadCount} leads
+            {tag.createdBy ? ` · ${tag.createdBy.firstName} ${tag.createdBy.lastName}` : ' · csv_import'} ·{' '}
+            {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
           </span>
         </div>
       )}

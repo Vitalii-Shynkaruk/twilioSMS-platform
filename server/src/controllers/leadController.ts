@@ -390,9 +390,10 @@ export class LeadController {
     // Auto-tag all imported leads with list name
     if (listName && allLeadIds.length > 0) {
       const tagName = listName.trim();
+      const userId = req.user!.id;
       const tag = await prisma.tag.upsert({
-        where: { name: tagName },
-        create: { name: tagName, color: '#3b82f6' },
+        where: { name_createdById: { name: tagName, createdById: userId } },
+        create: { name: tagName, color: '#3b82f6', createdById: userId },
         update: {},
       });
       await prisma.leadTag.createMany({
@@ -613,9 +614,10 @@ export class LeadController {
     // Auto-tag all imported leads with list name
     if (listName && allLeadIds.length > 0) {
       const tagName = listName.trim();
+      const userId = req.user!.id;
       const tag = await prisma.tag.upsert({
-        where: { name: tagName },
-        create: { name: tagName, color: '#3b82f6' },
+        where: { name_createdById: { name: tagName, createdById: userId } },
+        create: { name: tagName, color: '#3b82f6', createdById: userId },
         update: {},
       });
       await prisma.leadTag.createMany({

@@ -429,7 +429,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     dailyLimit: 0,
     scheduledAt: '',
   });
-  const [leadFilter, setLeadFilter] = useState({ status: '', search: '', source: '', state: '' });
+  const [leadFilter, setLeadFilter] = useState({ status: '', search: '', source: '', state: '', tag: '' });
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [leadSource, setLeadSource] = useState<'select' | 'csv'>('select');
@@ -438,10 +438,28 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const [csvMapping, setCsvMapping] = useState<Record<string, string>>({});
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvImported, setCsvImported] = useState<{ ids: string[]; count: number } | null>(null);
+  const [csvListName, setCsvListName] = useState('');
+
+  // Load available tags/lists for filtering
+  const { data: tagsData } = useQuery({
+    queryKey: ['tags'],
+    queryFn: async () => {
+      const { data } = await api.get('/settings/tags');
+      return data;
+    },
+  });
+  const availableTags = tagsData || [];
 
   // Load available leads for selection
   const { data: leadsData } = useQuery({
-    queryKey: ['campaign-leads', leadFilter.status, leadFilter.search, leadFilter.source, leadFilter.state],
+    queryKey: [
+      'campaign-leads',
+      leadFilter.status,
+      leadFilter.search,
+      leadFilter.source,
+      leadFilter.state,
+      leadFilter.tag,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('limit', '200');
@@ -449,6 +467,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
       if (leadFilter.search) params.set('search', leadFilter.search);
       if (leadFilter.source) params.set('source', leadFilter.source);
       if (leadFilter.state) params.set('state', leadFilter.state);
+      if (leadFilter.tag) params.set('tags', leadFilter.tag);
       const { data } = await api.get(`/leads?${params}`);
       return data;
     },
@@ -486,6 +505,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
         filterStatus: leadFilter.status ? [leadFilter.status] : undefined,
         filterSource: leadFilter.source || undefined,
         filterState: leadFilter.state || undefined,
+        filterTags: leadFilter.tag ? [leadFilter.tag] : undefined,
       });
     } else {
       createMutation.mutate({
@@ -516,6 +536,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
       const fd = new FormData();
       fd.append('file', csvFile);
       fd.append('mapping', JSON.stringify(csvMapping));
+      if (csvListName.trim()) fd.append('listName', csvListName.trim());
       const { data } = await api.post('/leads/import-mapped', fd);
       const ids = data.leadIds || [];
       setCsvImported({ ids, count: ids.length });
@@ -639,6 +660,18 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
                     <option value="FUNDED">FUNDED</option>
                     <option value="NOT_INTERESTED">NOT_INTERESTED</option>
                     <option value="DNC">DNC</option>
+                  </select>
+                  <select
+                    className="input py-1.5 text-sm w-auto"
+                    value={leadFilter.tag}
+                    onChange={(e) => setLeadFilter((f) => ({ ...f, tag: e.target.value }))}
+                  >
+                    <option value="">All Lists</option>
+                    {availableTags.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
                   </select>
                   <input
                     type="text"
@@ -776,6 +809,18 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
                               ))}
                             </tbody>
                           </table>
+                        </div>
+                        <div>
+                          <label className="text-xs text-dark-400 mb-1 block">
+                            List Name (optional — groups leads for reuse)
+                          </label>
+                          <input
+                            type="text"
+                            className="input py-1.5 text-sm w-full"
+                            placeholder="e.g., March Marketing List"
+                            value={csvListName}
+                            onChange={(e) => setCsvListName(e.target.value)}
+                          />
                         </div>
                         <button
                           type="button"

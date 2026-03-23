@@ -294,6 +294,7 @@ export class LeadController {
       throw new AppError('CSV file is required', 400);
     }
 
+    const listName = req.body.listName as string | undefined;
     const csvContent = req.file.buffer.toString('utf-8');
     const records = parse(csvContent, {
       columns: true,
@@ -305,6 +306,7 @@ export class LeadController {
     let duplicates = 0;
     let errors = 0;
     const errorDetails: string[] = [];
+    const allLeadIds: string[] = [];
 
     // Query default stage ONCE before the loop (with fallback to first stage)
     const defaultStage =
@@ -366,6 +368,8 @@ export class LeadController {
           ),
         );
 
+        allLeadIds.push(...results.map((r) => r.id));
+
         // Create pipeline cards for new leads in batch
         const newLeads = results.filter((r) => r.createdAt.getTime() > Date.now() - 10000);
         imported += newLeads.length;
@@ -381,6 +385,20 @@ export class LeadController {
           });
         }
       }
+    }
+
+    // Auto-tag all imported leads with list name
+    if (listName && allLeadIds.length > 0) {
+      const tagName = listName.trim();
+      const tag = await prisma.tag.upsert({
+        where: { name: tagName },
+        create: { name: tagName, color: '#3b82f6' },
+        update: {},
+      });
+      await prisma.leadTag.createMany({
+        data: allLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
+        skipDuplicates: true,
+      });
     }
 
     res.json({
@@ -466,6 +484,7 @@ export class LeadController {
       throw new AppError('CSV file is required', 400);
     }
 
+    const listName = req.body.listName as string | undefined;
     const mappingStr = req.body.mapping;
     if (!mappingStr) {
       throw new AppError('Column mapping is required', 400);
@@ -589,6 +608,20 @@ export class LeadController {
           });
         }
       }
+    }
+
+    // Auto-tag all imported leads with list name
+    if (listName && allLeadIds.length > 0) {
+      const tagName = listName.trim();
+      const tag = await prisma.tag.upsert({
+        where: { name: tagName },
+        create: { name: tagName, color: '#3b82f6' },
+        update: {},
+      });
+      await prisma.leadTag.createMany({
+        data: allLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
+        skipDuplicates: true,
+      });
     }
 
     res.json({

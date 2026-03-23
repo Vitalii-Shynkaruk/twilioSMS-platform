@@ -1,0 +1,6 @@
+firstName,lastName,phone,email,company,source
+John,Smith,+12125551001,john.smith@acmecorp.com,Acme Corp,Website
+Maria,Garcia,+13055552002,maria.garcia@sunrisellc.com,Sunrise LLC,Referral
+James,Johnson,+17865553003,james.j@techstartup.io,Tech Startup Inc,LinkedIn
+Emily,Williams,+14155554004,emily.w@greenleaf.com,GreenLeaf Solutions,Facebook Ad
+Robert,Brown,+12815555005,robert.brown@coastalgroup.com,Coastal Group,Cold List

@@ -818,7 +818,7 @@ function LeadListGroup({
   });
 
   const groupLeads = data?.leads || [];
-  const leadCount = isExpanded ? (data?.pagination?.total ?? tag._count?.leads ?? 0) : (tag._count?.leads ?? 0);
+  const leadCount = tag._count?.leads ?? 0;
 
   const allGroupSelected = isExpanded && groupLeads.length > 0 && groupLeads.every((l: any) => selected.has(l.id));
   const toggleGroupSelect = () => {

@@ -1126,6 +1126,21 @@ function ImportModal({ onClose }: { onClose: () => void }) {
                   </>
                 )}
               </div>
+
+              {/* List Name */}
+              <div>
+                <label className="text-sm font-semibold text-dark-100 block mb-1.5">List Name</label>
+                <p className="text-xs text-dark-400 mb-2">
+                  Give this import a name so you can find it later on the Leads page.
+                </p>
+                <input
+                  type="text"
+                  className="input text-sm py-2 w-full"
+                  placeholder="e.g., March Marketing List"
+                  value={listName}
+                  onChange={(e) => setListName(e.target.value)}
+                />
+              </div>
             </div>
           )}
 
@@ -1162,21 +1177,6 @@ function ImportModal({ onClose }: { onClose: () => void }) {
                     </div>
                   ))}
                 </div>
-              </div>
-
-              {/* List Name */}
-              <div>
-                <h4 className="text-sm font-semibold text-dark-100 mb-2">List Name (optional)</h4>
-                <p className="text-xs text-dark-400 mb-2">
-                  Give this import a name to easily select these leads later when creating campaigns.
-                </p>
-                <input
-                  type="text"
-                  className="input text-sm py-1.5 w-full max-w-sm"
-                  placeholder="e.g., March Marketing List"
-                  value={listName}
-                  onChange={(e) => setListName(e.target.value)}
-                />
               </div>
 
               {/* Data Preview Table */}

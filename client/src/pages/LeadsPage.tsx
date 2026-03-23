@@ -16,6 +16,8 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   FileSpreadsheet,
   Copy,
   Ban,
@@ -63,6 +65,7 @@ export default function LeadsPage() {
   const tagPickerRef = useRef<HTMLDivElement>(null);
   const [detailLeadId, setDetailLeadId] = useState<string | null>(null);
   const [editLead, setEditLead] = useState<any | null>(null);
+  const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
 
   // Close menu on outside click
   useEffect(() => {
@@ -311,382 +314,248 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-dark-700/50">
-                <th className="table-th w-10">
-                  <input
-                    type="checkbox"
-                    checked={selected.size === leads.length && leads.length > 0}
-                    onChange={toggleAll}
-                    className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
-                  />
-                </th>
-                <th className="table-th">Name</th>
-                <th className="table-th">Phone</th>
-                <th className="table-th">Status</th>
-                <th className="table-th">Source</th>
-                <th className="table-th">Tags</th>
-                <th className="table-th">Added</th>
-                <th className="table-th w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading &&
-                [...Array(10)].map((_, i) => (
-                  <tr key={i}>
-                    {[...Array(8)].map((_, j) => (
-                      <td key={j} className="table-td">
-                        <div className="h-4 bg-dark-700 rounded animate-pulse" />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              {!isLoading && leads.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center">
-                        <Users className="w-7 h-7 text-dark-500" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-dark-300">No leads yet</p>
-                        <p className="text-xs text-dark-500 mt-1">Add your first lead to get started with campaigns</p>
-                      </div>
-                      <div className="flex gap-2 mt-1">
-                        <button
-                          onClick={() => setShowCreate(true)}
-                          className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add Lead
-                        </button>
-                        {canManage && (
-                          <button
-                            onClick={() => setShowImport(true)}
-                            className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
-                          >
-                            <Upload className="w-3.5 h-3.5" /> Import CSV
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {leads.map((lead: any) => (
-                <tr
-                  key={lead.id}
-                  className="border-b border-dark-800/50 hover:bg-dark-800/30 transition-colors cursor-pointer"
-                  onClick={(e) => {
-                    // Don't open detail drawer when clicking checkbox, buttons, or menu items
-                    const target = e.target as HTMLElement;
-                    if (
-                      target.closest('input[type="checkbox"]') ||
-                      target.closest('button') ||
-                      target.closest('[role="menu"]')
-                    )
-                      return;
-                    setDetailLeadId(lead.id);
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setCtxMenu({ x: e.clientX, y: e.clientY, lead });
-                    setOpenMenuId(null);
-                  }}
-                >
-                  <td className="table-td">
+      {/* Grouped Lead Lists */}
+      {listFilter ? (
+        /* When a specific list is selected, show flat table */
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-dark-700/50">
+                  <th className="table-th w-10">
                     <input
                       type="checkbox"
-                      checked={selected.has(lead.id)}
-                      onChange={() => toggleSelect(lead.id)}
+                      checked={selected.size === leads.length && leads.length > 0}
+                      onChange={toggleAll}
                       className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
                     />
-                  </td>
-                  <td className="table-td">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center text-xs font-semibold text-dark-300">
-                        {lead.firstName?.[0]}
-                        {lead.lastName?.[0] || ''}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-dark-200">
-                          {lead.firstName} {lead.lastName || ''}
-                        </p>
-                        {lead.email && <p className="text-xs text-dark-500">{lead.email}</p>}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="table-td">
-                    <span className="text-sm text-dark-300 font-mono">{lead.phone}</span>
-                  </td>
-                  <td className="table-td">
-                    <StatusBadge status={lead.status} />
-                  </td>
-                  <td className="table-td">
-                    <span className="text-sm text-dark-400">{lead.source || '—'}</span>
-                  </td>
-                  <td className="table-td">
-                    <div className="flex items-center gap-1 relative">
-                      {lead.tags?.slice(0, 3).map((lt: any) => (
-                        <span
-                          key={lt.tag.id}
-                          className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer group/tag inline-flex items-center gap-0.5"
-                          style={{
-                            backgroundColor: lt.tag.color + '33',
-                            color: lt.tag.color,
-                          }}
-                          title={`Click to remove "${lt.tag.name}"`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeTagMutation.mutate({ leadId: lead.id, tagId: lt.tag.id });
-                          }}
-                        >
-                          {lt.tag.name}
-                          <X className="w-2.5 h-2.5 opacity-0 group-hover/tag:opacity-100 transition-opacity" />
-                        </span>
-                      ))}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTagPickerLead(tagPickerLead?.id === lead.id ? null : lead);
-                        }}
-                        className="w-5 h-5 rounded flex items-center justify-center text-dark-500 hover:text-scl-400 hover:bg-scl-600/10 transition-colors"
-                        title="Add tag"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
-                      {tagPickerLead?.id === lead.id && (
-                        <div
-                          ref={tagPickerRef}
-                          className="absolute left-0 top-full mt-1 z-50 w-44 bg-dark-800 border border-dark-700 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto"
-                        >
-                          {allTags.length === 0 && (
-                            <p className="text-xs text-dark-500 px-3 py-2">No tags found. Create tags in Settings.</p>
-                          )}
-                          {allTags
-                            .filter((t: any) => !lead.tags?.some((lt: any) => lt.tag.id === t.id))
-                            .map((tag: any) => (
-                              <button
-                                key={tag.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  addTagMutation.mutate({ leadId: lead.id, tagId: tag.id });
-                                }}
-                                className="w-full text-left px-3 py-1.5 text-xs hover:bg-dark-700/50 flex items-center gap-2"
-                              >
-                                <span
-                                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                                  style={{ backgroundColor: tag.color }}
-                                />
-                                <span className="text-dark-300">{tag.name}</span>
-                              </button>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="table-td">
-                    <span className="text-sm text-dark-400">{format(new Date(lead.createdAt), 'MMM d')}</span>
-                  </td>
-                  <td className="table-td">
-                    <div className="relative">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenMenuId(openMenuId === lead.id ? null : lead.id);
-                        }}
-                        className="btn-ghost p-1"
-                      >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-                      {openMenuId === lead.id && (
-                        <div
-                          ref={menuRef}
-                          className="absolute right-0 top-full mt-1 w-48 bg-dark-800 border border-dark-700 rounded-lg shadow-xl z-50 py-1"
-                        >
-                          <button
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              setEditLead(lead);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-                          >
-                            <Pencil className="w-3.5 h-3.5" /> Edit Lead
-                          </button>
-                          <button
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              statusMutation.mutate({ id: lead.id, status: 'CONTACTED' });
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-                          >
-                            <Phone className="w-3.5 h-3.5" /> Mark Contacted
-                          </button>
-                          <button
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              statusMutation.mutate({ id: lead.id, status: 'DNC' });
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-                          >
-                            <X className="w-3.5 h-3.5" /> Mark DNC
-                          </button>
-                          <button
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              navigate(`/inbox?lead=${lead.id}`);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-                          >
-                            <Mail className="w-3.5 h-3.5" /> Open Conversation
-                          </button>
-                          <button
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              setEnrollLeadId(lead.id);
-                              setShowEnroll(true);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-purple-300 hover:bg-dark-700/50 flex items-center gap-2"
-                          >
-                            <Zap className="w-3.5 h-3.5" /> Start Automation
-                          </button>
-                          <div className="border-t border-dark-700 my-1" />
-                          <button
-                            onClick={() => {
-                              setOpenMenuId(null);
-                              if (window.confirm('Delete this lead? This action cannot be undone.')) {
-                                deleteMutation.mutate(lead.id);
-                              }
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> Delete Lead
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </td>
+                  </th>
+                  <th className="table-th">Name</th>
+                  <th className="table-th">Phone</th>
+                  <th className="table-th">Status</th>
+                  <th className="table-th">Source</th>
+                  <th className="table-th">Tags</th>
+                  <th className="table-th">Added</th>
+                  <th className="table-th w-10"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {isLoading &&
+                  [...Array(10)].map((_, i) => (
+                    <tr key={i}>
+                      {[...Array(8)].map((_, j) => (
+                        <td key={j} className="table-td">
+                          <div className="h-4 bg-dark-700 rounded animate-pulse" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                {!isLoading && leads.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-16 text-center">
+                      <p className="text-sm text-dark-500">No leads in this list</p>
+                    </td>
+                  </tr>
+                )}
+                {leads.map((lead: any) => (
+                  <LeadRow
+                    key={lead.id}
+                    lead={lead}
+                    selected={selected}
+                    toggleSelect={toggleSelect}
+                    setDetailLeadId={setDetailLeadId}
+                    setCtxMenu={setCtxMenu}
+                    setOpenMenuId={setOpenMenuId}
+                    openMenuId={openMenuId}
+                    menuRef={menuRef}
+                    setEditLead={setEditLead}
+                    statusMutation={statusMutation}
+                    deleteMutation={deleteMutation}
+                    navigate={navigate}
+                    setEnrollLeadId={setEnrollLeadId}
+                    setShowEnroll={setShowEnroll}
+                    removeTagMutation={removeTagMutation}
+                    addTagMutation={addTagMutation}
+                    allTags={allTags}
+                    tagPickerLead={tagPickerLead}
+                    setTagPickerLead={setTagPickerLead}
+                    tagPickerRef={tagPickerRef}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Pagination */}
+          <div className="flex items-center justify-between px-4 py-3 border-t border-dark-700/50">
+            <p className="text-sm text-dark-500">
+              Showing {leads.length} of {total}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="btn-ghost p-2 disabled:opacity-30"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm text-dark-300">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="btn-ghost p-2 disabled:opacity-30"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
+      ) : (
+        /* Default: grouped by lists */
+        <div className="space-y-3">
+          {allTags.length === 0 && !isLoading && (
+            <div className="card p-12 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center mx-auto mb-3">
+                <FileSpreadsheet className="w-7 h-7 text-dark-500" />
+              </div>
+              <p className="text-sm font-medium text-dark-300">No lists yet</p>
+              <p className="text-xs text-dark-500 mt-1">Import a CSV file to create your first lead list</p>
+              {canManage && (
+                <button
+                  onClick={() => setShowImport(true)}
+                  className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mx-auto mt-3"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Import CSV
+                </button>
+              )}
+            </div>
+          )}
+          {allTags.map((tag: any) => (
+            <LeadListGroup
+              key={tag.id}
+              tag={tag}
+              isExpanded={expandedLists.has(tag.id)}
+              onToggle={() => {
+                setExpandedLists((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(tag.id)) next.delete(tag.id);
+                  else next.add(tag.id);
+                  return next;
+                });
+              }}
+              selected={selected}
+              setSelected={setSelected}
+              toggleSelect={toggleSelect}
+              setDetailLeadId={setDetailLeadId}
+              setCtxMenu={setCtxMenu}
+              setOpenMenuId={setOpenMenuId}
+              openMenuId={openMenuId}
+              menuRef={menuRef}
+              setEditLead={setEditLead}
+              statusMutation={statusMutation}
+              deleteMutation={deleteMutation}
+              navigate={navigate}
+              setEnrollLeadId={setEnrollLeadId}
+              setShowEnroll={setShowEnroll}
+              removeTagMutation={removeTagMutation}
+              addTagMutation={addTagMutation}
+              allTags={allTags}
+              tagPickerLead={tagPickerLead}
+              setTagPickerLead={setTagPickerLead}
+              tagPickerRef={tagPickerRef}
+              searchFilter={debouncedSearch}
+              statusFilter={statusFilter}
+            />
+          ))}
+        </div>
+      )}
 
-        {/* Right-Click Context Menu */}
-        {ctxMenu && (
-          <div
-            ref={ctxMenuRef}
-            className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
-            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+      {/* Right-Click Context Menu */}
+      {ctxMenu && (
+        <div
+          ref={ctxMenuRef}
+          className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          <button
+            onClick={() => {
+              setEditLead(ctxMenu.lead);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
           >
-            <button
-              onClick={() => {
-                setEditLead(ctxMenu.lead);
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <Pencil className="w-3.5 h-3.5" /> Edit Lead
-            </button>
-            <button
-              onClick={() => {
-                navigate(`/inbox?lead=${ctxMenu.lead.id}`);
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <MessageSquare className="w-3.5 h-3.5" /> Open Conversation
-            </button>
-            <button
-              onClick={() => {
-                navigate(`/pipeline?lead=${ctxMenu.lead.id}`);
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5" /> View in Pipeline
-            </button>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(ctxMenu.lead.phone);
-                toast.success('Phone copied');
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <Copy className="w-3.5 h-3.5" /> Copy Phone
-            </button>
-            <button
-              onClick={() => {
-                setEnrollLeadId(ctxMenu.lead.id);
-                setShowEnroll(true);
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-purple-300 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <Zap className="w-3.5 h-3.5" /> Start Automation
-            </button>
-            <div className="border-t border-dark-700 my-1" />
-            <button
-              onClick={() => {
-                statusMutation.mutate({ id: ctxMenu.lead.id, status: 'CONTACTED' });
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <Phone className="w-3.5 h-3.5" /> Mark Contacted
-            </button>
-            <button
-              onClick={() => {
-                statusMutation.mutate({ id: ctxMenu.lead.id, status: 'DNC' });
-                setCtxMenu(null);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <Ban className="w-3.5 h-3.5" /> Mark DNC
-            </button>
-            <div className="border-t border-dark-700 my-1" />
-            <button
-              onClick={() => {
-                setCtxMenu(null);
-                if (window.confirm('Delete this lead?')) deleteMutation.mutate(ctxMenu.lead.id);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Delete Lead
-            </button>
-          </div>
-        )}
-
-        {/* Pagination */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-dark-700/50">
-          <p className="text-sm text-dark-500">
-            Showing {leads.length} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="btn-ghost p-2 disabled:opacity-30"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-sm text-dark-300">
-              {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="btn-ghost p-2 disabled:opacity-30"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+            <Pencil className="w-3.5 h-3.5" /> Edit Lead
+          </button>
+          <button
+            onClick={() => {
+              navigate(`/inbox?lead=${ctxMenu.lead.id}`);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <MessageSquare className="w-3.5 h-3.5" /> Open Conversation
+          </button>
+          <button
+            onClick={() => {
+              navigate(`/pipeline?lead=${ctxMenu.lead.id}`);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5" /> View in Pipeline
+          </button>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(ctxMenu.lead.phone);
+              toast.success('Phone copied');
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <Copy className="w-3.5 h-3.5" /> Copy Phone
+          </button>
+          <button
+            onClick={() => {
+              setEnrollLeadId(ctxMenu.lead.id);
+              setShowEnroll(true);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-purple-300 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <Zap className="w-3.5 h-3.5" /> Start Automation
+          </button>
+          <div className="border-t border-dark-700 my-1" />
+          <button
+            onClick={() => {
+              statusMutation.mutate({ id: ctxMenu.lead.id, status: 'CONTACTED' });
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <Phone className="w-3.5 h-3.5" /> Mark Contacted
+          </button>
+          <button
+            onClick={() => {
+              statusMutation.mutate({ id: ctxMenu.lead.id, status: 'DNC' });
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <Ban className="w-3.5 h-3.5" /> Mark DNC
+          </button>
+          <div className="border-t border-dark-700 my-1" />
+          <button
+            onClick={() => {
+              setCtxMenu(null);
+              if (window.confirm('Delete this lead?')) deleteMutation.mutate(ctxMenu.lead.id);
+            }}
+            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete Lead
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Import Modal */}
       {showImport && <ImportModal onClose={() => setShowImport(false)} />}
@@ -714,6 +583,322 @@ export default function LeadsPage() {
 
       {/* Lead Detail Drawer */}
       {detailLeadId && <LeadDetailDrawer leadId={detailLeadId} onClose={() => setDetailLeadId(null)} />}
+    </div>
+  );
+}
+
+function LeadRow({
+  lead,
+  selected,
+  toggleSelect,
+  setDetailLeadId,
+  setCtxMenu,
+  setOpenMenuId,
+  openMenuId,
+  menuRef,
+  setEditLead,
+  statusMutation,
+  deleteMutation,
+  navigate,
+  setEnrollLeadId,
+  setShowEnroll,
+  removeTagMutation,
+  addTagMutation,
+  allTags,
+  tagPickerLead,
+  setTagPickerLead,
+  tagPickerRef,
+}: any) {
+  return (
+    <tr
+      className="border-b border-dark-800/50 hover:bg-dark-800/30 transition-colors cursor-pointer"
+      onClick={(e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('input[type="checkbox"]') || target.closest('button') || target.closest('[role="menu"]'))
+          return;
+        setDetailLeadId(lead.id);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setCtxMenu({ x: e.clientX, y: e.clientY, lead });
+        setOpenMenuId(null);
+      }}
+    >
+      <td className="table-td">
+        <input
+          type="checkbox"
+          checked={selected.has(lead.id)}
+          onChange={() => toggleSelect(lead.id)}
+          className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+        />
+      </td>
+      <td className="table-td">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center text-xs font-semibold text-dark-300">
+            {lead.firstName?.[0]}
+            {lead.lastName?.[0] || ''}
+          </div>
+          <div>
+            <p className="text-sm font-medium text-dark-200">
+              {lead.firstName} {lead.lastName || ''}
+            </p>
+            {lead.email && <p className="text-xs text-dark-500">{lead.email}</p>}
+          </div>
+        </div>
+      </td>
+      <td className="table-td">
+        <span className="text-sm text-dark-300 font-mono">{lead.phone}</span>
+      </td>
+      <td className="table-td">
+        <StatusBadge status={lead.status} />
+      </td>
+      <td className="table-td">
+        <span className="text-sm text-dark-400">{lead.source || '—'}</span>
+      </td>
+      <td className="table-td">
+        <div className="flex items-center gap-1 relative">
+          {lead.tags?.slice(0, 3).map((lt: any) => (
+            <span
+              key={lt.tag.id}
+              className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer group/tag inline-flex items-center gap-0.5"
+              style={{ backgroundColor: lt.tag.color + '33', color: lt.tag.color }}
+              title={`Click to remove "${lt.tag.name}"`}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeTagMutation.mutate({ leadId: lead.id, tagId: lt.tag.id });
+              }}
+            >
+              {lt.tag.name}
+              <X className="w-2.5 h-2.5 opacity-0 group-hover/tag:opacity-100 transition-opacity" />
+            </span>
+          ))}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setTagPickerLead(tagPickerLead?.id === lead.id ? null : lead);
+            }}
+            className="w-5 h-5 rounded flex items-center justify-center text-dark-500 hover:text-scl-400 hover:bg-scl-600/10 transition-colors"
+            title="Add tag"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          {tagPickerLead?.id === lead.id && (
+            <div
+              ref={tagPickerRef}
+              className="absolute left-0 top-full mt-1 z-50 w-44 bg-dark-800 border border-dark-700 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto"
+            >
+              {allTags.length === 0 && (
+                <p className="text-xs text-dark-500 px-3 py-2">No tags found. Create tags in Settings.</p>
+              )}
+              {allTags
+                .filter((t: any) => !lead.tags?.some((lt: any) => lt.tag.id === t.id))
+                .map((tag: any) => (
+                  <button
+                    key={tag.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addTagMutation.mutate({ leadId: lead.id, tagId: tag.id });
+                    }}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-dark-700/50 flex items-center gap-2"
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                    <span className="text-dark-300">{tag.name}</span>
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
+      </td>
+      <td className="table-td">
+        <span className="text-sm text-dark-400">{format(new Date(lead.createdAt), 'MMM d')}</span>
+      </td>
+      <td className="table-td">
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenMenuId(openMenuId === lead.id ? null : lead.id);
+            }}
+            className="btn-ghost p-1"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+          {openMenuId === lead.id && (
+            <div
+              ref={menuRef}
+              className="absolute right-0 top-full mt-1 w-48 bg-dark-800 border border-dark-700 rounded-lg shadow-xl z-50 py-1"
+            >
+              <button
+                onClick={() => {
+                  setOpenMenuId(null);
+                  setEditLead(lead);
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit Lead
+              </button>
+              <button
+                onClick={() => {
+                  setOpenMenuId(null);
+                  statusMutation.mutate({ id: lead.id, status: 'CONTACTED' });
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+              >
+                <Phone className="w-3.5 h-3.5" /> Mark Contacted
+              </button>
+              <button
+                onClick={() => {
+                  setOpenMenuId(null);
+                  navigate(`/inbox?lead=${lead.id}`);
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+              >
+                <Mail className="w-3.5 h-3.5" /> Open Conversation
+              </button>
+              <button
+                onClick={() => {
+                  setOpenMenuId(null);
+                  setEnrollLeadId(lead.id);
+                  setShowEnroll(true);
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-purple-300 hover:bg-dark-700/50 flex items-center gap-2"
+              >
+                <Zap className="w-3.5 h-3.5" /> Start Automation
+              </button>
+              <div className="border-t border-dark-700 my-1" />
+              <button
+                onClick={() => {
+                  setOpenMenuId(null);
+                  if (window.confirm('Delete this lead?')) deleteMutation.mutate(lead.id);
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete Lead
+              </button>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function LeadListGroup({
+  tag,
+  isExpanded,
+  onToggle,
+  selected,
+  setSelected,
+  toggleSelect,
+  searchFilter,
+  statusFilter,
+  ...rowProps
+}: any) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['list-leads', tag.id, searchFilter, statusFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set('tags', tag.id);
+      params.set('limit', '500');
+      if (searchFilter) params.set('search', searchFilter);
+      if (statusFilter) params.set('status', statusFilter);
+      const { data } = await api.get(`/leads?${params}`);
+      return data;
+    },
+    enabled: isExpanded,
+  });
+
+  const groupLeads = data?.leads || [];
+  const leadCount = isExpanded ? (data?.pagination?.total ?? tag._count?.leads ?? 0) : (tag._count?.leads ?? 0);
+
+  const allGroupSelected = isExpanded && groupLeads.length > 0 && groupLeads.every((l: any) => selected.has(l.id));
+  const toggleGroupSelect = () => {
+    setSelected((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (allGroupSelected) {
+        groupLeads.forEach((l: any) => next.delete(l.id));
+      } else {
+        groupLeads.forEach((l: any) => next.add(l.id));
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="card overflow-hidden">
+      {/* Group Header */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-dark-800/50 transition-colors"
+        onClick={onToggle}
+      >
+        <input
+          type="checkbox"
+          checked={allGroupSelected}
+          onChange={(e) => {
+            e.stopPropagation();
+            toggleGroupSelect();
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+          disabled={!isExpanded}
+        />
+        <FileSpreadsheet className="w-4 h-4 text-scl-400" />
+        <span className="text-sm font-semibold text-dark-100">{tag.name}</span>
+        <span className="text-xs text-dark-500">
+          {leadCount} leads · {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
+        </span>
+        <div className="ml-auto">
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-dark-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-dark-500" />
+          )}
+        </div>
+      </div>
+
+      {/* Expanded leads */}
+      {isExpanded && (
+        <div className="border-t border-dark-700/50">
+          {isLoading ? (
+            <div className="px-4 py-6 text-center">
+              <div className="w-6 h-6 rounded-full border-2 border-scl-600/30 border-t-scl-500 animate-spin mx-auto" />
+            </div>
+          ) : groupLeads.length === 0 ? (
+            <p className="text-sm text-dark-500 text-center py-4">No leads found</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-dark-700/50">
+                    <th className="table-th w-10"></th>
+                    <th className="table-th">Name</th>
+                    <th className="table-th">Phone</th>
+                    <th className="table-th">Status</th>
+                    <th className="table-th">Source</th>
+                    <th className="table-th">Tags</th>
+                    <th className="table-th">Added</th>
+                    <th className="table-th w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupLeads.map((lead: any) => (
+                    <LeadRow key={lead.id} lead={lead} selected={selected} toggleSelect={toggleSelect} {...rowProps} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Collapsed summary */}
+      {!isExpanded && (
+        <div className="px-4 pb-3">
+          <span className="text-xs text-dark-500">
+            {leadCount} leads · csv_import · {tag.createdAt ? format(new Date(tag.createdAt), 'MMM d') : ''}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

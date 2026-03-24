@@ -66,6 +66,7 @@ export default function LeadsPage() {
   const [detailLeadId, setDetailLeadId] = useState<string | null>(null);
   const [editLead, setEditLead] = useState<any | null>(null);
   const [expandedLists, setExpandedLists] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'all' | 'lists'>('all');
 
   // Close menu on outside click
   useEffect(() => {
@@ -256,6 +257,21 @@ export default function LeadsPage() {
             </option>
           ))}
         </select>
+        {/* View mode toggle */}
+        <div className="flex items-center gap-1 ml-auto bg-dark-800/50 rounded-lg p-0.5">
+          <button
+            onClick={() => setViewMode('all')}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'all' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+          >
+            All Leads
+          </button>
+          <button
+            onClick={() => setViewMode('lists')}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'lists' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+          >
+            By Lists
+          </button>
+        </div>
       </div>
 
       {/* Bulk Actions Bar */}
@@ -323,9 +339,67 @@ export default function LeadsPage() {
         </div>
       )}
 
-      {/* Grouped Lead Lists */}
-      {listFilter ? (
-        /* When a specific list is selected, show flat table */
+      {/* Lead Content */}
+      {viewMode === 'lists' && !listFilter ? (
+        /* Grouped by lists view */
+        <div className="space-y-3">
+          {importLists.length === 0 && !isLoading && (
+            <div className="card p-12 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center mx-auto mb-3">
+                <FileSpreadsheet className="w-7 h-7 text-dark-500" />
+              </div>
+              <p className="text-sm font-medium text-dark-300">No lists yet</p>
+              <p className="text-xs text-dark-500 mt-1">Import a CSV file to create your first lead list</p>
+              {canManage && (
+                <button
+                  onClick={() => setShowImport(true)}
+                  className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mx-auto mt-3"
+                >
+                  <Upload className="w-3.5 h-3.5" /> Import CSV
+                </button>
+              )}
+            </div>
+          )}
+          {importLists.map((tag: any) => (
+            <LeadListGroup
+              key={tag.id}
+              tag={tag}
+              isExpanded={expandedLists.has(tag.id)}
+              onToggle={() => {
+                setExpandedLists((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(tag.id)) next.delete(tag.id);
+                  else next.add(tag.id);
+                  return next;
+                });
+              }}
+              selected={selected}
+              setSelected={setSelected}
+              toggleSelect={toggleSelect}
+              setDetailLeadId={setDetailLeadId}
+              setCtxMenu={setCtxMenu}
+              setOpenMenuId={setOpenMenuId}
+              openMenuId={openMenuId}
+              menuRef={menuRef}
+              setEditLead={setEditLead}
+              statusMutation={statusMutation}
+              deleteMutation={deleteMutation}
+              navigate={navigate}
+              setEnrollLeadId={setEnrollLeadId}
+              setShowEnroll={setShowEnroll}
+              removeTagMutation={removeTagMutation}
+              addTagMutation={addTagMutation}
+              allTags={allTags}
+              tagPickerLead={tagPickerLead}
+              setTagPickerLead={setTagPickerLead}
+              tagPickerRef={tagPickerRef}
+              searchFilter={debouncedSearch}
+              statusFilter={statusFilter}
+            />
+          ))}
+        </div>
+      ) : (
+        /* Default: flat table of all leads */
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -362,7 +436,7 @@ export default function LeadsPage() {
                 {!isLoading && leads.length === 0 && (
                   <tr>
                     <td colSpan={8} className="py-16 text-center">
-                      <p className="text-sm text-dark-500">No leads in this list</p>
+                      <p className="text-sm text-dark-500">No leads found</p>
                     </td>
                   </tr>
                 )}
@@ -419,64 +493,6 @@ export default function LeadsPage() {
               </button>
             </div>
           </div>
-        </div>
-      ) : (
-        /* Default: grouped by lists */
-        <div className="space-y-3">
-          {importLists.length === 0 && !isLoading && (
-            <div className="card p-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center mx-auto mb-3">
-                <FileSpreadsheet className="w-7 h-7 text-dark-500" />
-              </div>
-              <p className="text-sm font-medium text-dark-300">No lists yet</p>
-              <p className="text-xs text-dark-500 mt-1">Import a CSV file to create your first lead list</p>
-              {canManage && (
-                <button
-                  onClick={() => setShowImport(true)}
-                  className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mx-auto mt-3"
-                >
-                  <Upload className="w-3.5 h-3.5" /> Import CSV
-                </button>
-              )}
-            </div>
-          )}
-          {importLists.map((tag: any) => (
-            <LeadListGroup
-              key={tag.id}
-              tag={tag}
-              isExpanded={expandedLists.has(tag.id)}
-              onToggle={() => {
-                setExpandedLists((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(tag.id)) next.delete(tag.id);
-                  else next.add(tag.id);
-                  return next;
-                });
-              }}
-              selected={selected}
-              setSelected={setSelected}
-              toggleSelect={toggleSelect}
-              setDetailLeadId={setDetailLeadId}
-              setCtxMenu={setCtxMenu}
-              setOpenMenuId={setOpenMenuId}
-              openMenuId={openMenuId}
-              menuRef={menuRef}
-              setEditLead={setEditLead}
-              statusMutation={statusMutation}
-              deleteMutation={deleteMutation}
-              navigate={navigate}
-              setEnrollLeadId={setEnrollLeadId}
-              setShowEnroll={setShowEnroll}
-              removeTagMutation={removeTagMutation}
-              addTagMutation={addTagMutation}
-              allTags={allTags}
-              tagPickerLead={tagPickerLead}
-              setTagPickerLead={setTagPickerLead}
-              tagPickerRef={tagPickerRef}
-              searchFilter={debouncedSearch}
-              statusFilter={statusFilter}
-            />
-          ))}
         </div>
       )}
 

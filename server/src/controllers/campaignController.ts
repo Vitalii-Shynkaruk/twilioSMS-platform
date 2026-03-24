@@ -112,29 +112,40 @@ export class CampaignController {
       deletedAt: null,
     };
 
+    let hasFilter = false;
+
     if (leadIds && leadIds.length > 0) {
       leadQuery.id = { in: leadIds };
+      hasFilter = true;
     } else {
       if (filterTags && filterTags.length > 0) {
         leadQuery.tags = {
           some: { tagId: { in: filterTags } },
         };
+        hasFilter = true;
       }
       if (filterStatus && filterStatus.length > 0) {
         leadQuery.status = { in: filterStatus };
+        hasFilter = true;
       }
       if (filterSource) {
         leadQuery.source = filterSource;
+        hasFilter = true;
       }
       if (filterState) {
         leadQuery.state = filterState;
+        hasFilter = true;
       }
     }
 
-    const leads = await prisma.lead.findMany({
-      where: leadQuery,
-      select: { id: true },
-    });
+    // Safety: if no filter criteria provided, don't add any leads (prevents adding ALL leads)
+    let leads: { id: string }[] = [];
+    if (hasFilter) {
+      leads = await prisma.lead.findMany({
+        where: leadQuery,
+        select: { id: true },
+      });
+    }
 
     if (leads.length > 0) {
       await prisma.campaignLead.createMany({

@@ -374,6 +374,7 @@ export class LeadController {
 
         const newLeadIds: string[] = [];
         for (const result of results) {
+          allLeadIds.push(result.id); // Track ALL lead IDs (new + existing)
           const existing = existingPhoneMap.get(result.phone);
           if (!existing) {
             newLeadIds.push(result.id);
@@ -385,8 +386,6 @@ export class LeadController {
             duplicates++;
           }
         }
-
-        allLeadIds.push(...newLeadIds);
 
         if (defaultStage && newLeadIds.length > 0) {
           await prisma.pipelineCard.createMany({
@@ -593,6 +592,8 @@ export class LeadController {
 
         const newLeadIds: string[] = [];
         for (const result of results) {
+          // Track ALL lead IDs (new + existing) so they can be added to campaigns
+          allLeadIds.push(result.id);
           const existing = existingPhoneMap.get(result.phone);
           if (!existing) {
             newLeadIds.push(result.id);
@@ -604,8 +605,6 @@ export class LeadController {
             duplicates++;
           }
         }
-
-        allLeadIds.push(...newLeadIds);
 
         if (defaultStage && newLeadIds.length > 0) {
           await prisma.pipelineCard.createMany({
@@ -619,7 +618,7 @@ export class LeadController {
       }
     }
 
-    // Auto-tag all imported leads with list name
+    // Auto-tag all imported leads (new + existing) with list name
     if (listName && allLeadIds.length > 0) {
       const tagName = listName.trim();
       const userId = req.user!.id;

@@ -120,10 +120,10 @@ export const createCampaignSchema = z.object({
     .or(z.literal('')),
   leadIds: z.array(cuid).optional(),
   // Targeting filters
-  targetStatuses: z.array(z.string()).optional(),
-  targetSources: z.array(z.string()).optional(),
-  targetStates: z.array(z.string()).optional(),
-  targetTags: z.array(cuid).optional(),
+  filterStatus: z.array(z.string()).optional(),
+  filterSource: z.string().optional(),
+  filterState: z.string().optional(),
+  filterTags: z.array(cuid).optional(),
 });
 
 export const updateCampaignSchema = createCampaignSchema.partial();

@@ -1026,6 +1026,8 @@ function ImportModal({ onClose }: { onClose: () => void }) {
     onSuccess: (res) => {
       setImportResult(res.data);
       queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['import-lists'] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
       setStep('done');
     },
     onError: () => {

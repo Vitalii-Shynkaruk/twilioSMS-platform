@@ -87,8 +87,9 @@ export default function App() {
                   <AppLayout>
                     <Suspense fallback={<PageLoader />}>
                       <Routes>
-                        <Route path="/" element={<DashboardPage />} />
+                        <Route path="/" element={<Navigate to="command-center" replace />} />
                         <Route path="command-center" element={<CommandCenterPage />} />
+                        <Route path="dashboard" element={<DashboardPage />} />
                         <Route path="campaigns" element={<CampaignsPage />} />
                         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
                         <Route path="inbox" element={<InboxPage />} />

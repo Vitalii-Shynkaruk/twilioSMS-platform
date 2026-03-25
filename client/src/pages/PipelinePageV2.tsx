@@ -14,6 +14,9 @@ import {
   ChevronRight,
   SkipForward,
   FileText,
+  RefreshCw,
+  Phone,
+  CheckCircle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '../stores/authStore';
@@ -285,7 +288,7 @@ export default function PipelinePage() {
                 <option value="">All Reps</option>
                 {reps.map((rep: Rep) => (
                   <option key={rep.id} value={rep.id}>
-                    {rep.initials || rep.firstName}
+                    {rep.firstName} {rep.lastName || ''} {rep.initials ? `(${rep.initials})` : ''}
                   </option>
                 ))}
               </select>
@@ -449,6 +452,25 @@ function DraggableDealCard({ deal, compact, onClick }: { deal: Deal; compact: bo
 // ─── Revive Queue — one-card-at-a-time ───
 function ReviveQueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (id: string) => void }) {
   const [idx, setIdx] = useState(0);
+  const qc = useQueryClient();
+
+  const reopenMutation = useMutation({
+    mutationFn: (dealId: string) => dealApi.moveDeal(dealId, { stage: 'ENGAGED_INTERESTED' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      toast.success('Deal reopened → Engaged');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Reopen failed'),
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: (dealId: string) => dealApi.completeAction(dealId, { outcome: 'completed' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      toast.success('Action completed');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Complete failed'),
+  });
 
   if (deals.length === 0) {
     return (
@@ -513,6 +535,7 @@ function ReviveQueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (
             )}
           </div>
 
+          {/* Primary actions */}
           <div className="flex gap-2">
             <button
               onClick={() => onDealClick(deal.id)}
@@ -522,13 +545,40 @@ function ReviveQueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (
               Open Deal
             </button>
             <button
-              onClick={() => {
-                setIdx(Math.min(deals.length - 1, idx + 1));
-              }}
+              onClick={() => setIdx(Math.min(deals.length - 1, idx + 1))}
               className="px-4 py-2.5 text-sm font-medium rounded-lg border border-[var(--border-primary)] text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] transition"
             >
               <SkipForward className="w-4 h-4 inline mr-1" />
               Skip
+            </button>
+          </div>
+
+          {/* Quick actions */}
+          <div className="flex gap-2 pt-1 border-t border-[var(--border-primary)]">
+            <button
+              onClick={() => reopenMutation.mutate(deal.id)}
+              disabled={reopenMutation.isPending}
+              className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 transition"
+            >
+              <RefreshCw className="w-3.5 h-3.5 inline mr-1" />
+              Reopen
+            </button>
+            {deal.client?.phone && (
+              <a
+                href={`tel:${deal.client.phone}`}
+                className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition text-center"
+              >
+                <Phone className="w-3.5 h-3.5 inline mr-1" />
+                Call Now
+              </a>
+            )}
+            <button
+              onClick={() => completeMutation.mutate(deal.id)}
+              disabled={completeMutation.isPending}
+              className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 disabled:opacity-50 transition"
+            >
+              <CheckCircle className="w-3.5 h-3.5 inline mr-1" />
+              Complete
             </button>
           </div>
         </div>

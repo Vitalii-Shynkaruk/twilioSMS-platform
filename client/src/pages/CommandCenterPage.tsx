@@ -16,8 +16,9 @@ import {
 import { clsx } from 'clsx';
 import { formatCurrency } from '../components/pipeline/DealCard';
 import type { CommandCenterMetrics, Rep, Deal } from '../types';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import DealPanel from '../components/pipeline/DealPanel';
+import CreateDealModal from '../components/pipeline/CreateDealModal';
 
 const STAGE_LABELS: Record<string, string> = {
   NEW_LEAD: 'New Lead',
@@ -46,7 +47,7 @@ export default function CommandCenterPage() {
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [simRepId, setSimRepId] = useState<string>('');
-
+  const [showCreateDeal, setShowCreateDeal] = useState(false);
   const repFilterParam: Record<string, string> = simRepId ? { repId: simRepId } : {};
 
   const { data: reps } = useQuery({
@@ -199,6 +200,12 @@ export default function CommandCenterPage() {
               </span>
             </div>
           )}
+          <button
+            onClick={() => setShowCreateDeal(true)}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-scl-500 text-white hover:bg-scl-600 transition"
+          >
+            + Add Deal
+          </button>
         </div>
       </div>
 
@@ -525,6 +532,52 @@ export default function CommandCenterPage() {
         </section>
       )}
 
+      {/* Next 5 Actions - ranked by value + urgency */}
+      {queue && queue.length > 0 && (
+        <section>
+          <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
+            <Target className="w-3.5 h-3.5" /> Next 5 Actions
+          </h2>
+          <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4 space-y-2">
+            {(queue as Deal[])
+              .filter((d: any) => d.nextAction || d.primaryAction)
+              .slice(0, 5)
+              .map((deal: any, i: number) => (
+                <div
+                  key={deal.id}
+                  className="flex items-center justify-between text-xs cursor-pointer hover:bg-[var(--bg-tertiary)] p-2 rounded-lg transition"
+                  onClick={() => setSelectedDealId(deal.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-[var(--text-muted)] w-4">{i + 1}.</span>
+                    <div>
+                      <p className="font-medium text-[var(--text-primary)]">
+                        {deal.client?.businessName || 'Unknown'}{' '}
+                        <span className="text-[var(--text-muted)]">· {formatCurrency(deal.dealAmount)}</span>
+                      </p>
+                      <p className="text-[10px] text-scl-400">
+                        {deal.nextAction || deal.primaryAction}{' '}
+                        {deal.nextActionDue && (
+                          <span
+                            className={clsx(
+                              new Date(deal.nextActionDue) < new Date() ? 'text-red-400' : 'text-[var(--text-muted)]',
+                            )}
+                          >
+                            — {new Date(deal.nextActionDue).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--bg-tertiary)] rounded text-[var(--text-secondary)]">
+                    {deal.stageLabel || deal.stage?.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              ))}
+          </div>
+        </section>
+      )}
+
       {/* Product Mix (Admin) */}
       {isAdmin && productMix && !simRepId && (
         <section>
@@ -593,6 +646,7 @@ export default function CommandCenterPage() {
 
       {/* Deal Panel */}
       {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
+      {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
     </div>
   );
 }

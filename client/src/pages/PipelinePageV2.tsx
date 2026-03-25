@@ -18,7 +18,13 @@ import {
   Phone,
   CheckCircle,
 } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import { clsx } from 'clsx';
+
+// ══════════════════════════════════════════════════════
+// 🔒 TEMPORARY LOCK — set to false to unlock Pipeline
+const PIPELINE_LOCKED = true;
+// ══════════════════════════════════════════════════════
 import { useAuthStore } from '../stores/authStore';
 import DealCard, { STAGE_COLORS, formatCurrency } from '../components/pipeline/DealCard';
 import DealPanel from '../components/pipeline/DealPanel';
@@ -182,7 +188,20 @@ export default function PipelinePage() {
   }, [activeDragId, board]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
+      {/* 🔒 Lock overlay */}
+      {PIPELINE_LOCKED && (
+        <div className="absolute inset-0 z-50 bg-[var(--bg-primary)]/80 backdrop-blur-[2px] flex items-center justify-center">
+          <div className="text-center">
+            <Lock className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-3 opacity-40" />
+            <h2 className="text-lg font-semibold text-[var(--text-secondary)]">Pipeline is temporarily locked</h2>
+            <p className="text-sm text-[var(--text-muted)] mt-1">
+              This section is under maintenance. Please check back soon.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Stats bar */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 pb-0">

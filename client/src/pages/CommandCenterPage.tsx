@@ -461,9 +461,11 @@ export default function CommandCenterPage() {
                         >
                           {r.initials}
                         </div>
-                        <span className="text-[var(--text-secondary)]">{r.initials}</span>
+                        <span className="text-[var(--text-secondary)]">{r.name || r.initials}</span>
                       </div>
-                      <span className="font-medium text-[var(--text-primary)]">{r.activeDeals} active</span>
+                      <span className="font-medium text-[var(--text-primary)]">
+                        {r.activeDeals ?? r.totalDeals ?? 0} active
+                      </span>
                     </div>
                   ))}
                 </div>

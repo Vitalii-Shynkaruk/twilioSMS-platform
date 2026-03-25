@@ -197,7 +197,12 @@ export default function PipelinePage() {
           />
           <StatCard icon={Flame} label="Hot Deals" value={String(stats.hotCount)} color="text-orange-400" />
           <StatCard icon={AlertTriangle} label="At Risk" value={String(stats.atRisk)} color="text-red-400" />
-          <StatCard icon={Zap} label="Active" value={String(stats.activePipeline)} color="text-blue-400" />
+          <StatCard
+            icon={Zap}
+            label="Active"
+            value={String(stats.activeCount ?? stats.activePipeline)}
+            color="text-blue-400"
+          />
         </div>
       )}
 

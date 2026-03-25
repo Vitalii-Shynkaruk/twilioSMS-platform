@@ -399,7 +399,7 @@ export class CommandCenterController {
         return {
           id: rep.id,
           name: `${rep.firstName} ${rep.lastName}`,
-          initials: rep.initials,
+          initials: rep.initials || ((rep.firstName?.[0] || '') + (rep.lastName?.[0] || '')).toUpperCase(),
           avatarColor: rep.avatarColor,
           monthlyGoal: rep.monthlyGoal,
           status: isActive ? 'active' : 'idle',
@@ -409,7 +409,7 @@ export class CommandCenterController {
           fundedMTD: fundedMTD._sum.amountFunded || 0,
           pipelineValue: pipelineValue._sum.dealAmount || 0,
           committedValue: committedValue._sum.dealAmount || 0,
-          totalDeals,
+          activeDeals: totalDeals,
         };
       }),
     );
@@ -456,15 +456,16 @@ export class CommandCenterController {
       DealStage.COMMITTED_FUNDING,
       DealStage.FUNDED,
     ];
-    const stageChanges = await prisma.dealEvent.groupBy({
-      by: ['toStage'],
-      where: { eventType: 'stage_change', toStage: { in: funnelStages as string[] } },
+    const stageCounts = await prisma.deal.groupBy({
+      by: ['stage'],
+      where: { stage: { in: funnelStages } },
       _count: true,
     });
 
     const funnel = funnelStages.map((stage: DealStage, i: number) => {
-      const count = stageChanges.find((s: any) => s.toStage === stage)?._count || 0;
-      const prevCount = i > 0 ? stageChanges.find((s: any) => s.toStage === funnelStages[i - 1])?._count || 1 : count;
+      const count = (stageCounts.find((s: any) => s.stage === stage)?._count as number) || 0;
+      const prevCount =
+        i > 0 ? (stageCounts.find((s: any) => s.stage === funnelStages[i - 1])?._count as number) || 1 : count;
       return {
         stage,
         label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS],
@@ -503,7 +504,7 @@ export class CommandCenterController {
   static async getExecutionScores(req: AuthRequest, res: Response) {
     const reps = await prisma.user.findMany({
       where: { isActive: true, role: { in: ['REP', 'ADMIN'] } },
-      select: { id: true, initials: true, avatarColor: true, firstName: true },
+      select: { id: true, initials: true, avatarColor: true, firstName: true, lastName: true },
     });
 
     const today = new Date();
@@ -511,33 +512,34 @@ export class CommandCenterController {
 
     const scores = await Promise.all(
       reps.map(async (rep) => {
-        const [_assigned, completed] = await Promise.all([
+        const [todayActions, assignedDeals, overdueCount] = await Promise.all([
           prisma.dealEvent.count({
             where: { repId: rep.id, eventType: 'action_completed', createdAt: { gte: today } },
           }),
-          prisma.dealEvent.count({
-            where: { repId: rep.id, eventType: 'action_completed', createdAt: { gte: today } },
+          prisma.deal.count({
+            where: {
+              assignedRepId: rep.id,
+              stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
+            },
+          }),
+          prisma.deal.count({
+            where: {
+              assignedRepId: rep.id,
+              nextActionDue: { lt: new Date() },
+              stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
+            },
           }),
         ]);
 
-        // Count deals with overdue tasks as assigned work
-        const overdueCount = await prisma.deal.count({
-          where: {
-            assignedRepId: rep.id,
-            nextActionDue: { lt: new Date() },
-            stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
-          },
-        });
-
-        const totalAssigned = completed + overdueCount;
+        const totalAssigned = assignedDeals;
 
         return {
           id: rep.id,
-          initials: rep.initials,
+          initials: rep.initials || ((rep.firstName?.[0] || '') + (rep.lastName?.[0] || '')).toUpperCase(),
           avatarColor: rep.avatarColor,
           firstName: rep.firstName,
-          score: totalAssigned > 0 ? Math.round((completed / totalAssigned) * 100) : 100,
-          completed,
+          score: totalAssigned > 0 ? Math.round(((totalAssigned - overdueCount) / totalAssigned) * 100) : 0,
+          completed: todayActions,
           assigned: totalAssigned,
           overdue: overdueCount,
         };

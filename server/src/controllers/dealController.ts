@@ -147,13 +147,17 @@ export class DealController {
     }
 
     // Stage metadata
-    const stages = STAGE_ORDER.map((stage, index) => ({
-      key: stage,
-      label: STAGE_LABELS[stage],
-      order: index,
-      deals: board[stage] || [],
-      count: (board[stage] || []).length,
-    }));
+    const stages = STAGE_ORDER.map((stage, index) => {
+      const deals = board[stage] || [];
+      return {
+        stage,
+        label: STAGE_LABELS[stage],
+        order: index,
+        deals,
+        count: deals.length,
+        value: deals.reduce((sum: number, d: any) => sum + (d.dealAmount || 0), 0),
+      };
+    });
 
     res.json({ stages });
   }
@@ -785,6 +789,7 @@ export class DealController {
 
     res.json({
       activePipeline,
+      activeCount: deals.length,
       fundedMTD: fundedMTD._sum.amountFunded || 0,
       lifetimeFunded: lifetimeFunded._sum.amountFunded || 0,
       atRisk,

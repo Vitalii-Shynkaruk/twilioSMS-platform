@@ -367,6 +367,7 @@ export interface DealBoard {
 
 export interface DealStats {
   activePipeline: number;
+  activeCount: number;
   fundedMTD: number;
   lifetimeFunded: number;
   atRisk: number;

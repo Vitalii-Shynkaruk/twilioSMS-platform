@@ -416,6 +416,7 @@ export default function LeadsPage() {
                   <th className="table-th">Name</th>
                   <th className="table-th">Phone</th>
                   <th className="table-th">Status</th>
+                  <th className="table-th">Pipeline</th>
                   <th className="table-th">Source</th>
                   <th className="table-th">Tags</th>
                   <th className="table-th">Added</th>
@@ -426,7 +427,7 @@ export default function LeadsPage() {
                 {isLoading &&
                   [...Array(10)].map((_, i) => (
                     <tr key={i}>
-                      {[...Array(8)].map((_, j) => (
+                      {[...Array(9)].map((_, j) => (
                         <td key={j} className="table-td">
                           <div className="h-4 bg-dark-700 rounded animate-pulse" />
                         </td>
@@ -678,6 +679,15 @@ function LeadRow({
         <StatusBadge status={lead.status} />
       </td>
       <td className="table-td">
+        {lead.deal ? (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-scl-500/15 text-scl-400 font-medium whitespace-nowrap">
+            {lead.deal.stageLabel || lead.deal.stage?.replace(/_/g, ' ')}
+          </span>
+        ) : (
+          <span className="text-xs text-dark-600">—</span>
+        )}
+      </td>
+      <td className="table-td">
         <span className="text-sm text-dark-400">{lead.source || '—'}</span>
       </td>
       <td className="table-td">
@@ -924,6 +934,7 @@ function LeadListGroup({
                     <th className="table-th">Name</th>
                     <th className="table-th">Phone</th>
                     <th className="table-th">Status</th>
+                    <th className="table-th">Pipeline</th>
                     <th className="table-th">Source</th>
                     <th className="table-th">Tags</th>
                     <th className="table-th">Added</th>

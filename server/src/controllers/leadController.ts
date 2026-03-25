@@ -3,6 +3,32 @@ import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { parse } from 'csv-parse/sync';
+import { DealStage, LeadStatus } from '@prisma/client';
+
+// Lead status → Deal stage mapping
+const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
+  NEW: DealStage.NEW_LEAD,
+  CONTACTED: DealStage.ENGAGED_INTERESTED,
+  REPLIED: DealStage.ENGAGED_INTERESTED,
+  INTERESTED: DealStage.QUALIFIED,
+  DOCS_REQUESTED: DealStage.QUALIFIED,
+  SUBMITTED: DealStage.SUBMITTED_IN_REVIEW,
+  FUNDED: DealStage.FUNDED,
+  NOT_INTERESTED: DealStage.NURTURE,
+  DNC: DealStage.CLOSED,
+};
+
+const STAGE_LABELS: Record<DealStage, string> = {
+  NEW_LEAD: 'New Lead',
+  ENGAGED_INTERESTED: 'Engaged / Interested',
+  QUALIFIED: 'Qualified',
+  SUBMITTED_IN_REVIEW: 'Submitted (In Review)',
+  APPROVED_OFFERS: 'Approved / Offers',
+  COMMITTED_FUNDING: 'Committed (Funding)',
+  FUNDED: 'Funded',
+  NURTURE: 'Nurture',
+  CLOSED: 'Closed',
+};
 
 export class LeadController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
@@ -69,6 +95,9 @@ export class LeadController {
           assignedRep: {
             select: { id: true, firstName: true, lastName: true },
           },
+          deal: {
+            select: { id: true, stage: true, stageLabel: true, dealAmount: true, isHot: true },
+          },
           _count: {
             select: { conversations: true },
           },
@@ -97,6 +126,17 @@ export class LeadController {
         tags: { include: { tag: true } },
         assignedRep: {
           select: { id: true, firstName: true, lastName: true },
+        },
+        deal: {
+          select: {
+            id: true,
+            stage: true,
+            stageLabel: true,
+            dealAmount: true,
+            isHot: true,
+            nextAction: true,
+            nextActionDue: true,
+          },
         },
         conversations: {
           include: {
@@ -263,11 +303,44 @@ export class LeadController {
       data,
       include: {
         tags: { include: { tag: true } },
+        deal: { select: { id: true, stage: true } },
       },
     });
 
-    // Auto-move pipeline card when lead status changes
+    // Sync lead status → deal stage when status changes
     if (status && status !== existing.status) {
+      const newDealStage = LEAD_TO_DEAL[status as LeadStatus];
+      if (newDealStage) {
+        // Find linked deal (via leadId FK or by phone match)
+        let linkedDeal = lead.deal;
+        if (!linkedDeal) {
+          const client = await prisma.client.findUnique({ where: { phone: existing.phone } });
+          if (client) {
+            linkedDeal = await prisma.deal.findFirst({
+              where: { clientId: client.id },
+              select: { id: true, stage: true },
+              orderBy: { createdAt: 'desc' },
+            });
+            // Link for future syncs
+            if (linkedDeal) {
+              await prisma.deal.update({ where: { id: linkedDeal.id }, data: { leadId: id } });
+            }
+          }
+        }
+        if (linkedDeal && linkedDeal.stage !== newDealStage) {
+          await prisma.deal.update({
+            where: { id: linkedDeal.id },
+            data: {
+              stage: newDealStage,
+              stageLabel: STAGE_LABELS[newDealStage],
+              daysInStage: 0,
+              lastActivityAt: new Date(),
+            },
+          });
+        }
+      }
+
+      // Legacy: auto-move pipeline card
       const targetStage = await prisma.pipelineStage.findFirst({
         where: { mappedStatus: status },
       });

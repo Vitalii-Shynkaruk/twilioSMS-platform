@@ -1,8 +1,33 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
-import { DealStage, ProductType, CommitSubStatus, RenewalTaskStatus } from '@prisma/client';
+import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
+
+// ─── Lead ↔ Deal status mapping ───
+const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
+  NEW: DealStage.NEW_LEAD,
+  CONTACTED: DealStage.ENGAGED_INTERESTED,
+  REPLIED: DealStage.ENGAGED_INTERESTED,
+  INTERESTED: DealStage.QUALIFIED,
+  DOCS_REQUESTED: DealStage.QUALIFIED,
+  SUBMITTED: DealStage.SUBMITTED_IN_REVIEW,
+  FUNDED: DealStage.FUNDED,
+  NOT_INTERESTED: DealStage.NURTURE,
+  DNC: DealStage.CLOSED,
+};
+
+const DEAL_TO_LEAD: Record<DealStage, LeadStatus> = {
+  NEW_LEAD: LeadStatus.NEW,
+  ENGAGED_INTERESTED: LeadStatus.CONTACTED,
+  QUALIFIED: LeadStatus.INTERESTED,
+  SUBMITTED_IN_REVIEW: LeadStatus.SUBMITTED,
+  APPROVED_OFFERS: LeadStatus.SUBMITTED,
+  COMMITTED_FUNDING: LeadStatus.SUBMITTED,
+  FUNDED: LeadStatus.FUNDED,
+  NURTURE: LeadStatus.NOT_INTERESTED,
+  CLOSED: LeadStatus.DNC,
+};
 
 // Stage label mapping (exact names from spec)
 const STAGE_LABELS: Record<DealStage, string> = {
@@ -233,10 +258,18 @@ export class DealController {
       });
     }
 
+    // Try to find and link an existing lead by phone
+    let linkedLeadId: string | undefined;
+    if (phone) {
+      const existingLead = await prisma.lead.findUnique({ where: { phone }, select: { id: true } });
+      if (existingLead) linkedLeadId = existingLead.id;
+    }
+
     const deal = await prisma.deal.create({
       data: {
         clientId: client.id,
         assignedRepId: assignedRepId || req.user!.id,
+        leadId: linkedLeadId || null,
         stage: DealStage.NEW_LEAD,
         stageLabel: STAGE_LABELS[DealStage.NEW_LEAD],
         productType: productType || null,
@@ -438,6 +471,22 @@ export class DealController {
         assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
       },
     });
+
+    // Sync deal stage → linked lead status
+    const newLeadStatus = DEAL_TO_LEAD[stage as DealStage];
+    if (newLeadStatus) {
+      let leadId = existing.leadId;
+      if (!leadId && deal.client?.phone) {
+        const lead = await prisma.lead.findUnique({ where: { phone: deal.client.phone }, select: { id: true } });
+        if (lead) {
+          leadId = lead.id;
+          await prisma.deal.update({ where: { id }, data: { leadId: lead.id } });
+        }
+      }
+      if (leadId) {
+        await prisma.lead.update({ where: { id: leadId }, data: { status: newLeadStatus } }).catch(() => {});
+      }
+    }
 
     const io = (req.app as any).io;
     if (io) io.emit('deal:updated', { dealId: deal.id, stage: deal.stage, repId: deal.assignedRepId });

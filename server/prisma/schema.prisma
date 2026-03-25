@@ -228,6 +228,7 @@ model Lead {
   campaignLeads   CampaignLead[]
   automationRuns  AutomationRun[]
   pipelineCards   PipelineCard[]
+  deal            Deal?            // Linked deal in pipeline
 
   @@unique([phone])
   @@index([status])
@@ -754,6 +755,7 @@ model Deal {
   id                String          @id @default(cuid())
   clientId          String
   assignedRepId     String
+  leadId            String?         @unique  // Link back to source lead
   assistingRepIds   Json?           // JSON array of user IDs
 
   // Stage
@@ -807,6 +809,7 @@ model Deal {
   // Relations
   client            Client          @relation(fields: [clientId], references: [id])
   assignedRep       User            @relation("PrimaryRep", fields: [assignedRepId], references: [id])
+  lead              Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
   offers            Offer[]
   fundingEvents     FundingEvent[]
   dealEvents        DealEvent[]
@@ -821,6 +824,7 @@ model Deal {
   @@index([followUpDate])
   @@index([stage, assignedRepId])
   @@index([importBatch])
+  @@index([leadId])
   @@map("deals")
 }
 

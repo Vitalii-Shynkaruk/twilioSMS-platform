@@ -33,7 +33,7 @@ const navGroups = [
   {
     label: 'CORE',
     items: [
-      { name: 'Command Center', href: '/command-center', icon: Target },
+      // { name: 'Command Center', href: '/command-center', icon: Target },
       { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
       { name: 'Pipeline', href: '/pipeline', icon: Kanban },
       { name: 'Leads', href: '/leads', icon: Users },

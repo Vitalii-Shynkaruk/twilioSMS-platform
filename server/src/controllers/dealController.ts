@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { DealStage, ProductType, CommitSubStatus, RenewalTaskStatus } from '@prisma/client';
+import { parse } from 'csv-parse/sync';
 
 // Stage label mapping (exact names from spec)
 const STAGE_LABELS: Record<DealStage, string> = {
@@ -269,6 +270,11 @@ export class DealController {
     const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 
+    // Rule #9: Closed deals locked — only admin can edit
+    if (existing.stage === DealStage.CLOSED && req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Closed deals are locked. Ask an admin to unlock.' });
+    }
+
     // Permission check
     if (req.user?.role !== 'ADMIN') {
       const assistingIds = (existing.assistingRepIds as string[]) || [];
@@ -380,6 +386,11 @@ export class DealController {
 
     const existing = await prisma.deal.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
+
+    // Rule #9: Closed deals locked — only admin can move
+    if (existing.stage === DealStage.CLOSED && req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Closed deals are locked. Ask an admin to unlock.' });
+    }
 
     // Nurture requires lost reason + follow-up date
     if (stage === 'NURTURE' && (!req.body.lostReason || !req.body.followUpDate)) {
@@ -805,5 +816,131 @@ export class DealController {
     });
 
     res.json(deals);
+  }
+
+  // POST /api/deals/import-csv - Import historical funded deals from CSV (admin only)
+  static async importCSV(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required' });
+    }
+
+    const csvContent = req.file.buffer.toString('utf-8');
+    const records = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true });
+
+    // Load reps for initials matching
+    const reps = await prisma.user.findMany({ select: { id: true, firstName: true, lastName: true, initials: true } });
+
+    const batchId = `import_${Date.now()}`;
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const row of records) {
+      const businessName = row.business_name || row.BusinessName || row.company || '';
+      const repName = row.rep_name || row.RepName || row.rep || row.originator || '';
+      const productRaw = (row.product_type || row.ProductType || row.product || '').toUpperCase();
+      const amountStr = (row.funded_amount || row.FundedAmount || row.amount || '0').replace(/[$,]/g, '');
+      const dateStr = row.funded_date || row.FundedDate || row.date || '';
+
+      if (!businessName) {
+        skipped++;
+        errors.push('Row missing business_name');
+        continue;
+      }
+
+      const amount = parseFloat(amountStr) || 0;
+      const fundedDate = dateStr ? new Date(dateStr) : new Date();
+      if (isNaN(fundedDate.getTime())) {
+        skipped++;
+        errors.push(`Invalid date: ${dateStr}`);
+        continue;
+      }
+
+      // Match rep by initials or partial name
+      const repMatch = reps.find(
+        (r) =>
+          r.initials?.toLowerCase() === repName.toLowerCase() ||
+          `${r.firstName} ${r.lastName}`.toLowerCase().includes(repName.toLowerCase()) ||
+          repName.toLowerCase().includes((r.initials || '').toLowerCase()),
+      );
+      const repId = repMatch?.id || req.user!.id;
+
+      // Map product type
+      const productMap: Record<string, ProductType> = {
+        MCA: ProductType.MCA,
+        LOC: ProductType.LOC,
+        EQUIPMENT: ProductType.EQUIPMENT,
+        HELOC: ProductType.HELOC,
+        SBA: ProductType.SBA,
+        CRE: ProductType.CRE,
+        BRIDGE: ProductType.BRIDGE,
+      };
+      const productType = productMap[productRaw] || null;
+
+      try {
+        // Upsert client
+        const client = await prisma.client.create({
+          data: {
+            businessName,
+            contactName: row.contact_name || row.ContactName || businessName,
+            phone: row.phone || row.Phone || null,
+            email: row.email || row.Email || null,
+            totalFunded: amount,
+            fundingCount: 1,
+            lastFundedDate: fundedDate,
+          },
+        });
+
+        // Create deal in FUNDED stage
+        const deal = await prisma.deal.create({
+          data: {
+            clientId: client.id,
+            assignedRepId: repId,
+            stage: DealStage.FUNDED,
+            stageLabel: STAGE_LABELS[DealStage.FUNDED],
+            productType,
+            dealAmount: amount,
+            fundedDate,
+            lastActivityAt: fundedDate,
+            importBatch: batchId,
+            originatorName: repName || undefined,
+            lender: row.lender || row.Lender || undefined,
+            notes: row.notes || row.Notes || undefined,
+          },
+        });
+
+        // Create funding event
+        await prisma.fundingEvent.create({
+          data: {
+            dealId: deal.id,
+            repId,
+            amountFunded: amount,
+            productType,
+            fundedDate,
+            lender: row.lender || row.Lender || undefined,
+          },
+        });
+
+        // Create 3 renewal tasks from funded date
+        const ms = (d: number) => d * 24 * 60 * 60 * 1000;
+        await prisma.renewalTask.createMany({
+          data: [
+            { dealId: deal.id, taskType: '35d_checkin', dueDate: new Date(fundedDate.getTime() + ms(35)) },
+            { dealId: deal.id, taskType: 'midpoint', dueDate: new Date(fundedDate.getTime() + ms(90)) },
+            { dealId: deal.id, taskType: 'payoff_30d', dueDate: new Date(fundedDate.getTime() + ms(150)) },
+          ],
+        });
+
+        imported++;
+      } catch (err: any) {
+        skipped++;
+        errors.push(`${businessName}: ${err.message}`);
+      }
+    }
+
+    res.json({ imported, skipped, total: records.length, batchId, errors: errors.slice(0, 20) });
   }
 }

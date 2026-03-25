@@ -377,20 +377,21 @@ export interface DealStats {
 }
 
 export interface CommandCenterMetrics {
-  moneyZone: {
-    fundedMTD: number;
-    pipelineValue: number;
-    committedValue: number;
-    atRisk: number;
-    goalProgress: number;
-    projectedMonthEnd: number;
-  };
-  executionZone: {
-    hotCount: number;
-    staleCount: number;
-    overdueCount: number;
-  };
-  futureOpportunities?: { next7d: number; next30d: number; total: number } | number;
+  fundedMTD: number;
+  pipelineValue: number;
+  committedValue: number;
+  atRisk: number;
+  goalProgress: number;
+  projectedMonthEnd: number;
+  monthlyGoal: number;
+  hotCount: number;
+  staleCount: number;
+  staleRevenue: number;
+  overdueCount: number;
+  futureNext7: number;
+  futureNext30: number;
+  futureTotal: number;
+  renewalsDue: number;
 }
 
 export interface Goal {

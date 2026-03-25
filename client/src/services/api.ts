@@ -103,6 +103,11 @@ export const dealApi = {
   completeAction: (id: string, data: any) => api.post(`/deals/${id}/complete-action`, data),
   shareDeal: (id: string, data: any) => api.put(`/deals/${id}/share`, data),
   logCall: (id: string, data: any) => api.post(`/deals/${id}/call-log`, data),
+  importCSV: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/deals/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
 };
 
 export const commandCenterApi = {

@@ -24,7 +24,7 @@ const ACTIVE_STAGES: DealStage[] = [
 ];
 
 // Product-specific stall thresholds (days) per spec §4.5 Rule #21
-const _STALL_THRESHOLDS: Record<string, number> = {
+const STALL_THRESHOLDS: Record<string, number> = {
   [ProductType.MCA]: 2,
   [ProductType.LOC]: 3,
   [ProductType.EQUIPMENT]: 5,
@@ -33,6 +33,7 @@ const _STALL_THRESHOLDS: Record<string, number> = {
   [ProductType.CRE]: 60,
   [ProductType.BRIDGE]: 5,
 };
+const DEFAULT_STALL_THRESHOLD = 3;
 
 async function runDailyDealMaintenance() {
   const start = Date.now();
@@ -66,6 +67,22 @@ async function runDailyDealMaintenance() {
       },
       data: { staleDays: 0 },
     });
+
+    // 2b. Product-specific stall threshold: mark deals as stale when exceeding their product threshold
+    const activeDeals = await prisma.deal.findMany({
+      where: { stage: { in: ACTIVE_STAGES } },
+      select: { id: true, productType: true, staleDays: true, isHot: true },
+    });
+    const stalled: string[] = [];
+    for (const d of activeDeals) {
+      const threshold = d.productType
+        ? (STALL_THRESHOLDS[d.productType] ?? DEFAULT_STALL_THRESHOLD)
+        : DEFAULT_STALL_THRESHOLD;
+      if (d.staleDays >= threshold) stalled.push(d.id);
+    }
+    if (stalled.length > 0) {
+      logger.info(`[DealCron] ${stalled.length} deals exceed product-specific stall threshold`);
+    }
 
     // 3. Mark overdue renewal tasks
     const now = new Date();

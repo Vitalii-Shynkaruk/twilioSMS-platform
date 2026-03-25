@@ -143,8 +143,7 @@ export default function CommandCenterPage() {
     );
   }
 
-  const mz = metrics?.moneyZone;
-  const ez = metrics?.executionZone;
+  const m = metrics;
 
   return (
     <div className="p-4 space-y-6 overflow-y-auto max-h-[calc(100vh-64px)]">
@@ -211,71 +210,66 @@ export default function CommandCenterPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <MetricCard
             label="Funded MTD"
-            value={formatCurrency(mz?.fundedMTD)}
+            value={formatCurrency(m?.fundedMTD)}
             icon={TrendingUp}
             color="text-green-400"
           />
           <MetricCard
             label="Pipeline Value"
-            value={formatCurrency(mz?.pipelineValue)}
+            value={formatCurrency(m?.pipelineValue)}
             icon={DollarSign}
             color="text-scl-500"
           />
-          <MetricCard
-            label="Committed"
-            value={formatCurrency(mz?.committedValue)}
-            icon={Target}
-            color="text-cyan-400"
-          />
-          <MetricCard label="At Risk" value={formatCurrency(mz?.atRisk)} icon={AlertTriangle} color="text-red-400" />
+          <MetricCard label="Committed" value={formatCurrency(m?.committedValue)} icon={Target} color="text-cyan-400" />
+          <MetricCard label="At Risk" value={formatCurrency(m?.atRisk)} icon={AlertTriangle} color="text-red-400" />
           <MetricCard
             label="Goal Progress"
-            value={`${Math.round(mz?.goalProgress || 0)}%`}
+            value={`${Math.round(m?.goalProgress || 0)}%`}
             icon={BarChart3}
             color={
-              mz?.goalProgress && mz.goalProgress >= 80
+              m?.goalProgress && m.goalProgress >= 80
                 ? 'text-green-400'
-                : mz?.goalProgress && mz.goalProgress >= 50
+                : m?.goalProgress && m.goalProgress >= 50
                   ? 'text-amber-400'
                   : 'text-red-400'
             }
           />
           <MetricCard
             label="Projected"
-            value={formatCurrency(mz?.projectedMonthEnd)}
+            value={formatCurrency(m?.projectedMonthEnd)}
             icon={TrendingUp}
             color="text-blue-400"
           />
         </div>
         {/* Goal progress bar */}
-        {mz?.goalProgress !== undefined && (
+        {m?.goalProgress !== undefined && (
           <div className="mt-2 h-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
             <div
               className={clsx(
                 'h-full rounded-full transition-all',
-                mz.goalProgress >= 80 ? 'bg-green-500' : mz.goalProgress >= 50 ? 'bg-amber-500' : 'bg-red-500',
+                m.goalProgress >= 80 ? 'bg-green-500' : m.goalProgress >= 50 ? 'bg-amber-500' : 'bg-red-500',
               )}
-              style={{ width: `${Math.min(100, mz.goalProgress)}%` }}
+              style={{ width: `${Math.min(100, m.goalProgress)}%` }}
             />
           </div>
         )}
         {/* Future Opportunities */}
-        {metrics?.futureOpportunities && typeof metrics.futureOpportunities === 'object' && (
+        {m?.futureNext7 || m?.futureNext30 || m?.futureTotal ? (
           <div className="grid grid-cols-3 gap-3 mt-3">
             <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-center">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{metrics.futureOpportunities.next7d || 0}</p>
+              <p className="text-lg font-bold text-[var(--text-primary)]">{m.futureNext7 || 0}</p>
               <p className="text-[10px] text-[var(--text-muted)]">Next 7 Days</p>
             </div>
             <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-center">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{metrics.futureOpportunities.next30d || 0}</p>
+              <p className="text-lg font-bold text-[var(--text-primary)]">{m.futureNext30 || 0}</p>
               <p className="text-[10px] text-[var(--text-muted)]">Next 30 Days</p>
             </div>
             <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-center">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{metrics.futureOpportunities.total || 0}</p>
+              <p className="text-lg font-bold text-[var(--text-primary)]">{m.futureTotal || 0}</p>
               <p className="text-[10px] text-[var(--text-muted)]">Total Pipeline</p>
             </div>
           </div>
-        )}
+        ) : null}
       </section>
 
       {/* Execution Zone */}
@@ -284,9 +278,9 @@ export default function CommandCenterPage() {
           <Zap className="w-3.5 h-3.5" /> Execution Zone
         </h2>
         <div className="grid grid-cols-3 gap-3">
-          <ExecCard label="Hot Deals" count={ez?.hotCount || 0} color="bg-orange-500" icon={Flame} />
-          <ExecCard label="Stale (24h+)" count={ez?.staleCount || 0} color="bg-amber-500" icon={Clock} />
-          <ExecCard label="Overdue Tasks" count={ez?.overdueCount || 0} color="bg-red-500" icon={AlertTriangle} />
+          <ExecCard label="Hot Deals" count={m?.hotCount || 0} color="bg-orange-500" icon={Flame} />
+          <ExecCard label="Stale (24h+)" count={m?.staleCount || 0} color="bg-amber-500" icon={Clock} />
+          <ExecCard label="Overdue Tasks" count={m?.overdueCount || 0} color="bg-red-500" icon={AlertTriangle} />
         </div>
       </section>
 

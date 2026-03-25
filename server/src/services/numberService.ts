@@ -274,6 +274,40 @@ export class NumberService {
   }
 
   /**
+   * Recalculate dailySentCount from actual messages table.
+   * Called on startup to fix counter drift after restarts.
+   */
+  static async recalculateDailyCounts(): Promise<void> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const counts = await prisma.message.groupBy({
+      by: ['phoneNumberId'],
+      where: {
+        direction: 'OUTBOUND',
+        createdAt: { gte: todayStart },
+        phoneNumberId: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    // Reset all to 0 first, then set actual counts
+    await prisma.phoneNumber.updateMany({ data: { dailySentCount: 0 } });
+
+    for (const row of counts) {
+      if (row.phoneNumberId) {
+        await prisma.phoneNumber.update({
+          where: { id: row.phoneNumberId },
+          data: { dailySentCount: row._count.id },
+        });
+      }
+    }
+
+    await this.invalidateNumbersCache();
+    logger.info(`Daily counts recalculated from messages: ${counts.length} numbers updated`);
+  }
+
+  /**
    * Reset daily counters (run at midnight)
    */
   static async resetDailyCounters(): Promise<void> {
@@ -349,6 +383,27 @@ export class NumberService {
    * Get number health overview for monitoring dashboard
    */
   static async getNumberHealthOverview() {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Get actual sent-today counts from messages table (reliable, survives restarts)
+    const sentTodayCounts = await prisma.message.groupBy({
+      by: ['phoneNumberId'],
+      where: {
+        direction: 'OUTBOUND',
+        createdAt: { gte: todayStart },
+        phoneNumberId: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    const sentTodayMap = new Map<string, number>();
+    for (const row of sentTodayCounts) {
+      if (row.phoneNumberId) {
+        sentTodayMap.set(row.phoneNumberId, row._count.id);
+      }
+    }
+
     const numbers = await prisma.phoneNumber.findMany({
       select: {
         id: true,
@@ -381,17 +436,26 @@ export class NumberService {
       orderBy: { phoneNumber: 'asc' },
     });
 
+    // Override dailySentCount with actual message counts
+    const numbersWithActualCounts = numbers.map((n) => ({
+      ...n,
+      dailySentCount: sentTodayMap.get(n.id) ?? n.dailySentCount,
+    }));
+
     const summary = {
-      total: numbers.length,
-      active: numbers.filter((n) => n.status === 'ACTIVE').length,
-      warming: numbers.filter((n) => n.status === 'WARMING').length,
-      cooling: numbers.filter((n) => n.status === 'COOLING').length,
-      suspended: numbers.filter((n) => n.status === 'SUSPENDED').length,
-      totalCapacity: numbers.reduce((sum, n) => sum + n.dailyLimit, 0),
-      totalUsed: numbers.reduce((sum, n) => sum + n.dailySentCount, 0),
-      avgDeliveryRate: numbers.length > 0 ? numbers.reduce((sum, n) => sum + n.deliveryRate, 0) / numbers.length : 0,
+      total: numbersWithActualCounts.length,
+      active: numbersWithActualCounts.filter((n) => n.status === 'ACTIVE').length,
+      warming: numbersWithActualCounts.filter((n) => n.status === 'WARMING').length,
+      cooling: numbersWithActualCounts.filter((n) => n.status === 'COOLING').length,
+      suspended: numbersWithActualCounts.filter((n) => n.status === 'SUSPENDED').length,
+      totalCapacity: numbersWithActualCounts.reduce((sum, n) => sum + n.dailyLimit, 0),
+      totalUsed: numbersWithActualCounts.reduce((sum, n) => sum + n.dailySentCount, 0),
+      avgDeliveryRate:
+        numbersWithActualCounts.length > 0
+          ? numbersWithActualCounts.reduce((sum, n) => sum + n.deliveryRate, 0) / numbersWithActualCounts.length
+          : 0,
     };
 
-    return { numbers, summary };
+    return { numbers: numbersWithActualCounts, summary };
   }
 }

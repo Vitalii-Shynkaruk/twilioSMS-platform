@@ -9,7 +9,7 @@ import redis from '../config/redis';
  * 1. Process due follow-up sequences
  * 2. Reset daily number counters at midnight
  * 3. Execute scheduled automation rules
- * 
+ *
  * Uses distributed lock (Redis SETNX) to prevent duplicate processing
  * in multi-instance deployments.
  */
@@ -23,7 +23,7 @@ const DAILY_RESET_CHECK_INTERVAL = 300_000;
 const LOCK_KEY = 'lock:automation-worker';
 const LOCK_TTL = 55; // seconds — just under interval
 
-let lastResetDate = '';
+let lastResetDate = new Date().toISOString().split('T')[0]; // Init to today to prevent false reset on restart
 
 /** Acquire a distributed lock. Returns true if lock obtained. */
 async function acquireLock(key: string, ttl: number): Promise<boolean> {
@@ -37,7 +37,11 @@ async function acquireLock(key: string, ttl: number): Promise<boolean> {
 }
 
 async function releaseLock(key: string): Promise<void> {
-  try { await redis.del(key); } catch { /* non-fatal */ }
+  try {
+    await redis.del(key);
+  } catch {
+    /* non-fatal */
+  }
 }
 
 async function checkAndProcessAutomations(): Promise<void> {
@@ -70,14 +74,13 @@ async function checkDailyReset(): Promise<void> {
 }
 
 // Start periodic processing
-const automationInterval = setInterval(
-  checkAndProcessAutomations,
-  AUTOMATION_CHECK_INTERVAL
-);
+const automationInterval = setInterval(checkAndProcessAutomations, AUTOMATION_CHECK_INTERVAL);
 
-const resetInterval = setInterval(
-  checkDailyReset,
-  DAILY_RESET_CHECK_INTERVAL
+const resetInterval = setInterval(checkDailyReset, DAILY_RESET_CHECK_INTERVAL);
+
+// Recalculate daily counts from actual messages on startup (fixes counter drift after restarts)
+NumberService.recalculateDailyCounts().catch((err) =>
+  logger.error('Startup daily count recalculation failed:', { error: err.message }),
 );
 
 logger.info('🤖 Automation Worker started');

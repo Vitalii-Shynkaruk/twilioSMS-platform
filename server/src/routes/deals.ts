@@ -1,0 +1,27 @@
+import { Router } from 'express';
+import { DealController } from '../controllers/dealController';
+import { authenticate } from '../middleware/auth';
+import { asyncHandler } from '../utils/asyncHandler';
+
+const router = Router();
+
+router.use(authenticate);
+
+// Deal CRUD
+router.get('/', asyncHandler(DealController.getDeals));
+router.get('/board', asyncHandler(DealController.getBoard));
+router.get('/stats', asyncHandler(DealController.getStats));
+router.get('/revive-queue', asyncHandler(DealController.getReviveQueue));
+router.get('/:id', asyncHandler(DealController.getDeal));
+router.post('/', asyncHandler(DealController.createDeal));
+router.put('/:id', asyncHandler(DealController.updateDeal));
+router.put('/:id/move', asyncHandler(DealController.moveDeal));
+
+// Deal actions
+router.post('/:id/offers', asyncHandler(DealController.addOffer));
+router.post('/:id/fund', asyncHandler(DealController.markFunded));
+router.post('/:id/complete-action', asyncHandler(DealController.completeAction));
+router.put('/:id/share', asyncHandler(DealController.shareDeal));
+router.post('/:id/call-log', asyncHandler(DealController.logCall));
+
+export default router;

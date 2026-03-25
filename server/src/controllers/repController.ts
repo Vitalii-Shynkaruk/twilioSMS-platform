@@ -1,0 +1,189 @@
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
+import prisma from '../config/database';
+import bcrypt from 'bcryptjs';
+
+export class RepController {
+  // GET /api/reps - List all reps
+  static async getReps(req: AuthRequest, res: Response) {
+    const { activeOnly } = req.query;
+    const where: any = {};
+    if (activeOnly === 'true') where.isActive = true;
+
+    const reps = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        initials: true,
+        role: true,
+        isActive: true,
+        monthlyGoal: true,
+        annualGoal: true,
+        avatarColor: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+      orderBy: { firstName: 'asc' },
+    });
+
+    res.json(reps);
+  }
+
+  // GET /api/reps/:id - Get single rep with stats
+  static async getRep(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+
+    const rep = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        initials: true,
+        role: true,
+        isActive: true,
+        monthlyGoal: true,
+        annualGoal: true,
+        avatarColor: true,
+        lastLoginAt: true,
+        createdAt: true,
+      },
+    });
+
+    if (!rep) return res.status(404).json({ error: 'Rep not found' });
+    res.json(rep);
+  }
+
+  // POST /api/reps - Create a new rep (Admin only)
+  static async createRep(req: AuthRequest, res: Response) {
+    const { firstName, lastName, email, initials, role, monthlyGoal, annualGoal, avatarColor, password } = req.body;
+
+    if (!firstName || !email || !initials) {
+      return res.status(400).json({ error: 'firstName, email, and initials are required' });
+    }
+
+    // Check uniqueness
+    const existing = await prisma.user.findFirst({
+      where: { OR: [{ email }, { initials }] },
+    });
+    if (existing) {
+      return res
+        .status(400)
+        .json({ error: existing.email === email ? 'Email already exists' : 'Initials already taken' });
+    }
+
+    const passwordHash = await bcrypt.hash(password || 'TempPass123!', 12);
+
+    const rep = await prisma.user.create({
+      data: {
+        firstName,
+        lastName: lastName || '',
+        email,
+        passwordHash,
+        initials: initials.toUpperCase(),
+        role: role || 'REP',
+        monthlyGoal: monthlyGoal ? parseFloat(monthlyGoal) : 0,
+        annualGoal: annualGoal ? parseFloat(annualGoal) : 0,
+        avatarColor:
+          avatarColor ||
+          `#${Math.floor(Math.random() * 16777215)
+            .toString(16)
+            .padStart(6, '0')}`,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        initials: true,
+        role: true,
+        isActive: true,
+        monthlyGoal: true,
+        annualGoal: true,
+        avatarColor: true,
+      },
+    });
+
+    res.status(201).json(rep);
+  }
+
+  // PUT /api/reps/:id - Update rep
+  static async updateRep(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { firstName, lastName, email, initials, role, monthlyGoal, annualGoal, avatarColor, isActive } = req.body;
+
+    // Admin cannot change own role
+    if (id === req.user?.id && role && role !== req.user.role) {
+      return res.status(400).json({ error: 'Cannot change your own role' });
+    }
+
+    const updateData: any = {};
+    if (firstName !== undefined) updateData.firstName = firstName;
+    if (lastName !== undefined) updateData.lastName = lastName;
+    if (email !== undefined) updateData.email = email;
+    if (initials !== undefined) updateData.initials = initials.toUpperCase();
+    if (role !== undefined) updateData.role = role;
+    if (monthlyGoal !== undefined) updateData.monthlyGoal = parseFloat(monthlyGoal);
+    if (annualGoal !== undefined) updateData.annualGoal = parseFloat(annualGoal);
+    if (avatarColor !== undefined) updateData.avatarColor = avatarColor;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const rep = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        initials: true,
+        role: true,
+        isActive: true,
+        monthlyGoal: true,
+        annualGoal: true,
+        avatarColor: true,
+      },
+    });
+
+    res.json(rep);
+  }
+
+  // PUT /api/reps/:id/goals - Update goals (admin only)
+  static async updateGoals(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { monthlyGoal, annualGoal } = req.body;
+
+    const rep = await prisma.user.update({
+      where: { id },
+      data: {
+        monthlyGoal: monthlyGoal !== undefined ? parseFloat(monthlyGoal) : undefined,
+        annualGoal: annualGoal !== undefined ? parseFloat(annualGoal) : undefined,
+      },
+      select: { id: true, firstName: true, lastName: true, initials: true, monthlyGoal: true, annualGoal: true },
+    });
+
+    res.json(rep);
+  }
+
+  // PUT /api/reps/team-goals - Update team goal
+  static async updateTeamGoals(req: AuthRequest, res: Response) {
+    const { monthlyGoal, annualGoal } = req.body;
+
+    const goal = await prisma.goal.upsert({
+      where: { entityType_entityId: { entityType: 'team', entityId: 'team' } },
+      update: { monthlyGoal: parseFloat(monthlyGoal), annualGoal: parseFloat(annualGoal) },
+      create: {
+        entityType: 'team',
+        entityId: 'team',
+        monthlyGoal: parseFloat(monthlyGoal),
+        annualGoal: parseFloat(annualGoal),
+      },
+    });
+
+    res.json(goal);
+  }
+}

@@ -214,3 +214,189 @@ export interface Pagination {
   total: number;
   pages?: number;
 }
+
+// ─── Phase 2: Deal Pipeline & Command Center ───
+
+export type DealStage =
+  | 'NEW_LEAD'
+  | 'ENGAGED_INTERESTED'
+  | 'QUALIFIED'
+  | 'SUBMITTED_IN_REVIEW'
+  | 'APPROVED_OFFERS'
+  | 'COMMITTED_FUNDING'
+  | 'FUNDED'
+  | 'NURTURE'
+  | 'CLOSED';
+
+export type ProductType = 'MCA' | 'LOC' | 'EQUIPMENT' | 'HELOC' | 'SBA' | 'CRE' | 'BRIDGE';
+
+export type CommitSubStatus = 'DOCS_REQUESTED' | 'DOCS_SIGNED' | 'FUNDING';
+
+export type RenewalTaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SKIPPED';
+
+export interface Client {
+  id: string;
+  businessName: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  state?: string;
+  totalFunded: number;
+  fundingCount: number;
+  lastFundedDate?: string;
+}
+
+export interface Deal {
+  id: string;
+  clientId: string;
+  assignedRepId: string;
+  assistingRepIds?: string[];
+  stage: DealStage;
+  stageLabel: string;
+  productType?: ProductType;
+  dealAmount?: number;
+  needsAmount: boolean;
+  nextAction?: string;
+  nextActionDue?: string;
+  lastActivityAt: string;
+  lastReplyAt?: string;
+  daysInStage: number;
+  staleDays: number;
+  appSubmitted: boolean;
+  lenderEngaged: boolean;
+  commitSubStatus?: CommitSubStatus;
+  daysInSubStatus: number;
+  fundedDate?: string;
+  cycleTime?: number;
+  prevOffer?: number;
+  lostReason?: string;
+  disqualReason?: string;
+  followUpDate?: string;
+  followUpType?: string;
+  followUpNote?: string;
+  externalFundedDate?: string;
+  importBatch?: string;
+  originatorName?: string;
+  lender?: string;
+  notes?: string;
+  isHot: boolean;
+  createdAt: string;
+  updatedAt: string;
+  // Relations
+  client?: Client;
+  assignedRep?: Rep;
+  offers?: Offer[];
+  fundingEvents?: FundingEvent[];
+  dealEvents?: DealEvent[];
+  renewalTasks?: RenewalTask[];
+}
+
+export interface Offer {
+  id: string;
+  dealId: string;
+  lenderName: string;
+  amount: number;
+  terms?: string;
+  expiryDays?: number;
+  productType?: ProductType;
+  isAccepted: boolean;
+  createdAt: string;
+}
+
+export interface FundingEvent {
+  id: string;
+  dealId: string;
+  repId?: string;
+  amountFunded: number;
+  lender?: string;
+  productType?: ProductType;
+  fundedDate?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface DealEvent {
+  id: string;
+  dealId: string;
+  repId?: string;
+  eventType: string;
+  fromStage?: string;
+  toStage?: string;
+  note?: string;
+  metadata?: any;
+  createdAt: string;
+  rep?: { firstName: string; lastName: string };
+}
+
+export interface RenewalTask {
+  id: string;
+  dealId: string;
+  repId?: string;
+  taskType: string;
+  dueDate: string;
+  status: RenewalTaskStatus;
+  completedAt?: string;
+  notes?: string;
+}
+
+export interface Rep {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  initials?: string;
+  role: 'ADMIN' | 'MANAGER' | 'REP';
+  isActive: boolean;
+  monthlyGoal?: number;
+  annualGoal?: number;
+  avatarColor?: string;
+  lastLoginAt?: string;
+}
+
+export interface DealBoard {
+  stages: {
+    stage: DealStage;
+    label: string;
+    color: string;
+    deals: Deal[];
+    count: number;
+    value: number;
+  }[];
+  total: number;
+}
+
+export interface DealStats {
+  activePipeline: number;
+  fundedMTD: number;
+  lifetimeFunded: number;
+  atRisk: number;
+  hotCount: number;
+  pipelineValue: number;
+  avgCycleTime: number;
+  dealsByStage: { stage: string; count: number; value: number }[];
+}
+
+export interface CommandCenterMetrics {
+  moneyZone: {
+    fundedMTD: number;
+    pipelineValue: number;
+    committedValue: number;
+    atRisk: number;
+    goalProgress: number;
+    projectedMonthEnd: number;
+  };
+  executionZone: {
+    hotCount: number;
+    staleCount: number;
+    overdueCount: number;
+  };
+  futureOpportunities?: { next7d: number; next30d: number; total: number } | number;
+}
+
+export interface Goal {
+  id: string;
+  entityType: string;
+  entityId: string;
+  monthlyGoal: number;
+  annualGoal: number;
+}

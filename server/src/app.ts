@@ -23,6 +23,10 @@ import automationRoutes from './routes/automation';
 import settingsRoutes from './routes/settings';
 import aiRoutes from './routes/ai';
 import analyticsRoutes from './routes/analytics';
+import dealRoutes from './routes/deals';
+import commandCenterRoutes from './routes/commandCenter';
+import repRoutes from './routes/reps';
+import importRoutes from './routes/import';
 
 // Webhooks
 import twilioWebhooks from './webhooks/twilioWebhooks';
@@ -133,6 +137,10 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/deals', dealRoutes);
+app.use('/api/command-center', commandCenterRoutes);
+app.use('/api/reps', repRoutes);
+app.use('/api/import', importRoutes);
 
 // Twilio Webhooks (no auth required - validated by Twilio signature)
 app.use('/api/webhooks/twilio', twilioWebhooks);

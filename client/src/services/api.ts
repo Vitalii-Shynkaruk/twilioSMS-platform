@@ -86,3 +86,49 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// ─── Phase 2: Deal API helpers ───
+
+export const dealApi = {
+  getBoard: (params?: Record<string, string>) => api.get('/deals/board', { params }),
+  getDeals: (params?: Record<string, string>) => api.get('/deals', { params }),
+  getDeal: (id: string) => api.get(`/deals/${id}`),
+  getStats: (params?: Record<string, string>) => api.get('/deals/stats', { params }),
+  getReviveQueue: () => api.get('/deals/revive-queue'),
+  createDeal: (data: any) => api.post('/deals', data),
+  updateDeal: (id: string, data: any) => api.put(`/deals/${id}`, data),
+  moveDeal: (id: string, data: any) => api.put(`/deals/${id}/move`, data),
+  addOffer: (id: string, data: any) => api.post(`/deals/${id}/offers`, data),
+  markFunded: (id: string, data: any) => api.post(`/deals/${id}/fund`, data),
+  completeAction: (id: string, data: any) => api.post(`/deals/${id}/complete-action`, data),
+  shareDeal: (id: string, data: any) => api.put(`/deals/${id}/share`, data),
+  logCall: (id: string, data: any) => api.post(`/deals/${id}/call-log`, data),
+};
+
+export const commandCenterApi = {
+  getMetrics: (params?: Record<string, string>) => api.get('/command-center/metrics', { params }),
+  getOperatorQueue: (params?: Record<string, string>) => api.get('/command-center/operator-queue', { params }),
+  getHotLeads: (params?: Record<string, string>) => api.get('/command-center/hot-leads', { params }),
+  getStaleDeals: (params?: Record<string, string>) => api.get('/command-center/stale-deals', { params }),
+  getOverdueTasks: () => api.get('/command-center/overdue-tasks'),
+  getIntelligence: () => api.get('/command-center/intelligence'),
+  getExecutionScores: () => api.get('/command-center/execution-scores'),
+  getProductMix: (params?: Record<string, string>) => api.get('/command-center/product-mix', { params }),
+  getActivityFeed: (params?: Record<string, string>) => api.get('/command-center/activity-feed', { params }),
+  getSmsMetrics: () => api.get('/command-center/sms-metrics'),
+};
+
+export const repApi = {
+  getReps: (params?: Record<string, string>) => api.get('/reps', { params }),
+  getRep: (id: string) => api.get(`/reps/${id}`),
+  createRep: (data: any) => api.post('/reps', data),
+  updateRep: (id: string, data: any) => api.put(`/reps/${id}`, data),
+  updateGoals: (id: string, data: any) => api.put(`/reps/${id}/goals`, data),
+  updateTeamGoals: (data: any) => api.put('/reps/team-goals', data),
+};
+
+export const importApi = {
+  importCsv: (data: any) => api.post('/import/csv', data),
+  getBatches: () => api.get('/import/batches'),
+  rollbackBatch: (batchId: string) => api.delete(`/import/batches/${batchId}`),
+};

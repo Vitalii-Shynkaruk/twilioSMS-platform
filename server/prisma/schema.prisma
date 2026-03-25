@@ -34,6 +34,12 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // Phase 2: Rep-specific fields
+  initials      String?   @unique  // "JB", "HA", etc.
+  monthlyGoal   Float     @default(0)
+  annualGoal    Float     @default(0)
+  avatarColor   String    @default("#1c2e4a")
+
   // Relations
   assignedLeads     Lead[]
   conversations     Conversation[]
@@ -42,6 +48,12 @@ model User {
   numberAssignments NumberAssignment[]
   activityLogs      ActivityLog[]
   tags              Tag[]
+
+  // Phase 2 Relations
+  primaryDeals      Deal[]          @relation("PrimaryRep")
+  dealEvents        DealEvent[]
+  fundingEvents     FundingEvent[]
+  renewalTasks      RenewalTask[]
 
   @@index([email])
   @@index([role, isActive])
@@ -684,4 +696,235 @@ model DailyNumberStats {
   @@unique([phoneNumberId, date])
   @@index([date])
   @@map("daily_number_stats")
+}
+
+// ============================================
+// PHASE 2: DEAL PIPELINE & COMMAND CENTER
+// ============================================
+
+enum DealStage {
+  NEW_LEAD
+  ENGAGED_INTERESTED
+  QUALIFIED
+  SUBMITTED_IN_REVIEW
+  APPROVED_OFFERS
+  COMMITTED_FUNDING
+  FUNDED
+  NURTURE
+  CLOSED
+}
+
+enum ProductType {
+  MCA
+  LOC
+  EQUIPMENT
+  HELOC
+  SBA
+  CRE
+  BRIDGE
+}
+
+enum CommitSubStatus {
+  DOCS_REQUESTED
+  DOCS_SIGNED
+  FUNDING
+}
+
+model Client {
+  id              String    @id @default(cuid())
+  businessName    String
+  contactName     String?
+  phone           String?   @unique
+  email           String?
+  state           String?
+  totalFunded     Float     @default(0)
+  fundingCount    Int       @default(0)
+  lastFundedDate  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  deals           Deal[]
+
+  @@index([phone])
+  @@index([businessName])
+  @@map("clients")
+}
+
+model Deal {
+  id                String          @id @default(cuid())
+  clientId          String
+  assignedRepId     String
+  assistingRepIds   Json?           // JSON array of user IDs
+
+  // Stage
+  stage             DealStage       @default(NEW_LEAD)
+  stageLabel        String          @default("New Lead") // Exact display name
+  productType       ProductType?
+  dealAmount        Float?
+  needsAmount       Boolean         @default(true)
+
+  // Deal tracking
+  nextAction        String?
+  nextActionDue     DateTime?
+  lastActivityAt    DateTime        @default(now())
+  lastReplyAt       DateTime?
+  daysInStage       Int             @default(0)
+  staleDays         Int             @default(0)
+
+  // App & Offer tracking
+  appSubmitted      Boolean         @default(false)
+  lenderEngaged     Boolean         @default(false)
+
+  // Committed sub-status
+  commitSubStatus   CommitSubStatus?
+  daysInSubStatus   Int             @default(0)
+
+  // Funding
+  fundedDate        DateTime?
+  cycleTime         Int?            // days from app_submitted to funded
+
+  // Nurture / Close
+  prevOffer         Float?          // prior offer amount for Nurture pipeline value
+  lostReason        String?
+  disqualReason     String?
+
+  // Follow-up
+  followUpDate      DateTime?
+  followUpType      String?         // renewal | nurture | statement | timing | reengage
+  followUpNote      String?         @db.Text
+  externalFundedDate DateTime?
+
+  // Import tracking
+  importBatch       String?         // batch ID for CSV imports
+  originatorName    String?         // preserved text for imported deals
+  lender            String?
+  notes             String?         @db.Text
+  isHot             Boolean         @default(false)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relations
+  client            Client          @relation(fields: [clientId], references: [id])
+  assignedRep       User            @relation("PrimaryRep", fields: [assignedRepId], references: [id])
+  offers            Offer[]
+  fundingEvents     FundingEvent[]
+  dealEvents        DealEvent[]
+  renewalTasks      RenewalTask[]
+
+  @@index([stage])
+  @@index([assignedRepId])
+  @@index([clientId])
+  @@index([lastActivityAt])
+  @@index([fundedDate])
+  @@index([nextActionDue])
+  @@index([followUpDate])
+  @@index([stage, assignedRepId])
+  @@index([importBatch])
+  @@map("deals")
+}
+
+model Offer {
+  id            String      @id @default(cuid())
+  dealId        String
+  lenderName    String
+  amount        Float
+  termMonths    Int?
+  rateFactor    Float?
+  terms         String?     @db.Text
+  expiryDays    Int?        // urgency display
+  productType   ProductType?
+  isAccepted    Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  deal          Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+
+  @@index([dealId])
+  @@map("offers")
+}
+
+model FundingEvent {
+  id            String      @id @default(cuid())
+  dealId        String
+  repId         String?
+  amountFunded  Float
+  lender        String?
+  termMonths    Int?
+  rate          Float?
+  productType   ProductType?
+  fundedDate    DateTime?
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now())
+
+  deal          Deal        @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  rep           User?       @relation(fields: [repId], references: [id], onDelete: SetNull)
+
+  @@index([dealId])
+  @@index([repId])
+  @@index([fundedDate])
+  @@index([repId, fundedDate])
+  @@map("funding_events")
+}
+
+model DealEvent {
+  id          String   @id @default(cuid())
+  dealId      String
+  repId       String?
+  eventType   String   // stage_change, action_completed, call_logged, sms_sent, offer_added, note, etc.
+  fromStage   String?
+  toStage     String?
+  note        String?  @db.Text
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  rep         User?    @relation(fields: [repId], references: [id], onDelete: SetNull)
+
+  @@index([dealId, createdAt])
+  @@index([repId, createdAt])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("deal_events")
+}
+
+enum RenewalTaskStatus {
+  PENDING
+  COMPLETED
+  OVERDUE
+  SKIPPED
+}
+
+model RenewalTask {
+  id          String             @id @default(cuid())
+  dealId      String
+  repId       String?
+  taskType    String             // 35d_checkin, midpoint, payoff_30d
+  dueDate     DateTime
+  status      RenewalTaskStatus  @default(PENDING)
+  completedAt DateTime?
+  notes       String?            @db.Text
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  deal        Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  rep         User?              @relation(fields: [repId], references: [id], onDelete: SetNull)
+
+  @@index([dueDate, status])
+  @@index([repId])
+  @@index([dealId])
+  @@map("renewal_tasks")
+}
+
+model Goal {
+  id          String   @id @default(cuid())
+  entityType  String   // "team" | "user"
+  entityId    String   // "team" or user ID
+  monthlyGoal Float    @default(0)
+  annualGoal  Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([entityType, entityId])
+  @@map("goals")
 }

@@ -25,6 +25,7 @@ import jwt from 'jsonwebtoken';
 // Import workers so they start with the server
 import './jobs/worker';
 import { stopAutomationWorker } from './jobs/automationWorker';
+import { startDealCron, stopDealCron } from './jobs/dealCron';
 
 const httpServer = createServer(app);
 
@@ -131,6 +132,9 @@ async function start() {
     // Ensure admin user exists (from .env credentials)
     await ensureAdminUser();
 
+    // Start Phase 2 deal maintenance cron
+    startDealCron();
+
     httpServer.listen(config.port, () => {
       logger.info(`🚀 Server running on port ${config.port}`);
       logger.info(`📡 Environment: ${config.env}`);
@@ -170,7 +174,7 @@ async function ensureAdminUser() {
 }
 
 // Unhandled rejection handler
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
   logger.error('Unhandled Promise Rejection:', { reason });
 });
 
@@ -189,6 +193,7 @@ async function gracefulShutdown(signal: string) {
 
   // Stop automation intervals
   stopAutomationWorker();
+  stopDealCron();
 
   // Stop accepting new connections
   httpServer.close(() => {

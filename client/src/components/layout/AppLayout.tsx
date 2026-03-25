@@ -22,6 +22,7 @@ import {
   Search,
   Command,
   X,
+  Target,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
@@ -32,6 +33,7 @@ const navGroups = [
   {
     label: 'CORE',
     items: [
+      { name: 'Command Center', href: '/command-center', icon: Target },
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
       { name: 'Pipeline', href: '/pipeline', icon: Kanban },
       { name: 'Leads', href: '/leads', icon: Users },

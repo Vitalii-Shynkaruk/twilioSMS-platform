@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Tag, Users, ShieldX, Key, Settings, Clock } from 'lucide-react';
+import { Tag, Users, ShieldX, Key, Settings, Clock, UserCheck } from 'lucide-react';
 import { clsx } from 'clsx';
 import TagsTab from '../components/settings/TagsTab';
 import UsersTab from '../components/settings/UsersTab';
@@ -8,23 +8,21 @@ import SuppressionTab from '../components/settings/SuppressionTab';
 import IntegrationsTab from '../components/settings/IntegrationsTab';
 import SystemTab from '../components/settings/SystemTab';
 import ActivityLogTab from '../components/settings/ActivityLogTab';
+import RepsTab from '../components/settings/RepsTab';
 
-type Tab = 'tags' | 'users' | 'suppression' | 'system' | 'integrations' | 'activity';
+type Tab = 'tags' | 'users' | 'reps' | 'suppression' | 'system' | 'integrations' | 'activity';
 
 export default function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => {
-    const t = searchParams.get('tab');
-    if (t && ['tags', 'users', 'suppression', 'system', 'integrations', 'activity'].includes(t)) return t as Tab;
-    return 'tags';
-  });
+  const tabFromParams = searchParams.get('tab');
+  const validTabs = ['tags', 'users', 'reps', 'suppression', 'system', 'integrations', 'activity'];
+  const resolvedTab: Tab = tabFromParams && validTabs.includes(tabFromParams) ? (tabFromParams as Tab) : 'tags';
+  const [tab, setTab] = useState<Tab>(resolvedTab);
 
-  useEffect(() => {
-    const t = searchParams.get('tab');
-    if (t && ['tags', 'users', 'suppression', 'system', 'integrations', 'activity'].includes(t)) {
-      setTab(t as Tab);
-    }
-  }, [searchParams]);
+  // Sync tab when URL changes externally
+  if (tab !== resolvedTab && tabFromParams) {
+    setTab(resolvedTab);
+  }
 
   const handleTabChange = (key: Tab) => {
     setTab(key);
@@ -34,6 +32,7 @@ export default function SettingsPage() {
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: 'tags', label: 'Tags', icon: <Tag className="w-4 h-4" /> },
     { key: 'users', label: 'Users', icon: <Users className="w-4 h-4" /> },
+    { key: 'reps', label: 'Reps', icon: <UserCheck className="w-4 h-4" /> },
     { key: 'suppression', label: 'Suppression', icon: <ShieldX className="w-4 h-4" /> },
     { key: 'integrations', label: 'Integrations', icon: <Key className="w-4 h-4" /> },
     { key: 'system', label: 'System', icon: <Settings className="w-4 h-4" /> },
@@ -55,9 +54,7 @@ export default function SettingsPage() {
             onClick={() => handleTabChange(t.key)}
             className={clsx(
               'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
-              tab === t.key
-                ? 'bg-dark-700 text-dark-100'
-                : 'text-dark-400 hover:text-dark-200'
+              tab === t.key ? 'bg-dark-700 text-dark-100' : 'text-dark-400 hover:text-dark-200',
             )}
           >
             {t.icon}
@@ -69,6 +66,7 @@ export default function SettingsPage() {
       {/* Tab Content */}
       {tab === 'tags' && <TagsTab />}
       {tab === 'users' && <UsersTab />}
+      {tab === 'reps' && <RepsTab />}
       {tab === 'suppression' && <SuppressionTab />}
       {tab === 'integrations' && <IntegrationsTab />}
       {tab === 'system' && <SystemTab />}

@@ -332,13 +332,18 @@ export class CommandCenterController {
       select: { stage: true, dealAmount: true, assignedRepId: true, assignedRep: { select: { initials: true } } },
     });
 
-    const bottlenecks: Record<string, { total: number; reps: Record<string, number> }> = {};
+    const bottleneckMap: Record<string, { total: number; count: number; reps: Record<string, number> }> = {};
     for (const d of bottleneckDeals) {
-      if (!bottlenecks[d.stage]) bottlenecks[d.stage] = { total: 0, reps: {} };
-      bottlenecks[d.stage].total += d.dealAmount || 0;
+      if (!bottleneckMap[d.stage]) bottleneckMap[d.stage] = { total: 0, count: 0, reps: {} };
+      bottleneckMap[d.stage].total += d.dealAmount || 0;
+      bottleneckMap[d.stage].count += 1;
       const init = d.assignedRep?.initials || '??';
-      bottlenecks[d.stage].reps[init] = (bottlenecks[d.stage].reps[init] || 0) + 1;
+      bottleneckMap[d.stage].reps[init] = (bottleneckMap[d.stage].reps[init] || 0) + 1;
     }
+    // Convert to array sorted by value desc (frontend expects array with .slice)
+    const bottlenecks = Object.entries(bottleneckMap)
+      .map(([stage, v]) => ({ stage, count: v.count, value: v.total, reps: v.reps }))
+      .sort((a, b) => b.value - a.value);
 
     // Rep Activity Monitor
     const reps = await prisma.user.findMany({
@@ -485,7 +490,7 @@ export class CommandCenterController {
       bottlenecks,
       repActivity,
       stageSnapshot,
-      funnel,
+      conversionFunnel: funnel,
       pipelineHealth: {
         withNextAction: Math.round((withNextAction / totalActive) * 100),
         touched48h: Math.round((touchedRecently / totalActive) * 100),

@@ -329,7 +329,12 @@ export class CommandCenterController {
           ],
         },
       },
-      select: { stage: true, dealAmount: true, assignedRepId: true, assignedRep: { select: { initials: true } } },
+      select: {
+        stage: true,
+        dealAmount: true,
+        assignedRepId: true,
+        assignedRep: { select: { initials: true, firstName: true, lastName: true } },
+      },
     });
 
     const bottleneckMap: Record<string, { total: number; count: number; reps: Record<string, number> }> = {};
@@ -337,7 +342,10 @@ export class CommandCenterController {
       if (!bottleneckMap[d.stage]) bottleneckMap[d.stage] = { total: 0, count: 0, reps: {} };
       bottleneckMap[d.stage].total += d.dealAmount || 0;
       bottleneckMap[d.stage].count += 1;
-      const init = d.assignedRep?.initials || '??';
+      const init =
+        d.assignedRep?.initials ||
+        ((d.assignedRep?.firstName?.[0] || '') + (d.assignedRep?.lastName?.[0] || '')).toUpperCase() ||
+        '??';
       bottleneckMap[d.stage].reps[init] = (bottleneckMap[d.stage].reps[init] || 0) + 1;
     }
     // Convert to array sorted by value desc (frontend expects array with .slice)
@@ -462,15 +470,15 @@ export class CommandCenterController {
       _count: true,
     });
 
-    const funnel = funnelStages.map((stage: DealStage, i: number) => {
+    const totalDealsInFunnel = stageCounts.reduce((sum, s: any) => sum + ((s._count as number) || 0), 0);
+
+    const funnel = funnelStages.map((stage: DealStage) => {
       const count = (stageCounts.find((s: any) => s.stage === stage)?._count as number) || 0;
-      const prevCount =
-        i > 0 ? (stageCounts.find((s: any) => s.stage === funnelStages[i - 1])?._count as number) || 1 : count;
       return {
         stage,
         label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS],
         count,
-        rate: prevCount > 0 ? Math.round((count / prevCount) * 100) : 0,
+        rate: totalDealsInFunnel > 0 ? Math.round((count / totalDealsInFunnel) * 100) : 0,
       };
     });
 

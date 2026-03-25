@@ -789,7 +789,7 @@ export class DealController {
 
     res.json({
       activePipeline,
-      activeCount: deals.length,
+      activeCount: allDeals.length,
       fundedMTD: fundedMTD._sum.amountFunded || 0,
       lifetimeFunded: lifetimeFunded._sum.amountFunded || 0,
       atRisk,

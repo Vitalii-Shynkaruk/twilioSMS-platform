@@ -204,7 +204,7 @@ export default function PipelinePage() {
 
       {/* Stats bar */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 pb-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 p-4 pb-0">
           <StatCard
             icon={DollarSign}
             label="Pipeline Value"
@@ -217,13 +217,26 @@ export default function PipelinePage() {
             value={formatCurrency(stats.fundedMTD)}
             color="text-green-400"
           />
-          <StatCard icon={Flame} label="Hot Deals" value={String(stats.hotCount)} color="text-orange-400" />
-          <StatCard icon={AlertTriangle} label="At Risk" value={String(stats.atRisk)} color="text-red-400" />
           <StatCard
-            icon={Zap}
-            label="Active"
-            value={String(stats.activeCount ?? stats.activePipeline)}
-            color="text-blue-400"
+            icon={DollarSign}
+            label="Lifetime Funded"
+            value={formatCurrency(stats.lifetimeFunded)}
+            color="text-emerald-400"
+          />
+          <StatCard icon={AlertTriangle} label="At Risk" value={formatCurrency(stats.atRisk)} color="text-red-400" />
+          <StatCard icon={Flame} label="Hot Deals" value={String(stats.hotCount)} color="text-orange-400" />
+          <StatCard
+            icon={AlertTriangle}
+            label="No Next Action"
+            value={String(stats.noNextAction ?? 0)}
+            color="text-amber-400"
+          />
+          <StatCard icon={Zap} label="Queue Today" value={String(stats.queueToday ?? 0)} color="text-blue-400" />
+          <StatCard
+            icon={RotateCcw}
+            label="Renewals Due"
+            value={String(stats.renewalsDue ?? 0)}
+            color="text-purple-400"
           />
         </div>
       )}
@@ -483,7 +496,12 @@ function ReviveQueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (
   });
 
   const completeMutation = useMutation({
-    mutationFn: (dealId: string) => dealApi.completeAction(dealId, { outcome: 'completed' }),
+    mutationFn: (dealId: string) =>
+      dealApi.completeAction(dealId, {
+        actionType: 'follow_up',
+        nextAction: 'Review and set next steps',
+        nextActionDue: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Action completed');

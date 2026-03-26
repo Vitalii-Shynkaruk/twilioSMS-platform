@@ -265,10 +265,13 @@ export class DealController {
       if (existingLead) linkedLeadId = existingLead.id;
     }
 
+    // Rule #7: Rep assignment = admin only
+    const effectiveRepId = req.user?.role === 'ADMIN' && assignedRepId ? assignedRepId : req.user!.id;
+
     const deal = await prisma.deal.create({
       data: {
         clientId: client.id,
-        assignedRepId: assignedRepId || req.user!.id,
+        assignedRepId: effectiveRepId,
         leadId: linkedLeadId || null,
         stage: DealStage.NEW_LEAD,
         stageLabel: STAGE_LABELS[DealStage.NEW_LEAD],
@@ -321,6 +324,13 @@ export class DealController {
       // Reps cannot change ownership
       delete updateData.assignedRepId;
       delete updateData.assistingRepIds;
+    }
+
+    // Rule #12: Follow-up requires type + date + note (ALL required)
+    if (updateData.followUpDate || updateData.followUpType || updateData.followUpNote) {
+      if (!updateData.followUpDate || !updateData.followUpType || !updateData.followUpNote) {
+        return res.status(400).json({ error: 'Follow-up requires type, date, and note (all three are required)' });
+      }
     }
 
     // AUTOMATION RULE 1: App Submitted → Submitted (In Review)
@@ -514,36 +524,51 @@ export class DealController {
     });
 
     // AUTOMATION RULE 2: Offer Added → Approved / Offers
+    // Only auto-move if deal is in an EARLIER stage (not Committed/Funded/Closed)
+    const earlierStages: DealStage[] = [
+      DealStage.NEW_LEAD,
+      DealStage.ENGAGED_INTERESTED,
+      DealStage.QUALIFIED,
+      DealStage.SUBMITTED_IN_REVIEW,
+    ];
+    const shouldAutoMove = earlierStages.includes(deal.stage) || deal.stage === DealStage.NURTURE;
+
     const updateData: any = {
-      stage: DealStage.APPROVED_OFFERS,
-      stageLabel: STAGE_LABELS[DealStage.APPROVED_OFFERS],
       appSubmitted: true,
-      daysInStage: 0,
-      nextAction: 'Call client — present offer now',
-      nextActionDue: new Date(),
       lastActivityAt: new Date(),
-      dealAmount: parseFloat(amount),
+      // Only set dealAmount if deal doesn't have one yet
+      ...(deal.dealAmount ? {} : { dealAmount: parseFloat(amount) }),
     };
+
+    if (shouldAutoMove) {
+      updateData.stage = DealStage.APPROVED_OFFERS;
+      updateData.stageLabel = STAGE_LABELS[DealStage.APPROVED_OFFERS];
+      updateData.daysInStage = 0;
+      updateData.nextAction = 'Call client — present offer now';
+      updateData.nextActionDue = new Date();
+    }
 
     await prisma.dealEvent.create({
       data: { dealId: id, repId: req.user!.id, eventType: 'offer_added', note: `Offer from ${lenderName}: $${amount}` },
     });
 
-    await prisma.dealEvent.create({
-      data: {
-        dealId: id,
-        repId: req.user!.id,
-        eventType: 'stage_change',
-        fromStage: deal.stage,
-        toStage: DealStage.APPROVED_OFFERS,
-        note: 'Auto-moved: offer added',
-      },
-    });
+    if (shouldAutoMove) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'stage_change',
+          fromStage: deal.stage,
+          toStage: DealStage.APPROVED_OFFERS,
+          note: 'Auto-moved: offer added',
+        },
+      });
+    }
 
     await prisma.deal.update({ where: { id }, data: updateData });
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: id, stage: DealStage.APPROVED_OFFERS, repId: deal.assignedRepId });
+    if (io) io.emit('deal:updated', { dealId: id, stage: updateData.stage || deal.stage, repId: deal.assignedRepId });
 
     res.status(201).json(offer);
   }
@@ -852,24 +877,102 @@ export class DealController {
   }
 
   // GET /api/deals/revive-queue - Revive/Renewal Queue
+  // Spec: 3 sources — Renewal (funded 150+ days), Revive (nurture/approved 30+ days idle),
+  //                     Statement refresh (submitted 21+ days without activity)
   static async getReviveQueue(req: AuthRequest, res: Response) {
     const filter = repFilter(req.user);
     const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const twentyOneDaysAgo = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
+    const oneHundredFiftyDaysAgo = new Date(now.getTime() - 150 * 24 * 60 * 60 * 1000);
 
-    const deals = await prisma.deal.findMany({
-      where: {
-        ...filter,
-        followUpDate: { lte: now },
-        stage: { notIn: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING, DealStage.CLOSED] },
-      },
-      include: {
-        client: true,
-        assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
-      },
-      orderBy: { followUpDate: 'asc' },
+    const [renewalCandidates, reviveCandidates, statementRefresh, followUpDue] = await Promise.all([
+      // Source 1: Renewal — funded 150+ days ago
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          stage: DealStage.FUNDED,
+          fundedDate: { lte: oneHundredFiftyDaysAgo },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      // Source 2: Revive — nurture/approved 30+ days idle
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          stage: { in: [DealStage.NURTURE, DealStage.APPROVED_OFFERS] },
+          lastActivityAt: { lte: thirtyDaysAgo },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      // Source 3: Statement refresh — submitted 21+ days
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          stage: DealStage.SUBMITTED_IN_REVIEW,
+          lastActivityAt: { lte: twentyOneDaysAgo },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      // Also include deals with past-due follow-up dates
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          followUpDate: { lte: now },
+          stage: { notIn: [DealStage.CLOSED] },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+    ]);
+
+    // Tag each with source and deduplicate
+    const seen = new Set<string>();
+    const all: any[] = [];
+    for (const d of renewalCandidates) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'renewal' });
+      }
+    }
+    for (const d of reviveCandidates) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'revive' });
+      }
+    }
+    for (const d of statementRefresh) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'statement_refresh' });
+      }
+    }
+    for (const d of followUpDue) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'follow_up' });
+      }
+    }
+
+    // Sort by urgency: follow_up first (past due), then by amount desc
+    all.sort((a, b) => {
+      if (a.reviveSource === 'follow_up' && b.reviveSource !== 'follow_up') return -1;
+      if (b.reviveSource === 'follow_up' && a.reviveSource !== 'follow_up') return 1;
+      return (b.dealAmount || 0) - (a.dealAmount || 0);
     });
 
-    res.json(deals);
+    res.json(all);
   }
 
   // POST /api/deals/import-csv - Import historical funded deals from CSV (admin only)

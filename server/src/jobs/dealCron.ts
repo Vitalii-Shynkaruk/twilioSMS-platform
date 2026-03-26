@@ -52,17 +52,17 @@ async function runDailyDealMaintenance() {
     const staleResult = await prisma.deal.updateMany({
       where: {
         stage: { in: ACTIVE_STAGES },
-        updatedAt: { lt: oneDayAgo },
+        lastActivityAt: { lt: oneDayAgo },
       },
       data: { staleDays: { increment: 1 } },
     });
     logger.info(`[DealCron] Incremented staleDays for ${staleResult.count} deals`);
 
-    // Reset staleDays for recently updated deals
+    // Reset staleDays for recently active deals
     await prisma.deal.updateMany({
       where: {
         stage: { in: ACTIVE_STAGES },
-        updatedAt: { gte: oneDayAgo },
+        lastActivityAt: { gte: oneDayAgo },
         staleDays: { gt: 0 },
       },
       data: { staleDays: 0 },

@@ -372,7 +372,11 @@ export interface DealStats {
   lifetimeFunded: number;
   atRisk: number;
   hotCount: number;
+  noNextAction: number;
+  queueToday: number;
   pipelineValue: number;
+  renewalsDue: number;
+  committedValue: number;
   avgCycleTime: number;
   dealsByStage: { stage: string; count: number; value: number }[];
 }

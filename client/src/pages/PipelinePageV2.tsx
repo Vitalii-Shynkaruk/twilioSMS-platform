@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { dealApi, repApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import DealCard, { formatCurrency } from '../components/pipeline/DealCard';
@@ -81,6 +82,11 @@ export default function PipelinePage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ─── Read URL params once for initial state ───
+  const initialDealId = searchParams.get('deal');
+  const initialNewDeal = searchParams.get('newDeal');
 
   // ─── State ───
   const [viewMode, setViewMode] = useState<ViewMode>('simple');
@@ -88,10 +94,17 @@ export default function PipelinePage() {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [pipelineScope, setPipelineScope] = useState<PipelineScope>(isAdmin ? 'all' : 'mine');
   const [repFilter, setRepFilter] = useState('');
-  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
-  const [showCreateDeal, setShowCreateDeal] = useState(false);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(initialDealId);
+  const [showCreateDeal, setShowCreateDeal] = useState(initialNewDeal === '1');
   const [showGoals, setShowGoals] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  // ─── Clear URL params after reading ───
+  useEffect(() => {
+    if (initialDealId || initialNewDeal) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Body class for CSS view mode ───
   useEffect(() => {

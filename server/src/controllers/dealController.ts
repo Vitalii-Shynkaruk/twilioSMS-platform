@@ -1119,4 +1119,43 @@ export class DealController {
 
     res.json({ imported, skipped, total: records.length, batchId, errors: errors.slice(0, 20) });
   }
+
+  // GET /api/deals/:id/sms — SMS conversation linked to deal's lead
+  static async getDealSms(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const deal = await prisma.deal.findFirst({
+      where: { id },
+      select: { leadId: true, client: { select: { phone: true } } },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    let leadId = deal.leadId;
+    if (!leadId && deal.client?.phone) {
+      const lead = await prisma.lead.findFirst({ where: { phone: deal.client.phone }, select: { id: true } });
+      if (lead) leadId = lead.id;
+    }
+    if (!leadId) return res.json({ messages: [] });
+
+    const conversations = await prisma.conversation.findMany({
+      where: { leadId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            body: true,
+            direction: true,
+            status: true,
+            createdAt: true,
+            fromNumber: true,
+            toNumber: true,
+          },
+        },
+      },
+    });
+
+    const messages = conversations.flatMap((c) => c.messages);
+    messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    res.json({ messages });
+  }
 }

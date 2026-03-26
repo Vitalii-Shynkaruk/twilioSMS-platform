@@ -26,5 +26,6 @@ router.post('/:id/fund', asyncHandler(DealController.markFunded));
 router.post('/:id/complete-action', asyncHandler(DealController.completeAction));
 router.put('/:id/share', asyncHandler(DealController.shareDeal));
 router.post('/:id/call-log', asyncHandler(DealController.logCall));
+router.get('/:id/sms', asyncHandler(DealController.getDealSms));
 
 export default router;

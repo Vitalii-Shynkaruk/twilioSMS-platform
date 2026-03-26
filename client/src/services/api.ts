@@ -103,6 +103,7 @@ export const dealApi = {
   completeAction: (id: string, data: any) => api.post(`/deals/${id}/complete-action`, data),
   shareDeal: (id: string, data: any) => api.put(`/deals/${id}/share`, data),
   logCall: (id: string, data: any) => api.post(`/deals/${id}/call-log`, data),
+  getSms: (id: string) => api.get(`/deals/${id}/sms`),
   importCSV: (file: File) => {
     const form = new FormData();
     form.append('file', file);

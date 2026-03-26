@@ -3,6 +3,7 @@ import { commandCenterApi, repApi, dealApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { CommandCenterMetrics, Rep, Deal } from '../types';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import '../styles/command-center.css';
 
@@ -238,6 +239,7 @@ interface QueueDeal extends Deal {
 export default function CommandCenterPage() {
   const { user } = useAuthStore();
   const clock = useClock();
+  const navigate = useNavigate();
 
   const [activeView, setActiveView] = useState<string>('admin');
   const [execPopupOpen, setExecPopupOpen] = useState<string | null>(null);
@@ -531,7 +533,7 @@ export default function CommandCenterPage() {
           <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
             ↑ Import
           </button>
-          <button className="add-btn" onClick={() => toast('Lead intake form — coming soon')}>
+          <button className="add-btn" onClick={() => navigate('/pipeline?newDeal=1')}>
             + Add Lead
           </button>
         </div>
@@ -716,7 +718,7 @@ export default function CommandCenterPage() {
               Execution Zone \u2014 Operator Tools
             </div>
 
-            <OperatorQueue deals={operatorQueue} isAdmin />
+            <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => navigate(`/pipeline?deal=${id}`)} />
 
             <div className="g3">
               <PriorityCard
@@ -725,6 +727,7 @@ export default function CommandCenterPage() {
                 subtitle="System-wide \u00b7 immediate action"
                 deals={hotLeads}
                 count={metrics?.hotCount ?? hotLeads?.length ?? 0}
+                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
               />
               <PriorityCard
                 type="stale"
@@ -733,6 +736,7 @@ export default function CommandCenterPage() {
                 deals={staleDeals}
                 count={metrics?.staleCount ?? staleDeals?.length ?? 0}
                 riskValue={staleRevenue}
+                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
               />
               <PriorityCard
                 type="over"
@@ -740,6 +744,7 @@ export default function CommandCenterPage() {
                 subtitle="next_action_due_date < now"
                 deals={overdueTasks}
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
+                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
               />
             </div>
 
@@ -911,7 +916,7 @@ export default function CommandCenterPage() {
               Execution Zone \u2014 My Deals Only
             </div>
 
-            <OperatorQueue deals={operatorQueue} />
+            <OperatorQueue deals={operatorQueue} onDealClick={(id) => navigate(`/pipeline?deal=${id}`)} />
 
             <div className="g3">
               <PriorityCard
@@ -920,6 +925,7 @@ export default function CommandCenterPage() {
                 subtitle={`Your deals only (owner_id = ${activeRepInitials})`}
                 deals={hotLeads}
                 count={metrics?.hotCount ?? hotLeads?.length ?? 0}
+                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
               />
               <PriorityCard
                 type="stale"
@@ -928,6 +934,7 @@ export default function CommandCenterPage() {
                 deals={staleDeals}
                 count={metrics?.staleCount ?? staleDeals?.length ?? 0}
                 riskValue={staleRevenue}
+                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
               />
               <PriorityCard
                 type="over"
@@ -935,6 +942,7 @@ export default function CommandCenterPage() {
                 subtitle="next_action_due_date < now"
                 deals={overdueTasks}
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
+                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
               />
             </div>
 
@@ -1078,7 +1086,15 @@ function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () =
   );
 }
 
-function OperatorQueue({ deals, isAdmin }: { deals?: QueueDeal[]; isAdmin?: boolean }) {
+function OperatorQueue({
+  deals,
+  isAdmin,
+  onDealClick,
+}: {
+  deals?: QueueDeal[];
+  isAdmin?: boolean;
+  onDealClick: (id: string) => void;
+}) {
   if (!deals || deals.length === 0) return null;
   return (
     <div className="op-q">
@@ -1091,7 +1107,7 @@ function OperatorQueue({ deals, isAdmin }: { deals?: QueueDeal[]; isAdmin?: bool
       </div>
       <div className="oq-list">
         {deals.slice(0, 5).map((deal, i) => (
-          <div className="oqi" key={deal.id} onClick={() => toast(deal.client?.businessName || 'Deal')}>
+          <div className="oqi" key={deal.id} onClick={() => onDealClick(deal.id)}>
             <div className="oqi-rank">{i + 1}</div>
             <div className="oqi-info">
               <div className="oqi-name">
@@ -1115,7 +1131,7 @@ function OperatorQueue({ deals, isAdmin }: { deals?: QueueDeal[]; isAdmin?: bool
                 className={`oqi-action ${getActionButtonStyle(deal.primaryAction)}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  toast(`${deal.primaryAction}: ${deal.client?.businessName}`);
+                  onDealClick(deal.id);
                 }}
               >
                 {deal.primaryAction}
@@ -1135,6 +1151,7 @@ function PriorityCard({
   deals,
   count,
   riskValue,
+  onDealClick,
 }: {
   type: 'hot' | 'stale' | 'over';
   title: string;
@@ -1142,6 +1159,7 @@ function PriorityCard({
   deals?: Deal[];
   count: number;
   riskValue?: number;
+  onDealClick: (id: string) => void;
 }) {
   const ctaClass = type === 'hot' ? 'cta-h' : type === 'stale' ? 'cta-s' : 'cta-o';
   const ctaLabel = type === 'hot' ? 'Call Now' : type === 'stale' ? 'Follow Up' : 'Act Now';
@@ -1159,7 +1177,7 @@ function PriorityCard({
       </div>
       <div className="pc-body">
         {deals?.slice(0, 3).map((deal) => (
-          <div className="pdi" key={deal.id} onClick={() => toast(deal.client?.businessName || 'Deal')}>
+          <div className="pdi" key={deal.id} onClick={() => onDealClick(deal.id)}>
             <div>
               <div className="pdi-name">
                 {deal.client?.businessName || 'Unknown'}

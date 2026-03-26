@@ -38,7 +38,7 @@ interface DealPanelProps {
 }
 
 export default function DealPanel({ dealId, onClose }: DealPanelProps) {
-  const [tab, setTab] = useState<'details' | 'activity' | 'offers'>('details');
+  const [tab, setTab] = useState<'details' | 'activity' | 'offers' | 'sms'>('details');
   const [showActionModal, setShowActionModal] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -244,7 +244,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 
         {/* Tabs */}
         <div className="flex border-b border-[var(--border-primary)]">
-          {(['details', 'activity', 'offers'] as const).map((t) => (
+          {(['details', 'activity', 'offers', 'sms'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -273,6 +273,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
           )}
           {tab === 'activity' && <ActivityTab deal={deal} />}
           {tab === 'offers' && <OffersTab deal={deal} onAddOffer={() => setShowOfferModal(true)} />}
+          {tab === 'sms' && <SmsTab dealId={deal.id} />}
         </div>
 
         {/* Modals */}
@@ -494,6 +495,84 @@ function ActivityTab({ deal }: { deal: Deal }) {
               {event.rep ? `${event.rep.firstName} ${event.rep.lastName}` : ''}{' '}
               {new Date(event.createdAt).toLocaleString()}
             </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── SMS Tab ───
+function SmsTab({ dealId }: { dealId: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['deal-sms', dealId],
+    queryFn: async () => {
+      const { data } = await dealApi.getSms(dealId);
+      return data as {
+        messages: Array<{
+          id: string;
+          body: string;
+          direction: string;
+          status: string;
+          createdAt: string;
+          fromNumber?: string;
+          toNumber?: string;
+        }>;
+      };
+    },
+  });
+
+  if (isLoading) return <div className="text-xs text-[var(--text-muted)] p-4">Loading messages...</div>;
+
+  const messages = data?.messages || [];
+  if (messages.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <MessageSquare className="w-8 h-8 text-[var(--text-faint)] mb-2" />
+        <p className="text-xs text-[var(--text-muted)]">No SMS conversation linked to this deal</p>
+        <p className="text-[10px] text-[var(--text-faint)] mt-1">
+          Messages will appear here when linked via lead phone number
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {messages.map((msg) => (
+        <div
+          key={msg.id}
+          className={clsx(
+            'max-w-[85%] px-3 py-2 rounded-lg text-xs',
+            msg.direction === 'outbound'
+              ? 'ml-auto bg-scl-600/20 border border-scl-500/30 text-[var(--text-primary)]'
+              : 'mr-auto bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[var(--text-primary)]',
+          )}
+        >
+          <p className="whitespace-pre-wrap break-words">{msg.body}</p>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[9px] text-[var(--text-faint)]">
+              {new Date(msg.createdAt).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </span>
+            {msg.direction === 'outbound' && (
+              <span
+                className={clsx(
+                  'text-[9px]',
+                  msg.status === 'delivered'
+                    ? 'text-green-400'
+                    : msg.status === 'failed'
+                      ? 'text-red-400'
+                      : 'text-[var(--text-faint)]',
+                )}
+              >
+                {msg.status}
+              </span>
+            )}
           </div>
         </div>
       ))}

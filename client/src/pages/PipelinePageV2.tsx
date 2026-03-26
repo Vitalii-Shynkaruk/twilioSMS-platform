@@ -23,7 +23,7 @@ import { clsx } from 'clsx';
 
 // ══════════════════════════════════════════════════════
 // 🔒 TEMPORARY LOCK — set to false to unlock Pipeline
-const PIPELINE_LOCKED = true;
+const PIPELINE_LOCKED = false;
 // ══════════════════════════════════════════════════════
 import { useAuthStore } from '../stores/authStore';
 import DealCard, { STAGE_COLORS, formatCurrency } from '../components/pipeline/DealCard';

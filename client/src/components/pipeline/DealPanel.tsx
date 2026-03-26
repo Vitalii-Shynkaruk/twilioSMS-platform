@@ -789,17 +789,19 @@ function MoveModal({ deal, onClose, onSubmit }: { deal: Deal; onClose: () => voi
 function OfferModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: any) => void }) {
   const [lenderName, setLenderName] = useState('');
   const [amount, setAmount] = useState('');
-  const [terms, setTerms] = useState('');
-  const [expiryDays, setExpiryDays] = useState('');
+  const [termMonths, setTermMonths] = useState('');
+  const [rate, setRate] = useState('');
+  const [productType, setProductType] = useState('');
+  const [notes, setNotes] = useState('');
 
   return (
     <ModalOverlay title="Add Offer" onClose={onClose}>
       <div className="ff">
-        <div className="fl">Lender Name *</div>
+        <div className="fl">Lender name *</div>
         <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} className="fi" />
       </div>
       <div className="ff">
-        <div className="fl">Amount *</div>
+        <div className="fl">Offer amount *</div>
         <input
           type="number"
           value={amount}
@@ -809,12 +811,34 @@ function OfferModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (dat
         />
       </div>
       <div className="ff">
-        <div className="fl">Terms</div>
-        <input value={terms} onChange={(e) => setTerms(e.target.value)} className="fi" />
+        <div className="fl">Term (months)</div>
+        <input
+          value={termMonths}
+          onChange={(e) => setTermMonths(e.target.value)}
+          className="fi"
+          placeholder="e.g. 12"
+        />
       </div>
       <div className="ff">
-        <div className="fl">Expiry (days)</div>
-        <input type="number" value={expiryDays} onChange={(e) => setExpiryDays(e.target.value)} className="fi" />
+        <div className="fl">Rate / factor</div>
+        <input value={rate} onChange={(e) => setRate(e.target.value)} className="fi" placeholder="e.g. 1.28" />
+      </div>
+      <div className="ff">
+        <div className="fl">Product</div>
+        <select className="fsel" value={productType} onChange={(e) => setProductType(e.target.value)}>
+          <option value="">—</option>
+          <option>MCA</option>
+          <option>SBA</option>
+          <option>HELOC</option>
+          <option>Equipment</option>
+          <option>LOC</option>
+          <option>CRE</option>
+          <option>BRIDGE</option>
+        </select>
+      </div>
+      <div className="ff">
+        <div className="fl">Notes</div>
+        <input value={notes} onChange={(e) => setNotes(e.target.value)} className="fi" placeholder="Any offer notes" />
       </div>
       <div className="mfoot">
         <button className="btn-c" onClick={onClose}>
@@ -830,12 +854,14 @@ function OfferModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (dat
             onSubmit({
               lenderName,
               amount: parseFloat(amount),
-              terms: terms || undefined,
-              expiryDays: expiryDays ? parseInt(expiryDays) : undefined,
+              terms: termMonths ? `${termMonths} months` : undefined,
+              productType: productType || undefined,
+              rate: rate || undefined,
+              notes: notes || undefined,
             });
           }}
         >
-          Add Offer
+          Save Offer
         </button>
       </div>
     </ModalOverlay>

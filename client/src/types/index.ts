@@ -386,6 +386,7 @@ export interface DealStats {
 
 export interface CommandCenterMetrics {
   fundedMTD: number;
+  lifetimeFunded: number;
   pipelineValue: number;
   committedValue: number;
   atRisk: number;
@@ -396,6 +397,8 @@ export interface CommandCenterMetrics {
   staleCount: number;
   staleRevenue: number;
   overdueCount: number;
+  noNextAction: number;
+  idleRepsCount: number;
   futureNext7: number;
   futureNext30: number;
   futureTotal: number;

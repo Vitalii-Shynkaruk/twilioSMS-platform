@@ -156,6 +156,8 @@ interface RepActivity {
   committedValue: number;
   activeDeals: number;
   monthlyGoal?: number;
+  submittedCount: number;
+  fundedCount: number;
 }
 
 interface Bottleneck {
@@ -612,6 +614,13 @@ export default function CommandCenterPage() {
                     <div className="hbs">Approved + Committed + Nurture</div>
                   </div>
                   <div className="hbox">
+                    <div className="hbl">Lifetime Funded</div>
+                    <div className="hbv" style={{ color: 'var(--gold)' }}>
+                      {fmtCurrency(metrics?.lifetimeFunded)}
+                    </div>
+                    <div className="hbs">all clients</div>
+                  </div>
+                  <div className="hbox">
                     <div className="hbl">Renewals Due</div>
                     <div className="hbv" style={{ color: 'var(--amber)' }}>
                       {metrics?.renewalsDue ?? 0}
@@ -705,8 +714,12 @@ export default function CommandCenterPage() {
                     <div className="rb-lbl">Overdue tasks</div>
                   </div>
                   <div className="rb-stat">
-                    <div className="rb-val">{metrics?.staleCount ?? 0}</div>
-                    <div className="rb-lbl">Stale deals</div>
+                    <div className="rb-val">{metrics?.noNextAction ?? 0}</div>
+                    <div className="rb-lbl">No next action</div>
+                  </div>
+                  <div className="rb-stat">
+                    <div className="rb-val">{metrics?.idleRepsCount ?? 0}</div>
+                    <div className="rb-lbl">Idle reps (24h)</div>
                   </div>
                 </div>
               </div>
@@ -1162,7 +1175,23 @@ function PriorityCard({
   onDealClick: (id: string) => void;
 }) {
   const ctaClass = type === 'hot' ? 'cta-h' : type === 'stale' ? 'cta-s' : 'cta-o';
-  const ctaLabel = type === 'hot' ? 'Call Now' : type === 'stale' ? 'Follow Up' : 'Act Now';
+
+  function getDealCta(deal: Deal): string {
+    if (type === 'hot') {
+      const na = (deal.nextAction || '').toLowerCase();
+      if (na.includes('schedule') || na.includes('callback')) return 'Schedule';
+      return 'Call Now';
+    }
+    if (type === 'over') {
+      if (!deal.nextAction) return 'Assign';
+      const na = deal.nextAction.toLowerCase();
+      if (na.includes('send')) return 'Send Now';
+      if (na.includes('call')) return 'Act Now';
+      if (na.includes('assign') || !deal.nextAction) return 'Assign';
+      return 'Act Now';
+    }
+    return 'Follow Up';
+  }
 
   return (
     <div className={`pcard ${type}`}>
@@ -1193,7 +1222,7 @@ function PriorityCard({
                 {deal.staleDays > 0 ? ` \u00b7 ${deal.staleDays}d idle` : ''}
               </div>
             </div>
-            <button className={`cta ${ctaClass}`}>{ctaLabel}</button>
+            <button className={`cta ${ctaClass}`}>{getDealCta(deal)}</button>
           </div>
         ))}
         {riskValue != null && riskValue > 0 && (
@@ -1356,6 +1385,18 @@ function RepPerformanceTable({
       let av = 0,
         bv = 0;
       switch (sort.col) {
+        case 'submitted':
+          av = a.submittedCount;
+          bv = b.submittedCount;
+          break;
+        case 'fundedCount':
+          av = a.fundedCount;
+          bv = b.fundedCount;
+          break;
+        case 'convRate':
+          av = a.submittedCount > 0 ? (a.fundedCount / a.submittedCount) * 100 : 0;
+          bv = b.submittedCount > 0 ? (b.fundedCount / b.submittedCount) * 100 : 0;
+          break;
         case 'funded':
           av = a.fundedMTD;
           bv = b.fundedMTD;
@@ -1367,10 +1408,6 @@ function RepPerformanceTable({
         case 'committed':
           av = a.committedValue;
           bv = b.committedValue;
-          break;
-        case 'deals':
-          av = a.activeDeals;
-          bv = b.activeDeals;
           break;
         default:
           av = a.fundedMTD;
@@ -1397,8 +1434,14 @@ function RepPerformanceTable({
         <thead>
           <tr>
             <th>Rep</th>
-            <th className={sort.col === 'deals' ? 'sorted' : ''} onClick={() => toggleSort('deals')}>
-              Active
+            <th className={sort.col === 'submitted' ? 'sorted' : ''} onClick={() => toggleSort('submitted')}>
+              Submitted
+            </th>
+            <th className={sort.col === 'fundedCount' ? 'sorted' : ''} onClick={() => toggleSort('fundedCount')}>
+              Funded
+            </th>
+            <th className={sort.col === 'convRate' ? 'sorted' : ''} onClick={() => toggleSort('convRate')}>
+              Conv %
             </th>
             <th className={sort.col === 'funded' ? 'sorted' : ''} onClick={() => toggleSort('funded')}>
               Funded $
@@ -1412,39 +1455,48 @@ function RepPerformanceTable({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((rep, i) => (
-            <tr key={rep.id}>
-              <td>
-                <div className="r-nc">
-                  <div
-                    className="r-av"
-                    style={{
-                      background: rep.avatarColor || 'var(--faint)',
-                      color: rep.avatarColor ? 'var(--bg)' : 'var(--muted)',
-                    }}
-                  >
+          {sorted.map((rep, i) => {
+            const convRate = rep.submittedCount > 0 ? Math.round((rep.fundedCount / rep.submittedCount) * 100) : 0;
+            return (
+              <tr key={rep.id}>
+                <td>
+                  <div className="r-nc">
+                    <div
+                      className="r-av"
+                      style={{
+                        background: rep.avatarColor || 'var(--faint)',
+                        color: rep.avatarColor ? 'var(--bg)' : 'var(--muted)',
+                      }}
+                    >
+                      {rep.initials}
+                    </div>
                     {rep.initials}
+                    {i === 0 && rep.fundedMTD > 0 && <span className="top-badge">Top</span>}
                   </div>
-                  {rep.initials}
-                  {i === 0 && rep.fundedMTD > 0 && <span className="top-badge">Top</span>}
-                </div>
-              </td>
-              <td>{rep.activeDeals}</td>
-              <td>
-                <span style={{ color: 'var(--gold)', fontWeight: 700 }}>{fmtCurrency(rep.fundedMTD)}</span>
-                <div
-                  className="vbar"
-                  style={{
-                    width: (rep.fundedMTD / topFunded) * 100 + '%',
-                    background: 'var(--gold)',
-                    opacity: 0.3,
-                  }}
-                />
-              </td>
-              <td style={{ color: 'var(--text)' }}>{fmtCurrency(rep.pipelineValue)}</td>
-              <td style={{ color: 'var(--green2)', opacity: 0.8 }}>{fmtCurrency(rep.committedValue)}</td>
-            </tr>
-          ))}
+                </td>
+                <td>{rep.submittedCount}</td>
+                <td>{rep.fundedCount}</td>
+                <td
+                  style={{ color: convRate >= 50 ? 'var(--green2)' : convRate >= 30 ? 'var(--amber)' : 'var(--red)' }}
+                >
+                  {convRate}%
+                </td>
+                <td>
+                  <span style={{ color: 'var(--gold)', fontWeight: 700 }}>{fmtCurrency(rep.fundedMTD)}</span>
+                  <div
+                    className="vbar"
+                    style={{
+                      width: (rep.fundedMTD / topFunded) * 100 + '%',
+                      background: 'var(--gold)',
+                      opacity: 0.3,
+                    }}
+                  />
+                </td>
+                <td style={{ color: 'var(--text)' }}>{fmtCurrency(rep.pipelineValue)}</td>
+                <td style={{ color: 'var(--green2)', opacity: 0.8 }}>{fmtCurrency(rep.committedValue)}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -44,6 +44,7 @@ export class CommandCenterController {
       followUps30d,
       followUpsTotal,
       renewalsDue,
+      lifetimeFundedAgg,
     ] = await Promise.all([
       // Funded MTD
       prisma.fundingEvent.aggregate({
@@ -79,6 +80,7 @@ export class CommandCenterController {
           nextActionDue: true,
           lastActivityAt: true,
           staleDays: true,
+          assignedRepId: true,
         },
       }),
       // Future Opportunities: Next 7 days
@@ -107,9 +109,15 @@ export class CommandCenterController {
           dueDate: { lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) },
         },
       }),
+      // Lifetime funded
+      prisma.fundingEvent.aggregate({
+        where: { ...effectiveFundingFilter },
+        _sum: { amountFunded: true },
+      }),
     ]);
 
     const fundedMTD = fundedMTDAgg._sum.amountFunded || 0;
+    const lifetimeFunded = lifetimeFundedAgg._sum.amountFunded || 0;
 
     // Pipeline Value = Approved + Committed + Nurture (prevOffer > 0)
     const approvedCommittedValue = pipelineDeals.reduce((s: number, d: any) => s + (d.dealAmount || 0), 0);
@@ -150,6 +158,24 @@ export class CommandCenterController {
     // Overdue tasks
     const overdueDeals = allActiveDeals.filter((d) => d.nextActionDue && new Date(d.nextActionDue) < now);
 
+    // No next action set
+    const noNextActionCount = allActiveDeals.filter((d) => !d.nextAction).length;
+
+    // Idle reps (24h+) — reps with no deal activity in 24h
+    const twentyFourHMs = 24 * 60 * 60 * 1000;
+    const repLastActivity: Record<string, Date> = {};
+    allActiveDeals.forEach((d: any) => {
+      if (d.assignedRepId && d.lastActivityAt) {
+        const la = new Date(d.lastActivityAt);
+        if (!repLastActivity[d.assignedRepId] || la > repLastActivity[d.assignedRepId]) {
+          repLastActivity[d.assignedRepId] = la;
+        }
+      }
+    });
+    const idleRepsCount = Object.values(repLastActivity).filter(
+      (la) => now.getTime() - la.getTime() > twentyFourHMs,
+    ).length;
+
     // Get goal for progress
     let monthlyGoal = 0;
     if (req.user?.role === 'ADMIN' && !repId) {
@@ -170,6 +196,7 @@ export class CommandCenterController {
     res.json({
       // Money Zone
       fundedMTD,
+      lifetimeFunded,
       pipelineValue,
       committedValue,
       atRisk,
@@ -182,6 +209,8 @@ export class CommandCenterController {
       staleCount: staleDeals.length,
       staleRevenue,
       overdueCount: overdueDeals.length,
+      noNextAction: noNextActionCount,
+      idleRepsCount,
 
       // Future Opportunities
       futureNext7: followUps7d,
@@ -363,44 +392,55 @@ export class CommandCenterController {
 
     const repActivity = await Promise.all(
       reps.map(async (rep) => {
-        const [dealsAtRisk, overdueCount, lastEvent, fundedMTD, pipelineValue, committedValue, totalDeals] =
-          await Promise.all([
-            prisma.deal.count({
-              where: {
-                assignedRepId: rep.id,
-                stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] },
-                OR: [
-                  { nextActionDue: { lt: now } },
-                  { lastActivityAt: { lt: new Date(now.getTime() - 48 * 60 * 60 * 1000) } },
-                ],
-              },
-            }),
-            prisma.deal.count({
-              where: {
-                assignedRepId: rep.id,
-                nextActionDue: { lt: now },
-                stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
-              },
-            }),
-            prisma.dealEvent.findFirst({
-              where: { repId: rep.id },
-              orderBy: { createdAt: 'desc' },
-              select: { createdAt: true },
-            }),
-            prisma.fundingEvent.aggregate({
-              where: { repId: rep.id, fundedDate: { gte: startOfMonth } },
-              _sum: { amountFunded: true },
-            }),
-            prisma.deal.aggregate({
-              where: { assignedRepId: rep.id, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
-              _sum: { dealAmount: true },
-            }),
-            prisma.deal.aggregate({
-              where: { assignedRepId: rep.id, stage: DealStage.COMMITTED_FUNDING },
-              _sum: { dealAmount: true },
-            }),
-            prisma.deal.count({ where: { assignedRepId: rep.id, stage: { notIn: [DealStage.CLOSED] } } }),
-          ]);
+        const [
+          dealsAtRisk,
+          overdueCount,
+          lastEvent,
+          fundedMTD,
+          pipelineValue,
+          committedValue,
+          totalDeals,
+          submittedCount,
+          fundedCount,
+        ] = await Promise.all([
+          prisma.deal.count({
+            where: {
+              assignedRepId: rep.id,
+              stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] },
+              OR: [
+                { nextActionDue: { lt: now } },
+                { lastActivityAt: { lt: new Date(now.getTime() - 48 * 60 * 60 * 1000) } },
+              ],
+            },
+          }),
+          prisma.deal.count({
+            where: {
+              assignedRepId: rep.id,
+              nextActionDue: { lt: now },
+              stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
+            },
+          }),
+          prisma.dealEvent.findFirst({
+            where: { repId: rep.id },
+            orderBy: { createdAt: 'desc' },
+            select: { createdAt: true },
+          }),
+          prisma.fundingEvent.aggregate({
+            where: { repId: rep.id, fundedDate: { gte: startOfMonth } },
+            _sum: { amountFunded: true },
+          }),
+          prisma.deal.aggregate({
+            where: { assignedRepId: rep.id, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
+            _sum: { dealAmount: true },
+          }),
+          prisma.deal.aggregate({
+            where: { assignedRepId: rep.id, stage: DealStage.COMMITTED_FUNDING },
+            _sum: { dealAmount: true },
+          }),
+          prisma.deal.count({ where: { assignedRepId: rep.id, stage: { notIn: [DealStage.CLOSED] } } }),
+          prisma.deal.count({ where: { assignedRepId: rep.id, stage: DealStage.SUBMITTED_IN_REVIEW } }),
+          prisma.fundingEvent.count({ where: { repId: rep.id, fundedDate: { gte: startOfMonth } } }),
+        ]);
 
         const isActive = lastEvent?.createdAt && new Date(lastEvent.createdAt) > twentyFourHoursAgo;
 
@@ -418,6 +458,8 @@ export class CommandCenterController {
           pipelineValue: pipelineValue._sum.dealAmount || 0,
           committedValue: committedValue._sum.dealAmount || 0,
           activeDeals: totalDeals,
+          submittedCount,
+          fundedCount,
         };
       }),
     );

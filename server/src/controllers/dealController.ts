@@ -863,11 +863,28 @@ export class DealController {
       .filter((d) => d.stage === DealStage.COMMITTED_FUNDING)
       .reduce((sum, d) => sum + (d.dealAmount || 0), 0);
 
+    // Monthly Goal — individual rep or team sum
+    let monthlyGoal = 0;
+    if (where.assignedRepId) {
+      const repUser = await prisma.user.findUnique({
+        where: { id: where.assignedRepId },
+        select: { monthlyGoal: true },
+      });
+      monthlyGoal = repUser?.monthlyGoal || 0;
+    } else {
+      const allReps = await prisma.user.aggregate({
+        where: { role: { in: ['REP', 'ADMIN', 'MANAGER'] }, isActive: true },
+        _sum: { monthlyGoal: true },
+      });
+      monthlyGoal = allReps._sum.monthlyGoal || 0;
+    }
+
     res.json({
       activePipeline,
       activeCount: allDeals.length,
       fundedMTD: fundedMTD._sum.amountFunded || 0,
       lifetimeFunded: lifetimeFunded._sum.amountFunded || 0,
+      monthlyGoal,
       atRisk,
       hotCount,
       noNextAction,

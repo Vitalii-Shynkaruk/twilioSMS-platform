@@ -827,6 +827,9 @@ body.simple-view .sbar{display:none;}
 
   /* Legend: hide on mobile */
   .legend { display: none; }
+  .banner { padding: 3px 10px; gap: 6px; }
+  .vb { font-size: 9px; }
+  .btext { font-size: 10px; }
 
   /* Board: horizontal swipe columns */
   .board-wrap { padding: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -837,6 +840,8 @@ body.simple-view .sbar{display:none;}
   .mgr-bar { flex-direction: column; }
   .mc { border-right: none; border-bottom: 1px solid var(--border); padding: 6px 10px; }
   .mc:last-child { border-bottom: none; }
+  .mr2 { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .mri { min-width: 100px; }
   .sum-bar { flex-direction: column; }
   .sb2 { border-right: none; border-bottom: 1px solid var(--border2); padding: 8px 10px; }
   .sb2:last-child { border-bottom: none; }

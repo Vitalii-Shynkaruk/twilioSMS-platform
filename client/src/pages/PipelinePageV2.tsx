@@ -57,8 +57,8 @@ const FILTERS: { key: QuickFilter; label: string; activeCls: string }[] = [
   { key: 'mine', label: 'Mine', activeCls: 'act' },
   { key: 'overdue', label: 'Overdue', activeCls: 'urg' },
   { key: 'hot', label: '🔥 Hot', activeCls: 'fire' },
-  { key: 'neglected', label: 'Neglected', activeCls: 'act' },
-  { key: 'this_week', label: 'This Week', activeCls: 'week-act' },
+  { key: 'neglected', label: 'Neglected', activeCls: 'urg' },
+  { key: 'this_week', label: '📅 This Week', activeCls: 'week-act' },
 ];
 
 // ═══════════════════════════════════════
@@ -167,7 +167,7 @@ export default function PipelinePage() {
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
           if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
           if (quickFilter === 'hot' && !d.isHot) return false;
-          if (quickFilter === 'neglected' && (d.staleDays || 0) < 2) return false;
+          if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
           if (quickFilter === 'this_week') {
             const weekEnd = new Date();
             weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
@@ -210,6 +210,44 @@ export default function PipelinePage() {
 
   const reviveCount = reviveQueue?.length || 0;
 
+  // ─── Filter counts (computed from unfiltered board) ───
+  const filterCounts = useMemo(() => {
+    if (!board?.stages) return { overdue: 0, hot: 0, neglected: 0, this_week: 0 };
+    const allDeals: Deal[] = board.stages.flatMap((s: any) => s.deals);
+    const now = new Date();
+    const weekEnd = new Date();
+    weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
+
+    const overdue = allDeals.filter((d) => d.nextActionDue && new Date(d.nextActionDue) < now).length;
+    const hot = allDeals.filter((d) => d.isHot).length;
+    const neglected = allDeals.filter((d) => (d.staleDays || 0) >= 7 && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
+    const this_week = allDeals.filter((d) => {
+      if (['CLOSED', 'NURTURE'].includes(d.stage)) return false;
+      if (['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(d.stage)) return true;
+      if (d.nextActionDue && new Date(d.nextActionDue) < now) return true;
+      if (d.nextActionDue) {
+        const due = new Date(d.nextActionDue);
+        if (due <= weekEnd) return true;
+      }
+      if (d.isHot) return true;
+      return false;
+    }).length;
+    return { overdue, hot, neglected, this_week };
+  }, [board]);
+
+  // ─── Filter labels with counts ───
+  const filterLabels = useMemo(
+    () => ({
+      all: 'All',
+      mine: 'Mine',
+      overdue: filterCounts.overdue ? `Overdue (${filterCounts.overdue})` : 'Overdue',
+      hot: filterCounts.hot ? `🔥 Hot (${filterCounts.hot})` : '🔥 Hot',
+      neglected: filterCounts.neglected ? `Neglected (${filterCounts.neglected})` : 'Neglected',
+      this_week: filterCounts.this_week ? `📅 This Week (${filterCounts.this_week})` : '📅 This Week',
+    }),
+    [filterCounts],
+  );
+
   const handleViewTab = (tab: ViewTab, scope?: PipelineScope) => {
     setViewTab(tab);
     if (scope) setPipelineScope(scope);
@@ -250,7 +288,7 @@ export default function PipelinePage() {
               className={`fp ${quickFilter === f.key ? f.activeCls : ''}`}
               onClick={() => setQuickFilter(f.key)}
             >
-              {f.label}
+              {filterLabels[f.key]}
             </button>
           ))}
         </div>
@@ -316,6 +354,58 @@ export default function PipelinePage() {
         </button>
       </div>
 
+      {/* ═══ BANNER (role + context) ═══ */}
+      <div className="banner">
+        {isAdmin && !repFilter ? (
+          <>
+            <span
+              className="vb"
+              style={{ background: 'var(--gold-bg)', color: 'var(--gold)', border: '1px solid var(--gold-b)' }}
+            >
+              Admin — Full Access
+            </span>
+            <span className="btext">
+              All reps · all clients · full edit access
+              {viewMode === 'execution' ? ' · ⚡ Execution Mode' : ''}
+              {quickFilter === 'overdue' ? ' · Overdue only' : ''}
+              {quickFilter === 'hot' ? ' · Hot deals' : ''}
+              {quickFilter === 'neglected' ? ' · Neglected' : ''}
+              {quickFilter === 'this_week' ? ' · 📅 This Week — likely to close' : ''}
+            </span>
+          </>
+        ) : repFilter && reps ? (
+          <>
+            <span
+              className="vb"
+              style={{ background: 'var(--info-bg)', color: 'var(--info)', border: '1px solid var(--info-b)' }}
+            >
+              My Pipeline ({reps.find((r) => r.id === repFilter)?.initials || '?'})
+            </span>
+            <span className="btext">Your deals only</span>
+          </>
+        ) : viewTab === 'team' ? (
+          <>
+            <span
+              className="vb"
+              style={{ background: 'var(--good-bg)', color: 'var(--good)', border: '1px solid var(--good-b)' }}
+            >
+              Team Pipeline
+            </span>
+            <span className="btext">Shared view · Approved/Offers + Committed + Funded only · no contact info</span>
+          </>
+        ) : (
+          <>
+            <span
+              className="vb"
+              style={{ background: 'var(--info-bg)', color: 'var(--info)', border: '1px solid var(--info-b)' }}
+            >
+              My Pipeline
+            </span>
+            <span className="btext">Your deals only</span>
+          </>
+        )}
+      </div>
+
       {/* ═══ LEGEND (hidden in simple mode via CSS) ═══ */}
       <div className="legend">
         <div className="li">
@@ -342,6 +432,8 @@ export default function PipelinePage() {
           <div className="ld" style={{ background: 'var(--good)' }} />
           Green = Good / funded
         </div>
+        <div className="lsep" />
+        <div className="li">⚡MCA/LOC: 2d · 🔧Equipment: 5d · 🏠HELOC: 30d · 🏛SBA/🏢CRE: 60d review clocks</div>
       </div>
 
       {/* ═══ MAIN CONTENT ═══ */}
@@ -395,32 +487,178 @@ export default function PipelinePage() {
           </div>
 
           {/* Manager bar (hidden in simple via CSS) */}
-          {isAdmin && stats && (
+          {isAdmin && stats && reps && reps.length > 0 && (
             <div className="mgr-bar">
+              {/* Rep names column */}
               <div className="mc">
-                <div className="ml">Pipeline</div>
-                <div className="mgr-val">{formatCurrency(stats.pipelineValue)}</div>
-              </div>
-              <div className="mc">
-                <div className="ml">Hot Deals</div>
-                <div className="mgr-val" style={{ color: 'var(--hot)' }}>
-                  {stats.hotCount}
+                <div className="ml">Rep</div>
+                <div className="mr2">
+                  {reps.map((rep) => (
+                    <div key={rep.id} className="mri">
+                      <div
+                        className="av"
+                        style={{
+                          width: '15px',
+                          height: '15px',
+                          background: rep.avatarColor || 'var(--gold)',
+                          fontSize: '7px',
+                        }}
+                      >
+                        {rep.initials || rep.firstName[0]}
+                      </div>
+                      {rep.firstName} {rep.lastName}
+                    </div>
+                  ))}
                 </div>
               </div>
+              {/* Active */}
               <div className="mc">
-                <div className="ml">No Action</div>
-                <div className="mgr-val" style={{ color: 'var(--urgent)' }}>
-                  {stats.noNextAction ?? 0}
+                <div className="ml">Active</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const v =
+                      board?.stages
+                        ?.flatMap((s: any) => s.deals)
+                        .filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage))
+                        .length || 0;
+                    return (
+                      <div key={rep.id} className="mri">
+                        <span className="mgr-val" style={{ color: v ? 'var(--text)' : 'var(--text3)' }}>
+                          {v}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+              {/* Overdue */}
               <div className="mc">
-                <div className="ml">Queue Today</div>
-                <div className="mgr-val">{stats.queueToday ?? 0}</div>
+                <div className="ml">Overdue</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const now = new Date();
+                    const v =
+                      board?.stages
+                        ?.flatMap((s: any) => s.deals)
+                        .filter(
+                          (d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now,
+                        ).length || 0;
+                    return (
+                      <div key={rep.id} className="mri">
+                        <span className="mgr-val" style={{ color: v ? 'var(--urgent)' : 'var(--text3)' }}>
+                          {v}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+              {/* Hot */}
               <div className="mc">
-                <div className="ml">Renewals</div>
-                <div className="mgr-val" style={{ color: 'var(--good)' }}>
-                  {stats.renewalsDue ?? 0}
+                <div className="ml">🔥 Hot</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const v =
+                      board?.stages
+                        ?.flatMap((s: any) => s.deals)
+                        .filter((d: Deal) => d.assignedRepId === rep.id && d.isHot).length || 0;
+                    return (
+                      <div key={rep.id} className="mri">
+                        <span className="mgr-val" style={{ color: v ? 'var(--hot)' : 'var(--text3)' }}>
+                          {v}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Pipeline $ */}
+              <div className="mc">
+                <div className="ml">Pipeline $</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const total =
+                      board?.stages
+                        ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
+                        .flatMap((s: any) => s.deals)
+                        .filter((d: Deal) => d.assignedRepId === rep.id)
+                        .reduce((sum: number, d: Deal) => {
+                          const best = d.offers?.length
+                            ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount
+                            : 0;
+                          return sum + best;
+                        }, 0) || 0;
+                    return (
+                      <div key={rep.id} className="mri">
+                        <span className="mgr-val" style={{ color: total ? 'var(--good)' : 'var(--text3)' }}>
+                          {total ? formatCurrency(total) : '$0'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Funded MTD */}
+              <div className="mc">
+                <div className="ml">Funded MTD</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const total =
+                      board?.stages
+                        ?.find((s: any) => s.stage === 'FUNDED')
+                        ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
+                        .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0) || 0;
+                    return (
+                      <div key={rep.id} className="mri">
+                        <span className="mgr-val" style={{ color: total ? 'var(--good)' : 'var(--text3)' }}>
+                          {total ? formatCurrency(total) : '$0'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* MTD Goal % */}
+              <div className="mc">
+                <div className="ml">MTD Goal %</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const funded =
+                      board?.stages
+                        ?.find((s: any) => s.stage === 'FUNDED')
+                        ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
+                        .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0) || 0;
+                    const goal = rep.monthlyGoal || 0;
+                    if (!goal)
+                      return (
+                        <div key={rep.id} className="mri">
+                          <span className="mgr-val" style={{ color: 'var(--text3)' }}>
+                            —
+                          </span>
+                        </div>
+                      );
+                    const pct = Math.round((funded / goal) * 100);
+                    const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
+                    return (
+                      <div
+                        key={rep.id}
+                        className="mri"
+                        style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}
+                      >
+                        <span className="mgr-val" style={{ color: barColor }}>
+                          {pct}%
+                        </span>
+                        <div style={{ width: '60px' }}>
+                          <div className="goal-bar-track">
+                            <div
+                              className="goal-bar-fill"
+                              style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -430,39 +668,80 @@ export default function PipelinePage() {
           {stats && (
             <div className="sum-bar">
               <div className="sb2">
-                <div className="sl">Pipeline Value</div>
-                <div className="sv">{formatCurrency(stats.pipelineValue)}</div>
-                <div className="ss">{stats.activeCount || 0} active deals</div>
-              </div>
-              <div className="sb2">
-                <div className="sl">Hot / Active</div>
-                <div className="sv" style={{ color: 'var(--hot)' }}>
-                  {stats.hotCount}
+                <div className="sl">Active Pipeline</div>
+                <div className="sv" style={{ color: 'var(--good)' }}>
+                  {formatCurrency(stats.pipelineValue)}
                 </div>
-                <div className="ss">hot deals</div>
+                <div className="ss">Approved + Committed</div>
               </div>
               <div className="sb2 goal-block">
                 <div className="sl">Funded MTD</div>
                 <div className="sv" style={{ color: 'var(--good)' }}>
                   {formatCurrency(stats.fundedMTD)}
                 </div>
-                <div className="ss">this month</div>
+                <div className="ss">Goal: {formatCurrency(stats.monthlyGoal)}</div>
+                {stats.monthlyGoal &&
+                  stats.monthlyGoal > 0 &&
+                  (() => {
+                    const pct = Math.round(((stats.fundedMTD || 0) / stats.monthlyGoal) * 100);
+                    const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
+                    const goalCls = pct >= 75 ? 'on-track' : pct >= 50 ? 'at-risk' : 'behind';
+                    return (
+                      <div className="goal-bar-wrap">
+                        <div className="goal-bar-track">
+                          <div
+                            className="goal-bar-fill"
+                            style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
+                          />
+                        </div>
+                        <div className={`goal-pct ${goalCls}`}>
+                          {pct}% of {formatCurrency(stats.monthlyGoal)} monthly goal
+                        </div>
+                      </div>
+                    );
+                  })()}
               </div>
               <div className="sb2">
-                <div className="sl">Committed</div>
-                <div className="sv">{formatCurrency(stats.committedValue)}</div>
+                <div className="sl">Lifetime Funded</div>
+                <div className="sv" style={{ color: 'var(--gold)' }}>
+                  {formatCurrency(stats.lifetimeFunded)}
+                </div>
+                <div className="ss">All clients</div>
               </div>
               <div className="sb2">
-                <div className="sl">At Risk</div>
-                <div className="sv" style={{ color: 'var(--urgent)' }}>
+                <div className="sl">⚠ At Risk</div>
+                <div className="sv" style={{ color: (stats.atRisk || 0) > 0 ? 'var(--urgent)' : 'var(--text3)' }}>
                   {formatCurrency(stats.atRisk)}
                 </div>
-                <div className="ss">{stats.noNextAction ?? 0} no next action</div>
+                <div className="ss">Overdue / stale / no action</div>
               </div>
               <div className="sb2">
-                <div className="sl">Avg Cycle</div>
-                <div className="sv">{stats.avgCycleTime || '—'}d</div>
-                <div className="ss">lead → funded</div>
+                <div className="sl">🔥 Hot</div>
+                <div className="sv" style={{ color: 'var(--hot)' }}>
+                  {stats.hotCount}
+                </div>
+                <div className="ss">Offer / replied / engaged</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">No Next Action</div>
+                <div className="sv" style={{ color: 'var(--urgent)' }}>
+                  {stats.noNextAction ?? 0}
+                </div>
+                <div className="ss">Blocking progress</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">Renewals Due</div>
+                <div className="sv" style={{ color: 'var(--good)' }}>
+                  {stats.renewalsDue ?? 0}
+                </div>
+                <div className="ss">Re-engage funded</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">🔁 Queue Today</div>
+                <div className="sv" style={{ color: 'var(--info)' }}>
+                  {stats.queueToday ?? 0}
+                </div>
+                <div className="ss">Scheduled follow-ups due</div>
               </div>
             </div>
           )}
@@ -503,14 +782,42 @@ function StageColumn({
   onDealClick: (id: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: config.value });
+  const urgentCount = deals.filter(
+    (d) =>
+      (d.nextActionDue && new Date(d.nextActionDue) < new Date()) ||
+      d.renewalTasks?.some((t) => t.status === 'PENDING'),
+  ).length;
 
   return (
     <div ref={setNodeRef} className={`col ${config.colClass || ''}`}>
       <div className="col-head">
         {viewMode === 'simple' ? (
           <>
-            <div className="sc-col-title">{config.short}</div>
-            <div className="sc-col-count">{count}</div>
+            <div
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}
+            >
+              <div className="sc-col-title" style={{ color: config.color }}>
+                {config.short}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span className="sc-col-count">{count}</span>
+                {urgentCount > 0 && (
+                  <span
+                    style={{
+                      background: 'var(--urgent-bg)',
+                      color: 'var(--urgent)',
+                      border: '1px solid var(--urgent-b)',
+                      fontSize: '9px',
+                      padding: '1px 6px',
+                      borderRadius: '3px',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {urgentCount}
+                  </span>
+                )}
+              </div>
+            </div>
           </>
         ) : (
           <>

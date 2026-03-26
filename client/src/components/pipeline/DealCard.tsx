@@ -27,8 +27,8 @@ export const PRODUCT_COLORS: Record<string, string> = {
 
 export function formatCurrency(amount?: number | null): string {
   if (!amount) return '$0';
-  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
+  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(2)}M`;
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}k`;
   return `$${amount.toLocaleString()}`;
 }
 
@@ -77,9 +77,9 @@ function simpleDueInfo(dateStr?: string | null) {
   const dNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const nNorm = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diff = Math.floor((dNorm.getTime() - nNorm.getTime()) / 86400000);
-  if (diff < 0) return { text: `${Math.abs(diff)}d late`, cls: 'st-od' };
+  if (diff < 0) return { text: 'OVERDUE', cls: 'st-od' };
   if (diff === 0) return { text: 'Today', cls: 'st-td' };
-  if (diff === 1) return { text: 'Tmrw', cls: 'st-good' };
+  if (diff === 1) return { text: 'Tomorrow', cls: 'st-good' };
   return { text: `${diff}d`, cls: 'st-nm' };
 }
 
@@ -88,6 +88,7 @@ function simpleCardState(deal: Deal): string {
   if (deal.isHot) return 'sc-hot';
   if (due.isOverdue) return 'sc-overdue';
   if (due.isToday) return 'sc-today';
+  if (deal.stage === 'FUNDED') return 'sc-good';
   if (deal.staleDays <= 0) return 'sc-good';
   return 'sc-normal';
 }
@@ -120,14 +121,32 @@ function staleTxt(days: number): { text: string; cls: string } {
 
 function simpleAmount(deal: Deal): { text: string; cls: string } {
   if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
-    return { text: formatCurrency(deal.fundingEvents[0].amountFunded), cls: 'sca-green' };
+    return { text: `💰 ${formatCurrency(deal.fundingEvents[0].amountFunded)}`, cls: 'sca-green' };
+  }
+  if ((deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.offers?.length) {
+    const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
+    const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
+    return { text: `${prefix}${formatCurrency(best.amount)}`, cls: best.amount >= 300000 ? 'sca-green' : 'sca-amber' };
   }
   if (deal.offers?.length) {
     const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
     return { text: formatCurrency(best.amount), cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
   }
   if (deal.stage === 'NURTURE' && deal.prevOffer) {
-    return { text: formatCurrency(deal.prevOffer), cls: 'sca-prev' };
+    return { text: `💰 ${formatCurrency(deal.prevOffer)} prev`, cls: 'sca-prev' };
+  }
+  if (deal.stage === 'SUBMITTED_IN_REVIEW') {
+    const icon =
+      deal.productType === 'MCA'
+        ? '⚡'
+        : deal.productType === 'EQUIPMENT'
+          ? '🔧'
+          : deal.productType === 'HELOC'
+            ? '🏠'
+            : deal.productType === 'SBA'
+              ? '🏛'
+              : '📋';
+    return { text: `${icon} In review`, cls: 'sca-gray' };
   }
   if (deal.dealAmount) {
     return { text: formatCurrency(deal.dealAmount), cls: deal.dealAmount >= 25000 ? 'sca-green' : 'sca-amber' };
@@ -184,18 +203,20 @@ function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
   const due = simpleDueInfo(deal.nextActionDue);
 
   return (
-    <div className={`s-card ${state}`} onClick={onClick} style={{ padding: '10px 12px' }}>
-      {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
-      <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
-      <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
-      {deal.nextAction ? (
-        <div className="sc-action-row">
-          <span className="sc-action">{deal.nextAction}</span>
-          <span className={`sc-time ${due.cls}`}>{due.text}</span>
-        </div>
-      ) : (
-        deal.stage !== 'FUNDED' && deal.stage !== 'CLOSED' && <div className="sc-no-action">⚠ No next action set</div>
-      )}
+    <div className={`s-card ${state}`} onClick={onClick}>
+      <div style={{ padding: '10px 11px 8px' }}>
+        {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
+        <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
+        <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
+        {deal.nextAction ? (
+          <div className="sc-action-row">
+            <span className="sc-action">{deal.nextAction}</span>
+            {due.text && <span className={`sc-time ${due.cls}`}>{due.text}</span>}
+          </div>
+        ) : (
+          !['FUNDED', 'CLOSED', 'NURTURE'].includes(deal.stage) && <div className="sc-no-action">⚠ No action set</div>
+        )}
+      </div>
     </div>
   );
 }

@@ -370,6 +370,7 @@ export interface DealStats {
   activeCount: number;
   fundedMTD: number;
   lifetimeFunded: number;
+  monthlyGoal: number;
   atRisk: number;
   hotCount: number;
   noNextAction: number;

@@ -18,33 +18,43 @@ interface StageConfig {
   label: string;
   short: string;
   color: string;
+  opacity: number;
   colClass?: string;
   stageClass?: string;
 }
 
 const STAGES: StageConfig[] = [
-  { value: 'NEW_LEAD', label: 'New Lead', short: 'New Lead', color: 'var(--info)' },
-  { value: 'ENGAGED_INTERESTED', label: 'Contacted', short: 'Contacted', color: 'var(--info)' },
+  { value: 'NEW_LEAD', label: 'New Lead', short: 'New Lead', color: '#4A9EE8', opacity: 0.28 },
+  { value: 'ENGAGED_INTERESTED', label: 'Engaged / Interested', short: 'Engaged', color: '#9B72E8', opacity: 0.38 },
   {
     value: 'QUALIFIED',
-    label: 'Qualified / Interested',
+    label: 'Qualified',
     short: 'Qualified',
-    color: 'var(--attn)',
-    stageClass: 'app-req',
+    color: '#C9952A',
+    opacity: 0.45,
   },
-  { value: 'SUBMITTED_IN_REVIEW', label: 'Submitted (In Review)', short: 'Submitted', color: 'var(--watch)' },
+  { value: 'SUBMITTED_IN_REVIEW', label: 'Submitted (In Review)', short: 'Submitted', color: '#4A9EE8', opacity: 0.55 },
   {
     value: 'APPROVED_OFFERS',
-    label: 'New Business',
-    short: 'New Business',
-    color: 'var(--good)',
+    label: 'Approved / Offers',
+    short: 'Approved / Offers',
+    color: '#FF8C00',
+    opacity: 0.85,
     colClass: 'nb-col',
     stageClass: 'pipe',
   },
-  { value: 'COMMITTED_FUNDING', label: 'Committed → Funding', short: 'Committed', color: 'var(--good)' },
-  { value: 'FUNDED', label: 'Funded', short: 'Funded', color: 'var(--good)' },
-  { value: 'NURTURE', label: 'Nurture', short: 'Nurture', color: 'var(--text3)', stageClass: 'closed-s' },
-  { value: 'CLOSED', label: 'Closed (DQ)', short: 'Closed', color: 'var(--text4)', stageClass: 'closed-s' },
+  {
+    value: 'COMMITTED_FUNDING',
+    label: 'Committed (Funding)',
+    short: 'Committed',
+    color: '#3AB97A',
+    opacity: 0.95,
+    colClass: 'nb-col',
+    stageClass: 'pipe',
+  },
+  { value: 'FUNDED', label: 'Funded', short: 'Funded', color: '#3AB97A', opacity: 1, stageClass: 'pipe' },
+  { value: 'NURTURE', label: 'Nurture', short: 'Nurture', color: '#4A9EE8', opacity: 0.3 },
+  { value: 'CLOSED', label: 'Closed', short: 'Closed', color: '#536070', opacity: 0.28, stageClass: 'closed-s' },
 ];
 
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week';
@@ -304,12 +314,14 @@ export default function PipelinePage() {
           <button className={`vs ${viewTab === 'team' ? 'team-act' : ''}`} onClick={() => handleViewTab('team')}>
             Team Pipeline
           </button>
-          <button
-            className={`vs ${viewTab === 'pipeline' && pipelineScope === 'all' ? 'act' : ''}`}
-            onClick={() => handleViewTab('pipeline', 'all')}
-          >
-            All Deals
-          </button>
+          {isAdmin && (
+            <button
+              className={`vs ${viewTab === 'pipeline' && pipelineScope === 'all' ? 'act' : ''}`}
+              onClick={() => handleViewTab('pipeline', 'all')}
+            >
+              All Deals
+            </button>
+          )}
         </div>
 
         {/* View mode toggle */}
@@ -352,6 +364,38 @@ export default function PipelinePage() {
         <button className="add-btn" onClick={() => setShowCreateDeal(true)}>
           + Add Lead
         </button>
+      </div>
+
+      {/* ═══ LEGEND (hidden in simple mode via CSS) ═══ */}
+      <div className="legend">
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--urgent)' }} />
+          Red = Urgent / Overdue
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--hot)' }} />
+          🔥 HOT = Offer received · replied · lender engaged
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--attn)' }} />
+          Orange = Attention needed
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--watch)' }} />
+          Amber = Due soon
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--good)' }} />
+          Green = Good / funded
+        </div>
+        <div className="lsep" />
+        <div className="li" style={{ color: 'var(--text3)', fontStyle: 'italic' }}>
+          ⚡MCA/LOC: flag 2d · 🔧Equipment: 5d · 🏠HELOC: 30d · 🏛SBA/🏢CRE: 60d review clocks
+        </div>
       </div>
 
       {/* ═══ BANNER (role + context) ═══ */}
@@ -406,36 +450,6 @@ export default function PipelinePage() {
         )}
       </div>
 
-      {/* ═══ LEGEND (hidden in simple mode via CSS) ═══ */}
-      <div className="legend">
-        <div className="li">
-          <div className="ld" style={{ background: 'var(--urgent)' }} />
-          Red = Urgent / Overdue
-        </div>
-        <div className="lsep" />
-        <div className="li">
-          <div className="ld" style={{ background: 'var(--hot)' }} />
-          🔥 HOT = Offer received · replied · lender engaged
-        </div>
-        <div className="lsep" />
-        <div className="li">
-          <div className="ld" style={{ background: 'var(--attn)' }} />
-          Orange = Attention needed
-        </div>
-        <div className="lsep" />
-        <div className="li">
-          <div className="ld" style={{ background: 'var(--watch)' }} />
-          Amber = Due soon
-        </div>
-        <div className="lsep" />
-        <div className="li">
-          <div className="ld" style={{ background: 'var(--good)' }} />
-          Green = Good / funded
-        </div>
-        <div className="lsep" />
-        <div className="li">⚡MCA/LOC: 2d · 🔧Equipment: 5d · 🏠HELOC: 30d · 🏛SBA/🏢CRE: 60d review clocks</div>
-      </div>
-
       {/* ═══ MAIN CONTENT ═══ */}
 
       {viewTab === 'pipeline' && (
@@ -463,7 +477,7 @@ export default function PipelinePage() {
                 onDragCancel={() => setActiveDragId(null)}
               >
                 <div className="board">
-                  {STAGES.map((stageDef) => {
+                  {STAGES.filter((s) => viewMode !== 'simple' || s.value !== 'CLOSED').map((stageDef) => {
                     const stageData = filteredBoard?.stages?.find((s: any) => s.stage === stageDef.value);
                     const deals = stageData?.deals || [];
                     const count = stageData?.count || deals.length;
@@ -618,6 +632,29 @@ export default function PipelinePage() {
                   })}
                 </div>
               </div>
+              {/* Shared */}
+              <div className="mc">
+                <div className="ml">Shared</div>
+                <div className="mr2">
+                  {reps.map((rep) => {
+                    const count =
+                      board?.stages?.reduce(
+                        (acc: number, s: any) =>
+                          acc +
+                          s.deals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id)
+                            .length,
+                        0,
+                      ) || 0;
+                    return (
+                      <div key={rep.id} className="mri">
+                        <span className="mgr-val" style={{ color: count ? 'var(--info)' : 'var(--text3)' }}>
+                          {count}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               {/* MTD Goal % */}
               <div className="mc">
                 <div className="ml">MTD Goal %</div>
@@ -763,6 +800,24 @@ export default function PipelinePage() {
 }
 
 // ═══════════════════════════════════════
+// CARD SORT PRIORITY (matches prototype)
+// ═══════════════════════════════════════
+function sortPri(d: Deal): number {
+  const now = new Date();
+  const overdue = d.nextActionDue && new Date(d.nextActionDue) < now;
+  const hasRenewal = d.renewalTasks?.some((t) => t.status === 'PENDING');
+  if (overdue || hasRenewal) return 0;
+  if (!d.nextAction) return 1; // missing next action
+  if (d.stage === 'COMMITTED_FUNDING' && (d.daysInSubStatus || 0) > 5) return 0;
+  if (d.stage === 'COMMITTED_FUNDING' && (d.daysInSubStatus || 0) > 3) return 1;
+  if (d.isHot) return 2;
+  const dueToday = d.nextActionDue && new Date(d.nextActionDue).toDateString() === now.toDateString();
+  if (dueToday) return 3;
+  if ((d.staleDays || 0) <= 1) return 4;
+  return 5;
+}
+
+// ═══════════════════════════════════════
 // STAGE COLUMN (droppable)
 // ═══════════════════════════════════════
 
@@ -826,15 +881,25 @@ function StageColumn({
             <div className="col-ct">
               {count} {count === 1 ? 'deal' : 'deals'}
             </div>
-            {config.value === 'APPROVED_OFFERS' && <div className="nb-total">Active Pipeline</div>}
+            {(config.value === 'APPROVED_OFFERS' || config.value === 'COMMITTED_FUNDING') &&
+              (() => {
+                const offerCount = deals.reduce((acc, d) => acc + (d.offers?.length || 0), 0);
+                return offerCount > 0 ? (
+                  <div className="nb-total">
+                    {offerCount} lender offer{offerCount !== 1 ? 's' : ''} in play
+                  </div>
+                ) : null;
+              })()}
           </>
         )}
       </div>
-      <div className="col-bar" style={{ background: config.color }} />
+      <div className="col-bar" style={{ background: config.color, opacity: config.opacity }} />
       <div className={`col-cards ${isOver ? 'drag-over' : ''}`}>
-        {deals.map((deal) => (
-          <DraggableDealCard key={deal.id} deal={deal} viewMode={viewMode} onClick={() => onDealClick(deal.id)} />
-        ))}
+        {[...deals]
+          .sort((a, b) => sortPri(a) - sortPri(b) || (a.staleDays || 0) - (b.staleDays || 0))
+          .map((deal) => (
+            <DraggableDealCard key={deal.id} deal={deal} viewMode={viewMode} onClick={() => onDealClick(deal.id)} />
+          ))}
       </div>
     </div>
   );

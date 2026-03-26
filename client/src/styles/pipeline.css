@@ -253,6 +253,7 @@ body.execution-view .touched-by{display:flex;}
 .nt-re-engage{background:rgba(58,185,122,.1);color:var(--good);border:1px solid rgba(58,185,122,.25);}
 .nt-waiting-docs{background:rgba(212,169,64,.12);color:var(--watch);border:1px solid rgba(212,169,64,.28);}
 .nt-timing{background:rgba(139,148,158,.12);color:var(--text2);border:1px solid rgba(139,148,158,.22);}
+.nt-renewal{background:rgba(58,185,122,.1);color:var(--good);border:1px solid rgba(58,185,122,.25);}
 .nt-competitor{background:rgba(208,104,40,.1);color:var(--attn);border:1px solid rgba(208,104,40,.25);}
 
 /* ── REP OWNERSHIP ROW ── */
@@ -304,6 +305,9 @@ body.execution-view .touched-by{display:flex;}
 .rp-ok{background:rgba(74,158,232,0.1);border:1px solid rgba(74,158,232,0.25);color:var(--info);}
 .rp-warn{background:var(--watch-bg);border:1px solid var(--watch-b);color:var(--watch);}
 .rp-alert{background:var(--urgent-bg);border:1px solid var(--urgent-b);color:var(--urgent);}
+.review-early{background:rgba(74,158,232,0.1);border:1px solid rgba(74,158,232,0.25);color:var(--info);}
+.review-mid{background:var(--watch-bg);border:1px solid var(--watch-b);color:var(--watch);}
+.review-late{background:var(--urgent-bg);border:1px solid var(--urgent-b);color:var(--urgent);}
 /* ── COMMIT STAGE ── */
 .commit-pill{display:flex;align-items:center;gap:4px;padding:3px 7px;border-radius:5px;background:var(--good-bg);border:1px solid var(--good-b);margin-bottom:3px;font-size:10px;color:var(--good);font-weight:500;}
 

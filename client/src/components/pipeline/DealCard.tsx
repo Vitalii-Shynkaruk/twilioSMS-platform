@@ -5,14 +5,14 @@ import type { Deal, CommitSubStatus } from '../../types';
 
 export const STAGE_COLORS: Record<string, string> = {
   NEW_LEAD: '#4A9EE8',
-  ENGAGED_INTERESTED: '#4A9EE8',
-  QUALIFIED: '#D06828',
-  SUBMITTED_IN_REVIEW: '#D4A940',
-  APPROVED_OFFERS: '#3AB97A',
+  ENGAGED_INTERESTED: '#9B72E8',
+  QUALIFIED: '#C9952A',
+  SUBMITTED_IN_REVIEW: '#4A9EE8',
+  APPROVED_OFFERS: '#FF8C00',
   COMMITTED_FUNDING: '#3AB97A',
   FUNDED: '#3AB97A',
-  NURTURE: '#536070',
-  CLOSED: '#3A4A5C',
+  NURTURE: '#4A9EE8',
+  CLOSED: '#536070',
 };
 
 export const PRODUCT_COLORS: Record<string, string> = {
@@ -236,6 +236,12 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
   const naRowCls = due.isOverdue ? 'na-od' : due.isToday ? 'na-td' : '';
   const naDotBg = due.isOverdue ? 'var(--urgent)' : due.isToday ? 'var(--watch)' : 'var(--text3)';
 
+  // Nurture urgency — compute outside JSX to avoid impure Date calls in render
+  const nurtureDaysUntil =
+    deal.stage === 'NURTURE' && deal.nurtureType === '30d' && deal.nextActionDue
+      ? Math.ceil((new Date(deal.nextActionDue).getTime() - new Date().getTime()) / 86400000)
+      : null;
+
   return (
     <div className={`card ${priority}`} onClick={onClick}>
       {/* Staleness bar */}
@@ -302,6 +308,37 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
           </div>
         )}
 
+        {/* Review pill (SUBMITTED_IN_REVIEW stage) */}
+        {deal.stage === 'SUBMITTED_IN_REVIEW' &&
+          deal.daysInStage > 0 &&
+          (() => {
+            const productDays: Record<string, number> = { MCA: 2, LOC: 2, EQUIPMENT: 5, HELOC: 30, SBA: 60, CRE: 60 };
+            const threshold = productDays[deal.productType || 'MCA'] || 2;
+            const pNote =
+              deal.productType === 'MCA' || deal.productType === 'LOC'
+                ? '2d flag'
+                : deal.productType === 'EQUIPMENT'
+                  ? '5d flag'
+                  : deal.productType === 'HELOC'
+                    ? '30d flag'
+                    : '60d flag';
+            if (deal.daysInStage >= threshold) {
+              return (
+                <div className="review-pill review-late">
+                  ⚠ Day {deal.daysInStage} in review · {pNote} — check lender status
+                </div>
+              );
+            }
+            if (deal.daysInStage >= threshold * 0.6) {
+              return (
+                <div className="review-pill review-mid">
+                  Day {deal.daysInStage} in review · {pNote}
+                </div>
+              );
+            }
+            return <div className="review-pill review-early">In underwriting · {pNote}</div>;
+          })()}
+
         {/* Returning client */}
         {deal.client && deal.client.fundingCount > 0 && (
           <div className="ret-pill">
@@ -364,6 +401,36 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
             {deal.lostReason && <div className="lost-r">&ldquo;{deal.lostReason}&rdquo;</div>}
           </>
         )}
+
+        {/* Nurture urgency pill */}
+        {nurtureDaysUntil !== null && nurtureDaysUntil > 0 && nurtureDaysUntil <= 7 && (
+          <div className="nu-urg">
+            <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--watch)', flexShrink: 0 }} />
+            <span className="nu-t">Touch due in {nurtureDaysUntil}d</span>
+          </div>
+        )}
+
+        {/* Nurture tags */}
+        {deal.stage === 'NURTURE' &&
+          deal.followUpType &&
+          (() => {
+            const NURTURE_TAG_CONFIG: Record<string, { label: string; icon: string; cls: string }> = {
+              renewal: { label: 'Renewal', icon: '♻', cls: 'nt-renewal' },
+              reengage: { label: 'Re-Engage', icon: '↩', cls: 'nt-re-engage' },
+              'waiting-docs': { label: 'Waiting Docs', icon: '📋', cls: 'nt-waiting-docs' },
+              timing: { label: 'Timing', icon: '⏰', cls: 'nt-timing' },
+              competitor: { label: 'Competitor', icon: '⚔', cls: 'nt-competitor' },
+            };
+            const cfg = NURTURE_TAG_CONFIG[deal.followUpType];
+            if (!cfg) return null;
+            return (
+              <div style={{ marginBottom: 3 }}>
+                <span className={`n-tag ${cfg.cls}`}>
+                  {cfg.icon} {cfg.label}
+                </span>
+              </div>
+            );
+          })()}
 
         {/* Committed sub-status track */}
         {deal.stage === 'COMMITTED_FUNDING' && deal.commitSubStatus && (
@@ -453,15 +520,18 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
 
         {/* Footer */}
         <div className="c-foot">
-          <span className={`stale-t ${stale.cls}`}>{stale.text}</span>
-          <span className="age-t">{deal.daysInStage}d</span>
-          {deal.assignedRep && (
-            <div className="touched-by">
+          <div className="touched-by">
+            {deal.assignedRep && (
               <div className="touched-av" style={{ background: repColor(deal.assignedRep) }}>
                 {repInitials(deal.assignedRep)}
               </div>
-            </div>
-          )}
+            )}
+            <span className={`stale-t ${stale.cls}`}>
+              {deal.assignedRep ? `${repInitials(deal.assignedRep)} · ` : ''}
+              {stale.text}
+            </span>
+          </div>
+          <span className="age-t">Age: {deal.daysInStage}d</span>
         </div>
       </div>
     </div>

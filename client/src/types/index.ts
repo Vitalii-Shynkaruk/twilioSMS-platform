@@ -289,6 +289,8 @@ export interface Deal {
   fundingEvents?: FundingEvent[];
   dealEvents?: DealEvent[];
   renewalTasks?: RenewalTask[];
+  coRepIds?: string[];
+  nurtureType?: string;
 }
 
 export interface Offer {

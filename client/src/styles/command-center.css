@@ -41,6 +41,7 @@ button { font-family: var(--mono); cursor: pointer; }
   height: 44px; padding: 0 18px;
   display: flex; align-items: center; justify-content: space-between;
 }
+.cc-title-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; flex-shrink: 0; }
 .logo-wrap { display: flex; align-items: center; gap: 10px; }
 .logo-sq { width: 24px; height: 24px; background: var(--gold); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--bg); }
 .logo-name { font-size: 13px; font-weight: 600; color: #e6edf3; }
@@ -68,6 +69,8 @@ button { font-family: var(--mono); cursor: pointer; }
 .clk { font-size: 10px; color: var(--muted); }
 .add-btn { background: var(--gold); border: none; color: var(--bg); font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 3px; transition: opacity .15s; }
 .add-btn:hover { opacity: .85; }
+.csv-import-btn { background: var(--faint); color: var(--text); border: 1px solid var(--border2); }
+.csv-import-btn:hover { border-color: var(--gold); color: var(--gold); }
 
 /* ─────────────────────────────────────────── LAYOUT */
 .page { padding: 8px 20px 14px; display: flex; flex-direction: column; gap: 10px; }

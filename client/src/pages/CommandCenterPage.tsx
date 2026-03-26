@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { commandCenterApi, repApi } from '../services/api';
+import { commandCenterApi, repApi, dealApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { CommandCenterMetrics, Rep, Deal } from '../types';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -244,6 +244,10 @@ export default function CommandCenterPage() {
   const [repTableSort, setRepTableSort] = useState<{ col: string; asc: boolean }>({ col: 'funded', asc: false });
   const [pmPeriod, setPmPeriod] = useState<'lifetime' | '30d'>('lifetime');
   const [clockMs, setClockMs] = useState(0);
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [rrqIndex, setRrqIndex] = useState(0);
 
   useEffect(() => {
     function tick() {
@@ -334,6 +338,12 @@ export default function CommandCenterPage() {
     staleTime: 60000,
   });
 
+  const { data: reviveQueue } = useQuery<Deal[]>({
+    queryKey: ['cc-revive-queue'],
+    queryFn: async () => (await dealApi.getReviveQueue()).data,
+    staleTime: 30000,
+  });
+
   // ── Animated values ──
 
   const animatedFunded = useCounterAnimation(metrics?.fundedMTD ?? 0);
@@ -391,13 +401,7 @@ export default function CommandCenterPage() {
     <div className="cc-root" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       {/* TOPBAR */}
       <div className="topbar">
-        <div className="logo-wrap">
-          <div className="logo-sq">S</div>
-          <div>
-            <div className="logo-name">SCL Capital</div>
-            <div className="logo-sub">Command Center</div>
-          </div>
-        </div>
+        <span className="cc-title-label">Command Center</span>
         <div className="tb-right">
           <span className={`role-label ${isAdmin ? 'rl-admin' : 'rl-rep'}`}>
             {isAdmin ? 'Operator Mode' : `Rep View \u2014 ${activeRepInitials}`}
@@ -455,7 +459,10 @@ export default function CommandCenterPage() {
             LIVE
           </div>
           <span className="clk">{clock}</span>
-          <button className="add-btn" onClick={() => toast('Lead intake form coming soon')}>
+          <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
+            ↑ Import
+          </button>
+          <button className="add-btn" onClick={() => toast('Lead intake form — coming soon')}>
             + Add Lead
           </button>
         </div>
@@ -666,6 +673,10 @@ export default function CommandCenterPage() {
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
               />
             </div>
+
+            {reviveQueue && reviveQueue.length > 0 && (
+              <RenewalQueueCard deals={reviveQueue} index={rrqIndex} onNav={setRrqIndex} />
+            )}
 
             {/* Intelligence Zone */}
             <div className="zone">
@@ -938,6 +949,33 @@ export default function CommandCenterPage() {
           </div>
         )}
       </div>
+
+      {/* CSV IMPORT MODAL */}
+      {csvModalOpen && (
+        <CSVImportModal
+          file={csvFile}
+          importing={csvImporting}
+          onFileSelect={setCsvFile}
+          onImport={async () => {
+            if (!csvFile) return;
+            setCsvImporting(true);
+            try {
+              await dealApi.importCSV(csvFile);
+              toast.success('CSV imported successfully');
+              setCsvModalOpen(false);
+              setCsvFile(null);
+            } catch {
+              toast.error('Import failed — check file format');
+            } finally {
+              setCsvImporting(false);
+            }
+          }}
+          onClose={() => {
+            setCsvModalOpen(false);
+            setCsvFile(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1745,6 +1783,213 @@ function SmsBar({ metrics, label }: { metrics: SmsMetricsData; label?: string })
         <div>
           <div className="si-v">{metrics.totalLeads}</div>
           <div className="si-k">Total leads</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── CSV IMPORT MODAL ──
+
+function CSVImportModal({
+  file,
+  importing,
+  onFileSelect,
+  onImport,
+  onClose,
+}: {
+  file: File | null;
+  importing: boolean;
+  onFileSelect: (f: File | null) => void;
+  onImport: () => void;
+  onClose: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const f = e.dataTransfer.files?.[0];
+      if (f && f.name.endsWith('.csv')) onFileSelect(f);
+    },
+    [onFileSelect],
+  );
+
+  return (
+    <div className="csv-modal open" onClick={onClose}>
+      <div className="csv-box" onClick={(e) => e.stopPropagation()}>
+        <div className="csv-title">Import Funded Deals</div>
+        <div className="csv-sub">
+          Upload a CSV with historical funded deals. Required columns: business_name, rep_name, product_type,
+          funded_amount, funded_date
+        </div>
+        <div className="csv-schema">
+          <div>
+            <span className="field">business_name</span> <span className="type">text</span>{' '}
+            <span className="req">required</span>
+          </div>
+          <div>
+            <span className="field">rep_name</span> <span className="type">text (initials)</span>{' '}
+            <span className="req">required</span>
+          </div>
+          <div>
+            <span className="field">product_type</span>{' '}
+            <span className="type">MCA | SBA | EQUIPMENT | HELOC | CRE | BRIDGE</span>
+          </div>
+          <div>
+            <span className="field">funded_amount</span> <span className="type">number</span>{' '}
+            <span className="req">required</span>
+          </div>
+          <div>
+            <span className="field">funded_date</span> <span className="type">YYYY-MM-DD</span>{' '}
+            <span className="req">required</span>
+          </div>
+        </div>
+        <div
+          className="csv-drop"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <div className="csv-drop-icon">{file ? '\u2705' : '\u2B06'}</div>
+          <div className="csv-drop-txt">{file ? file.name : 'Drop CSV here or click to browse'}</div>
+          <div className="csv-drop-sub">{file ? `${(file.size / 1024).toFixed(1)} KB` : '.csv files only'}</div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null;
+            onFileSelect(f);
+          }}
+        />
+        <div className="csv-acts">
+          <button className="csv-btn csv-cancel" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="csv-btn csv-import" disabled={!file || importing} onClick={onImport}>
+            {importing ? 'Importing\u2026' : 'Import'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── RENEWAL / REVIVE QUEUE CARD ──
+
+function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: number; onNav: (i: number) => void }) {
+  const clampedIndex = Math.min(index, deals.length - 1);
+  const deal = deals[clampedIndex];
+  if (!deal) return null;
+
+  function getReasonTag(d: Deal): { cls: string; label: string } {
+    if (d.stage === 'FUNDED') return { cls: 'rr-renewal', label: 'Renewal' };
+    if (d.stage === 'NURTURE') return { cls: 'rr-nurture', label: 'Nurture' };
+    if (d.stage === 'APPROVED_OFFERS') return { cls: 'rr-revive', label: 'Revive' };
+    if (d.stage === 'SUBMITTED_IN_REVIEW') return { cls: 'rr-stmts', label: 'Statements' };
+    return { cls: 'rr-expired', label: 'Expired' };
+  }
+
+  const reason = getReasonTag(deal);
+
+  return (
+    <div className="rrq-wrap">
+      <div className="rrq-header">
+        <div className="rrq-title-row">
+          <div className="rrq-icon">{'\uD83D\uDD01'}</div>
+          <div>
+            <div className="rrq-title">Renewal / Revive Queue</div>
+            <div className="rrq-sub">One deal at a time \u00b7 system-prioritized</div>
+          </div>
+        </div>
+        <div className="rrq-meta-row">
+          <div className="rrq-counter">
+            <strong>{clampedIndex + 1}</strong> of <strong>{deals.length}</strong>
+          </div>
+          <div className="rrq-progress-pills">
+            {deals.slice(0, 10).map((_, i) => (
+              <div
+                key={i}
+                className={`rrq-pill ${i < clampedIndex ? 'done' : i === clampedIndex ? 'current' : 'pending'}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="rrq-body">
+        <div className="rrq-card">
+          <div className={`rrq-reason-tag ${reason.cls}`}>{reason.label}</div>
+          <div className="rrq-deal-row">
+            <div>
+              <div className="rrq-deal-name">{deal.client?.businessName || 'Unknown'}</div>
+              <div className="rrq-deal-meta">
+                {deal.productType && <span className="rrq-meta-pill highlight">{deal.productType}</span>}
+                <span className="rrq-meta-pill">{STAGE_LABELS[deal.stage] || deal.stage}</span>
+                {deal.assignedRep && (
+                  <span className="rrq-meta-pill">
+                    {deal.assignedRep.initials ||
+                      (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
+                  </span>
+                )}
+                {deal.staleDays > 0 && <span className="rrq-meta-pill">{deal.staleDays}d idle</span>}
+              </div>
+            </div>
+            <div className="rrq-deal-amounts">
+              <div className="rrq-prior-amt">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</div>
+              <div className="rrq-prior-lbl">Prior amount</div>
+            </div>
+          </div>
+          <div className="rrq-detail-grid">
+            <div className="rrq-detail-cell">
+              <div className="rrq-detail-lbl">Stage</div>
+              <div className="rrq-detail-val">{STAGE_LABELS[deal.stage] || deal.stage}</div>
+            </div>
+            <div className="rrq-detail-cell">
+              <div className="rrq-detail-lbl">Days Idle</div>
+              <div className={`rrq-detail-val ${deal.staleDays > 30 ? 'warn' : 'ok'}`}>{deal.staleDays ?? 0}d</div>
+            </div>
+            <div className="rrq-detail-cell">
+              <div className="rrq-detail-lbl">Next Action</div>
+              <div className="rrq-detail-val neutral">{deal.nextAction || 'None set'}</div>
+            </div>
+          </div>
+          <div className="rrq-actions">
+            <button className="rrq-btn rrq-btn-primary" onClick={() => toast('Request Statements')}>
+              Request Statements
+            </button>
+            <button className="rrq-btn rrq-btn-call" onClick={() => toast('Call Now')}>
+              Call Now
+            </button>
+            <button className="rrq-btn rrq-btn-reopen" onClick={() => toast('Reopen')}>
+              Reopen
+            </button>
+            <button
+              className="rrq-btn rrq-btn-skip"
+              onClick={() => onNav(Math.min(clampedIndex + 1, deals.length - 1))}
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="rrq-nav">
+        <div className="rrq-nav-left">
+          <button className="rrq-nav-btn" disabled={clampedIndex === 0} onClick={() => onNav(clampedIndex - 1)}>
+            ← Prev
+          </button>
+          <button
+            className="rrq-nav-btn"
+            disabled={clampedIndex >= deals.length - 1}
+            onClick={() => onNav(clampedIndex + 1)}
+          >
+            Next →
+          </button>
+          <span className="rrq-nav-pos">
+            <strong>{clampedIndex + 1}</strong> / {deals.length}
+          </span>
         </div>
       </div>
     </div>

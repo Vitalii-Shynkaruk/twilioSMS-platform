@@ -36,7 +36,7 @@ ssh root@198.199.91.174
 # Password: 7Securecreditlines
 
 # 2. Pull latest code
-cd /root/twilio-sms-platform
+cd /opt/sms-platform
 git pull origin deploy/mysql-hosting
 
 # 3. Build frontend
@@ -53,7 +53,7 @@ pm2 restart all
 
 ```bash
 sshpass -p '7Securecreditlines' ssh -o StrictHostKeyChecking=no root@198.199.91.174 \
-  "cd /root/twilio-sms-platform && git pull origin deploy/mysql-hosting && cd client && npm run build && cd ../server && npm run build && cd .. && pm2 restart all"
+  "cd /opt/sms-platform && git pull origin deploy/mysql-hosting && cd client && npm run build && cd ../server && npm run build && cd .. && pm2 restart all"
 ```
 
 ---
@@ -61,7 +61,7 @@ sshpass -p '7Securecreditlines' ssh -o StrictHostKeyChecking=no root@198.199.91.
 ## Server Layout
 
 ```
-/root/twilio-sms-platform/        # Project root
+/opt/sms-platform/        # Project root
   ├── client/                      # React frontend source
   │   └── dist/                    # Built static files (served by Nginx)
   ├── server/                      # Express backend source
@@ -116,7 +116,7 @@ systemctl reload nginx  # Apply config changes
 
 The Nginx config serves:
 
-- **Static files** from `/root/twilio-sms-platform/client/dist/`
+- **Static files** from `/opt/sms-platform/client/dist/`
 - **API proxy** to `http://127.0.0.1:3001` for `/api/` and `/socket.io/` routes
 - **SSL** via Let's Encrypt (auto-renewal via certbot)
 
@@ -129,7 +129,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/app.sclcapital.io/privkey.pem;
 
     # Static frontend
-    root /root/twilio-sms-platform/client/dist;
+    root /opt/sms-platform/client/dist;
     index index.html;
 
     # API proxy
@@ -169,7 +169,7 @@ Configure these in Twilio Console → Messaging Service → Integration:
 
 ## Environment Variables
 
-Key environment variables in `/root/twilio-sms-platform/server/.env`:
+Key environment variables in `/opt/sms-platform/server/.env`:
 
 | Variable                        | Description                               |
 | ------------------------------- | ----------------------------------------- |
@@ -203,7 +203,7 @@ certbot certificates       # Check current certs
 ### Prisma Migrations
 
 ```bash
-cd /root/twilio-sms-platform/server
+cd /opt/sms-platform/server
 npx prisma db push         # Push schema changes
 npx prisma generate        # Regenerate client
 npx prisma studio          # Open DB browser (dev only)

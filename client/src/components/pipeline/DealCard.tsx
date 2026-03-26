@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import type { Deal, CommitSubStatus } from '../../types';
+import { useAuthStore } from '../../stores/authStore';
 
 // ─── Exported constants (used by DealPanel, CommandCenter, etc.) ───
 
@@ -35,13 +36,23 @@ export function formatCurrency(amount?: number | null): string {
 // ─── Internal helpers ───
 
 const PRODUCT_TAG: Record<string, { cls: string; label: string }> = {
-  MCA: { cls: 't-mca', label: '⚡MCA' },
+  MCA: { cls: 't-mca', label: 'MCA' },
   LOC: { cls: 't-con', label: 'LOC' },
-  EQUIPMENT: { cls: 't-eq', label: '🔧Equip' },
-  HELOC: { cls: 't-hel', label: '🏠HELOC' },
-  SBA: { cls: 't-sba', label: '🏛SBA' },
-  CRE: { cls: 't-sba', label: '🏢CRE' },
+  EQUIPMENT: { cls: 't-eq', label: 'Equipment' },
+  HELOC: { cls: 't-hel', label: 'HELOC' },
+  SBA: { cls: 't-sba', label: 'SBA' },
+  CRE: { cls: 't-sba', label: 'CRE' },
   BRIDGE: { cls: 't-con', label: 'Bridge' },
+};
+
+const PRODUCT_BADGE: Record<string, { icon: string; color: string; bg: string }> = {
+  MCA: { icon: '⚡', color: '#C9952A', bg: 'rgba(201,149,42,0.15)' },
+  LOC: { icon: '💳', color: '#4A9EE8', bg: 'rgba(74,158,232,0.15)' },
+  HELOC: { icon: '🏠', color: '#9B72E8', bg: 'rgba(155,114,232,0.15)' },
+  EQUIPMENT: { icon: '🔧', color: '#3AB97A', bg: 'rgba(58,185,122,0.15)' },
+  SBA: { icon: '🏛', color: '#3AB97A', bg: 'rgba(58,185,122,0.15)' },
+  CRE: { icon: '🏢', color: '#D06828', bg: 'rgba(208,104,40,0.15)' },
+  BRIDGE: { icon: '🌉', color: '#D4A940', bg: 'rgba(212,169,64,0.15)' },
 };
 
 const REP_COLORS = ['#C9952A', '#3AB97A', '#4A9EE8', '#9B72E8', '#D06828', '#E24B4A'];
@@ -230,6 +241,7 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
   const sbar = staleBarCls(deal.staleDays);
   const stale = staleTxt(deal.staleDays);
   const due = dueInfo(deal.nextActionDue);
+  const { user } = useAuthStore();
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
 
@@ -241,6 +253,13 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
     deal.stage === 'NURTURE' && deal.nurtureType === '30d' && deal.nextActionDue
       ? Math.ceil((new Date(deal.nextActionDue).getTime() - new Date().getTime()) / 86400000)
       : null;
+
+  // Co-rep badges
+  const assistIds: string[] = (deal.assistingRepIds as string[]) || [];
+  const hasAssists = assistIds.length > 0;
+  const meId = user?.id;
+  const imPrimary = meId === deal.assignedRepId;
+  const imAssisting = meId && assistIds.includes(meId);
 
   return (
     <div className={`card ${priority}`} onClick={onClick}>
@@ -261,17 +280,20 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
           </div>
         </div>
 
-        {/* Product tag */}
-        {deal.productType && (
-          <div className="tags">
-            <span className={`t ${PRODUCT_TAG[deal.productType]?.cls || 't-mca'}`}>
-              {PRODUCT_TAG[deal.productType]?.label || deal.productType}
-            </span>
-            {deal.dealAmount && deal.stage !== 'FUNDED' && !bestOffer && (
-              <span className="t t-offer">{formatCurrency(deal.dealAmount)}</span>
-            )}
-          </div>
-        )}
+        {/* Product badge + days in stage row */}
+        {deal.productType &&
+          (() => {
+            const pb = PRODUCT_BADGE[deal.productType];
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3, flexWrap: 'wrap' }}>
+                {pb && (
+                  <span className="prod-badge" style={{ background: pb.bg, color: pb.color }}>
+                    {pb.icon} {PRODUCT_TAG[deal.productType]?.label || deal.productType}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
         {/* HOT reason row */}
         {deal.isHot && (
@@ -490,8 +512,11 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
                 {repInitials(deal.assignedRep)}
               </div>
               <span className="rep-primary-name">{deal.assignedRep.firstName}</span>
-              <span className="rep-primary-label">Primary</span>
+              <span className="rep-primary-label">Primary{hasAssists ? ` · ${assistIds.length} assist` : ''}</span>
             </div>
+            {/* Role badge */}
+            {imAssisting && !imPrimary && <span className="assist-badge">↗ You are assisting</span>}
+            {imPrimary && hasAssists && <span className="shared-badge">👥 Shared deal</span>}
           </div>
         )}
 

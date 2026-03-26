@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dealApi } from '../../services/api';
+import { dealApi, repApi } from '../../services/api';
 import {
   X,
   Phone,
@@ -16,8 +16,9 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
-import type { Deal, DealStage } from '../../types';
+import type { Deal, DealStage, Rep, Offer, ProductType } from '../../types';
 import { STAGE_COLORS, formatCurrency } from './DealCard';
+import { useAuthStore } from '../../stores/authStore';
 
 const STAGE_LABELS: Record<DealStage, string> = {
   NEW_LEAD: 'New Lead',
@@ -43,7 +44,11 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showFundedModal, setShowFundedModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  const [showNQModal, setShowNQModal] = useState(false);
+  const [showEditFundModal, setShowEditFundModal] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
   const { data: deal, isLoading } = useQuery({
     queryKey: ['deal', dealId],
@@ -99,6 +104,15 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
       queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal marked as funded!');
+    },
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: (data: any) => dealApi.shareDeal(dealId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      toast.success('Co-rep updated');
     },
   });
 
@@ -178,7 +192,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
             )}
           </div>
 
-          {/* Secondary actions: Follow-Up, Call, Text */}
+          {/* Secondary actions */}
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => setShowFollowUpModal(true)}
@@ -186,6 +200,12 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
             >
               <Calendar className="w-3 h-3 inline mr-0.5" />
               Follow-Up
+            </button>
+            <button
+              onClick={() => setShowNQModal(true)}
+              className="px-2.5 py-1 text-[10px] font-medium rounded border border-[var(--border-primary)] text-[var(--text-muted)] hover:text-red-400 transition"
+            >
+              Lost / NQ
             </button>
             {deal.client?.phone && (
               <>
@@ -242,7 +262,15 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {tab === 'details' && <DetailsTab deal={deal} onUpdate={(data: any) => updateMutation.mutate(data)} />}
+          {tab === 'details' && (
+            <DetailsTab
+              deal={deal}
+              onUpdate={(data: any) => updateMutation.mutate(data)}
+              isAdmin={isAdmin}
+              onShare={(data: any) => shareMutation.mutate(data)}
+              onEditFundEvent={(feId: string) => setShowEditFundModal(feId)}
+            />
+          )}
           {tab === 'activity' && <ActivityTab deal={deal} />}
           {tab === 'offers' && <OffersTab deal={deal} onAddOffer={() => setShowOfferModal(true)} />}
         </div>
@@ -274,10 +302,33 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
         )}
         {showFollowUpModal && (
           <ScheduleFollowUpModal
+            deal={deal}
             onClose={() => setShowFollowUpModal(false)}
             onSubmit={(data) => {
               updateMutation.mutate(data);
               setShowFollowUpModal(false);
+            }}
+          />
+        )}
+        {showNQModal && (
+          <NQCloseModal
+            deal={deal}
+            onClose={() => setShowNQModal(false)}
+            onSubmit={(data) => {
+              moveMutation.mutate(data);
+              setShowNQModal(false);
+            }}
+          />
+        )}
+        {showEditFundModal && (
+          <EditFundEventModal
+            fundEventId={showEditFundModal}
+            deal={deal}
+            onClose={() => setShowEditFundModal(null)}
+            onSave={() => {
+              queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+              queryClient.invalidateQueries({ queryKey: ['deals'] });
+              setShowEditFundModal(null);
             }}
           />
         )}
@@ -287,7 +338,19 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 }
 
 // ─── Details Tab ───
-function DetailsTab({ deal, onUpdate }: { deal: Deal; onUpdate: (data: any) => void }) {
+function DetailsTab({
+  deal,
+  onUpdate,
+  isAdmin,
+  onShare,
+  onEditFundEvent,
+}: {
+  deal: Deal;
+  onUpdate: (data: any) => void;
+  isAdmin: boolean;
+  onShare: (data: any) => void;
+  onEditFundEvent: (feId: string) => void;
+}) {
   return (
     <div className="space-y-4">
       {/* Client info */}
@@ -333,22 +396,8 @@ function DetailsTab({ deal, onUpdate }: { deal: Deal; onUpdate: (data: any) => v
         {deal.lender && <Field label="Lender" value={deal.lender} />}
       </Section>
 
-      {/* Rep */}
-      <Section title="Rep">
-        <div className="flex items-center gap-2">
-          {deal.assignedRep && (
-            <div
-              className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-              style={{ backgroundColor: deal.assignedRep.avatarColor || '#6366f1' }}
-            >
-              {deal.assignedRep.initials || deal.assignedRep.firstName[0]}
-            </div>
-          )}
-          <span className="text-sm text-[var(--text-primary)]">
-            {deal.assignedRep ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}` : 'Unassigned'}
-          </span>
-        </div>
-      </Section>
+      {/* Rep Ownership — with co-rep editor for admin */}
+      <RepOwnershipSection deal={deal} isAdmin={isAdmin} onShare={onShare} onUpdate={onUpdate} />
 
       {/* Notes */}
       <Section title="Notes">
@@ -364,6 +413,32 @@ function DetailsTab({ deal, onUpdate }: { deal: Deal; onUpdate: (data: any) => v
           placeholder="Add notes..."
         />
       </Section>
+
+      {/* Funding events with edit links */}
+      {deal.fundingEvents && deal.fundingEvents.length > 0 && (
+        <Section title="Funding Events">
+          {deal.fundingEvents.map((fe) => (
+            <div
+              key={fe.id}
+              className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] mb-2"
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-semibold text-green-400">{formatCurrency(fe.amountFunded)}</span>
+                <button
+                  onClick={() => onEditFundEvent(fe.id)}
+                  className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] cursor-pointer"
+                >
+                  Edit
+                </button>
+              </div>
+              <div className="text-[10px] text-[var(--text-muted)] mt-1">
+                {fe.lender && <span>{fe.lender} · </span>}
+                {fe.fundedDate && <span>{new Date(fe.fundedDate).toLocaleDateString()}</span>}
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
 
       {/* Renewal tasks */}
       {deal.renewalTasks && deal.renewalTasks.length > 0 && (
@@ -510,52 +585,42 @@ function ActionModal({
 
   return (
     <ModalOverlay title="Complete Action" onClose={onClose}>
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Action Completed</label>
-          <select
-            value={actionType}
-            onChange={(e) => setActionType(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          >
-            <option value="">Select action type...</option>
-            <option value="call">Call</option>
-            <option value="email">Email</option>
-            <option value="sms">SMS</option>
-            <option value="docs_sent">Docs Sent</option>
-            <option value="docs_received">Docs Received</option>
-            <option value="follow_up">Follow Up</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Next Action *</label>
-          <input
-            value={nextAction}
-            onChange={(e) => setNextAction(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-            placeholder="e.g. Follow up with lender"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Due Date *</label>
-          <input
-            type="date"
-            value={nextActionDue}
-            onChange={(e) => setNextActionDue(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Note</label>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)] resize-none"
-          />
-        </div>
+      <div className="ff">
+        <div className="fl">Action Completed</div>
+        <select value={actionType} onChange={(e) => setActionType(e.target.value)} className="fsel">
+          <option value="">Select action type...</option>
+          <option value="call">Call</option>
+          <option value="email">Email</option>
+          <option value="sms">SMS</option>
+          <option value="docs_sent">Docs Sent</option>
+          <option value="docs_received">Docs Received</option>
+          <option value="follow_up">Follow Up</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div className="ff">
+        <div className="fl">Next Action *</div>
+        <input
+          value={nextAction}
+          onChange={(e) => setNextAction(e.target.value)}
+          className="fi"
+          placeholder="e.g. Follow up with lender"
+        />
+      </div>
+      <div className="ff">
+        <div className="fl">Due Date *</div>
+        <input type="date" value={nextActionDue} onChange={(e) => setNextActionDue(e.target.value)} className="fi" />
+      </div>
+      <div className="ff">
+        <div className="fl">Note</div>
+        <input value={note} onChange={(e) => setNote(e.target.value)} className="fi" />
+      </div>
+      <div className="mfoot">
+        <button className="btn-c" onClick={onClose}>
+          Cancel
+        </button>
         <button
+          className="btn-s"
           onClick={() => {
             if (!nextAction || !nextActionDue) {
               toast.error('Next action and due date are required');
@@ -563,8 +628,6 @@ function ActionModal({
             }
             onSubmit({ actionType, nextAction, nextActionDue, note });
           }}
-          disabled={!nextAction || !nextActionDue}
-          className="w-full py-2 rounded-lg bg-scl-500 text-white text-sm font-medium hover:bg-scl-600 disabled:opacity-50 transition"
         >
           Complete & Set Next
         </button>
@@ -594,66 +657,47 @@ function MoveModal({ deal, onClose, onSubmit }: { deal: Deal; onClose: () => voi
 
   return (
     <ModalOverlay title="Move Deal" onClose={onClose}>
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Move to Stage</label>
-          <select
-            value={targetStage}
-            onChange={(e) => setTargetStage(e.target.value as DealStage)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          >
-            <option value="">Select stage...</option>
-            {stages
-              .filter((s) => s.value !== deal.stage)
-              .map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-          </select>
-        </div>
-        {targetStage === 'NURTURE' && (
-          <>
-            <div>
-              <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Lost Reason *</label>
-              <input
-                value={lostReason}
-                onChange={(e) => setLostReason(e.target.value)}
-                className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Follow-Up Date *</label>
-              <input
-                type="date"
-                value={followUpDate}
-                onChange={(e) => setFollowUpDate(e.target.value)}
-                className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-              />
-            </div>
-          </>
-        )}
-        {targetStage === 'CLOSED' && (
-          <div>
-            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Disqualification Reason *</label>
-            <input
-              value={disqualReason}
-              onChange={(e) => setDisqualReason(e.target.value)}
-              className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-            />
+      <div className="ff">
+        <div className="fl">Move to Stage</div>
+        <select value={targetStage} onChange={(e) => setTargetStage(e.target.value as DealStage)} className="fsel">
+          <option value="">Select stage...</option>
+          {stages
+            .filter((s) => s.value !== deal.stage)
+            .map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+        </select>
+      </div>
+      {targetStage === 'NURTURE' && (
+        <>
+          <div className="ff">
+            <div className="fl">Lost Reason *</div>
+            <input value={lostReason} onChange={(e) => setLostReason(e.target.value)} className="fi" />
           </div>
-        )}
+          <div className="ff">
+            <div className="fl">Follow-Up Date *</div>
+            <input type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} className="fi" />
+          </div>
+        </>
+      )}
+      {targetStage === 'CLOSED' && (
+        <div className="ff">
+          <div className="fl">Disqualification Reason *</div>
+          <input value={disqualReason} onChange={(e) => setDisqualReason(e.target.value)} className="fi" />
+        </div>
+      )}
+      <div className="mfoot">
+        <button className="btn-c" onClick={onClose}>
+          Cancel
+        </button>
         <button
+          className="btn-s"
           onClick={() => {
             if (!targetStage) return;
             onSubmit({ stage: targetStage, lostReason, followUpDate, disqualReason });
           }}
-          disabled={
-            !targetStage ||
-            (targetStage === 'NURTURE' && (!lostReason || !followUpDate)) ||
-            (targetStage === 'CLOSED' && !disqualReason)
-          }
-          className="w-full py-2 rounded-lg bg-scl-500 text-white text-sm font-medium hover:bg-scl-600 disabled:opacity-50 transition"
         >
           Move Deal
         </button>
@@ -671,44 +715,34 @@ function OfferModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (dat
 
   return (
     <ModalOverlay title="Add Offer" onClose={onClose}>
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Lender Name *</label>
-          <input
-            value={lenderName}
-            onChange={(e) => setLenderName(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Amount *</label>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-            placeholder="50000"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Terms</label>
-          <textarea
-            value={terms}
-            onChange={(e) => setTerms(e.target.value)}
-            rows={2}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)] resize-none"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Expiry (days)</label>
-          <input
-            type="number"
-            value={expiryDays}
-            onChange={(e) => setExpiryDays(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          />
-        </div>
+      <div className="ff">
+        <div className="fl">Lender Name *</div>
+        <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} className="fi" />
+      </div>
+      <div className="ff">
+        <div className="fl">Amount *</div>
+        <input
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="fi"
+          placeholder="50000"
+        />
+      </div>
+      <div className="ff">
+        <div className="fl">Terms</div>
+        <input value={terms} onChange={(e) => setTerms(e.target.value)} className="fi" />
+      </div>
+      <div className="ff">
+        <div className="fl">Expiry (days)</div>
+        <input type="number" value={expiryDays} onChange={(e) => setExpiryDays(e.target.value)} className="fi" />
+      </div>
+      <div className="mfoot">
+        <button className="btn-c" onClick={onClose}>
+          Cancel
+        </button>
         <button
+          className="btn-s"
           onClick={() => {
             if (!lenderName || !amount) {
               toast.error('Lender name and amount are required');
@@ -721,8 +755,6 @@ function OfferModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (dat
               expiryDays: expiryDays ? parseInt(expiryDays) : undefined,
             });
           }}
-          disabled={!lenderName || !amount}
-          className="w-full py-2 rounded-lg bg-scl-500 text-white text-sm font-medium hover:bg-scl-600 disabled:opacity-50 transition"
         >
           Add Offer
         </button>
@@ -731,7 +763,7 @@ function OfferModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (dat
   );
 }
 
-// ─── Mark Funded Modal (Rule #4) ───
+// ─── Mark Funded Modal (C6 — prototype match) ───
 function MarkFundedModal({
   deal,
   onClose,
@@ -741,189 +773,738 @@ function MarkFundedModal({
   onClose: () => void;
   onSubmit: (data: any) => void;
 }) {
-  const [amountFunded, setAmountFunded] = useState(deal.dealAmount?.toString() || '');
-  const [lender, setLender] = useState('');
+  const offers = deal.offers || [];
+  const firstOffer = offers[0];
+  const [amountFunded, setAmountFunded] = useState(
+    firstOffer ? String(firstOffer.amount) : deal.dealAmount?.toString() || '',
+  );
+  const [lender, setLender] = useState(firstOffer?.lenderName || '');
   const [fundedDate, setFundedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [termMonths, setTermMonths] = useState('');
+  const [termMonths, setTermMonths] = useState(firstOffer?.terms?.match(/(\d+)\s*mo/)?.[1] || '');
   const [rate, setRate] = useState('');
+  const [productType, setProductType] = useState<string>(deal.productType || 'MCA');
   const [notes, setNotes] = useState('');
 
+  const milestones = useMemo(() => {
+    const months = parseInt(termMonths);
+    if (!fundedDate || !months) return null;
+    return computeRenewalDates(fundedDate, months);
+  }, [fundedDate, termMonths]);
+
+  function prefillFromOffer(offer: Offer) {
+    setAmountFunded(String(offer.amount));
+    setLender(offer.lenderName);
+    if (offer.productType) setProductType(offer.productType);
+    const termMatch = offer.terms?.match(/(\d+)\s*mo/);
+    if (termMatch) setTermMonths(termMatch[1]);
+  }
+
   return (
-    <ModalOverlay title="Mark as Funded" onClose={onClose}>
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Amount Funded *</label>
+    <div className="modal-ov open" onClick={onClose}>
+      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          Mark as Funded{' '}
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        {/* Offer picker if multiple */}
+        {offers.length > 1 && (
+          <div style={{ marginBottom: 12 }}>
+            <div className="fl" style={{ marginBottom: 6, fontWeight: 500 }}>
+              Which offer was accepted?
+            </div>
+            {offers.map((o) => (
+              <div
+                key={o.id}
+                onClick={() => prefillFromOffer(o)}
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border2)',
+                  background: 'var(--bg4)',
+                  marginBottom: 4,
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span>
+                  {o.lenderName} · {o.terms || '—'}
+                </span>
+                <span style={{ color: 'var(--good)', fontWeight: 600 }}>{formatCurrency(o.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="fr">
+          <div className="ff">
+            <div className="fl">Funded date *</div>
+            <input className="fi" type="date" value={fundedDate} onChange={(e) => setFundedDate(e.target.value)} />
+          </div>
+          <div className="ff">
+            <div className="fl">Amount funded *</div>
             <input
-              type="number"
+              className="fi"
               value={amountFunded}
               onChange={(e) => setAmountFunded(e.target.value)}
-              className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Funded Date *</label>
-            <input
-              type="date"
-              value={fundedDate}
-              onChange={(e) => setFundedDate(e.target.value)}
-              className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
+              placeholder="50000"
             />
           </div>
         </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Funder / Lender</label>
-          <input
-            value={lender}
-            onChange={(e) => setLender(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Term (months)</label>
+        <div className="fr">
+          <div className="ff">
+            <div className="fl">Funder *</div>
             <input
-              type="number"
+              className="fi"
+              value={lender}
+              onChange={(e) => setLender(e.target.value)}
+              placeholder="e.g. OnDeck"
+            />
+          </div>
+          <div className="ff">
+            <div className="fl">Term (months) *</div>
+            <input
+              className="fi"
               value={termMonths}
               onChange={(e) => setTermMonths(e.target.value)}
-              className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Rate / Factor</label>
-            <input
-              type="number"
-              step="0.01"
-              value={rate}
-              onChange={(e) => setRate(e.target.value)}
-              className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
+              placeholder="e.g. 12"
             />
           </div>
         </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Notes</label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)] resize-none"
-          />
+        <div className="fr">
+          <div className="ff">
+            <div className="fl">Rate / factor</div>
+            <input className="fi" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="e.g. 1.28" />
+          </div>
+          <div className="ff">
+            <div className="fl">Product</div>
+            <select className="fsel" value={productType} onChange={(e) => setProductType(e.target.value)}>
+              <option>MCA</option>
+              <option>SBA</option>
+              <option>HELOC</option>
+              <option>Equipment</option>
+              <option>Conventional</option>
+            </select>
+          </div>
+        </div>
+        <div className="ff">
+          <div className="fl">Notes</div>
+          <input className="fi" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any deal notes" />
         </div>
 
         {/* Renewal milestones preview */}
-        <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)]">
-          <p className="text-[10px] font-semibold text-[var(--text-muted)] uppercase mb-1">
-            Auto-created renewal milestones:
-          </p>
-          <div className="text-[10px] text-[var(--text-secondary)] space-y-0.5">
-            <p>• 35-day check-in</p>
-            <p>• Midpoint review</p>
-            <p>• 30-day payoff approach</p>
+        <div className="renew-info">
+          {milestones ? (
+            <>
+              Milestones:
+              <br />· Check-in: {milestones.checkin}
+              <br />· Midpoint renewal: {milestones.midpoint}
+              <br />· 30-day payoff warning: {milestones.warn}
+              <br />· Payoff: {milestones.payoff}
+            </>
+          ) : (
+            'Enter funded date and term to see auto-renewal milestones.'
+          )}
+        </div>
+
+        <div className="mfoot">
+          <button className="btn-c" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-s green-s"
+            onClick={() => {
+              const amt = parseFloat(String(amountFunded).replace(/[^0-9.]/g, ''));
+              if (!amt || !fundedDate || !lender) {
+                toast.error('Amount, date and funder are required');
+                return;
+              }
+              onSubmit({
+                amountFunded: amt,
+                productType: productType || undefined,
+                lender: lender || undefined,
+                fundedDate: fundedDate || undefined,
+                termMonths: termMonths ? parseInt(termMonths) : undefined,
+                rate: rate ? parseFloat(rate) : undefined,
+                notes: notes || undefined,
+              });
+              onClose();
+            }}
+          >
+            Confirm Funded ✓
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Schedule Follow-Up Modal (C4 — prototype match) ───
+const FU_SMART_DAYS: Record<string, number[]> = {
+  MCA: [90, 120, 150],
+  LOC: [90, 120, 150],
+  HELOC: [120, 150, 180],
+  Equipment: [90, 120, 150],
+  EQUIPMENT: [90, 120, 150],
+  SBA: [150, 180, 365],
+  CRE: [150, 180, 365],
+};
+
+const FU_TYPES: { key: string; icon: string; label: string; sub: string }[] = [
+  { key: 'renewal', icon: '♻️', label: 'Renewal', sub: 'Funded elsewhere' },
+  { key: 'nurture', icon: '🌱', label: 'Nurture', sub: 'Not now' },
+  { key: 'statement', icon: '📄', label: 'Statement Refresh', sub: 'Need updated docs' },
+  { key: 'timing', icon: '⏰', label: 'Check Timing', sub: 'Not the right time' },
+  { key: 'reengage', icon: '↩', label: 'Re-engage', sub: 'Gone quiet' },
+];
+
+function addDaysISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+function daysFromToday(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+function fmtDateLabel(dateStr: string): string {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function ScheduleFollowUpModal({
+  deal,
+  onClose,
+  onSubmit,
+}: {
+  deal: Deal;
+  onClose: () => void;
+  onSubmit: (data: any) => void;
+}) {
+  const [fuType, setFuType] = useState(deal.followUpType || '');
+  const [fuDate, setFuDate] = useState(deal.followUpDate?.split('T')[0] || '');
+  const [fuNote, setFuNote] = useState(deal.followUpNote || '');
+  const [extDate, setExtDate] = useState(deal.externalFundedDate?.split('T')[0] || '');
+
+  const datePreview = useMemo(() => {
+    if (!fuDate) return '';
+    const days = daysFromToday(fuDate);
+    if (days < 0) return '⚠ This date is in the past';
+    if (days === 0) return `${fmtDateLabel(fuDate)} · Due today`;
+    return `${fmtDateLabel(fuDate)} · ${days} days from today`;
+  }, [fuDate]);
+
+  const smartSuggestions = useMemo(() => {
+    if (fuType !== 'renewal' || !extDate) return null;
+    const prod = deal.productType || 'MCA';
+    const days = FU_SMART_DAYS[prod] || [90, 120, 150];
+    const base = new Date(extDate + 'T00:00:00');
+    return days.map((n) => {
+      const d = new Date(base);
+      d.setDate(d.getDate() + n);
+      return {
+        days: n,
+        label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        iso: d.toISOString().split('T')[0],
+      };
+    });
+  }, [fuType, extDate, deal.productType]);
+
+  return (
+    <div className="modal-ov open" onClick={onClose}>
+      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          📅 Schedule Follow-Up{' '}
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 12 }}>
+          Every deal without a close date becomes a scheduled future opportunity. Nothing dies — it gets rescheduled.
+        </div>
+
+        {/* Follow-up type grid */}
+        <div className="ff">
+          <div className="fl">Follow-up type *</div>
+          <div className="fu-type-grid">
+            {FU_TYPES.map((t) => (
+              <button
+                key={t.key}
+                className={clsx('fu-type-btn', fuType === t.key && `sel sel-${t.key}`)}
+                onClick={() => setFuType(t.key)}
+              >
+                {t.icon} {t.label}
+                <br />
+                <span style={{ fontSize: 9, fontWeight: 400 }}>{t.sub}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        <button
-          onClick={() => {
-            if (!amountFunded) {
-              toast.error('Amount is required');
-              return;
-            }
-            onSubmit({
-              amountFunded: parseFloat(amountFunded),
-              productType: deal.productType,
-              lender: lender || undefined,
-              fundedDate: fundedDate || undefined,
-              termMonths: termMonths ? parseInt(termMonths) : undefined,
-              rate: rate ? parseFloat(rate) : undefined,
-              notes: notes || undefined,
-            });
-            onClose();
-          }}
-          disabled={!amountFunded}
-          className="w-full py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition"
-        >
-          <DollarSign className="w-4 h-4 inline mr-1" />
-          Confirm Funding
-        </button>
+        {/* External funded date — only for renewal */}
+        {fuType === 'renewal' && (
+          <div className="ff">
+            <div className="fl">
+              External funded date <span style={{ color: 'var(--text3)' }}>(if client funded elsewhere)</span>
+            </div>
+            <input className="fi" type="date" value={extDate} onChange={(e) => setExtDate(e.target.value)} />
+          </div>
+        )}
+
+        {/* Smart suggestion */}
+        {smartSuggestions && (
+          <div className="smart-suggest show">
+            💡 Smart suggestions for {deal.productType || 'MCA'}:{' '}
+            {smartSuggestions.map((s, i) => (
+              <span key={s.days}>
+                {i > 0 && ' · '}
+                <strong onClick={() => setFuDate(s.iso)} style={{ cursor: 'pointer', textDecoration: 'underline' }}>
+                  {s.label} ({s.days}d)
+                </strong>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Date + quick buttons */}
+        <div className="ff">
+          <div className="fl">Follow-up date *</div>
+          <div className="fu-quick-btns">
+            {[30, 60, 90, 120, 150, 180].map((d) => (
+              <button key={d} className="fu-quick" onClick={() => setFuDate(addDaysISO(d))}>
+                {d === 180 ? '6 months' : `${d} days`}
+              </button>
+            ))}
+          </div>
+          <input className="fi" type="date" value={fuDate} onChange={(e) => setFuDate(e.target.value)} />
+          {fuDate && (
+            <div
+              style={{
+                fontSize: 10,
+                color: daysFromToday(fuDate) < 0 ? 'var(--urgent)' : 'var(--text3)',
+                marginTop: 4,
+              }}
+            >
+              {datePreview}
+            </div>
+          )}
+        </div>
+
+        {/* Note */}
+        <div className="ff">
+          <div className="fl">
+            Note <span style={{ color: 'var(--text3)' }}>(required — no vague notes)</span>
+          </div>
+          <input
+            className="fi"
+            value={fuNote}
+            onChange={(e) => setFuNote(e.target.value)}
+            placeholder="e.g. Funded with OnDeck in March, check back in 90 days for renewal"
+          />
+        </div>
+
+        <div className="mfoot">
+          <button className="btn-c" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-s"
+            onClick={() => {
+              if (!fuType) {
+                toast.error('Select a follow-up type');
+                return;
+              }
+              if (!fuDate) {
+                toast.error('Follow-up date is required');
+                return;
+              }
+              if (daysFromToday(fuDate) < 0) {
+                toast.error('Follow-up date cannot be in the past');
+                return;
+              }
+              if (!fuNote.trim()) {
+                toast.error('A note is required — no vague scheduling');
+                return;
+              }
+              onSubmit({
+                followUpType: fuType,
+                followUpDate: fuDate,
+                followUpNote: fuNote.trim(),
+                ...(extDate ? { externalFundedDate: extDate } : {}),
+              });
+            }}
+          >
+            📅 Schedule Follow-Up
+          </button>
+        </div>
       </div>
-    </ModalOverlay>
+    </div>
   );
 }
 
-// ─── Schedule Follow-Up Modal (Rule #12: type + date + note ALL required) ───
-function ScheduleFollowUpModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (data: any) => void }) {
-  const [followUpType, setFollowUpType] = useState('');
-  const [followUpDate, setFollowUpDate] = useState('');
-  const [followUpNote, setFollowUpNote] = useState('');
+// ─── NQ / Close Modal (C5 — prototype match) ───
+const LOST_REASONS = ['Went with competitor', 'Timing issue', 'Declined all offers', 'No response', 'Other'];
+const NQ_REASONS = ['Not eligible', 'Declined — credit', 'Declined — revenue', 'Bad lead', 'Do not contact'];
+
+function NQCloseModal({
+  deal: _deal,
+  onClose,
+  onSubmit,
+}: {
+  deal: Deal;
+  onClose: () => void;
+  onSubmit: (data: any) => void;
+}) {
+  const [closeType, setCloseType] = useState<'lost' | 'disq'>('lost');
+  const [lostReason, setLostReason] = useState(LOST_REASONS[0]);
+  const [reengageDate, setReengageDate] = useState(() => addDaysISO(30));
+  const [disqualReason, setDisqualReason] = useState(NQ_REASONS[0]);
 
   return (
-    <ModalOverlay title="Schedule Follow-Up" onClose={onClose}>
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Type *</label>
-          <select
-            value={followUpType}
-            onChange={(e) => setFollowUpType(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
+    <div className="modal-ov open" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          Close Deal{' '}
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        <div className="close-type">
+          <button className={clsx('ct-btn', closeType === 'lost' && 'sel-lost')} onClick={() => setCloseType('lost')}>
+            Lost — Recoverable
+          </button>
+          <button className={clsx('ct-btn', closeType === 'disq' && 'sel-disq')} onClick={() => setCloseType('disq')}>
+            NQ / Disqualified
+          </button>
+        </div>
+
+        {closeType === 'lost' && (
+          <div>
+            <div className="ff">
+              <div className="fl">Reason *</div>
+              <select className="fsel" value={lostReason} onChange={(e) => setLostReason(e.target.value)}>
+                {LOST_REASONS.map((r) => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div className="ff">
+              <div className="fl">Re-engage date *</div>
+              <input
+                className="fi"
+                type="date"
+                value={reengageDate}
+                onChange={(e) => setReengageDate(e.target.value)}
+              />
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
+              → Auto-moves to Nurture. Client + history preserved.
+            </div>
+          </div>
+        )}
+
+        {closeType === 'disq' && (
+          <div>
+            <div className="ff">
+              <div className="fl">Reason *</div>
+              <select className="fsel" value={disqualReason} onChange={(e) => setDisqualReason(e.target.value)}>
+                {NQ_REASONS.map((r) => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--urgent)', marginTop: 4 }}>
+              ⚠ Locks permanently. Client record preserved for admin.
+            </div>
+          </div>
+        )}
+
+        <div className="mfoot">
+          <button className="btn-c" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-s"
+            onClick={() => {
+              if (closeType === 'lost') {
+                if (!reengageDate) {
+                  toast.error('Re-engage date is required');
+                  return;
+                }
+                onSubmit({ stage: 'NURTURE', lostReason, followUpDate: reengageDate });
+              } else {
+                onSubmit({ stage: 'CLOSED', disqualReason });
+              }
+            }}
           >
-            <option value="">Select type...</option>
-            <option value="call">Call</option>
-            <option value="email">Email</option>
-            <option value="sms">SMS</option>
-            <option value="meeting">Meeting</option>
-            <option value="docs_check">Documents Check</option>
-            <option value="renewal">Renewal</option>
-          </select>
+            Confirm
+          </button>
         </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Date *</label>
-          <input
-            type="date"
-            value={followUpDate}
-            onChange={(e) => setFollowUpDate(e.target.value)}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Note *</label>
-          <textarea
-            value={followUpNote}
-            onChange={(e) => setFollowUpNote(e.target.value)}
-            rows={2}
-            className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)] resize-none"
-            placeholder="What needs to happen and why..."
-          />
-        </div>
-        <button
-          onClick={() => {
-            if (!followUpType || !followUpDate || !followUpNote) {
-              toast.error('All fields are required');
-              return;
-            }
-            onSubmit({ followUpType, followUpDate, followUpNote });
-          }}
-          disabled={!followUpType || !followUpDate || !followUpNote}
-          className="w-full py-2 rounded-lg bg-scl-500 text-white text-sm font-medium hover:bg-scl-600 disabled:opacity-50 transition"
-        >
-          Schedule Follow-Up
-        </button>
       </div>
-    </ModalOverlay>
+    </div>
   );
 }
 
-// ─── Modal wrapper ───
+// ─── Edit Fund Event Modal (C7 — prototype match) ───
+function EditFundEventModal({
+  fundEventId,
+  deal,
+  onClose,
+  onSave,
+}: {
+  fundEventId: string;
+  deal: Deal;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const fe = (deal.fundingEvents || []).find((e) => e.id === fundEventId);
+  const [fdDate, setFdDate] = useState(fe?.fundedDate?.split('T')[0] || '');
+  const [amt, setAmt] = useState(fe ? String(fe.amountFunded) : '');
+  const [lender, setLender] = useState(fe?.lender || '');
+  const [term, setTerm] = useState('');
+  const [rateVal, setRateVal] = useState('');
+  const [prod, setProd] = useState<string>(fe?.productType || 'MCA');
+  const [notes, setNotes] = useState(fe?.notes || '');
+
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => dealApi.updateDeal(deal.id, data),
+    onSuccess: () => {
+      toast.success('Funding event updated');
+      onSave();
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Update failed'),
+  });
+
+  if (!fe) return null;
+
+  return (
+    <div className="modal-ov open" onClick={onClose}>
+      <div className="modal wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          Edit Funding Event{' '}
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="fr">
+          <div className="ff">
+            <div className="fl">Funded date</div>
+            <input className="fi" type="date" value={fdDate} onChange={(e) => setFdDate(e.target.value)} />
+          </div>
+          <div className="ff">
+            <div className="fl">Amount</div>
+            <input className="fi" value={amt} onChange={(e) => setAmt(e.target.value)} />
+          </div>
+        </div>
+        <div className="fr">
+          <div className="ff">
+            <div className="fl">Funder</div>
+            <input className="fi" value={lender} onChange={(e) => setLender(e.target.value)} />
+          </div>
+          <div className="ff">
+            <div className="fl">Term (months)</div>
+            <input className="fi" value={term} onChange={(e) => setTerm(e.target.value)} />
+          </div>
+        </div>
+        <div className="fr">
+          <div className="ff">
+            <div className="fl">Rate</div>
+            <input className="fi" value={rateVal} onChange={(e) => setRateVal(e.target.value)} />
+          </div>
+          <div className="ff">
+            <div className="fl">Product</div>
+            <select className="fsel" value={prod} onChange={(e) => setProd(e.target.value)}>
+              <option>MCA</option>
+              <option>SBA</option>
+              <option>HELOC</option>
+              <option>Equipment</option>
+              <option>Conventional</option>
+            </select>
+          </div>
+        </div>
+        <div className="ff">
+          <div className="fl">Notes</div>
+          <input className="fi" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </div>
+        <div className="mfoot">
+          <button className="btn-c" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="btn-s"
+            onClick={() => {
+              const parsedAmt = parseFloat(String(amt).replace(/[^0-9.]/g, ''));
+              updateMutation.mutate({
+                fundingEventUpdate: {
+                  id: fundEventId,
+                  amountFunded: parsedAmt || fe.amountFunded,
+                  lender: lender || fe.lender,
+                  fundedDate: fdDate || fe.fundedDate,
+                  termMonths: term ? parseInt(term) : undefined,
+                  rate: rateVal ? parseFloat(rateVal) : undefined,
+                  productType: prod || fe.productType,
+                  notes,
+                },
+              });
+            }}
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rep Ownership Section (C8 — prototype match) ───
+function RepOwnershipSection({
+  deal,
+  isAdmin,
+  onShare,
+  onUpdate: _onUpdate,
+}: {
+  deal: Deal;
+  isAdmin: boolean;
+  onShare: (data: any) => void;
+  onUpdate: (data: any) => void;
+}) {
+  const { data: reps } = useQuery<Rep[]>({
+    queryKey: ['reps'],
+    queryFn: async () => {
+      const { data } = await repApi.getReps();
+      return (data as any).reps || data;
+    },
+    staleTime: 60_000,
+  });
+
+  const allReps = reps || [];
+  const primary = allReps.find((r) => r.id === deal.assignedRepId);
+  const assistIds: string[] = (deal.assistingRepIds as string[]) || [];
+  const assists = allReps.filter((r) => assistIds.includes(r.id));
+
+  function setPrimary(repId: string) {
+    if (!isAdmin || repId === deal.assignedRepId) return;
+    onShare({ assignedRepId: repId, assistingRepIds: assistIds.filter((id) => id !== repId) });
+  }
+
+  function toggleAssist(repId: string) {
+    if (!isAdmin || repId === deal.assignedRepId) return;
+    const newAssists = assistIds.includes(repId) ? assistIds.filter((id) => id !== repId) : [...assistIds, repId];
+    onShare({ assistingRepIds: newAssists });
+  }
+
+  return (
+    <Section title="Rep Ownership">
+      {/* Primary row */}
+      <div className="own-row">
+        <span className="own-label pl">Primary</span>
+        {allReps.map((r) => {
+          const isSel = r.id === deal.assignedRepId;
+          return (
+            <div
+              key={r.id}
+              className={clsx('own-rep-chip', isSel && 'sel-primary')}
+              onClick={() => setPrimary(r.id)}
+              style={!isAdmin ? { cursor: 'default', opacity: 0.6 } : undefined}
+              title={`${r.firstName} ${r.lastName}${isSel ? ' (primary)' : ''}`}
+            >
+              <div
+                className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-white"
+                style={{ backgroundColor: r.avatarColor || '#6366f1' }}
+              >
+                {r.initials || r.firstName[0]}
+              </div>
+              {r.firstName}
+              {isSel && <span style={{ fontSize: 9, opacity: 0.7 }}>✓</span>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Assist row */}
+      <div className="own-row">
+        <span className="own-label al">Assist</span>
+        {allReps
+          .filter((r) => r.id !== deal.assignedRepId)
+          .map((r) => {
+            const isAssisting = assistIds.includes(r.id);
+            return (
+              <div
+                key={r.id}
+                className={clsx('own-rep-chip', isAssisting && 'sel-assist')}
+                onClick={() => toggleAssist(r.id)}
+                style={!isAdmin ? { cursor: 'default', opacity: 0.6 } : undefined}
+                title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ' — click to add'}`}
+              >
+                <div
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-white"
+                  style={{ backgroundColor: r.avatarColor || '#6366f1' }}
+                >
+                  {r.initials || r.firstName[0]}
+                </div>
+                {r.firstName}
+                {isAssisting ? (
+                  <span style={{ fontSize: 9, opacity: 0.7 }}>✓</span>
+                ) : (
+                  <span style={{ fontSize: 9, color: 'var(--text3)' }}>+</span>
+                )}
+              </div>
+            );
+          })}
+        {assists.length === 0 && <span style={{ fontSize: 9, color: 'var(--text3)' }}>None — click rep to add</span>}
+      </div>
+
+      {/* Shared note */}
+      {assists.length > 0 && primary && (
+        <div style={{ fontSize: 10, color: 'var(--info)', marginTop: 3 }}>
+          👥 This deal appears on {assists.map((r) => r.firstName).join(', ')}&apos;s pipeline too. They can view and
+          work it but {primary.firstName} is the primary owner.
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ─── Renewal date computation helper ───
+function computeRenewalDates(fdRaw: string, months: number) {
+  const fd = new Date(fdRaw + 'T00:00:00');
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const addD = (d: Date, n: number) => {
+    const r = new Date(d);
+    r.setDate(r.getDate() + n);
+    return r;
+  };
+  const addM = (d: Date, n: number) => {
+    const r = new Date(d);
+    r.setMonth(r.getMonth() + n);
+    return r;
+  };
+  const mid = addM(fd, Math.round(months / 2));
+  const payoff = addM(fd, months);
+  const checkinD = addD(fd, 35);
+  const warnD = addD(payoff, -30);
+  return { checkin: fmt(checkinD), midpoint: fmt(mid), warn: fmt(warnD), payoff: fmt(payoff) };
+}
+
+// ─── Modal wrapper (kept for ActionModal, MoveModal, OfferModal) ───
 function ModalOverlay({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl w-full max-w-md p-4 shadow-xl"
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)]">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-tertiary)]">
-            <X className="w-4 h-4 text-[var(--text-muted)]" />
+    <div className="modal-ov open" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          {title}{' '}
+          <button className="modal-close" onClick={onClose}>
+            ×
           </button>
         </div>
         {children}

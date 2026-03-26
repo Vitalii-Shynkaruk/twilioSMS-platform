@@ -241,6 +241,7 @@ export default function CommandCenterPage() {
 
   const [activeView, setActiveView] = useState<string>('admin');
   const [execPopupOpen, setExecPopupOpen] = useState<string | null>(null);
+  const [execDropdownOpen, setExecDropdownOpen] = useState(false);
   const [repTableSort, setRepTableSort] = useState<{ col: string; asc: boolean }>({ col: 'funded', asc: false });
   const [pmPeriod, setPmPeriod] = useState<'lifetime' | '30d'>('lifetime');
   const [clockMs, setClockMs] = useState(0);
@@ -257,6 +258,19 @@ export default function CommandCenterPage() {
     const id = setInterval(tick, 60000);
     return () => clearInterval(id);
   }, []);
+
+  // Close exec dropdown on outside click
+  const execBarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!execDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (execBarRef.current && !execBarRef.current.contains(e.target as Node)) {
+        setExecDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [execDropdownOpen]);
 
   const sliderRef = useRef<HTMLDivElement>(null);
   const rswRef = useRef<HTMLDivElement>(null);
@@ -408,31 +422,86 @@ export default function CommandCenterPage() {
           </span>
 
           {/* Execution Score Bar */}
-          {execScores && execScores.length > 0 && (
-            <div className="exec-score-bar esb-wrap" style={{ position: 'relative' }}>
-              <span className="esb-label">Execution</span>
-              {execScores.map((es) => (
-                <div
-                  key={es.id}
-                  className="esb-rep"
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setExecPopupOpen(execPopupOpen === es.id ? null : es.id)}
-                >
-                  <span className="esb-init">{es.initials}</span>
-                  <div className="esb-track">
-                    <div className="esb-fill" style={{ width: es.score + '%', background: getExecColor(es.score) }} />
-                  </div>
-                  <span className={`esb-pct ${getExecClass(es.score)}`}>{es.score}%</span>
+          {execScores &&
+            execScores.length > 0 &&
+            (() => {
+              const ESB_VISIBLE = 3;
+              const visible = execScores.slice(0, ESB_VISIBLE);
+              const overflow = execScores.slice(ESB_VISIBLE);
+              const avgScore = Math.round(execScores.reduce((s, e) => s + e.score, 0) / execScores.length);
+              return (
+                <div className="exec-score-bar esb-wrap" ref={execBarRef} style={{ position: 'relative' }}>
+                  <span className="esb-label">Execution</span>
+                  {visible.map((es) => (
+                    <div
+                      key={es.id}
+                      className="esb-rep"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setExecPopupOpen(execPopupOpen === es.id ? null : es.id)}
+                    >
+                      <span className="esb-init">{es.initials}</span>
+                      <div className="esb-track">
+                        <div
+                          className="esb-fill"
+                          style={{ width: es.score + '%', background: getExecColor(es.score) }}
+                        />
+                      </div>
+                      <span className={`esb-pct ${getExecClass(es.score)}`}>{es.score}%</span>
+                    </div>
+                  ))}
+                  {overflow.length > 0 && (
+                    <button
+                      className="esb-more-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExecDropdownOpen(!execDropdownOpen);
+                      }}
+                    >
+                      +{overflow.length}
+                      <span className={`esb-pct ${getExecClass(avgScore)}`} style={{ marginLeft: 3 }}>
+                        avg {avgScore}%
+                      </span>
+                    </button>
+                  )}
+                  {/* Overflow dropdown */}
+                  {execDropdownOpen && overflow.length > 0 && (
+                    <div className="esb-dropdown" onClick={(e) => e.stopPropagation()}>
+                      <div className="esb-dd-head">
+                        <span>All Reps ({execScores.length})</span>
+                        <button className="esb-dd-close" onClick={() => setExecDropdownOpen(false)}>
+                          {'\u2715'}
+                        </button>
+                      </div>
+                      {execScores.map((es) => (
+                        <div
+                          key={es.id}
+                          className="esb-dd-row"
+                          onClick={() => {
+                            setExecPopupOpen(execPopupOpen === es.id ? null : es.id);
+                          }}
+                        >
+                          <span className="esb-dd-init">{es.initials}</span>
+                          <span className="esb-dd-name">{es.firstName}</span>
+                          <div className="esb-track" style={{ flex: 1 }}>
+                            <div
+                              className="esb-fill"
+                              style={{ width: es.score + '%', background: getExecColor(es.score) }}
+                            />
+                          </div>
+                          <span className={`esb-pct ${getExecClass(es.score)}`}>{es.score}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {execPopupOpen && execScores.find((e) => e.id === execPopupOpen) && (
+                    <ExecPopup
+                      data={execScores.find((e) => e.id === execPopupOpen)!}
+                      onClose={() => setExecPopupOpen(null)}
+                    />
+                  )}
                 </div>
-              ))}
-              {execPopupOpen && execScores.find((e) => e.id === execPopupOpen) && (
-                <ExecPopup
-                  data={execScores.find((e) => e.id === execPopupOpen)!}
-                  onClose={() => setExecPopupOpen(null)}
-                />
-              )}
-            </div>
-          )}
+              );
+            })()}
 
           {/* Role Switch */}
           <div className="rsw" ref={rswRef}>

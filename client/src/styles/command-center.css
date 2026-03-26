@@ -410,6 +410,21 @@ button { font-family: var(--mono); cursor: pointer; }
 .esb-pct.mid { color: var(--amber); }
 .esb-pct.weak { color: var(--red); }
 
+/* ESB "+N more" button */
+.esb-more-btn { display: flex; align-items: center; gap: 2px; background: var(--faint); border: 1px solid var(--border); border-radius: 3px; padding: 2px 8px; font-size: 10px; font-weight: 700; color: var(--muted); cursor: pointer; transition: background .15s; white-space: nowrap; font-family: inherit; }
+.esb-more-btn:hover { background: var(--border); color: var(--text); }
+
+/* ESB vertical dropdown */
+.esb-dropdown { position: absolute; top: calc(100% + 6px); right: 0; z-index: 200; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; min-width: 240px; max-height: 360px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.esb-dd-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.esb-dd-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 4px; line-height: 1; }
+.esb-dd-close:hover { color: var(--text); }
+.esb-dd-row { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; transition: background .12s; border-bottom: 1px solid var(--faint); }
+.esb-dd-row:last-child { border-bottom: none; }
+.esb-dd-row:hover { background: var(--faint); }
+.esb-dd-init { font-size: 10px; font-weight: 700; color: var(--muted); min-width: 20px; }
+.esb-dd-name { font-size: 11px; color: var(--text); min-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* FUTURE OPPORTUNITIES — compact metric card */
 .future-opps { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; border-top: 1px solid #1a3060; }
 .fo-label { font-size: 9px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 7px; }

@@ -388,7 +388,7 @@ export default function CommandCenterPage() {
   // ══════════════════════════════════════
 
   return (
-    <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+    <div className="cc-root" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       {/* TOPBAR */}
       <div className="topbar">
         <div className="logo-wrap">
@@ -572,7 +572,7 @@ export default function CommandCenterPage() {
                 <div className="fo-label">Future Opportunities</div>
                 <div
                   style={{
-                    fontSize: 7,
+                    fontSize: 9,
                     color: 'var(--muted)',
                     marginBottom: 6,
                     lineHeight: 1.4,
@@ -584,7 +584,7 @@ export default function CommandCenterPage() {
                   <div className="fo-row">
                     <span className="fo-lbl">Next 7 days</span>
                     <div style={{ textAlign: 'right' }}>
-                      <div className="fo-val" style={{ fontSize: 11 }}>
+                      <div className="fo-val" style={{ fontSize: 12 }}>
                         {metrics?.futureNext7 ?? 0} deals
                       </div>
                     </div>
@@ -592,7 +592,7 @@ export default function CommandCenterPage() {
                   <div className="fo-row">
                     <span className="fo-lbl">Next 30 days</span>
                     <div style={{ textAlign: 'right' }}>
-                      <div className="fo-val" style={{ fontSize: 11 }}>
+                      <div className="fo-val" style={{ fontSize: 12 }}>
                         {metrics?.futureNext30 ?? 0} deals
                       </div>
                     </div>
@@ -694,7 +694,7 @@ export default function CommandCenterPage() {
                 <PipelineSnapshotCard stages={intelligence.stageSnapshot} />
                 <div className="card">
                   <div className="cl">Product Mix \u2014 quick view</div>
-                  <div style={{ fontSize: 8, color: 'var(--muted)', marginBottom: 8 }}>
+                  <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 8 }}>
                     Team funded \u00b7 see full module below
                   </div>
                   {productMix && (
@@ -794,7 +794,7 @@ export default function CommandCenterPage() {
                     }}
                   />
                 </div>
-                <div style={{ marginTop: 4, fontSize: 8, color: 'var(--muted)' }}>
+                <div style={{ marginTop: 4, fontSize: 9, color: 'var(--muted)' }}>
                   {Math.round(metrics?.goalProgress ?? 0)}% of {fmtCurrency(metrics?.monthlyGoal)} goal
                 </div>
               </div>
@@ -869,7 +869,7 @@ export default function CommandCenterPage() {
               ) : (
                 <div className="card">
                   <div className="cl">My Pipeline</div>
-                  <div style={{ fontSize: 9, color: 'var(--muted)' }}>Loading...</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>Loading...</div>
                 </div>
               )}
 
@@ -976,7 +976,7 @@ function OperatorQueue({ deals, isAdmin }: { deals?: QueueDeal[]; isAdmin?: bool
   return (
     <div className="op-q">
       <div className="oq-head">
-        <span style={{ color: 'var(--orange)', fontSize: 12 }}>{'\u2605'}</span>
+        <span style={{ color: 'var(--orange)', fontSize: 13 }}>{'\u2605'}</span>
         <span className="oq-title">
           {isAdmin ? 'Operator Queue \u2014 Admin Hit List' : 'Close These Today \u2014 My Deals'}
         </span>
@@ -990,7 +990,7 @@ function OperatorQueue({ deals, isAdmin }: { deals?: QueueDeal[]; isAdmin?: bool
               <div className="oqi-name">
                 {deal.client?.businessName || 'Unknown'}
                 {isAdmin && deal.assignedRep && (
-                  <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 400 }}>
+                  <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
                     {' \u00b7 '}
                     {deal.assignedRep.initials ||
                       (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
@@ -1057,7 +1057,7 @@ function PriorityCard({
               <div className="pdi-name">
                 {deal.client?.businessName || 'Unknown'}
                 {deal.assignedRep && (
-                  <span style={{ fontSize: 8, color: 'var(--muted)' }}>
+                  <span style={{ fontSize: 9, color: 'var(--muted)' }}>
                     {' '}
                     ({deal.assignedRep.initials || deal.assignedRep.firstName[0]})
                   </span>
@@ -1114,7 +1114,7 @@ function BottleneckCard({ bottlenecks }: { bottlenecks: Bottleneck[] }) {
                     <span
                       style={{
                         color: 'var(--amber)',
-                        fontSize: 9,
+                        fontSize: 10,
                         fontWeight: 700,
                       }}
                     >
@@ -1194,7 +1194,7 @@ function RepMonitorCard({
                 {(rep.dealsAtRisk > 0 || rep.overdueCount > 0) && (
                   <div
                     style={{
-                      fontSize: 8,
+                      fontSize: 9,
                       color: 'var(--amber)',
                       marginTop: 2,
                     }}
@@ -1448,7 +1448,7 @@ function ActivityFeedCard({ events, title }: { events?: ActivityEvent[]; title?:
           </div>
         ))}
         {(!events || events.length === 0) && (
-          <div style={{ fontSize: 9, color: 'var(--muted)', padding: '8px 0' }}>No recent activity</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', padding: '8px 0' }}>No recent activity</div>
         )}
       </div>
     </div>
@@ -1674,7 +1674,7 @@ function ProductMixModule({
 }
 
 function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
-  if (!deals || deals.length === 0) return <div style={{ fontSize: 9, color: 'var(--muted)' }}>No actions queued</div>;
+  if (!deals || deals.length === 0) return <div style={{ fontSize: 10, color: 'var(--muted)' }}>No actions queued</div>;
 
   function getActionClass(action: string): string {
     switch (action) {

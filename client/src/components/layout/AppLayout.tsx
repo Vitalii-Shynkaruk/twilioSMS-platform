@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
-import ThemeToggle from '../ThemeToggle';
 
 // Navigation v2 — grouped by section
 const navGroups = [
@@ -349,11 +348,6 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
           )}
         </NavLink>
 
-        {!collapsed && (
-          <div className="flex justify-center px-1 pb-1">
-            <ThemeToggle />
-          </div>
-        )}
         <div className={clsx('flex items-center gap-3 px-3 py-2 rounded-lg', collapsed && 'justify-center px-0')}>
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"

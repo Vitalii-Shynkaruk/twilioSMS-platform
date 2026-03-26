@@ -9,10 +9,6 @@ interface ThemeState {
 }
 
 function getStoredTheme(): ThemeMode {
-  try {
-    const stored = localStorage.getItem('scl-theme');
-    if (stored === 'light' || stored === 'dark' || stored === 'system') return stored;
-  } catch {}
   return 'dark';
 }
 

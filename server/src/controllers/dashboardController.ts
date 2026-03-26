@@ -2,7 +2,7 @@ import { Response } from 'express';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { subDays, subHours, startOfDay } from 'date-fns';
-import getTwilioClient, { getSmsMode } from '../config/twilio';
+import { getActiveTwilioClient, getSmsMode } from '../config/twilio';
 import redis from '../config/redis';
 import { config } from '../config';
 import logger from '../config/logger';
@@ -399,7 +399,7 @@ export class DashboardController {
    * messaging services, phone numbers, usage records
    */
   static async getTwilioDiagnostics(req: AuthRequest, res: Response): Promise<void> {
-    const client = getTwilioClient();
+    const client = await getActiveTwilioClient();
     if (!client) {
       res.status(503).json({ error: 'Twilio client not configured' });
       return;

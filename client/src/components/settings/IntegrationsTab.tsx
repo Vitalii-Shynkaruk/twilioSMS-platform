@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
-import { Phone, Brain, Shield, Webhook, Eye, EyeOff, Save } from 'lucide-react';
+import { Phone, Brain, Shield, Webhook, Eye, EyeOff, Save, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 
@@ -40,7 +40,15 @@ function IntegrationField({
   const hasExisting = isSecret && isMasked(String(serverVal));
   return (
     <div>
-      <label className="label">{label}</label>
+      <label className="label flex items-center gap-2">
+        {label}
+        {hasExisting && local[settingKey] === undefined && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">
+            <CheckCircle2 className="w-3 h-3" />
+            Saved ••••{String(serverVal).slice(-4)}
+          </span>
+        )}
+      </label>
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <input
@@ -49,9 +57,7 @@ function IntegrationField({
             value={getVal(settingKey, defaultValue, isSecret)}
             onChange={(e) => handleChange(settingKey, e.target.value)}
             placeholder={
-              hasExisting && local[settingKey] === undefined
-                ? 'Saved ••••' + String(serverVal).slice(-4) + ' — enter new value to replace'
-                : `Enter ${label}...`
+              hasExisting && local[settingKey] === undefined ? 'Enter new value to replace' : `Enter ${label}...`
             }
           />
           {isSecret && onToggle && (
@@ -96,8 +102,19 @@ export default function IntegrationsTab() {
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
       await api.put(`/settings/settings/${key}`, { value });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['systemSettings'] });
+      // Clear local & dirty only after successful save
+      setLocal((prev) => {
+        const next = { ...prev };
+        delete next[variables.key];
+        return next;
+      });
+      setDirty((prev) => {
+        const next = new Set(prev);
+        next.delete(variables.key);
+        return next;
+      });
       toast.success('Setting saved');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to save'),
@@ -120,12 +137,12 @@ export default function IntegrationsTab() {
   };
 
   const handleSave = (key: string) => {
-    saveMutation.mutate({ key, value: getVal(key) });
-    setDirty((prev) => {
-      const next = new Set(prev);
-      next.delete(key);
-      return next;
-    });
+    const val = getVal(key);
+    if (!val && val !== '0') {
+      toast.error('Enter a value before saving');
+      return;
+    }
+    saveMutation.mutate({ key, value: val });
   };
 
   const fieldProps = { settings, local, dirty, getVal, handleChange, handleSave, savePending: saveMutation.isPending };

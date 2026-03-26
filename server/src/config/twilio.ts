@@ -5,15 +5,62 @@ import redis from './redis';
 
 let _client: ReturnType<typeof Twilio> | null = null;
 let _testClient: ReturnType<typeof Twilio> | null = null;
+let _liveSid: string | null = null;
+let _liveToken: string | null = null;
 
 /**
- * Get the standard (live) Twilio client.
- * Uses credentials from .env / config.
+ * Get live credentials from DB settings (with Redis cache), falling back to env vars.
+ */
+async function getLiveCredentials(): Promise<{ sid: string; token: string } | null> {
+  try {
+    const cachedSid = await redis.get('setting:twilioAccountSid');
+    const cachedToken = await redis.get('setting:twilioAuthToken');
+
+    if (cachedSid && cachedToken) {
+      return { sid: cachedSid, token: cachedToken };
+    }
+
+    const [sidSetting, tokenSetting] = await Promise.all([
+      prisma.systemSetting.findUnique({ where: { key: 'twilioAccountSid' } }),
+      prisma.systemSetting.findUnique({ where: { key: 'twilioAuthToken' } }),
+    ]);
+
+    const sid = (typeof sidSetting?.value === 'string' ? sidSetting.value : '') as string;
+    const token = (typeof tokenSetting?.value === 'string' ? tokenSetting.value : '') as string;
+
+    if (sid && token) {
+      await redis.set('setting:twilioAccountSid', sid, 'EX', 30);
+      await redis.set('setting:twilioAuthToken', token, 'EX', 30);
+      return { sid, token };
+    }
+
+    // Fallback to env vars
+    const envSid = config.twilio.accountSid;
+    const envToken = config.twilio.authToken;
+    if (envSid && envToken) {
+      return { sid: envSid, token: envToken };
+    }
+
+    return null;
+  } catch {
+    // Last resort fallback to env vars
+    const envSid = config.twilio.accountSid;
+    const envToken = config.twilio.authToken;
+    if (envSid && envToken) {
+      return { sid: envSid, token: envToken };
+    }
+    return null;
+  }
+}
+
+/**
+ * Get the standard (live) Twilio client — sync version using cached credentials.
+ * Prefer getActiveTwilioClient() for DB-aware credential loading.
  */
 function getTwilioClient() {
   if (!_client) {
-    const sid = config.twilio.accountSid;
-    const token = config.twilio.authToken;
+    const sid = _liveSid || config.twilio.accountSid;
+    const token = _liveToken || config.twilio.authToken;
     if (!sid || !sid.startsWith('AC') || !token) {
       console.warn('⚠️  Twilio credentials not configured – SMS sending disabled');
       return null;
@@ -90,7 +137,7 @@ async function getTestCredentials(): Promise<{ sid: string; token: string } | nu
 
 /**
  * Get the active Twilio client — returns test client when twilioTestMode is enabled.
- * Falls back to live client if test credentials are unavailable.
+ * Reads credentials from DB (Settings → Integrations), falls back to env vars.
  */
 async function getActiveTwilioClient(): Promise<ReturnType<typeof Twilio> | null> {
   const testMode = await isTwilioTestMode();
@@ -98,7 +145,6 @@ async function getActiveTwilioClient(): Promise<ReturnType<typeof Twilio> | null
   if (testMode) {
     const creds = await getTestCredentials();
     if (creds && creds.sid.startsWith('AC') && creds.token) {
-      // Re-create test client if credentials changed
       if (!_testClient) {
         _testClient = Twilio(creds.sid, creds.token);
       }
@@ -107,13 +153,30 @@ async function getActiveTwilioClient(): Promise<ReturnType<typeof Twilio> | null
     console.warn('⚠️  Twilio Test Mode enabled but test credentials not configured — falling back to live');
   }
 
+  // Load live credentials from DB (with env fallback) and cache for sync getTwilioClient
+  const liveCreds = await getLiveCredentials();
+  if (liveCreds && liveCreds.sid.startsWith('AC') && liveCreds.token) {
+    // Rebuild client if credentials changed
+    if (_liveSid !== liveCreds.sid || _liveToken !== liveCreds.token) {
+      _liveSid = liveCreds.sid;
+      _liveToken = liveCreds.token;
+      _client = null;
+    }
+    if (!_client) {
+      _client = Twilio(liveCreds.sid, liveCreds.token);
+    }
+    return _client;
+  }
+
   return getTwilioClient();
 }
 
-/** Reset cached clients (call when credentials change) */
+/** Reset cached clients and credentials (call when credentials change in Settings) */
 function resetTwilioClients() {
   _client = null;
   _testClient = null;
+  _liveSid = null;
+  _liveToken = null;
 }
 
 export default getTwilioClient;

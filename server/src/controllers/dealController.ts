@@ -331,6 +331,8 @@ export class DealController {
       if (!updateData.followUpDate || !updateData.followUpType || !updateData.followUpNote) {
         return res.status(400).json({ error: 'Follow-up requires type, date, and note (all three are required)' });
       }
+      // Convert date string to proper Date object for Prisma DateTime field
+      updateData.followUpDate = new Date(updateData.followUpDate);
     }
 
     // AUTOMATION RULE 1: App Submitted → Submitted (In Review)

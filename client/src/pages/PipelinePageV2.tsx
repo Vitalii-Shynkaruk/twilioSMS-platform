@@ -57,6 +57,8 @@ const STAGES: StageConfig[] = [
   { value: 'CLOSED', label: 'Closed', short: 'Closed', color: '#536070', opacity: 0.28, stageClass: 'closed-s' },
 ];
 
+const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.value, s.short]));
+
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week';
 type ViewTab = 'pipeline' | 'team' | 'queue';
 type ViewMode = 'simple' | 'execution';
@@ -1145,40 +1147,127 @@ function TeamView({
 
 function QueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (id: string) => void }) {
   const qc = useQueryClient();
-  const now = new Date();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
   const reopenMutation = useMutation({
     mutationFn: (dealId: string) => dealApi.moveDeal(dealId, { stage: 'ENGAGED_INTERESTED' }),
-    onSuccess: () => {
+    onSuccess: (_data, dealId) => {
       qc.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal reopened → Engaged');
+      markDone(dealId);
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Reopen failed'),
   });
 
-  const overdue = deals.filter((d) => d.followUpDate && new Date(d.followUpDate) < now);
-  const thisWeek = deals.filter((d) => {
-    if (!d.followUpDate || new Date(d.followUpDate) < now) return false;
-    const weekEnd = new Date();
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    return new Date(d.followUpDate) <= weekEnd;
+  const completeMutation = useMutation({
+    mutationFn: (dealId: string) =>
+      dealApi.completeAction(dealId, { actionType: 'follow_up', note: 'Completed from Revive Queue' }),
+    onSuccess: (_data, dealId) => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      toast.success('Action completed');
+      markDone(dealId);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Complete failed'),
   });
-  const upcoming = deals.filter((d) => {
-    if (!d.followUpDate) return false;
-    const weekEnd = new Date();
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    return new Date(d.followUpDate) > weekEnd;
-  });
+
+  // Filter out completed deals for display
+  const activeDealsList = deals.filter((d) => !completedIds.has(d.id));
+  const total = activeDealsList.length;
+  const idx = Math.min(currentIndex, Math.max(0, total - 1));
+  const deal = activeDealsList[idx];
 
   const totalPrev = deals.reduce((s, d) => s + (d.prevOffer || d.dealAmount || 0), 0);
   const renewalCount = deals.filter((d) => d.followUpType === 'renewal').length;
+  const now = new Date();
+  const overdueCount = deals.filter((d) => d.followUpDate && new Date(d.followUpDate) < now).length;
+
+  function markDone(dealId: string) {
+    setCompletedIds((prev) => new Set(prev).add(dealId));
+  }
+
+  function getReasonTag(d: Deal): { cls: string; label: string; icon: string } {
+    if (d.followUpType === 'renewal') return { cls: 'qr-renewal', label: 'Renewal', icon: '♻' };
+    if (d.followUpType === 'statement') return { cls: 'qr-statement', label: 'Statement Refresh', icon: '📄' };
+    if (d.followUpType === 'nurture') return { cls: 'qr-reengage', label: 'Nurture', icon: '🌱' };
+    if (d.stage === 'NURTURE' || d.stage === 'APPROVED_OFFERS')
+      return { cls: 'qr-reengage', label: 'Revive', icon: '↩' };
+    if (d.stage === 'SUBMITTED_IN_REVIEW') return { cls: 'qr-statement', label: 'Statement Refresh', icon: '📄' };
+    if (d.stage === 'FUNDED') return { cls: 'qr-renewal', label: 'Renewal', icon: '♻' };
+    return { cls: 'qr-timing', label: 'Re-engage', icon: '⏰' };
+  }
+
+  // All deals done
+  if (total === 0 && deals.length > 0) {
+    return (
+      <div className="queue-view">
+        <div className="queue-header">
+          <div>
+            <div className="queue-title">🔁 Revive Queue</div>
+            <div className="queue-sub">All {deals.length} deals processed!</div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
+          <div style={{ fontSize: '28px', marginBottom: '8px' }}>✅</div>
+          <div style={{ fontSize: '14px', fontWeight: 600 }}>Queue Complete</div>
+          <div style={{ fontSize: '11px', marginTop: '6px', color: 'var(--text3)' }}>
+            All {deals.length} deals have been processed
+          </div>
+          <button
+            style={{
+              marginTop: '14px',
+              padding: '6px 16px',
+              borderRadius: '6px',
+              border: '1px solid var(--border2)',
+              background: 'var(--bg4)',
+              color: 'var(--text2)',
+              fontSize: '11px',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+            onClick={() => {
+              setCompletedIds(new Set());
+              setCurrentIndex(0);
+            }}
+          >
+            Reset Queue
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty queue
+  if (deals.length === 0) {
+    return (
+      <div className="queue-view">
+        <div className="queue-header">
+          <div>
+            <div className="queue-title">🔁 Revive Queue</div>
+            <div className="queue-sub">Deals awaiting re-engagement</div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔁</div>
+          <div style={{ fontSize: '13px' }}>No deals in the revive queue</div>
+          <div style={{ fontSize: '11px', marginTop: '4px' }}>Deals appear here when they need re-engagement</div>
+        </div>
+      </div>
+    );
+  }
+
+  const reason = getReasonTag(deal);
+  const followUp = deal.followUpDate ? new Date(deal.followUpDate) : null;
+  const isOverdue = followUp ? followUp < now : false;
+  const daysSinceActivity = deal.staleDays ?? 0;
 
   return (
     <div className="queue-view">
+      {/* Header with stats */}
       <div className="queue-header">
         <div>
           <div className="queue-title">🔁 Revive Queue</div>
-          <div className="queue-sub">Deals awaiting re-engagement · {deals.length} total</div>
+          <div className="queue-sub">One deal at a time · system-prioritized · {deals.length} total</div>
         </div>
       </div>
 
@@ -1190,7 +1279,7 @@ function QueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (id: st
         <div className="q-stat">
           <div className="q-stat-label">Overdue</div>
           <div className="q-stat-val" style={{ color: 'var(--urgent)' }}>
-            {overdue.length}
+            {overdueCount}
           </div>
         </div>
         <div className="q-stat">
@@ -1205,158 +1294,147 @@ function QueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (id: st
         </div>
       </div>
 
-      {/* Overdue section */}
-      {overdue.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">
-            🔴 OVERDUE
-            <span>{overdue.length}</span>
-          </div>
-          {overdue.map((deal) => (
-            <QueueCard
-              key={deal.id}
-              deal={deal}
-              onClick={() => onDealClick(deal.id)}
-              onRevive={() => reopenMutation.mutate(deal.id)}
-              isReviving={reopenMutation.isPending}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* This week */}
-      {thisWeek.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">
-            📅 THIS WEEK
-            <span>{thisWeek.length}</span>
-          </div>
-          {thisWeek.map((deal) => (
-            <QueueCard
-              key={deal.id}
-              deal={deal}
-              onClick={() => onDealClick(deal.id)}
-              onRevive={() => reopenMutation.mutate(deal.id)}
-              isReviving={reopenMutation.isPending}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Upcoming */}
-      {upcoming.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">
-            ⏰ UPCOMING
-            <span>{upcoming.length}</span>
-          </div>
-          {upcoming.map((deal) => (
-            <QueueCard
-              key={deal.id}
-              deal={deal}
-              onClick={() => onDealClick(deal.id)}
-              onRevive={() => reopenMutation.mutate(deal.id)}
-              isReviving={reopenMutation.isPending}
-            />
-          ))}
-        </div>
-      )}
-
-      {deals.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
-          <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔁</div>
-          <div style={{ fontSize: '13px' }}>No deals in the revive queue</div>
-          <div style={{ fontSize: '11px', marginTop: '4px' }}>Deals appear here when they need re-engagement</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Queue Card ───
-
-function QueueCard({
-  deal,
-  onClick,
-  onRevive,
-  isReviving,
-}: {
-  deal: Deal;
-  onClick: () => void;
-  onRevive: () => void;
-  isReviving: boolean;
-}) {
-  const now = new Date();
-  const followUp = deal.followUpDate ? new Date(deal.followUpDate) : null;
-  const isOverdue = followUp ? followUp < now : false;
-  const isToday = followUp?.toDateString() === now.toDateString();
-
-  const cardClass = isOverdue
-    ? 'qc-overdue'
-    : isToday
-      ? 'qc-today'
-      : deal.followUpType === 'renewal'
-        ? 'qc-renewal'
-        : 'qc-upcoming';
-
-  const reasonMap: Record<string, { cls: string; label: string }> = {
-    renewal: { cls: 'qr-renewal', label: '♻ Renewal' },
-    nurture: { cls: 'qr-reengage', label: '🌱 Nurture' },
-    statement: { cls: 'qr-statement', label: '📄 Statement' },
-    timing: { cls: 'qr-timing', label: '⏰ Timing' },
-    reengage: { cls: 'qr-reengage', label: '↩ Re-engage' },
-  };
-  const reason = deal.followUpType ? reasonMap[deal.followUpType] : null;
-
-  const dueText = isOverdue
-    ? `${Math.floor((now.getTime() - followUp!.getTime()) / 86400000)}d overdue`
-    : isToday
-      ? 'Today'
-      : followUp
-        ? followUp.toLocaleDateString()
-        : '';
-  const dueCls = isOverdue ? 'qd-od' : isToday ? 'qd-td' : 'qd-ok';
-
-  return (
-    <div className={`q-card ${cardClass}`} onClick={onClick}>
-      <div className="q-biz">{deal.client?.businessName || 'Unknown'}</div>
-      {reason && <div className={`q-reason-pill ${reason.cls}`}>{reason.label}</div>}
-      <div className="q-funding-row">
-        {deal.prevOffer ? `Prev offer: ${formatCurrency(deal.prevOffer)}` : ''}
-        {deal.productType && ` · ${deal.productType}`}
+      {/* Progress pills */}
+      <div className="rvq-progress-row">
+        {activeDealsList.slice(0, 15).map((_, i) => (
+          <div key={i} className={`rvq-pill ${i < idx ? 'rvq-done' : i === idx ? 'rvq-current' : 'rvq-pending'}`} />
+        ))}
+        {total > 15 && <span className="rvq-more">+{total - 15}</span>}
       </div>
-      {deal.followUpNote && <div className="q-script">{deal.followUpNote}</div>}
-      <div className="q-meta">
-        <div className="q-rep">
-          {deal.assignedRep && (
-            <>
-              <div
-                className="av"
-                style={{
-                  background: deal.assignedRep.avatarColor || 'var(--gold)',
-                  width: '14px',
-                  height: '14px',
-                  fontSize: '7px',
-                }}
-              >
-                {deal.assignedRep.initials || deal.assignedRep.firstName[0]}
-              </div>
-              {deal.assignedRep.firstName}
-            </>
-          )}
+
+      {/* Main carousel card */}
+      <div className={`rvq-card ${isOverdue ? 'rvq-overdue' : ''}`}>
+        {/* Reason tag */}
+        <div className={`q-reason-pill ${reason.cls}`}>
+          {reason.icon} {reason.label}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span className={`q-due ${dueCls}`}>{dueText}</span>
+
+        {/* Deal header row */}
+        <div className="rvq-deal-header">
+          <div>
+            <div className="rvq-biz" onClick={() => onDealClick(deal.id)} style={{ cursor: 'pointer' }}>
+              {deal.client?.businessName || 'Unknown'}
+            </div>
+            <div className="rvq-meta-pills">
+              {deal.productType && (
+                <span className={`p-badge pb-${deal.productType?.toLowerCase()}`}>{deal.productType}</span>
+              )}
+              <span className="rvq-stage-pill">{STAGE_LABELS[deal.stage] || deal.stage}</span>
+              {deal.assignedRep && (
+                <span className="rvq-rep-pill">
+                  <span
+                    className="av"
+                    style={{
+                      background: deal.assignedRep.avatarColor || 'var(--gold)',
+                      width: '14px',
+                      height: '14px',
+                      fontSize: '7px',
+                      display: 'inline-flex',
+                      verticalAlign: 'middle',
+                    }}
+                  >
+                    {deal.assignedRep.initials || deal.assignedRep.firstName[0]}
+                  </span>{' '}
+                  {deal.assignedRep.firstName}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="rvq-amount-block">
+            <div className="rvq-amount">
+              {deal.prevOffer
+                ? formatCurrency(deal.prevOffer)
+                : deal.dealAmount
+                  ? formatCurrency(deal.dealAmount)
+                  : 'TBD'}
+            </div>
+            <div className="rvq-amount-label">{deal.prevOffer ? 'Previous offer' : 'Deal amount'}</div>
+          </div>
+        </div>
+
+        {/* Detail grid — 3 cells */}
+        <div className="rvq-detail-grid">
+          <div className="rvq-detail-cell">
+            <div className="rvq-detail-lbl">Days Idle</div>
+            <div
+              className={`rvq-detail-val ${daysSinceActivity > 30 ? 'rvq-warn' : daysSinceActivity > 7 ? 'rvq-watch' : 'rvq-ok'}`}
+            >
+              {daysSinceActivity}d
+            </div>
+          </div>
+          <div className="rvq-detail-cell">
+            <div className="rvq-detail-lbl">Follow-up Due</div>
+            <div className={`rvq-detail-val ${isOverdue ? 'rvq-warn' : 'rvq-ok'}`}>
+              {followUp
+                ? isOverdue
+                  ? `${Math.floor((now.getTime() - followUp.getTime()) / 86400000)}d overdue`
+                  : followUp.toLocaleDateString()
+                : 'Not set'}
+            </div>
+          </div>
+          <div className="rvq-detail-cell">
+            <div className="rvq-detail-lbl">Next Action</div>
+            <div className="rvq-detail-val">{deal.nextAction || 'None set'}</div>
+          </div>
+        </div>
+
+        {/* Script / follow-up note */}
+        {deal.followUpNote && (
+          <div className="rvq-note-box">
+            <div className="rvq-note-lbl">Follow-up Notes</div>
+            <div className="rvq-note-text">{deal.followUpNote}</div>
+          </div>
+        )}
+
+        {/* 5 Action buttons */}
+        <div className="rvq-actions">
           <button
-            className="q-revive-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRevive();
-            }}
-            disabled={isReviving}
+            className="rvq-btn rvq-btn-stmts"
+            onClick={() => toast('Request Statements → ' + (deal.client?.businessName || 'Deal'))}
           >
-            Revive →
+            📄 Request Statements
           </button>
+          <button
+            className="rvq-btn rvq-btn-call"
+            onClick={() => toast('Call Now → ' + (deal.client?.businessName || 'Deal'))}
+          >
+            📞 Call Now
+          </button>
+          <button
+            className="rvq-btn rvq-btn-reopen"
+            onClick={() => reopenMutation.mutate(deal.id)}
+            disabled={reopenMutation.isPending}
+          >
+            ↩ Reopen
+          </button>
+          <button
+            className="rvq-btn rvq-btn-complete"
+            onClick={() => completeMutation.mutate(deal.id)}
+            disabled={completeMutation.isPending}
+          >
+            ✅ Complete
+          </button>
+          <button className="rvq-btn rvq-btn-skip" onClick={() => setCurrentIndex(Math.min(idx + 1, total - 1))}>
+            Skip →
+          </button>
+        </div>
+      </div>
+
+      {/* Navigation row */}
+      <div className="rvq-nav">
+        <div className="rvq-nav-left">
+          <button className="rvq-nav-btn" disabled={idx === 0} onClick={() => setCurrentIndex(idx - 1)}>
+            ← Previous
+          </button>
+          <span className="rvq-nav-pos">
+            <strong>{idx + 1}</strong> of <strong>{total}</strong>
+          </span>
+          <button className="rvq-nav-btn" disabled={idx >= total - 1} onClick={() => setCurrentIndex(idx + 1)}>
+            Next →
+          </button>
+        </div>
+        <div className="rvq-nav-right">
+          <span style={{ fontSize: '10px', color: 'var(--text3)' }}>{completedIds.size} processed</span>
         </div>
       </div>
     </div>

@@ -1,24 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { commandCenterApi, repApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
-import {
-  DollarSign,
-  TrendingUp,
-  Flame,
-  AlertTriangle,
-  Clock,
-  Target,
-  BarChart3,
-  Activity,
-  Zap,
-  Eye,
-} from 'lucide-react';
-import { clsx } from 'clsx';
-import { formatCurrency } from '../components/pipeline/DealCard';
 import type { CommandCenterMetrics, Rep, Deal } from '../types';
-import { useState, useCallback } from 'react';
-import DealPanel from '../components/pipeline/DealPanel';
-import CreateDealModal from '../components/pipeline/CreateDealModal';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import toast from 'react-hot-toast';
+import '../styles/command-center.css';
+
+// ── Helpers ──
 
 const STAGE_LABELS: Record<string, string> = {
   NEW_LEAD: 'New Lead',
@@ -32,692 +20,1732 @@ const STAGE_LABELS: Record<string, string> = {
   CLOSED: 'Closed',
 };
 
-const PRODUCT_BAR_COLORS: Record<string, string> = {
-  MCA: 'bg-amber-500',
-  LOC: 'bg-blue-500',
-  EQUIPMENT: 'bg-green-500',
-  HELOC: 'bg-purple-500',
-  SBA: 'bg-blue-600',
-  CRE: 'bg-rose-500',
-  BRIDGE: 'bg-teal-500',
+const PM_COLORS: Record<string, string> = {
+  MCA: '#c9a227',
+  SBA: '#4a9eff',
+  EQUIPMENT: '#3fb950',
+  HELOC: '#a371f7',
+  LOC: '#4a9eff',
+  CRE: '#e07b54',
+  BRIDGE: '#64b5d4',
+  OTHER: '#666',
 };
+
+function fmtCurrency(n: number | null | undefined): string {
+  if (n == null) return '$0';
+  if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'K';
+  return '$' + Math.round(n);
+}
+
+function timeAgo(d: string | null | undefined): string {
+  if (!d) return 'never';
+  const diff = Date.now() - new Date(d).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  return days + 'd ago';
+}
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good Morning';
+  if (h < 17) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
+function getActionButtonStyle(action: string): string {
+  switch (action) {
+    case 'Call Now':
+      return 'oqa-call';
+    case 'Send Offer':
+      return 'oqa-offer';
+    case 'Follow Up':
+      return 'oqa-follow';
+    case 'Request Docs':
+      return 'oqa-docs';
+    default:
+      return 'oqa-follow';
+  }
+}
+
+function getExecColor(score: number): string {
+  if (score >= 70) return 'var(--green2)';
+  if (score >= 40) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+function getExecClass(score: number): string {
+  if (score >= 70) return 'strong';
+  if (score >= 40) return 'mid';
+  return 'weak';
+}
+
+// ── Counter animation hook ──
+
+function useCounterAnimation(target: number, duration = 1200): number {
+  const [value, setValue] = useState(0);
+  const prevTarget = useRef(0);
+
+  useEffect(() => {
+    if (target === prevTarget.current) return;
+    prevTarget.current = target;
+    const start = performance.now();
+    function tick(now: number) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(target * eased);
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }, [target, duration]);
+
+  return value;
+}
+
+// ── Live clock hook ──
+
+function useClock(): string {
+  const [time, setTime] = useState('');
+  useEffect(() => {
+    function tick() {
+      setTime(
+        new Date().toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        }) + ' ET',
+      );
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return time;
+}
+
+// ── Types for API responses ──
+
+interface ExecScore {
+  id: string;
+  initials: string;
+  avatarColor?: string;
+  firstName: string;
+  score: number;
+  completed: number;
+  assigned: number;
+  overdue: number;
+}
+
+interface RepActivity {
+  id: string;
+  name: string;
+  initials: string;
+  avatarColor?: string;
+  status: string;
+  lastTouch: string | null;
+  dealsAtRisk: number;
+  overdueCount: number;
+  fundedMTD: number;
+  pipelineValue: number;
+  committedValue: number;
+  activeDeals: number;
+  monthlyGoal?: number;
+}
+
+interface Bottleneck {
+  stage: string;
+  count: number;
+  value: number;
+  reps: Record<string, number>;
+}
+
+interface StageSnapshot {
+  stage: string;
+  label: string;
+  count: number;
+  volume: number;
+  hideDollar: boolean;
+}
+
+interface FunnelStep {
+  stage: string;
+  label: string;
+  count: number;
+  rate: number;
+}
+
+interface IntelligenceData {
+  bottlenecks: Bottleneck[];
+  repActivity: RepActivity[];
+  stageSnapshot: StageSnapshot[];
+  conversionFunnel: FunnelStep[];
+  pipelineHealth: { withNextAction: number; touched48h: number; properlyStaged: number };
+}
+
+interface ProductMixItem {
+  type: string;
+  amount: number;
+  count: number;
+  percentage: number;
+}
+
+interface ProductMixData {
+  products: ProductMixItem[];
+  total: number;
+  repBreakdown: Array<{
+    id: string;
+    name: string;
+    initials: string;
+    funded: number;
+    mix: Array<{ type: string; amount: number; percentage: number; vsTeam: number }>;
+  }>;
+}
+
+interface SmsMetricsData {
+  sent24h: number;
+  delivered24h: number;
+  totalLeads: number;
+  replyRate7d: number;
+  errorRate: number;
+  activeAutomations: number;
+}
+
+interface ActivityEvent {
+  id: string;
+  eventType: string;
+  note?: string;
+  fromStage?: string;
+  toStage?: string;
+  createdAt: string;
+  deal?: { id: string; client?: { businessName: string }; stage: string };
+  rep?: { id: string; firstName: string; lastName: string; initials: string };
+}
+
+interface QueueDeal extends Deal {
+  primaryAction: string;
+  stageLabel: string;
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ══════════════════════════════════════════════════════════════
 
 export default function CommandCenterPage() {
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
-  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
-  const [simRepId, setSimRepId] = useState<string>('');
-  const [showCreateDeal, setShowCreateDeal] = useState(false);
-  const repFilterParam: Record<string, string> = simRepId ? { repId: simRepId } : {};
+  const clock = useClock();
 
-  const { data: reps } = useQuery({
+  const [activeView, setActiveView] = useState<string>('admin');
+  const [execPopupOpen, setExecPopupOpen] = useState<string | null>(null);
+  const [repTableSort, setRepTableSort] = useState<{ col: string; asc: boolean }>({ col: 'funded', asc: false });
+  const [pmPeriod, setPmPeriod] = useState<'lifetime' | '30d'>('lifetime');
+  const [clockMs, setClockMs] = useState(0);
+
+  useEffect(() => {
+    function tick() {
+      setClockMs(Date.now());
+    }
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  const sliderRef = useRef<HTMLDivElement>(null);
+  const rswRef = useRef<HTMLDivElement>(null);
+
+  const repIdParam = activeView === 'admin' ? undefined : activeView;
+
+  // ── Data queries ──
+
+  const { data: reps } = useQuery<Rep[]>({
     queryKey: ['reps'],
-    queryFn: async () => {
-      const { data } = await repApi.getReps({ activeOnly: 'true' });
-      return data as Rep[];
-    },
-    enabled: isAdmin,
+    queryFn: async () => (await repApi.getReps()).data,
+    staleTime: 60000,
   });
 
-  // Main metrics
-  const { data: metrics, isLoading } = useQuery({
-    queryKey: ['command-center', 'metrics', simRepId],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getMetrics(repFilterParam);
-      return data as CommandCenterMetrics;
-    },
+  const { data: metrics } = useQuery<CommandCenterMetrics>({
+    queryKey: ['cc-metrics', repIdParam],
+    queryFn: async () => (await commandCenterApi.getMetrics(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 30000,
   });
 
-  const { data: queue } = useQuery({
-    queryKey: ['command-center', 'operator-queue', simRepId],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getOperatorQueue(repFilterParam);
-      return data as Deal[];
-    },
+  const { data: execScores } = useQuery<ExecScore[]>({
+    queryKey: ['cc-exec-scores'],
+    queryFn: async () => (await commandCenterApi.getExecutionScores()).data,
+    staleTime: 30000,
+  });
+
+  const { data: operatorQueue } = useQuery<QueueDeal[]>({
+    queryKey: ['cc-operator-queue', repIdParam],
+    queryFn: async () => (await commandCenterApi.getOperatorQueue(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 30000,
   });
 
-  const { data: hotLeads } = useQuery({
-    queryKey: ['command-center', 'hot-leads', simRepId],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getHotLeads(repFilterParam);
-      return data as Deal[];
-    },
+  const { data: hotLeads } = useQuery<Deal[]>({
+    queryKey: ['cc-hot-leads', repIdParam],
+    queryFn: async () => (await commandCenterApi.getHotLeads(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 30000,
   });
 
-  const { data: staleDeals } = useQuery({
-    queryKey: ['command-center', 'stale-deals', simRepId],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getStaleDeals(repFilterParam);
-      return data as Deal[];
-    },
+  const { data: staleDeals } = useQuery<Deal[]>({
+    queryKey: ['cc-stale-deals', repIdParam],
+    queryFn: async () => (await commandCenterApi.getStaleDeals(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 30000,
   });
 
-  // Intelligence (admin only)
-  const { data: intelligence } = useQuery({
-    queryKey: ['command-center', 'intelligence'],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getIntelligence();
-      return data;
-    },
-    enabled: isAdmin && !simRepId,
-    refetchInterval: 60000,
+  const { data: overdueTasks } = useQuery<Deal[]>({
+    queryKey: ['cc-overdue-tasks'],
+    queryFn: async () => (await commandCenterApi.getOverdueTasks()).data,
+    refetchInterval: 30000,
   });
 
-  const { data: execScores } = useQuery({
-    queryKey: ['command-center', 'execution-scores'],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getExecutionScores();
-      return data;
-    },
-    enabled: isAdmin,
-    refetchInterval: 60000,
+  const { data: intelligence } = useQuery<IntelligenceData>({
+    queryKey: ['cc-intelligence'],
+    queryFn: async () => (await commandCenterApi.getIntelligence()).data,
+    enabled: activeView === 'admin',
+    staleTime: 30000,
   });
 
-  const { data: productMix } = useQuery({
-    queryKey: ['command-center', 'product-mix'],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getProductMix();
-      return data;
-    },
-    enabled: isAdmin,
-    refetchInterval: 60000,
+  const { data: productMix } = useQuery<ProductMixData>({
+    queryKey: ['cc-product-mix', repIdParam, pmPeriod],
+    queryFn: async () =>
+      (
+        await commandCenterApi.getProductMix({
+          ...(repIdParam ? { repId: repIdParam } : {}),
+          ...(pmPeriod === '30d' ? { period: '30d' } : {}),
+        })
+      ).data,
+    staleTime: 30000,
   });
 
-  const { data: activityFeed } = useQuery({
-    queryKey: ['command-center', 'activity-feed'],
-    queryFn: async () => {
-      const { data } = await commandCenterApi.getActivityFeed();
-      return data;
-    },
+  const { data: activityFeed } = useQuery<ActivityEvent[]>({
+    queryKey: ['cc-activity-feed', repIdParam],
+    queryFn: async () => (await commandCenterApi.getActivityFeed(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 15000,
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-scl-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const { data: smsMetrics } = useQuery<SmsMetricsData>({
+    queryKey: ['cc-sms-metrics'],
+    queryFn: async () => (await commandCenterApi.getSmsMetrics()).data,
+    staleTime: 60000,
+  });
 
-  const m = metrics;
+  // ── Animated values ──
+
+  const animatedFunded = useCounterAnimation(metrics?.fundedMTD ?? 0);
+
+  // ── View helpers ──
+
+  const isAdmin = activeView === 'admin';
+
+  const activeRep = useMemo(() => {
+    if (isAdmin || !reps) return null;
+    return reps.find((r) => r.id === activeView) ?? null;
+  }, [isAdmin, activeView, reps]);
+
+  const activeRepInitials = activeRep
+    ? activeRep.initials || (activeRep.firstName[0] + activeRep.lastName[0]).toUpperCase()
+    : '';
+
+  // Position slider
+  useEffect(() => {
+    if (!rswRef.current || !sliderRef.current) return;
+    const buttons = rswRef.current.querySelectorAll<HTMLButtonElement>('.rb');
+    let activeBtn: HTMLButtonElement | null = null;
+    buttons.forEach((b) => {
+      if (b.classList.contains('on')) activeBtn = b;
+    });
+    if (activeBtn) {
+      const pr = rswRef.current.getBoundingClientRect();
+      const br = (activeBtn as HTMLButtonElement).getBoundingClientRect();
+      sliderRef.current.style.left = br.left - pr.left + 'px';
+      sliderRef.current.style.width = br.width + 'px';
+    }
+  }, [activeView]);
+
+  const handleViewSwitch = useCallback((viewId: string) => {
+    setActiveView(viewId);
+    setPmPeriod('lifetime');
+  }, []);
+
+  // ── Stale revenue ──
+
+  const staleRevenue = useMemo(() => {
+    if (!staleDeals) return 0;
+    return staleDeals
+      .filter((d) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING', 'SUBMITTED_IN_REVIEW'].includes(d.stage))
+      .reduce((s, d) => s + (d.dealAmount || 0), 0);
+  }, [staleDeals]);
+
+  const daysLeft = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate();
+
+  // ══════════════════════════════════════
+  // RENDER
+  // ══════════════════════════════════════
 
   return (
-    <div className="p-4 space-y-6 overflow-y-auto max-h-[calc(100vh-64px)]">
-      {/* Header + Admin Sim Mode */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-[var(--text-primary)]">Command Center</h1>
-          <p className="text-xs text-[var(--text-muted)]">
-            Real-time pipeline intelligence
-            <span className="ml-2 text-green-400">● Live</span>
-          </p>
+    <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+      {/* TOPBAR */}
+      <div className="topbar">
+        <div className="logo-wrap">
+          <div className="logo-sq">S</div>
+          <div>
+            <div className="logo-name">SCL Capital</div>
+            <div className="logo-sub">Command Center</div>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && reps && (
-            <div className="flex items-center gap-1.5">
-              <Eye className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-              <select
-                value={simRepId}
-                onChange={(e) => setSimRepId(e.target.value)}
-                className="text-xs px-2 py-1 rounded bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
-              >
-                <option value="">Admin View</option>
-                {reps.map((r: Rep) => (
-                  <option key={r.id} value={r.id}>
-                    {r.initials} — {r.firstName} {r.lastName}
-                  </option>
-                ))}
-              </select>
+        <div className="tb-right">
+          <span className={`role-label ${isAdmin ? 'rl-admin' : 'rl-rep'}`}>
+            {isAdmin ? 'Operator Mode' : `Rep View \u2014 ${activeRepInitials}`}
+          </span>
+
+          {/* Execution Score Bar */}
+          {execScores && execScores.length > 0 && (
+            <div className="exec-score-bar esb-wrap" style={{ position: 'relative' }}>
+              <span className="esb-label">Execution</span>
+              {execScores.map((es) => (
+                <div
+                  key={es.id}
+                  className="esb-rep"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setExecPopupOpen(execPopupOpen === es.id ? null : es.id)}
+                >
+                  <span className="esb-init">{es.initials}</span>
+                  <div className="esb-track">
+                    <div className="esb-fill" style={{ width: es.score + '%', background: getExecColor(es.score) }} />
+                  </div>
+                  <span className={`esb-pct ${getExecClass(es.score)}`}>{es.score}%</span>
+                </div>
+              ))}
+              {execPopupOpen && execScores.find((e) => e.id === execPopupOpen) && (
+                <ExecPopup
+                  data={execScores.find((e) => e.id === execPopupOpen)!}
+                  onClose={() => setExecPopupOpen(null)}
+                />
+              )}
             </div>
           )}
-          {isAdmin && execScores && !simRepId && (
-            <div className="px-2.5 py-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-xs">
-              <span className="text-[var(--text-muted)]">Team Score: </span>
-              <span
-                className={clsx(
-                  'font-bold',
-                  (execScores as any[]).reduce((a: number, s: any) => a + s.score, 0) /
-                    Math.max(1, (execScores as any[]).length) >=
-                    75
-                    ? 'text-green-400'
-                    : (execScores as any[]).reduce((a: number, s: any) => a + s.score, 0) /
-                          Math.max(1, (execScores as any[]).length) >=
-                        50
-                      ? 'text-amber-400'
-                      : 'text-red-400',
-                )}
-              >
-                {Math.round(
-                  (execScores as any[]).reduce((a: number, s: any) => a + s.score, 0) /
-                    Math.max(1, (execScores as any[]).length),
-                )}
-                %
-              </span>
-            </div>
-          )}
-          <button
-            onClick={() => setShowCreateDeal(true)}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-scl-500 text-white hover:bg-scl-600 transition"
-          >
-            + Add Deal
+
+          {/* Role Switch */}
+          <div className="rsw" ref={rswRef}>
+            <div className="rsw-slider" ref={sliderRef} />
+            <button className={`rb ${isAdmin ? 'on on-admin' : ''}`} onClick={() => handleViewSwitch('admin')}>
+              Admin
+            </button>
+            {reps
+              ?.filter((r) => r.role !== 'MANAGER')
+              .slice(0, 3)
+              .map((rep) => (
+                <button
+                  key={rep.id}
+                  className={`rb ${activeView === rep.id ? 'on' : ''}`}
+                  onClick={() => handleViewSwitch(rep.id)}
+                >
+                  Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
+                </button>
+              ))}
+          </div>
+
+          <div className="live-pip">
+            <div className="lpd" />
+            LIVE
+          </div>
+          <span className="clk">{clock}</span>
+          <button className="add-btn" onClick={() => toast('Lead intake form coming soon')}>
+            + Add Lead
           </button>
         </div>
       </div>
 
-      {/* Money Zone */}
-      <section>
-        <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
-          <DollarSign className="w-3.5 h-3.5" /> Money Zone
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          <MetricCard
-            label="Funded MTD"
-            value={formatCurrency(m?.fundedMTD)}
-            icon={TrendingUp}
-            color="text-green-400"
-          />
-          <MetricCard
-            label="Pipeline Value"
-            value={formatCurrency(m?.pipelineValue)}
-            icon={DollarSign}
-            color="text-scl-500"
-          />
-          <MetricCard label="Committed" value={formatCurrency(m?.committedValue)} icon={Target} color="text-cyan-400" />
-          <MetricCard label="At Risk" value={formatCurrency(m?.atRisk)} icon={AlertTriangle} color="text-red-400" />
-          <MetricCard
-            label="Goal Progress"
-            value={`${Math.round(m?.goalProgress || 0)}%`}
-            icon={BarChart3}
-            color={
-              m?.goalProgress && m.goalProgress >= 80
-                ? 'text-green-400'
-                : m?.goalProgress && m.goalProgress >= 50
-                  ? 'text-amber-400'
-                  : 'text-red-400'
-            }
-          />
-          <MetricCard
-            label="Projected"
-            value={formatCurrency(m?.projectedMonthEnd)}
-            icon={TrendingUp}
-            color="text-blue-400"
-          />
-        </div>
-        {/* Goal progress bar */}
-        {m?.goalProgress !== undefined && (
-          <div className="mt-2 h-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
-            <div
-              className={clsx(
-                'h-full rounded-full transition-all',
-                m.goalProgress >= 80 ? 'bg-green-500' : m.goalProgress >= 50 ? 'bg-amber-500' : 'bg-red-500',
-              )}
-              style={{ width: `${Math.min(100, m.goalProgress)}%` }}
-            />
-          </div>
-        )}
-        {/* Future Opportunities */}
-        {m?.futureNext7 || m?.futureNext30 || m?.futureTotal ? (
-          <div className="grid grid-cols-3 gap-3 mt-3">
-            <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-center">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{m.futureNext7 || 0}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Next 7 Days</p>
+      {/* PAGE */}
+      <div className="page">
+        {/* ADMIN VIEW */}
+        {isAdmin && (
+          <div className="view on">
+            {/* Money Zone */}
+            <div className="zone">
+              <div className="zd" style={{ background: 'var(--gold)' }} />
+              Money Zone \u2014 Team-Wide
             </div>
-            <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-center">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{m.futureNext30 || 0}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Next 30 Days</p>
-            </div>
-            <div className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-center">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{m.futureTotal || 0}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Total Pipeline</p>
-            </div>
-          </div>
-        ) : null}
-      </section>
 
-      {/* Execution Zone */}
-      <section>
-        <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
-          <Zap className="w-3.5 h-3.5" /> Execution Zone
-        </h2>
-        <div className="grid grid-cols-3 gap-3">
-          <ExecCard label="Hot Deals" count={m?.hotCount || 0} color="bg-orange-500" icon={Flame} />
-          <ExecCard label="Stale (24h+)" count={m?.staleCount || 0} color="bg-amber-500" icon={Clock} />
-          <ExecCard label="Overdue Tasks" count={m?.overdueCount || 0} color="bg-red-500" icon={AlertTriangle} />
-        </div>
-      </section>
-
-      {/* Two-column: Operator Queue + Hot/Stale */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Operator Queue */}
-        <section className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Operator Queue</h3>
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {!queue || queue.length === 0 ? (
-              <p className="text-xs text-[var(--text-muted)] text-center py-4">No pending actions</p>
-            ) : (
-              queue.slice(0, 15).map((deal: Deal) => (
-                <div
-                  key={deal.id}
-                  onClick={() => setSelectedDealId(deal.id)}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--bg-tertiary)] cursor-pointer transition"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-[var(--text-primary)] truncate">
-                      {deal.client?.businessName}
-                    </p>
-                    <p className="text-[10px] text-[var(--text-muted)]">
-                      {deal.nextAction || 'No action set'}{' '}
-                      {deal.nextActionDue ? `— due ${new Date(deal.nextActionDue).toLocaleDateString()}` : ''}
-                    </p>
+            {/* Hero */}
+            <div className="hero">
+              <div className="hero-g">
+                <div>
+                  <div className="h-eyebrow">{getGreeting()}</div>
+                  <div className="h-name">
+                    {user?.firstName} {user?.lastName}
                   </div>
-                  {deal.dealAmount && (
-                    <span className="text-xs font-semibold text-[var(--text-secondary)]">
-                      {formatCurrency(deal.dealAmount)}
-                    </span>
-                  )}
-                  {deal.isHot && <Flame className="w-3 h-3 text-orange-500 flex-shrink-0" />}
+                  <div className="h-sub">
+                    Admin \u00b7 All Reps \u00b7{' '}
+                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        {/* Hot + Stale */}
-        <div className="space-y-4">
-          <section className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-orange-400 mb-3 flex items-center gap-1.5">
-              <Flame className="w-3.5 h-3.5" /> Hot Deals ({hotLeads?.length || 0})
-            </h3>
-            <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
-              {hotLeads?.slice(0, 8).map((deal: Deal) => (
-                <DealRow key={deal.id} deal={deal} onClick={() => setSelectedDealId(deal.id)} />
-              ))}
-              {(!hotLeads || hotLeads.length === 0) && (
-                <p className="text-xs text-[var(--text-muted)] text-center py-2">No hot deals</p>
-              )}
-            </div>
-          </section>
-
-          <section className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-amber-400 mb-3 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" /> Stale Deals ({staleDeals?.length || 0})
-              {staleDeals && staleDeals.length > 0 && (
-                <span className="text-[10px] font-normal text-[var(--text-muted)] ml-auto">
-                  ${staleDeals.reduce((a: number, d: Deal) => a + (d.dealAmount || 0), 0).toLocaleString()} at risk
-                </span>
-              )}
-            </h3>
-            <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
-              {staleDeals?.slice(0, 8).map((deal: Deal) => (
-                <DealRow key={deal.id} deal={deal} onClick={() => setSelectedDealId(deal.id)} />
-              ))}
-              {(!staleDeals || staleDeals.length === 0) && (
-                <p className="text-xs text-[var(--text-muted)] text-center py-2">No stale deals</p>
-              )}
-            </div>
-          </section>
-        </div>
-      </div>
-
-      {/* Intelligence Zone (Admin only) */}
-      {isAdmin && intelligence && !simRepId && (
-        <section>
-          <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
-            <Activity className="w-3.5 h-3.5" /> Intelligence Zone
-          </h2>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* Pipeline Snapshot bar chart */}
-            {intelligence.stageSnapshot && (
-              <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4 lg:col-span-2">
-                <h3 className="text-xs font-semibold text-[var(--text-primary)] mb-3">Pipeline Snapshot</h3>
-                <div className="space-y-2">
-                  {intelligence.stageSnapshot.map((s: any) => {
-                    const maxCount = Math.max(...intelligence.stageSnapshot.map((x: any) => x.count || 0), 1);
-                    return (
-                      <div key={s.stage} className="flex items-center gap-2">
-                        <span className="text-[10px] text-[var(--text-muted)] w-20 text-right truncate">
-                          {STAGE_LABELS[s.stage] || s.stage}
-                        </span>
-                        <div className="flex-1 h-5 bg-[var(--bg-tertiary)] rounded overflow-hidden">
-                          <div
-                            className="h-full bg-scl-500/60 rounded flex items-center px-1.5"
-                            style={{ width: `${Math.max(5, (s.count / maxCount) * 100)}%` }}
-                          >
-                            <span className="text-[9px] text-white font-medium">{s.count}</span>
-                          </div>
-                        </div>
-                        {s.stage !== 'SUBMITTED_IN_REVIEW' && s.value > 0 && (
-                          <span className="text-[10px] text-[var(--text-muted)] w-16 text-right">
-                            {formatCurrency(s.value)}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Conversion Funnel */}
-            {intelligence.conversionFunnel && (
-              <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-                <h3 className="text-xs font-semibold text-[var(--text-primary)] mb-3">Conversion Funnel</h3>
-                <div className="space-y-1">
-                  {intelligence.conversionFunnel.map((step: any, i: number) => {
-                    const maxW = Math.max(...intelligence.conversionFunnel.map((x: any) => x.count || 0), 1);
-                    const pct = maxW > 0 ? (step.count / maxW) * 100 : 0;
-                    return (
-                      <div key={step.stage}>
-                        <div
-                          className="py-1.5 rounded text-center text-[10px] font-medium text-white"
-                          style={{
-                            width: `${Math.max(30, pct)}%`,
-                            backgroundColor: `hsl(${220 + i * 25}, 60%, ${55 - i * 5}%)`,
-                            margin: '0 auto',
-                          }}
-                        >
-                          {step.count} {STAGE_LABELS[step.stage] || step.stage}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Row 2: Bottlenecks + Rep Activity + Execution Scores */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-            {/* Bottleneck Analysis */}
-            {intelligence.bottlenecks && (
-              <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-                <h3 className="text-xs font-semibold text-[var(--text-primary)] mb-2">Stage Bottlenecks</h3>
-                <div className="space-y-2">
-                  {intelligence.bottlenecks.slice(0, 5).map((b: any) => (
-                    <div key={b.stage} className="flex justify-between text-xs">
-                      <span className="text-[var(--text-secondary)]">{STAGE_LABELS[b.stage] || b.stage}</span>
-                      <div>
-                        <span className="font-medium text-[var(--text-primary)]">{b.count} deals</span>
-                        {b.value > 0 && (
-                          <span className="text-[var(--text-muted)] ml-1">({formatCurrency(b.value)})</span>
-                        )}
-                      </div>
+                <div>
+                  <div className="funded-lbl">
+                    Total Funded MTD \u2014 all reps \u00b7 stage = &quot;Funded&quot; \u00b7 current month
+                  </div>
+                  <div className="funded-n">{fmtCurrency(Math.round(animatedFunded))}</div>
+                  <div className="funded-meta">
+                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} \u00b7 real-time from
+                    pipeline
+                  </div>
+                  <div className="prog">
+                    <div className="prog-top">
+                      <span className="prog-goal">
+                        Team Goal: {fmtCurrency(metrics?.monthlyGoal)} \u00b7 {daysLeft} days remaining
+                      </span>
+                      <span className="prog-pct">{Math.round(metrics?.goalProgress ?? 0)}%</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Rep Activity */}
-            {intelligence.repActivity && (
-              <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-                <h3 className="text-xs font-semibold text-[var(--text-primary)] mb-2">Rep Activity</h3>
-                <div className="space-y-2">
-                  {intelligence.repActivity.map((r: any) => (
-                    <div key={r.id} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                          style={{ backgroundColor: r.avatarColor || '#6366f1' }}
-                        >
-                          {r.initials}
-                        </div>
-                        <span className="text-[var(--text-secondary)]">{r.name || r.initials}</span>
-                      </div>
-                      <span className="font-medium text-[var(--text-primary)]">
-                        {r.activeDeals ?? r.totalDeals ?? 0} active
+                    <div className="prog-track">
+                      <div
+                        className="prog-fill"
+                        style={{
+                          width: Math.min(metrics?.goalProgress ?? 0, 100) + '%',
+                        }}
+                      />
+                    </div>
+                    <div className="prog-row2">
+                      <span className="proj">
+                        Projected month-end: <span className="proj-hi">{fmtCurrency(metrics?.projectedMonthEnd)}</span>{' '}
+                        \u00b7 based on current daily pace
+                      </span>
+                      <span className="proj-need">
+                        Need{' '}
+                        {fmtCurrency(
+                          Math.max(
+                            0,
+                            ((metrics?.monthlyGoal ?? 0) - (metrics?.fundedMTD ?? 0)) / Math.max(1, daysLeft),
+                          ),
+                        )}
+                        /day to hit goal
                       </span>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Execution Scores */}
-            {execScores && (
-              <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-                <h3 className="text-xs font-semibold text-[var(--text-primary)] mb-2">Execution Scores</h3>
-                <div className="space-y-2">
-                  {(execScores as any[]).map((s: any) => (
-                    <div key={s.id} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                          style={{ backgroundColor: s.avatarColor || '#6366f1' }}
-                        >
-                          {s.initials}
-                        </div>
-                        <span className="text-[var(--text-secondary)]">{s.initials}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
-                          <div
-                            className={clsx(
-                              'h-full rounded-full',
-                              s.score >= 75 ? 'bg-green-500' : s.score >= 50 ? 'bg-amber-500' : 'bg-red-500',
-                            )}
-                            style={{ width: `${s.score}%` }}
-                          />
-                        </div>
-                        <span
-                          className={clsx(
-                            'font-bold',
-                            s.score >= 75 ? 'text-green-400' : s.score >= 50 ? 'text-amber-400' : 'text-red-400',
-                          )}
-                        >
-                          {Math.round(s.score)}%
-                        </span>
-                      </div>
+                <div className="hboxes">
+                  <div className="hbox">
+                    <div className="hbl">Pipeline Value</div>
+                    <div className="hbv">{fmtCurrency(metrics?.pipelineValue)}</div>
+                    <div className="hbs">Approved + Committed + Nurture</div>
+                  </div>
+                  <div className="hbox">
+                    <div className="hbl">Renewals Due</div>
+                    <div className="hbv" style={{ color: 'var(--amber)' }}>
+                      {metrics?.renewalsDue ?? 0}
                     </div>
-                  ))}
+                    <div className="hbs">within 30 days</div>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* Pipeline Health strip */}
-          {intelligence.pipelineHealth && (
-            <div className="grid grid-cols-3 gap-3 mt-4">
-              <HealthBar label="Has Next Action" value={intelligence.pipelineHealth.withNextAction} />
-              <HealthBar label="Touched 48h" value={intelligence.pipelineHealth.touched48h} />
-              <HealthBar label="Properly Staged" value={intelligence.pipelineHealth.properlyStaged} />
             </div>
-          )}
-        </section>
-      )}
 
-      {/* Next 5 Actions - ranked by value + urgency */}
-      {queue && queue.length > 0 && (
-        <section>
-          <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
-            <Target className="w-3.5 h-3.5" /> Next 5 Actions
-          </h2>
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4 space-y-2">
-            {(queue as Deal[])
-              .filter((d: any) => d.nextAction || d.primaryAction)
-              .slice(0, 5)
-              .map((deal: any, i: number) => (
+            {/* Scorecards + Future Opps */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr) 180px', gap: 8 }}>
+              <div className="sc tg">
+                <div className="scl">Funded MTD</div>
+                <div className="scv gold">{fmtCurrency(metrics?.fundedMTD)}</div>
+                <div className="scd">
+                  Goal: {fmtCurrency(metrics?.monthlyGoal)} \u00b7 {Math.round(metrics?.goalProgress ?? 0)}%
+                </div>
+              </div>
+              <div className="sc tp">
+                <div className="scl">Pipeline Value</div>
+                <div className="scv purple">{fmtCurrency(metrics?.pipelineValue)}</div>
+                <div className="scd up">Approved + Committed + Nurture offers</div>
+              </div>
+              <div className="sc" style={{ borderTop: '1px solid var(--green2)' }}>
+                <div className="scl">Committed (Funding)</div>
+                <div className="scv green">{fmtCurrency(metrics?.committedValue)}</div>
+                <div className="scd">Client accepted \u00b7 closing in progress</div>
+              </div>
+              <div className="sc tor">
+                <div className="scl">At Risk</div>
+                <div className="scv orange">{fmtCurrency(metrics?.atRisk)}</div>
+                <div className="scd dn">Overdue tasks + stalled deals</div>
+              </div>
+              <div className="future-opps">
+                <div className="fo-label">Future Opportunities</div>
                 <div
-                  key={deal.id}
-                  className="flex items-center justify-between text-xs cursor-pointer hover:bg-[var(--bg-tertiary)] p-2 rounded-lg transition"
-                  onClick={() => setSelectedDealId(deal.id)}
+                  style={{
+                    fontSize: 7,
+                    color: 'var(--muted)',
+                    marginBottom: 6,
+                    lineHeight: 1.4,
+                  }}
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] text-[var(--text-muted)] w-4">{i + 1}.</span>
-                    <div>
-                      <p className="font-medium text-[var(--text-primary)]">
-                        {deal.client?.businessName || 'Unknown'}{' '}
-                        <span className="text-[var(--text-muted)]">· {formatCurrency(deal.dealAmount)}</span>
-                      </p>
-                      <p className="text-[10px] text-scl-400">
-                        {deal.nextAction || deal.primaryAction}{' '}
-                        {deal.nextActionDue && (
-                          <span
-                            className={clsx(
-                              new Date(deal.nextActionDue) < new Date() ? 'text-red-400' : 'text-[var(--text-muted)]',
-                            )}
-                          >
-                            — {new Date(deal.nextActionDue).toLocaleDateString()}
-                          </span>
-                        )}
-                      </p>
+                  Scheduled follow-ups &amp; renewals
+                </div>
+                <div className="fo-rows">
+                  <div className="fo-row">
+                    <span className="fo-lbl">Next 7 days</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="fo-val" style={{ fontSize: 11 }}>
+                        {metrics?.futureNext7 ?? 0} deals
+                      </div>
                     </div>
                   </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-[var(--bg-tertiary)] rounded text-[var(--text-secondary)]">
-                    {deal.stageLabel || deal.stage?.replace(/_/g, ' ')}
-                  </span>
-                </div>
-              ))}
-          </div>
-        </section>
-      )}
-
-      {/* Product Mix (Admin) */}
-      {isAdmin && productMix && !simRepId && (
-        <section>
-          <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
-            <BarChart3 className="w-3.5 h-3.5" /> Product Mix
-          </h2>
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4">
-            <div className="h-6 rounded-full overflow-hidden flex">
-              {((productMix as any).breakdown || []).map(
-                (p: any) =>
-                  p.percentage > 0 && (
-                    <div
-                      key={p.product}
-                      className={clsx(
-                        'flex items-center justify-center text-[9px] font-bold text-white',
-                        PRODUCT_BAR_COLORS[p.product] || 'bg-gray-500',
-                      )}
-                      style={{ width: `${p.percentage}%` }}
-                      title={`${p.product}: ${p.percentage.toFixed(1)}%`}
-                    >
-                      {p.percentage >= 8 ? p.product : ''}
+                  <div className="fo-row">
+                    <span className="fo-lbl">Next 30 days</span>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="fo-val" style={{ fontSize: 11 }}>
+                        {metrics?.futureNext30 ?? 0} deals
+                      </div>
                     </div>
-                  ),
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3 mt-2">
-              {((productMix as any).breakdown || []).map((p: any) => (
-                <span key={p.product} className="text-[10px] text-[var(--text-muted)]">
-                  <span
-                    className={clsx(
-                      'inline-block w-2 h-2 rounded-full mr-1',
-                      PRODUCT_BAR_COLORS[p.product] || 'bg-gray-500',
-                    )}
-                  />
-                  {p.product} {p.percentage.toFixed(0)}%
-                </span>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Activity Feed */}
-      {activityFeed && (activityFeed as any[]).length > 0 && (
-        <section>
-          <h2 className="text-xs font-semibold uppercase text-[var(--text-muted)] mb-3 flex items-center gap-2">
-            <Activity className="w-3.5 h-3.5" /> Activity Feed
-          </h2>
-          <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-4 max-h-[300px] overflow-y-auto space-y-2">
-            {(activityFeed as any[]).slice(0, 20).map((event: any, idx: number) => (
-              <div key={event.id || idx} className="flex items-start gap-2 text-xs">
-                <div className="w-1.5 h-1.5 rounded-full bg-scl-500 mt-1.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <span className="font-medium text-[var(--text-primary)]">{event.eventType?.replace(/_/g, ' ')}</span>
-                  {event.note && <span className="text-[var(--text-muted)]"> — {event.note}</span>}
-                  <p className="text-[10px] text-[var(--text-muted)]">
-                    {event.rep?.firstName ? `${event.rep.firstName} ${event.rep.lastName}` : ''} ·{' '}
-                    {new Date(event.createdAt).toLocaleString()}
-                  </p>
+                  </div>
+                </div>
+                <div className="fo-total">
+                  <span className="fo-total-lbl">Total scheduled</span>
+                  <span className="fo-total-val">{metrics?.futureTotal ?? 0}</span>
                 </div>
               </div>
-            ))}
+            </div>
+
+            {/* Risk Banner */}
+            {(metrics?.atRisk ?? 0) > 0 && (
+              <div className="risk-banner">
+                <div className="rb-left">
+                  <div className="rb-icon">{'\u26A0'}</div>
+                  <div>
+                    <div className="rb-title">System Revenue at Risk</div>
+                    <div className="rb-sub">
+                      Approved + Committed deals \u00b7 overdue next actions \u00b7 stalled activity
+                    </div>
+                  </div>
+                </div>
+                <div className="rb-right">
+                  <div className="rb-stat">
+                    <div className="rb-val">{fmtCurrency(metrics?.atRisk)}</div>
+                    <div className="rb-lbl">At risk value</div>
+                  </div>
+                  <div className="rb-stat">
+                    <div className="rb-val">{metrics?.overdueCount ?? 0}</div>
+                    <div className="rb-lbl">Overdue tasks</div>
+                  </div>
+                  <div className="rb-stat">
+                    <div className="rb-val">{metrics?.staleCount ?? 0}</div>
+                    <div className="rb-lbl">Stale deals</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Execution Zone */}
+            <div className="zone">
+              <div className="zd" style={{ background: 'var(--orange)' }} />
+              Execution Zone \u2014 Operator Tools
+            </div>
+
+            <OperatorQueue deals={operatorQueue} isAdmin />
+
+            <div className="g3">
+              <PriorityCard
+                type="hot"
+                title="Hot Leads"
+                subtitle="System-wide \u00b7 immediate action"
+                deals={hotLeads}
+                count={metrics?.hotCount ?? hotLeads?.length ?? 0}
+              />
+              <PriorityCard
+                type="stale"
+                title="Stale Deals"
+                subtitle="last_activity_at < now - 24h"
+                deals={staleDeals}
+                count={metrics?.staleCount ?? staleDeals?.length ?? 0}
+                riskValue={staleRevenue}
+              />
+              <PriorityCard
+                type="over"
+                title="Overdue Tasks"
+                subtitle="next_action_due_date < now"
+                deals={overdueTasks}
+                count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
+              />
+            </div>
+
+            {/* Intelligence Zone */}
+            <div className="zone">
+              <div className="zd" style={{ background: 'var(--muted)' }} />
+              Intelligence Zone \u2014 Operator Oversight
+            </div>
+
+            {intelligence && (
+              <div className="g2">
+                <BottleneckCard bottlenecks={intelligence.bottlenecks} />
+                <RepMonitorCard
+                  repActivity={intelligence.repActivity}
+                  onSwitchRep={handleViewSwitch}
+                  clockMs={clockMs}
+                />
+              </div>
+            )}
+
+            {intelligence && (
+              <div className="g-3-2">
+                <RepPerformanceTable
+                  repActivity={intelligence.repActivity}
+                  sort={repTableSort}
+                  onSort={setRepTableSort}
+                />
+                <PipelineSnapshotCard stages={intelligence.stageSnapshot} />
+                <div className="card">
+                  <div className="cl">Product Mix \u2014 quick view</div>
+                  <div style={{ fontSize: 8, color: 'var(--muted)', marginBottom: 8 }}>
+                    Team funded \u00b7 see full module below
+                  </div>
+                  {productMix && (
+                    <>
+                      <SegBar products={productMix.products} />
+                      <LegendRow products={productMix.products} />
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="g2">
+              {intelligence && <ConversionFunnelCard funnel={intelligence.conversionFunnel} />}
+              <ActivityFeedCard events={activityFeed} />
+            </div>
+
+            {productMix && (
+              <ProductMixModule data={productMix} period={pmPeriod} onPeriodChange={setPmPeriod} isAdmin />
+            )}
+
+            {intelligence && (
+              <div className="g-2-1">
+                <div className="card">
+                  <div className="cl">Next Actions \u2014 ranked by value + urgency + proximity to funded</div>
+                  <Next5Actions deals={operatorQueue?.slice(0, 5)} />
+                </div>
+                <div>
+                  <div className="cl" style={{ marginBottom: 6 }}>
+                    Pipeline Health
+                  </div>
+                  <div className="pipe-health">
+                    <div className="ph-cell">
+                      <div className="ph-lbl">Next Action Set</div>
+                      <div
+                        className={`ph-val ${
+                          intelligence.pipelineHealth.withNextAction >= 80
+                            ? 'ok'
+                            : intelligence.pipelineHealth.withNextAction >= 60
+                              ? 'warn'
+                              : 'bad'
+                        }`}
+                      >
+                        {intelligence.pipelineHealth.withNextAction}%
+                      </div>
+                    </div>
+                    <div className="ph-cell">
+                      <div className="ph-lbl">Touched 48h</div>
+                      <div
+                        className={`ph-val ${
+                          intelligence.pipelineHealth.touched48h >= 80
+                            ? 'ok'
+                            : intelligence.pipelineHealth.touched48h >= 60
+                              ? 'warn'
+                              : 'bad'
+                        }`}
+                      >
+                        {intelligence.pipelineHealth.touched48h}%
+                      </div>
+                    </div>
+                    <div className="ph-cell">
+                      <div className="ph-lbl">Properly Staged</div>
+                      <div className={`ph-val ${intelligence.pipelineHealth.properlyStaged >= 90 ? 'ok' : 'warn'}`}>
+                        {intelligence.pipelineHealth.properlyStaged}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {smsMetrics && <SmsBar metrics={smsMetrics} />}
           </div>
-        </section>
-      )}
+        )}
 
-      {/* Deal Panel */}
-      {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
-      {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
+        {/* REP VIEW */}
+        {!isAdmin && activeRep && (
+          <div className="view on">
+            <div className="zone">
+              <div className="zd" style={{ background: activeRep.avatarColor || 'var(--gold)' }} />
+              My Performance \u2014 {activeRepInitials} \u00b7 owner_id filtered
+            </div>
+
+            <div className="rep-hero">
+              <div className="rbs" style={{ borderTop: '1px solid var(--gold)' }}>
+                <div className="rbs-lbl">My Funded MTD</div>
+                <div className="rbs-val gold">{fmtCurrency(metrics?.fundedMTD)}</div>
+                <div className="rbs-sub">
+                  {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </div>
+                <div className="rbs-bar">
+                  <div
+                    className="rbs-fill"
+                    style={{
+                      width: Math.min(metrics?.goalProgress ?? 0, 100) + '%',
+                      background: 'var(--gold)',
+                    }}
+                  />
+                </div>
+                <div style={{ marginTop: 4, fontSize: 8, color: 'var(--muted)' }}>
+                  {Math.round(metrics?.goalProgress ?? 0)}% of {fmtCurrency(metrics?.monthlyGoal)} goal
+                </div>
+              </div>
+              <div className="rbs" style={{ borderTop: '1px solid #1f6feb' }}>
+                <div className="rbs-lbl">My Pipeline Value</div>
+                <div className="rbs-val blue">{fmtCurrency(metrics?.pipelineValue)}</div>
+                <div className="rbs-sub">Approved + Committed only</div>
+              </div>
+              <div className="rbs" style={{ borderTop: '1px solid var(--green2)' }}>
+                <div className="rbs-lbl">Committed (Funding)</div>
+                <div className="rbs-val green">{fmtCurrency(metrics?.committedValue)}</div>
+                <div className="rbs-sub">Client accepted \u00b7 closing stage</div>
+              </div>
+              <div className="rbs" style={{ borderTop: '1px solid var(--green)' }}>
+                <div className="rbs-lbl">Hot Deals</div>
+                <div className="rbs-val green">{metrics?.hotCount ?? 0}</div>
+                <div className="rbs-sub">Active hot deals</div>
+              </div>
+            </div>
+
+            <div className={`pace-banner ${(metrics?.goalProgress ?? 0) >= 50 ? 'pace-good' : 'pace-warn'}`}>
+              <span>
+                Projected month-end: <strong>{fmtCurrency(metrics?.projectedMonthEnd)}</strong> \u00b7{' '}
+                {fmtCurrency(Math.max(0, (metrics?.monthlyGoal ?? 0) - (metrics?.fundedMTD ?? 0)))} remaining to hit{' '}
+                {fmtCurrency(metrics?.monthlyGoal)} goal
+              </span>
+              <span style={{ color: 'var(--muted)' }}>
+                {(metrics?.goalProgress ?? 0) >= 50 ? 'On pace' : 'Behind pace \u2014 action needed'}
+              </span>
+            </div>
+
+            <div className="zone" style={{ marginTop: 2 }}>
+              <div className="zd" style={{ background: 'var(--orange)' }} />
+              Execution Zone \u2014 My Deals Only
+            </div>
+
+            <OperatorQueue deals={operatorQueue} />
+
+            <div className="g3">
+              <PriorityCard
+                type="hot"
+                title="My Hot Leads"
+                subtitle={`Your deals only (owner_id = ${activeRepInitials})`}
+                deals={hotLeads}
+                count={metrics?.hotCount ?? hotLeads?.length ?? 0}
+              />
+              <PriorityCard
+                type="stale"
+                title="My Stale Deals"
+                subtitle="No contact 24h+ (my deals only)"
+                deals={staleDeals}
+                count={metrics?.staleCount ?? staleDeals?.length ?? 0}
+                riskValue={staleRevenue}
+              />
+              <PriorityCard
+                type="over"
+                title="My Overdue Tasks"
+                subtitle="next_action_due_date < now"
+                deals={overdueTasks}
+                count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
+              />
+            </div>
+
+            <div className="zone" style={{ marginTop: 2 }}>
+              <div className="zd" style={{ background: 'var(--muted)' }} />
+              My Intelligence \u2014 Personal Metrics
+            </div>
+
+            <div className="g-pipe">
+              {intelligence ? (
+                <PipelineSnapshotCard stages={intelligence.stageSnapshot} title="My Pipeline" />
+              ) : (
+                <div className="card">
+                  <div className="cl">My Pipeline</div>
+                  <div style={{ fontSize: 9, color: 'var(--muted)' }}>Loading...</div>
+                </div>
+              )}
+
+              {intelligence ? (
+                <ConversionFunnelCard funnel={intelligence.conversionFunnel} title="My Conversion Funnel" />
+              ) : (
+                <div className="card">
+                  <div className="cl">My Conversion</div>
+                </div>
+              )}
+
+              <div className="card">
+                <div className="cl">My Product Mix \u2014 funded</div>
+                {productMix && (
+                  <>
+                    <div className="pb-rows">
+                      {productMix.products.map((p) => (
+                        <div className="pb-r" key={p.type}>
+                          <div className="pb-lbl">
+                            {p.type}
+                            {p.percentage > 50 && <span className="pb-tag pb-top">TOP</span>}
+                          </div>
+                          <div className="pb-track">
+                            <div
+                              className="pb-fill"
+                              style={{
+                                width: p.percentage + '%',
+                                background: PM_COLORS[p.type] || '#666',
+                                opacity: 0.5,
+                              }}
+                            />
+                          </div>
+                          <div className="pb-val" style={{ color: PM_COLORS[p.type] || 'var(--text)' }}>
+                            {fmtCurrency(p.amount)}
+                          </div>
+                          <div className="pb-pct">{p.percentage}%</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pb-foot">
+                      <div className="pb-insight">
+                        {productMix.products.length > 0 && productMix.products[0].percentage >= 70
+                          ? `${productMix.products[0].type} dominant. Diversify to reduce risk.`
+                          : 'Balanced product mix.'}
+                      </div>
+                      <div className="pb-total">{fmtCurrency(productMix.total)}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <ActivityFeedCard events={activityFeed} title="My Activity" />
+            </div>
+
+            {productMix && (
+              <ProductMixModule
+                data={productMix}
+                period={pmPeriod}
+                onPeriodChange={setPmPeriod}
+                isAdmin={false}
+                repInitials={activeRepInitials}
+              />
+            )}
+
+            {smsMetrics && <SmsBar metrics={smsMetrics} label="My SMS" />}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Sub-components ───
+// ══════════════════════════════════════════════════════════════
+// SUB-COMPONENTS
+// ══════════════════════════════════════════════════════════════
 
-function MetricCard({ label, value, icon: Icon, color }: { label: string; value: string; icon: any; color: string }) {
+function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () => void }) {
+  const cls = data.score >= 70 ? 'ok' : data.score >= 40 ? 'warn' : 'bad';
   return (
-    <div className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-primary)]">
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon className={clsx('w-3.5 h-3.5', color)} />
-        <span className="text-[10px] font-medium text-[var(--text-muted)] uppercase">{label}</span>
+    <div className="esb-popup open" onClick={(e) => e.stopPropagation()}>
+      <div className="esb-popup-rep">
+        {data.firstName} \u2014 {data.score}%
       </div>
-      <p className="text-lg font-bold text-[var(--text-primary)]">{value}</p>
-    </div>
-  );
-}
-
-function ExecCard({ label, count, color, icon: Icon }: { label: string; count: number; color: string; icon: any }) {
-  return (
-    <div className="p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-primary)] flex items-center gap-3">
-      <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center', color)}>
-        <Icon className="w-5 h-5 text-white" />
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-[var(--text-primary)]">{count}</p>
-        <p className="text-[10px] text-[var(--text-muted)]">{label}</p>
-      </div>
-    </div>
-  );
-}
-
-function DealRow({ deal, onClick }: { deal: Deal; onClick: () => void }) {
-  return (
-    <div
-      onClick={onClick}
-      className="flex items-center justify-between p-1.5 rounded hover:bg-[var(--bg-tertiary)] cursor-pointer transition"
-    >
-      <div className="flex-1 min-w-0">
-        <span className="text-xs text-[var(--text-primary)] truncate block">{deal.client?.businessName}</span>
-      </div>
-      {deal.dealAmount && (
-        <span className="text-[10px] font-semibold text-[var(--text-secondary)] ml-2">
-          {formatCurrency(deal.dealAmount)}
+      <div className="esb-popup-row">
+        <span className="esb-popup-key">Actions completed</span>
+        <span className={`esb-popup-val ${cls}`}>
+          {data.completed} / {data.assigned}
         </span>
-      )}
-      <span className="text-[10px] text-[var(--text-muted)] ml-2">{deal.staleDays}d</span>
+      </div>
+      <div className="esb-popup-row">
+        <span className="esb-popup-key">Overdue actions</span>
+        <span className={`esb-popup-val ${data.overdue > 0 ? 'bad' : 'ok'}`}>{data.overdue}</span>
+      </div>
+      <div className="esb-popup-row">
+        <span className="esb-popup-key">Assigned deals</span>
+        <span className="esb-popup-val">{data.assigned}</span>
+      </div>
     </div>
   );
 }
 
-function HealthBar({ label, value }: { label: string; value?: number }) {
-  const pct = value || 0;
+function OperatorQueue({ deals, isAdmin }: { deals?: QueueDeal[]; isAdmin?: boolean }) {
+  if (!deals || deals.length === 0) return null;
   return (
-    <div className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-primary)]">
-      <div className="flex justify-between text-[10px] text-[var(--text-muted)] mb-1">
-        <span>{label}</span>
-        <span
-          className={clsx('font-bold', pct >= 80 ? 'text-green-400' : pct >= 50 ? 'text-amber-400' : 'text-red-400')}
-        >
-          {pct}%
+    <div className="op-q">
+      <div className="oq-head">
+        <span style={{ color: 'var(--orange)', fontSize: 12 }}>{'\u2605'}</span>
+        <span className="oq-title">
+          {isAdmin ? 'Operator Queue \u2014 Admin Hit List' : 'Close These Today \u2014 My Deals'}
         </span>
+        <span className="oq-sub">One action per deal \u00b7 system-determined by stage + urgency</span>
       </div>
-      <div className="h-1.5 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
-        <div
-          className={clsx(
-            'h-full rounded-full',
-            pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500',
-          )}
-          style={{ width: `${pct}%` }}
-        />
+      <div className="oq-list">
+        {deals.slice(0, 5).map((deal, i) => (
+          <div className="oqi" key={deal.id} onClick={() => toast(deal.client?.businessName || 'Deal')}>
+            <div className="oqi-rank">{i + 1}</div>
+            <div className="oqi-info">
+              <div className="oqi-name">
+                {deal.client?.businessName || 'Unknown'}
+                {isAdmin && deal.assignedRep && (
+                  <span style={{ fontSize: 9, color: 'var(--muted)', fontWeight: 400 }}>
+                    {' \u00b7 '}
+                    {deal.assignedRep.initials ||
+                      (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="oqi-detail">
+                {deal.productType || ''} {STAGE_LABELS[deal.stage] || deal.stage}
+                {deal.nextAction ? ` \u00b7 ${deal.nextAction}` : ''}
+              </div>
+            </div>
+            <div className="oqi-right">
+              <div className="oqi-amt">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</div>
+              <button
+                className={`oqi-action ${getActionButtonStyle(deal.primaryAction)}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toast(`${deal.primaryAction}: ${deal.client?.businessName}`);
+                }}
+              >
+                {deal.primaryAction}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PriorityCard({
+  type,
+  title,
+  subtitle,
+  deals,
+  count,
+  riskValue,
+}: {
+  type: 'hot' | 'stale' | 'over';
+  title: string;
+  subtitle: string;
+  deals?: Deal[];
+  count: number;
+  riskValue?: number;
+}) {
+  const ctaClass = type === 'hot' ? 'cta-h' : type === 'stale' ? 'cta-s' : 'cta-o';
+  const ctaLabel = type === 'hot' ? 'Call Now' : type === 'stale' ? 'Follow Up' : 'Act Now';
+
+  return (
+    <div className={`pcard ${type}`}>
+      <div className="pc-head">
+        <div className="pc-hl">
+          <div>
+            <div className="pc-title">{title}</div>
+            <div className="pc-sub">{subtitle}</div>
+          </div>
+        </div>
+        <div className="pc-ct">{count}</div>
+      </div>
+      <div className="pc-body">
+        {deals?.slice(0, 3).map((deal) => (
+          <div className="pdi" key={deal.id} onClick={() => toast(deal.client?.businessName || 'Deal')}>
+            <div>
+              <div className="pdi-name">
+                {deal.client?.businessName || 'Unknown'}
+                {deal.assignedRep && (
+                  <span style={{ fontSize: 8, color: 'var(--muted)' }}>
+                    {' '}
+                    ({deal.assignedRep.initials || deal.assignedRep.firstName[0]})
+                  </span>
+                )}
+              </div>
+              <div className="pdi-note">
+                {deal.nextAction || STAGE_LABELS[deal.stage] || deal.stage}
+                {deal.staleDays > 0 ? ` \u00b7 ${deal.staleDays}d idle` : ''}
+              </div>
+            </div>
+            <button className={`cta ${ctaClass}`}>{ctaLabel}</button>
+          </div>
+        ))}
+        {riskValue != null && riskValue > 0 && (
+          <div className="pc-risk">
+            <span className="pc-risk-lbl">Revenue at risk</span>
+            <span className="pc-risk-val">{fmtCurrency(riskValue)}</span>
+          </div>
+        )}
+        {(deals?.length ?? 0) > 3 && (
+          <div className="pc-more">
+            + {(deals?.length ?? 0) - 3} more {'\u2192'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BottleneckCard({ bottlenecks }: { bottlenecks: Bottleneck[] }) {
+  const total = bottlenecks.reduce((s, b) => s + b.value, 0);
+
+  function getSeverity(b: Bottleneck): string {
+    if (b.stage === 'SUBMITTED_IN_REVIEW') return 'crit';
+    if (b.stage === 'APPROVED_OFFERS') return 'warn';
+    return 'info';
+  }
+
+  return (
+    <div className="card">
+      <div className="cl">
+        <span>System Bottlenecks \u2014 owner assigned</span>
+        <span className="cl-action">Drill Down {'\u2192'}</span>
+      </div>
+      <div className="bn-list">
+        {bottlenecks.slice(0, 5).map((b) => {
+          const sev = getSeverity(b);
+          return (
+            <div className={`bn-item ${sev}`} key={b.stage}>
+              <div>
+                <div className="bn-lbl">
+                  {STAGE_LABELS[b.stage] || b.stage}
+                  {Object.entries(b.reps).length > 0 && (
+                    <span
+                      style={{
+                        color: 'var(--amber)',
+                        fontSize: 9,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {' \u00b7 '}
+                      {Object.entries(b.reps)
+                        .map(([init, cnt]) => `${init} (${cnt})`)
+                        .join(' \u00b7 ')}
+                    </span>
+                  )}
+                </div>
+                <div className="bn-sub">{b.count} deals</div>
+              </div>
+              <div>
+                <div className={`bn-val ${sev === 'crit' ? 'red' : sev === 'warn' ? 'amber' : 'gold'}`}>
+                  {fmtCurrency(b.value)}
+                </div>
+                <div className="bn-val-sub">{b.count} deals</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {total > 0 && (
+        <div className="bn-total">
+          <span className="bn-total-lbl">Total capital blocked or at risk</span>
+          <span className="bn-total-val">{fmtCurrency(total)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepMonitorCard({
+  repActivity,
+  onSwitchRep,
+  clockMs,
+}: {
+  repActivity: RepActivity[];
+  onSwitchRep: (id: string) => void;
+  clockMs: number;
+}) {
+  return (
+    <div className="card">
+      <div className="cl">
+        <span>Rep Activity Monitor</span>
+        <span className="cl-live">{'\u25CF'} Live</span>
+      </div>
+      <div className="rm-list">
+        {repActivity.map((rep) => {
+          const isActive = rep.status === 'active';
+          const timeCls = isActive
+            ? 'active'
+            : rep.lastTouch && clockMs - new Date(rep.lastTouch).getTime() > 48 * 3600000
+              ? 'dead'
+              : 'warn';
+          const flagCls = isActive ? 'af-active' : 'af-dead';
+          const flagLabel = isActive ? 'Active' : 'Idle';
+
+          return (
+            <div className="rm-item" key={rep.id} onClick={() => onSwitchRep(rep.id)}>
+              <div
+                className="rm-av"
+                style={{
+                  background: rep.avatarColor || 'var(--faint)',
+                  color: rep.avatarColor ? 'var(--bg)' : 'var(--muted)',
+                }}
+              >
+                {rep.initials}
+              </div>
+              <div className="rm-info">
+                <div className="rm-name">
+                  {rep.name} <span className={`act-flag ${flagCls}`}>{flagLabel}</span>
+                </div>
+                <div className="rm-status">
+                  {rep.activeDeals} active deals \u00b7 {rep.overdueCount} actions due
+                </div>
+                {(rep.dealsAtRisk > 0 || rep.overdueCount > 0) && (
+                  <div
+                    style={{
+                      fontSize: 8,
+                      color: 'var(--amber)',
+                      marginTop: 2,
+                    }}
+                  >
+                    Deals at risk: <strong>{fmtCurrency(rep.pipelineValue)}</strong> \u00b7 Overdue:{' '}
+                    <strong>{rep.overdueCount}</strong>
+                  </div>
+                )}
+              </div>
+              <div className="rm-right">
+                <div className={`rm-time ${timeCls}`}>{timeAgo(rep.lastTouch)}</div>
+                <div className="rm-tag">{fmtCurrency(rep.fundedMTD)} MTD</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RepPerformanceTable({
+  repActivity,
+  sort,
+  onSort,
+}: {
+  repActivity: RepActivity[];
+  sort: { col: string; asc: boolean };
+  onSort: (s: { col: string; asc: boolean }) => void;
+}) {
+  const sorted = useMemo(() => {
+    const arr = [...repActivity];
+    arr.sort((a, b) => {
+      let av = 0,
+        bv = 0;
+      switch (sort.col) {
+        case 'funded':
+          av = a.fundedMTD;
+          bv = b.fundedMTD;
+          break;
+        case 'pipeline':
+          av = a.pipelineValue;
+          bv = b.pipelineValue;
+          break;
+        case 'committed':
+          av = a.committedValue;
+          bv = b.committedValue;
+          break;
+        case 'deals':
+          av = a.activeDeals;
+          bv = b.activeDeals;
+          break;
+        default:
+          av = a.fundedMTD;
+          bv = b.fundedMTD;
+      }
+      return sort.asc ? av - bv : bv - av;
+    });
+    return arr;
+  }, [repActivity, sort]);
+
+  const toggleSort = (col: string) => {
+    onSort({ col, asc: sort.col === col ? !sort.asc : false });
+  };
+
+  const topFunded = Math.max(...repActivity.map((r) => r.fundedMTD), 1);
+
+  return (
+    <div className="card">
+      <div className="cl">
+        <span>Rep Performance Table</span>
+        <span className="cl-action">Click headers to sort {'\u2195'}</span>
+      </div>
+      <table className="rep-tbl">
+        <thead>
+          <tr>
+            <th>Rep</th>
+            <th className={sort.col === 'deals' ? 'sorted' : ''} onClick={() => toggleSort('deals')}>
+              Active
+            </th>
+            <th className={sort.col === 'funded' ? 'sorted' : ''} onClick={() => toggleSort('funded')}>
+              Funded $
+            </th>
+            <th className={sort.col === 'pipeline' ? 'sorted' : ''} onClick={() => toggleSort('pipeline')}>
+              Pipeline $
+            </th>
+            <th className={sort.col === 'committed' ? 'sorted' : ''} onClick={() => toggleSort('committed')}>
+              Committed $
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((rep, i) => (
+            <tr key={rep.id}>
+              <td>
+                <div className="r-nc">
+                  <div
+                    className="r-av"
+                    style={{
+                      background: rep.avatarColor || 'var(--faint)',
+                      color: rep.avatarColor ? 'var(--bg)' : 'var(--muted)',
+                    }}
+                  >
+                    {rep.initials}
+                  </div>
+                  {rep.initials}
+                  {i === 0 && rep.fundedMTD > 0 && <span className="top-badge">Top</span>}
+                </div>
+              </td>
+              <td>{rep.activeDeals}</td>
+              <td>
+                <span style={{ color: 'var(--gold)', fontWeight: 700 }}>{fmtCurrency(rep.fundedMTD)}</span>
+                <div
+                  className="vbar"
+                  style={{
+                    width: (rep.fundedMTD / topFunded) * 100 + '%',
+                    background: 'var(--gold)',
+                    opacity: 0.3,
+                  }}
+                />
+              </td>
+              <td style={{ color: 'var(--text)' }}>{fmtCurrency(rep.pipelineValue)}</td>
+              <td style={{ color: 'var(--green2)', opacity: 0.8 }}>{fmtCurrency(rep.committedValue)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PipelineSnapshotCard({ stages, title }: { stages: StageSnapshot[]; title?: string }) {
+  const maxCount = Math.max(...stages.map((s) => s.count), 1);
+  const pipelineValue = stages
+    .filter((s) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
+    .reduce((s, st) => s + st.volume, 0);
+  const fundedValue = stages.find((s) => s.stage === 'FUNDED')?.volume ?? 0;
+
+  const stageColors: Record<string, string> = {
+    NEW_LEAD: '#1c2333',
+    ENGAGED_INTERESTED: '#1c3a5c',
+    QUALIFIED: '#1c3a1c',
+    SUBMITTED_IN_REVIEW: '#1f4f9e',
+    APPROVED_OFFERS: 'var(--gold)',
+    COMMITTED_FUNDING: 'var(--gold)',
+    FUNDED: 'var(--gold)',
+    NURTURE: '#553098',
+    CLOSED: '#333',
+  };
+
+  return (
+    <div className="card">
+      <div className="cl">{title || 'Pipeline Snapshot \u2014 all reps \u00b7 all stages'}</div>
+      <div className="pipe-rows">
+        {stages
+          .filter((s) => s.stage !== 'CLOSED')
+          .map((s) => (
+            <div className="ps-r" key={s.stage}>
+              <div className="ps-n">{s.label}</div>
+              <div className="ps-bw">
+                <div
+                  className="ps-b"
+                  style={{
+                    width: (s.count / maxCount) * 100 + '%',
+                    background: stageColors[s.stage] || '#333',
+                    opacity: 0.7,
+                  }}
+                />
+              </div>
+              <div
+                className="ps-c"
+                style={{
+                  color:
+                    s.stage === 'FUNDED' ? 'var(--green2)' : s.stage === 'APPROVED_OFFERS' ? 'var(--gold)' : undefined,
+                }}
+              >
+                {s.count}
+              </div>
+              <div className={`ps-v ${!s.hideDollar && s.volume > 0 ? 'live' : ''}`}>
+                {s.hideDollar ? 'count only' : s.volume > 0 ? fmtCurrency(s.volume) : '\u2014'}
+              </div>
+            </div>
+          ))}
+      </div>
+      <div className="pipe-foot">
+        <div>
+          <div className="pfl">Pipeline Value</div>
+          <div className="pfv">{fmtCurrency(pipelineValue)}</div>
+        </div>
+        <div>
+          <div className="pfl">Funded MTD</div>
+          <div className="pfv">{fmtCurrency(fundedValue)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?: string }) {
+  const transitions: Array<{ from: string; to: string; rate: number }> = [];
+  for (let i = 0; i < funnel.length - 1; i++) {
+    const fromCount = funnel[i].count;
+    const toCount = funnel[i + 1].count;
+    const rate = fromCount > 0 ? Math.round((toCount / fromCount) * 100) : 0;
+    transitions.push({ from: funnel[i].label, to: funnel[i + 1].label, rate });
+  }
+
+  return (
+    <div className="card">
+      <div className="cl">{title || 'Conversion Funnel \u2014 team-wide'}</div>
+      <div className="cv-rows">
+        {transitions.map((t, i) => (
+          <div className={`cv-r ${t.rate >= 50 ? 'up' : 'dn'}`} key={i}>
+            <div className="cv-lbl">
+              {t.from} {'\u2192'} {t.to}
+            </div>
+            <div className="cv-right">
+              <div className="cv-val">{t.rate}%</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {transitions.length > 0 &&
+        (() => {
+          const weakest = transitions.reduce((min, t) => (t.rate < min.rate ? t : min), transitions[0]);
+          return weakest.rate < 50 ? (
+            <div className="cv-alert">
+              Weakest stage: {weakest.from} {'\u2192'} {weakest.to} at {weakest.rate}%
+            </div>
+          ) : null;
+        })()}
+    </div>
+  );
+}
+
+function ActivityFeedCard({ events, title }: { events?: ActivityEvent[]; title?: string }) {
+  return (
+    <div className="card">
+      <div className="cl">
+        <span>{title || 'Activity Feed \u2014 deal_events'}</span>
+        <span className="cl-live">{'\u25CF'} Streaming</span>
+      </div>
+      <div className="act-list">
+        {events?.slice(0, 8).map((event) => (
+          <div className="act-i" key={event.id}>
+            <div className={`act-pip ${getActivityPipClass(event)}`} />
+            <div>
+              <div className="act-txt">{getActivityText(event)}</div>
+              <div className="act-time">{timeAgo(event.createdAt)}</div>
+            </div>
+          </div>
+        ))}
+        {(!events || events.length === 0) && (
+          <div style={{ fontSize: 9, color: 'var(--muted)', padding: '8px 0' }}>No recent activity</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getActivityPipClass(event: ActivityEvent): string {
+  if (event.toStage === 'FUNDED') return 'ap-g';
+  if (event.eventType === 'stage_changed') return 'ap-b';
+  if (event.eventType === 'action_completed') return 'ap-gr';
+  if (event.eventType?.includes('alert') || event.eventType?.includes('system')) return 'ap-r';
+  if (event.eventType === 'note_added') return 'ap-a';
+  return 'ap-b';
+}
+
+function getActivityText(event: ActivityEvent): string {
+  const biz = event.deal?.client?.businessName || 'Unknown';
+  const repInit = event.rep?.initials || event.rep?.firstName || '';
+  if (event.toStage === 'FUNDED') return `${repInit} closed ${biz} \u2014 funded`;
+  if (event.eventType === 'stage_changed')
+    return `${repInit} moved ${biz} \u2192 ${STAGE_LABELS[event.toStage || ''] || event.toStage || ''}`;
+  if (event.eventType === 'action_completed')
+    return `${repInit} completed action on ${biz}${event.note ? ` \u2014 ${event.note}` : ''}`;
+  if (event.eventType === 'note_added') return `${repInit} note on ${biz}${event.note ? ` \u2014 ${event.note}` : ''}`;
+  return `${repInit}: ${biz} \u2014 ${event.eventType?.replace(/_/g, ' ') || 'update'}`;
+}
+
+function SegBar({ products }: { products: ProductMixItem[] }) {
+  return (
+    <div className="pm-seg-bar" style={{ marginBottom: 8 }}>
+      {products
+        .filter((p) => p.percentage > 0)
+        .map((p) => (
+          <div
+            key={p.type}
+            className="pm-seg"
+            style={{
+              width: p.percentage + '%',
+              background: PM_COLORS[p.type] || '#666',
+              opacity: 0.75,
+            }}
+          />
+        ))}
+    </div>
+  );
+}
+
+function LegendRow({ products }: { products: ProductMixItem[] }) {
+  return (
+    <div className="pm-legend">
+      {products
+        .filter((p) => p.percentage > 0)
+        .map((p) => (
+          <div key={p.type} className="pm-legend-item">
+            <div className="pm-legend-dot" style={{ background: PM_COLORS[p.type] || '#666' }} />
+            {p.type} <span style={{ color: 'var(--text)', fontWeight: 600 }}>{p.percentage}%</span>
+          </div>
+        ))}
+    </div>
+  );
+}
+
+function ProductMixModule({
+  data,
+  period,
+  onPeriodChange,
+  isAdmin,
+  repInitials,
+}: {
+  data: ProductMixData;
+  period: 'lifetime' | '30d';
+  onPeriodChange: (p: 'lifetime' | '30d') => void;
+  isAdmin: boolean;
+  repInitials?: string;
+}) {
+  return (
+    <div className="pm-wrap">
+      <div className="pm-header">
+        <span className="pm-title">
+          Product Mix{isAdmin ? ' \u2014 Team Intelligence' : ` \u2014 ${repInitials || ''}`}
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="pm-toggle">
+            <button
+              className={`pm-toggle-btn ${period === 'lifetime' ? 'on' : ''}`}
+              onClick={() => onPeriodChange('lifetime')}
+            >
+              Lifetime
+            </button>
+            <button className={`pm-toggle-btn ${period === '30d' ? 'on' : ''}`} onClick={() => onPeriodChange('30d')}>
+              30 Days
+            </button>
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: '14px 16px' }}>
+        <div className="pm-lifetime">
+          <div className="pm-lifetime-val">{fmtCurrency(data.total)}</div>
+          <div className="pm-lifetime-lbl">{period === 'lifetime' ? 'Lifetime Funded' : 'Last 30 Days'}</div>
+        </div>
+
+        <SegBar products={data.products} />
+        <LegendRow products={data.products} />
+
+        <div className="pm-prod-rows" style={{ marginTop: 10 }}>
+          {data.products.map((p) => (
+            <div className="pm-prod-r" key={p.type}>
+              <div className="pm-prod-name">
+                <div className="pm-legend-dot" style={{ background: PM_COLORS[p.type] || '#666' }} />
+                {p.type}
+              </div>
+              <div className="pm-prod-bar-w">
+                <div
+                  className="pm-prod-bar"
+                  style={{
+                    width: p.percentage + '%',
+                    background: PM_COLORS[p.type] || '#666',
+                    opacity: 0.7,
+                  }}
+                />
+              </div>
+              <div className="pm-prod-pct" style={{ color: PM_COLORS[p.type] || 'var(--text)' }}>
+                {p.percentage}%
+              </div>
+              <div className="pm-prod-amt">{fmtCurrency(p.amount)}</div>
+            </div>
+          ))}
+        </div>
+
+        {data.products.length > 0 && (
+          <div className="pm-insight-box" style={{ marginTop: 10 }}>
+            {data.products[0].percentage >= 70 ? (
+              <>
+                <strong>Over-concentrated:</strong> {data.products[0].type} is {data.products[0].percentage}% of funded
+                volume \u2014 single-product risk. <strong>{'\u2192'} Diversify</strong> into underrepresented products.
+              </>
+            ) : (
+              <>
+                <strong>Balanced mix.</strong> Continue diversifying \u2014 each product strengthens pipeline
+                resilience.
+              </>
+            )}
+          </div>
+        )}
+
+        {isAdmin && data.repBreakdown && data.repBreakdown.length > 0 && (
+          <>
+            <div className="pm-section-divider" />
+            <div className="pm-section-lbl">Rep Breakdown \u2014 vs team average</div>
+            <table className="pm-rep-table">
+              <thead>
+                <tr>
+                  <th>Rep</th>
+                  <th>Funded $</th>
+                  {data.products.slice(0, 4).map((p) => (
+                    <th key={p.type}>{p.type}</th>
+                  ))}
+                  <th>Top Product</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.repBreakdown.map((rep) => {
+                  const topProduct =
+                    rep.mix.length > 0
+                      ? rep.mix.reduce((a, b) => (a.percentage > b.percentage ? a : b)).type
+                      : '\u2014';
+                  return (
+                    <tr key={rep.id}>
+                      <td>
+                        <div className="r-nc">
+                          <span style={{ fontWeight: 600 }}>{rep.initials}</span>
+                        </div>
+                      </td>
+                      <td
+                        style={{
+                          color: rep.funded > 0 ? 'var(--gold)' : 'var(--muted)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {fmtCurrency(rep.funded)}
+                      </td>
+                      {data.products.slice(0, 4).map((teamProd) => {
+                        const repProd = rep.mix.find((m) => m.type === teamProd.type);
+                        const pct = repProd?.percentage ?? 0;
+                        return (
+                          <td key={teamProd.type}>
+                            <div className="pm-pct-cell">
+                              <div className="pm-pct-mini">
+                                <div
+                                  className="pm-pct-mini-fill"
+                                  style={{
+                                    width: pct + '%',
+                                    background: PM_COLORS[teamProd.type] || '#666',
+                                  }}
+                                />
+                              </div>
+                              {pct}%
+                            </div>
+                            {rep.funded > 0 && repProd && (
+                              <div
+                                className={`pm-vs-team ${
+                                  Math.abs(repProd.vsTeam) > 10 ? (repProd.vsTeam > 0 ? 'over' : 'under') : 'ok'
+                                }`}
+                              >
+                                {repProd.vsTeam > 0 ? '+' : ''}
+                                {repProd.vsTeam}% vs team
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td style={{ color: 'var(--text)', fontWeight: 600 }}>{topProduct}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
+  if (!deals || deals.length === 0) return <div style={{ fontSize: 9, color: 'var(--muted)' }}>No actions queued</div>;
+
+  function getActionClass(action: string): string {
+    switch (action) {
+      case 'Call Now':
+        return 'n5-call';
+      case 'Send Offer':
+        return 'n5-send';
+      case 'Follow Up':
+        return 'n5-follow';
+      case 'Request Docs':
+        return 'n5-docs';
+      default:
+        return 'n5-follow';
+    }
+  }
+
+  function getPriorityClass(deal: QueueDeal): string {
+    if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') return 'urgent';
+    if (deal.isHot) return 'high';
+    return 'normal';
+  }
+
+  return (
+    <div className="n5-list">
+      {deals.slice(0, 5).map((deal, i) => (
+        <div className={`n5-item ${getPriorityClass(deal)}`} key={deal.id}>
+          <div className="n5-rank">{i + 1}</div>
+          <div className="n5-name">{deal.client?.businessName || 'Unknown'}</div>
+          <div className="n5-amt">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</div>
+          <button
+            className={`n5-action ${getActionClass(deal.primaryAction)}`}
+            onClick={() => toast(`${deal.primaryAction}: ${deal.client?.businessName}`)}
+          >
+            {deal.primaryAction}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SmsBar({ metrics, label }: { metrics: SmsMetricsData; label?: string }) {
+  const deliveredPct = metrics.sent24h > 0 ? Math.round((metrics.delivered24h / metrics.sent24h) * 100) : 0;
+  return (
+    <div className="sms-bar">
+      <div className="sms-lbl">{label || 'SMS / Outreach \u2014 secondary metrics'}</div>
+      <div className="sms-items">
+        <div>
+          <div className="si-v">{metrics.sent24h}</div>
+          <div className="si-k">Sent 24h</div>
+        </div>
+        <div>
+          <div className={`si-v ${deliveredPct >= 90 ? 'ok' : ''}`}>{deliveredPct}%</div>
+          <div className="si-k">Delivered</div>
+        </div>
+        <div>
+          <div className={`si-v ${metrics.replyRate7d >= 20 ? 'ok' : ''}`}>{metrics.replyRate7d}%</div>
+          <div className="si-k">Reply rate 7d</div>
+        </div>
+        <div>
+          <div className={`si-v ${metrics.errorRate === 0 ? 'ok' : ''}`}>{metrics.errorRate}%</div>
+          <div className="si-k">Errors</div>
+        </div>
+        <div>
+          <div className="si-v">{metrics.activeAutomations}</div>
+          <div className="si-k">Active automations</div>
+        </div>
+        <div>
+          <div className="si-v">{metrics.totalLeads}</div>
+          <div className="si-k">Total leads</div>
+        </div>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ const CampaignsPage = lazy(() => import('./pages/CampaignsPage'));
 const CampaignDetailPage = lazy(() => import('./pages/CampaignDetailPage'));
 const InboxPage = lazy(() => import('./pages/InboxPage'));
 const PipelinePage = lazy(() => import('./pages/PipelinePageV2'));
-// const CommandCenterPage = lazy(() => import('./pages/CommandCenterPage'));
+const CommandCenterPage = lazy(() => import('./pages/CommandCenterPage'));
 const LeadsPage = lazy(() => import('./pages/LeadsPage'));
 const NumbersPage = lazy(() => import('./pages/NumbersPage'));
 const AutomationPage = lazy(() => import('./pages/AutomationPage'));
@@ -88,7 +88,7 @@ export default function App() {
                     <Suspense fallback={<PageLoader />}>
                       <Routes>
                         <Route path="/" element={<Navigate to="pipeline" replace />} />
-                        {/* <Route path="command-center" element={<CommandCenterPage />} /> */}
+                        <Route path="command-center" element={<CommandCenterPage />} />
                         <Route path="dashboard" element={<DashboardPage />} />
                         <Route path="campaigns" element={<CampaignsPage />} />
                         <Route path="campaigns/:id" element={<CampaignDetailPage />} />

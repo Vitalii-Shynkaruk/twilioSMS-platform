@@ -1,84 +1,122 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dealApi, repApi } from '../services/api';
-import {
-  Search,
-  Plus,
-  Flame,
-  TrendingUp,
-  DollarSign,
-  AlertTriangle,
-  Zap,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-  SkipForward,
-  FileText,
-  RefreshCw,
-  Phone,
-  CheckCircle,
-} from 'lucide-react';
-import { Lock } from 'lucide-react';
-import { clsx } from 'clsx';
-
-// ══════════════════════════════════════════════════════
-// 🔒 TEMPORARY LOCK — set to false to unlock Pipeline
-const PIPELINE_LOCKED = false;
-// ══════════════════════════════════════════════════════
 import { useAuthStore } from '../stores/authStore';
-import DealCard, { STAGE_COLORS, formatCurrency } from '../components/pipeline/DealCard';
+import DealCard, { formatCurrency } from '../components/pipeline/DealCard';
 import DealPanel from '../components/pipeline/DealPanel';
 import CreateDealModal from '../components/pipeline/CreateDealModal';
 import type { Deal, DealStage, DealBoard, DealStats, Rep } from '../types';
 import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import toast from 'react-hot-toast';
+import '../styles/pipeline.css';
 
-const STAGES: { value: DealStage; label: string; short: string }[] = [
-  { value: 'NEW_LEAD', label: 'New Lead', short: 'New' },
-  { value: 'ENGAGED_INTERESTED', label: 'Engaged / Interested', short: 'Engaged' },
-  { value: 'QUALIFIED', label: 'Qualified', short: 'Qualified' },
-  { value: 'SUBMITTED_IN_REVIEW', label: 'Submitted (In Review)', short: 'Submitted' },
-  { value: 'APPROVED_OFFERS', label: 'Approved / Offers', short: 'Offers' },
-  { value: 'COMMITTED_FUNDING', label: 'Committed → Funding', short: 'Committed' },
-  { value: 'FUNDED', label: 'Funded', short: 'Funded' },
-  { value: 'NURTURE', label: 'Nurture (Lost)', short: 'Nurture' },
-  { value: 'CLOSED', label: 'Closed (DQ)', short: 'Closed' },
+// ─── Stage configuration ───
+
+interface StageConfig {
+  value: DealStage;
+  label: string;
+  short: string;
+  color: string;
+  colClass?: string;
+  stageClass?: string;
+}
+
+const STAGES: StageConfig[] = [
+  { value: 'NEW_LEAD', label: 'New Lead', short: 'New Lead', color: 'var(--info)' },
+  { value: 'ENGAGED_INTERESTED', label: 'Contacted', short: 'Contacted', color: 'var(--info)' },
+  {
+    value: 'QUALIFIED',
+    label: 'Qualified / Interested',
+    short: 'Qualified',
+    color: 'var(--attn)',
+    stageClass: 'app-req',
+  },
+  { value: 'SUBMITTED_IN_REVIEW', label: 'Submitted (In Review)', short: 'Submitted', color: 'var(--watch)' },
+  {
+    value: 'APPROVED_OFFERS',
+    label: 'New Business',
+    short: 'New Business',
+    color: 'var(--good)',
+    colClass: 'nb-col',
+    stageClass: 'pipe',
+  },
+  { value: 'COMMITTED_FUNDING', label: 'Committed → Funding', short: 'Committed', color: 'var(--good)' },
+  { value: 'FUNDED', label: 'Funded', short: 'Funded', color: 'var(--good)' },
+  { value: 'NURTURE', label: 'Nurture', short: 'Nurture', color: 'var(--text3)', stageClass: 'closed-s' },
+  { value: 'CLOSED', label: 'Closed (DQ)', short: 'Closed', color: 'var(--text4)', stageClass: 'closed-s' },
 ];
 
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week';
-type ViewTab = 'board' | 'revive';
+type ViewTab = 'pipeline' | 'team' | 'queue';
+type ViewMode = 'simple' | 'execution';
+type PipelineScope = 'mine' | 'all';
+
+const FILTERS: { key: QuickFilter; label: string; activeCls: string }[] = [
+  { key: 'all', label: 'All', activeCls: 'act' },
+  { key: 'mine', label: 'Mine', activeCls: 'act' },
+  { key: 'overdue', label: 'Overdue', activeCls: 'urg' },
+  { key: 'hot', label: '🔥 Hot', activeCls: 'fire' },
+  { key: 'neglected', label: 'Neglected', activeCls: 'act' },
+  { key: 'this_week', label: 'This Week', activeCls: 'week-act' },
+];
+
+// ═══════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════
 
 export default function PipelinePage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const qc = useQueryClient();
 
+  // ─── State ───
+  const [viewMode, setViewMode] = useState<ViewMode>('simple');
+  const [viewTab, setViewTab] = useState<ViewTab>('pipeline');
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [pipelineScope, setPipelineScope] = useState<PipelineScope>(isAdmin ? 'all' : 'mine');
+  const [repFilter, setRepFilter] = useState('');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [showCreateDeal, setShowCreateDeal] = useState(false);
-  const [search, setSearch] = useState('');
-  const [repFilter, setRepFilter] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'simple' | 'execution'>('simple');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
-  const [activeTab, setActiveTab] = useState<ViewTab>('board');
+  const [showGoals, setShowGoals] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
+  // ─── Body class for CSS view mode ───
+  useEffect(() => {
+    const add = viewMode === 'simple' ? 'simple-view' : 'execution-view';
+    const remove = viewMode === 'simple' ? 'execution-view' : 'simple-view';
+    document.body.classList.add(add);
+    document.body.classList.remove(remove);
+    return () => {
+      document.body.classList.remove('simple-view', 'execution-view');
+    };
+  }, [viewMode]);
+
+  // ─── DnD ───
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Fetch board data
+  // ─── Data fetching ───
+  const userId = user?.id;
+  const boardParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    if (repFilter) {
+      params.repId = repFilter;
+    } else if (pipelineScope === 'mine' && !isAdmin && userId) {
+      params.repId = userId;
+    }
+    if (isAdmin) params.teamView = 'true';
+    return params;
+  }, [repFilter, pipelineScope, isAdmin, userId]);
+
   const { data: board, isLoading: boardLoading } = useQuery({
-    queryKey: ['deals', 'board', repFilter],
+    queryKey: ['deals', 'board', boardParams],
     queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (repFilter) params.repId = repFilter;
-      if (isAdmin) params.teamView = 'true';
-      const { data } = await dealApi.getBoard(params);
+      const { data } = await dealApi.getBoard(boardParams);
       return data as DealBoard;
     },
     refetchInterval: 30000,
   });
 
-  // Fetch stats
   const { data: stats } = useQuery({
     queryKey: ['deals', 'stats', repFilter],
     queryFn: async () => {
@@ -90,7 +128,6 @@ export default function PipelinePage() {
     refetchInterval: 30000,
   });
 
-  // Fetch reps for filter
   const { data: reps } = useQuery({
     queryKey: ['reps'],
     queryFn: async () => {
@@ -100,47 +137,33 @@ export default function PipelinePage() {
     enabled: isAdmin,
   });
 
-  // Revive queue
   const { data: reviveQueue } = useQuery({
     queryKey: ['deals', 'revive'],
     queryFn: async () => {
       const { data } = await dealApi.getReviveQueue();
       return data as Deal[];
     },
-    enabled: activeTab === 'revive',
   });
 
-  // Move mutation for DnD
+  // ─── Move mutation ───
   const moveMutation = useMutation({
     mutationFn: ({ dealId, stage }: { dealId: string; stage: string }) => dealApi.moveDeal(dealId, { stage }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal moved');
     },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Move failed — validation required'),
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Move failed'),
   });
 
-  // Filter deals by search + quick filter
+  // ─── Filtered board ───
   const filteredBoard = useMemo(() => {
     if (!board?.stages) return board;
-    const q = search.toLowerCase();
     const now = new Date();
     return {
       ...board,
       stages: board.stages.map((s: any) => ({
         ...s,
         deals: s.deals.filter((d: Deal) => {
-          // Text search
-          if (
-            q &&
-            !(
-              d.client?.businessName?.toLowerCase().includes(q) ||
-              d.client?.contactName?.toLowerCase().includes(q) ||
-              d.productType?.toLowerCase().includes(q)
-            )
-          )
-            return false;
-          // Quick filters
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
           if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
           if (quickFilter === 'hot' && !d.isHot) return false;
@@ -154,8 +177,9 @@ export default function PipelinePage() {
         }),
       })),
     };
-  }, [board, search, quickFilter, user?.id]);
+  }, [board, quickFilter, user?.id]);
 
+  // ─── DnD handlers ───
   const handleDragEnd = useCallback(
     (event: any) => {
       const { active, over } = event;
@@ -163,10 +187,8 @@ export default function PipelinePage() {
       if (!over || !active) return;
       const dealId = active.id as string;
       const targetStage = over.id as string;
-      // Find current stage of the deal
       const currentStage = board?.stages?.find((s: any) => s.deals.some((d: Deal) => d.id === dealId))?.stage;
       if (currentStage === targetStage) return;
-      // Nurture + Closed need extra fields — open panel instead
       if (targetStage === 'NURTURE' || targetStage === 'CLOSED') {
         setSelectedDealId(dealId);
         toast('Open panel to set required fields for this stage', { icon: 'ℹ️' });
@@ -177,7 +199,6 @@ export default function PipelinePage() {
     [board, moveMutation],
   );
 
-  // Find dragged deal for overlay
   const draggedDeal = useMemo(() => {
     if (!activeDragId || !board?.stages) return null;
     for (const s of board.stages) {
@@ -187,184 +208,159 @@ export default function PipelinePage() {
     return null;
   }, [activeDragId, board]);
 
+  const reviveCount = reviveQueue?.length || 0;
+
+  const handleViewTab = (tab: ViewTab, scope?: PipelineScope) => {
+    setViewTab(tab);
+    if (scope) setPipelineScope(scope);
+  };
+
+  // ═══ RENDER ═══
   return (
-    <div className="h-full flex flex-col relative">
-      {/* 🔒 Lock overlay */}
-      {PIPELINE_LOCKED && (
-        <div className="absolute inset-0 z-50 bg-[var(--bg-primary)]/80 backdrop-blur-[2px] flex items-center justify-center">
-          <div className="text-center">
-            <Lock className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-3 opacity-40" />
-            <h2 className="text-lg font-semibold text-[var(--text-secondary)]">Pipeline is temporarily locked</h2>
-            <p className="text-sm text-[var(--text-muted)] mt-1">
-              This section is under maintenance. Please check back soon.
-            </p>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* ═══ TOPBAR ═══ */}
+      <div className="topbar">
+        <div className="logo">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
+            <rect x="1.5" y="1.5" width="14" height="14" rx="3" stroke="#C9952A" strokeWidth="1.4" />
+            <path d="M5.5 8.5h6M8.5 5.5v6" stroke="#C9952A" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+          SCL <em>Pipeline</em>
+        </div>
+
+        {/* Role switch (admin) */}
+        {isAdmin && reps && (
+          <div className="role-sw">
+            <button className={`rs ${!repFilter ? 'act' : ''}`} onClick={() => setRepFilter('')}>
+              Admin
+            </button>
+            {reps.slice(0, 4).map((r) => (
+              <button key={r.id} className={`rs ${repFilter === r.id ? 'act' : ''}`} onClick={() => setRepFilter(r.id)}>
+                {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
+              </button>
+            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Stats bar */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 p-4 pb-0">
-          <StatCard
-            icon={DollarSign}
-            label="Pipeline Value"
-            value={formatCurrency(stats.pipelineValue)}
-            color="text-scl-500"
-          />
-          <StatCard
-            icon={TrendingUp}
-            label="Funded MTD"
-            value={formatCurrency(stats.fundedMTD)}
-            color="text-green-400"
-          />
-          <StatCard
-            icon={DollarSign}
-            label="Lifetime Funded"
-            value={formatCurrency(stats.lifetimeFunded)}
-            color="text-emerald-400"
-          />
-          <StatCard icon={AlertTriangle} label="At Risk" value={formatCurrency(stats.atRisk)} color="text-red-400" />
-          <StatCard icon={Flame} label="Hot Deals" value={String(stats.hotCount)} color="text-orange-400" />
-          <StatCard
-            icon={AlertTriangle}
-            label="No Next Action"
-            value={String(stats.noNextAction ?? 0)}
-            color="text-amber-400"
-          />
-          <StatCard icon={Zap} label="Queue Today" value={String(stats.queueToday ?? 0)} color="text-blue-400" />
-          <StatCard
-            icon={RotateCcw}
-            label="Renewals Due"
-            value={String(stats.renewalsDue ?? 0)}
-            color="text-purple-400"
-          />
+        {/* Filter pills */}
+        <div className="fp-row">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              className={`fp ${quickFilter === f.key ? f.activeCls : ''}`}
+              onClick={() => setQuickFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* Tab row: Board | Revive Queue */}
-      <div className="flex items-center gap-4 px-4 pt-3">
-        <button
-          onClick={() => setActiveTab('board')}
-          className={clsx(
-            'text-sm font-medium pb-1 border-b-2 transition',
-            activeTab === 'board'
-              ? 'text-scl-500 border-scl-500'
-              : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text-secondary)]',
-          )}
-        >
-          Pipeline Board
-        </button>
-        <button
-          onClick={() => setActiveTab('revive')}
-          className={clsx(
-            'text-sm font-medium pb-1 border-b-2 transition',
-            activeTab === 'revive'
-              ? 'text-scl-500 border-scl-500'
-              : 'text-[var(--text-muted)] border-transparent hover:text-[var(--text-secondary)]',
-          )}
-        >
-          <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
-          Revive Queue
+        {/* View switches */}
+        <div className="view-sw">
+          <button
+            className={`vs ${viewTab === 'pipeline' && pipelineScope === 'mine' ? 'act' : ''}`}
+            onClick={() => handleViewTab('pipeline', 'mine')}
+          >
+            My Pipeline
+          </button>
+          <button className={`vs ${viewTab === 'team' ? 'team-act' : ''}`} onClick={() => handleViewTab('team')}>
+            Team Pipeline
+          </button>
+          <button
+            className={`vs ${viewTab === 'pipeline' && pipelineScope === 'all' ? 'act' : ''}`}
+            onClick={() => handleViewTab('pipeline', 'all')}
+          >
+            All Deals
+          </button>
+        </div>
+
+        {/* View mode toggle */}
+        <div className="view-mode-sw">
+          <button
+            className={`vms ${viewMode === 'simple' ? 'act' : ''}`}
+            id="vms-simple"
+            onClick={() => setViewMode('simple')}
+          >
+            Simple
+          </button>
+          <button
+            className={`vms ${viewMode === 'execution' ? 'act' : ''}`}
+            id="vms-power"
+            onClick={() => setViewMode('execution')}
+          >
+            ⚡ Execution
+          </button>
+        </div>
+
+        {/* Queue button */}
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            className={`queue-nav-btn ${viewTab === 'queue' ? 'act' : ''}`}
+            onClick={() => setViewTab(viewTab === 'queue' ? 'pipeline' : 'queue')}
+          >
+            🔁 Revive Queue
+          </button>
+          {reviveCount > 0 && <span className="notif-badge">{reviveCount}</span>}
+        </div>
+
+        {/* Goals button (admin) */}
+        {isAdmin && (
+          <button className="goal-btn" onClick={() => setShowGoals(true)}>
+            ⚡ Goals
+          </button>
+        )}
+
+        {/* Add lead button */}
+        <button className="add-btn" onClick={() => setShowCreateDeal(true)}>
+          + Add Lead
         </button>
       </div>
 
-      {activeTab === 'board' ? (
+      {/* ═══ LEGEND (hidden in simple mode via CSS) ═══ */}
+      <div className="legend">
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--urgent)' }} />
+          Red = Urgent / Overdue
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--hot)' }} />
+          🔥 HOT = Offer received · replied · lender engaged
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--attn)' }} />
+          Orange = Attention needed
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--watch)' }} />
+          Amber = Due soon
+        </div>
+        <div className="lsep" />
+        <div className="li">
+          <div className="ld" style={{ background: 'var(--good)' }} />
+          Green = Good / funded
+        </div>
+      </div>
+
+      {/* ═══ MAIN CONTENT ═══ */}
+
+      {viewTab === 'pipeline' && (
         <>
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-3 p-4">
-            {/* Search */}
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search deals..."
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-              />
-            </div>
-
-            {/* Quick filters */}
-            <div className="flex gap-1">
-              {(
-                [
-                  { key: 'all', label: 'All' },
-                  { key: 'mine', label: 'Mine' },
-                  { key: 'hot', label: 'Hot' },
-                  { key: 'overdue', label: 'Overdue' },
-                  { key: 'neglected', label: 'Neglected' },
-                  { key: 'this_week', label: 'This Week' },
-                ] as const
-              ).map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => setQuickFilter(f.key)}
-                  className={clsx(
-                    'px-2.5 py-1 text-[10px] font-medium rounded-full transition',
-                    quickFilter === f.key
-                      ? 'bg-scl-500 text-white'
-                      : 'bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]',
-                  )}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Rep filter */}
-            {isAdmin && reps && (
-              <select
-                value={repFilter}
-                onChange={(e) => setRepFilter(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
-              >
-                <option value="">All Reps</option>
-                {reps.map((rep: Rep) => (
-                  <option key={rep.id} value={rep.id}>
-                    {rep.firstName} {rep.lastName || ''} {rep.initials ? `(${rep.initials})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {/* View toggle */}
-            <div className="flex rounded-lg border border-[var(--border-primary)] overflow-hidden">
-              <button
-                onClick={() => setViewMode('simple')}
-                className={clsx(
-                  'px-3 py-1.5 text-xs font-medium transition',
-                  viewMode === 'simple' ? 'bg-scl-500 text-white' : 'bg-[var(--bg-secondary)] text-[var(--text-muted)]',
-                )}
-              >
-                Simple
-              </button>
-              <button
-                onClick={() => setViewMode('execution')}
-                className={clsx(
-                  'px-3 py-1.5 text-xs font-medium transition',
-                  viewMode === 'execution'
-                    ? 'bg-scl-500 text-white'
-                    : 'bg-[var(--bg-secondary)] text-[var(--text-muted)]',
-                )}
-              >
-                Execution
-              </button>
-            </div>
-
-            {/* Create deal */}
-            <button
-              onClick={() => setShowCreateDeal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-scl-500 text-white hover:bg-scl-600 transition"
-            >
-              <Plus className="w-4 h-4" />
-              New Deal
-            </button>
-          </div>
-
-          {/* Board with DnD */}
-          <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 pt-0">
+          {/* Board */}
+          <div className="board-wrap">
             {boardLoading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="w-8 h-8 border-2 border-scl-500 border-t-transparent rounded-full animate-spin" />
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '200px',
+                  color: 'var(--text3)',
+                }}
+              >
+                Loading…
               </div>
             ) : (
               <DndContext
@@ -374,7 +370,7 @@ export default function PipelinePage() {
                 onDragEnd={handleDragEnd}
                 onDragCancel={() => setActiveDragId(null)}
               >
-                <div className="flex gap-3 h-full min-w-max">
+                <div className="board">
                   {STAGES.map((stageDef) => {
                     const stageData = filteredBoard?.stages?.find((s: any) => s.stage === stageDef.value);
                     const deals = stageData?.deals || [];
@@ -383,7 +379,7 @@ export default function PipelinePage() {
                     return (
                       <StageColumn
                         key={stageDef.value}
-                        stage={stageDef}
+                        config={stageDef}
                         deals={deals}
                         count={count}
                         value={value}
@@ -393,98 +389,391 @@ export default function PipelinePage() {
                     );
                   })}
                 </div>
-                <DragOverlay>
-                  {draggedDeal && <DealCard deal={draggedDeal} compact={viewMode === 'simple'} />}
-                </DragOverlay>
+                <DragOverlay>{draggedDeal && <DealCard deal={draggedDeal} viewMode={viewMode} />}</DragOverlay>
               </DndContext>
             )}
           </div>
+
+          {/* Manager bar (hidden in simple via CSS) */}
+          {isAdmin && stats && (
+            <div className="mgr-bar">
+              <div className="mc">
+                <div className="ml">Pipeline</div>
+                <div className="mgr-val">{formatCurrency(stats.pipelineValue)}</div>
+              </div>
+              <div className="mc">
+                <div className="ml">Hot Deals</div>
+                <div className="mgr-val" style={{ color: 'var(--hot)' }}>
+                  {stats.hotCount}
+                </div>
+              </div>
+              <div className="mc">
+                <div className="ml">No Action</div>
+                <div className="mgr-val" style={{ color: 'var(--urgent)' }}>
+                  {stats.noNextAction ?? 0}
+                </div>
+              </div>
+              <div className="mc">
+                <div className="ml">Queue Today</div>
+                <div className="mgr-val">{stats.queueToday ?? 0}</div>
+              </div>
+              <div className="mc">
+                <div className="ml">Renewals</div>
+                <div className="mgr-val" style={{ color: 'var(--good)' }}>
+                  {stats.renewalsDue ?? 0}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Summary bar (hidden in simple via CSS) */}
+          {stats && (
+            <div className="sum-bar">
+              <div className="sb2">
+                <div className="sl">Pipeline Value</div>
+                <div className="sv">{formatCurrency(stats.pipelineValue)}</div>
+                <div className="ss">{stats.activeCount || 0} active deals</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">Hot / Active</div>
+                <div className="sv" style={{ color: 'var(--hot)' }}>
+                  {stats.hotCount}
+                </div>
+                <div className="ss">hot deals</div>
+              </div>
+              <div className="sb2 goal-block">
+                <div className="sl">Funded MTD</div>
+                <div className="sv" style={{ color: 'var(--good)' }}>
+                  {formatCurrency(stats.fundedMTD)}
+                </div>
+                <div className="ss">this month</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">Committed</div>
+                <div className="sv">{formatCurrency(stats.committedValue)}</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">At Risk</div>
+                <div className="sv" style={{ color: 'var(--urgent)' }}>
+                  {formatCurrency(stats.atRisk)}
+                </div>
+                <div className="ss">{stats.noNextAction ?? 0} no next action</div>
+              </div>
+              <div className="sb2">
+                <div className="sl">Avg Cycle</div>
+                <div className="sv">{stats.avgCycleTime || '—'}d</div>
+                <div className="ss">lead → funded</div>
+              </div>
+            </div>
+          )}
         </>
-      ) : (
-        /* Revive Queue — one-card-at-a-time */
-        <ReviveQueueView deals={reviveQueue || []} onDealClick={(id) => setSelectedDealId(id)} />
       )}
 
-      {/* Deal Panel */}
+      {viewTab === 'team' && (
+        <TeamView stats={stats} board={board} reps={reps || []} onDealClick={(id) => setSelectedDealId(id)} />
+      )}
+
+      {viewTab === 'queue' && <QueueView deals={reviveQueue || []} onDealClick={(id) => setSelectedDealId(id)} />}
+
+      {/* ═══ PANELS & MODALS ═══ */}
       {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
       {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
+      {showGoals && <GoalsModal reps={reps || []} onClose={() => setShowGoals(false)} />}
     </div>
   );
 }
 
-// ─── Stage Column (droppable) ───
+// ═══════════════════════════════════════
+// STAGE COLUMN (droppable)
+// ═══════════════════════════════════════
+
 function StageColumn({
-  stage,
+  config,
   deals,
   count,
   value,
   viewMode,
   onDealClick,
 }: {
-  stage: { value: DealStage; label: string; short: string };
+  config: StageConfig;
   deals: Deal[];
   count: number;
   value: number;
-  viewMode: string;
+  viewMode: ViewMode;
   onDealClick: (id: string) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: stage.value });
-  const color = STAGE_COLORS[stage.value] || '#6366f1';
+  const { setNodeRef, isOver } = useDroppable({ id: config.value });
 
   return (
-    <div
-      ref={setNodeRef}
-      className={clsx(
-        'w-[220px] flex-shrink-0 flex flex-col rounded-xl border transition-colors',
-        isOver ? 'bg-scl-500/10 border-scl-500/40' : 'bg-[var(--bg-secondary)]/50 border-[var(--border-primary)]',
-      )}
-    >
-      <div className="p-3 border-b border-[var(--border-primary)]">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-          <h3 className="text-xs font-semibold text-[var(--text-primary)] truncate">{stage.short}</h3>
-          <span className="ml-auto text-[10px] font-medium bg-[var(--bg-tertiary)] text-[var(--text-muted)] px-1.5 py-0.5 rounded-full">
-            {count}
-          </span>
-        </div>
-        {viewMode === 'execution' && stage.value !== 'SUBMITTED_IN_REVIEW' && value > 0 && (
-          <p className="text-[10px] text-[var(--text-muted)]">{formatCurrency(value)}</p>
-        )}
-      </div>
-      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]">
-        {deals.length === 0 ? (
-          <p className="text-[10px] text-[var(--text-muted)] text-center py-4">No deals</p>
+    <div ref={setNodeRef} className={`col ${config.colClass || ''}`}>
+      <div className="col-head">
+        {viewMode === 'simple' ? (
+          <>
+            <div className="sc-col-title">{config.short}</div>
+            <div className="sc-col-count">{count}</div>
+          </>
         ) : (
-          deals.map((deal: Deal) => (
-            <DraggableDealCard
-              key={deal.id}
-              deal={deal}
-              compact={viewMode === 'simple'}
-              onClick={() => onDealClick(deal.id)}
-            />
-          ))
+          <>
+            <div className={`col-stage ${config.stageClass || ''}`}>{config.short}</div>
+            <div className={`col-vol ${value ? '' : 'dim'}`}>{value ? formatCurrency(value) : '—'}</div>
+            <div className="col-ct">
+              {count} {count === 1 ? 'deal' : 'deals'}
+            </div>
+            {config.value === 'APPROVED_OFFERS' && <div className="nb-total">Active Pipeline</div>}
+          </>
         )}
+      </div>
+      <div className="col-bar" style={{ background: config.color }} />
+      <div className={`col-cards ${isOver ? 'drag-over' : ''}`}>
+        {deals.map((deal) => (
+          <DraggableDealCard key={deal.id} deal={deal} viewMode={viewMode} onClick={() => onDealClick(deal.id)} />
+        ))}
       </div>
     </div>
   );
 }
 
-// ─── Draggable Deal Card ───
-function DraggableDealCard({ deal, compact, onClick }: { deal: Deal; compact: boolean; onClick: () => void }) {
+// ═══════════════════════════════════════
+// DRAGGABLE CARD WRAPPER
+// ═══════════════════════════════════════
+
+function DraggableDealCard({ deal, viewMode, onClick }: { deal: Deal; viewMode: ViewMode; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
+  const style = transform
+    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.25 : 1 }
+    : undefined;
 
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} className={clsx(isDragging && 'opacity-30')}>
-      <DealCard deal={deal} onClick={onClick} compact={compact} />
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+      <DealCard deal={deal} onClick={onClick} viewMode={viewMode} />
     </div>
   );
 }
 
-// ─── Revive Queue — one-card-at-a-time ───
-function ReviveQueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (id: string) => void }) {
-  const [idx, setIdx] = useState(0);
+// ═══════════════════════════════════════
+// TEAM VIEW
+// ═══════════════════════════════════════
+
+function TeamView({
+  stats,
+  board,
+  reps,
+  onDealClick,
+}: {
+  stats?: DealStats;
+  board?: DealBoard;
+  reps: Rep[];
+  onDealClick: (id: string) => void;
+}) {
+  const fundedDeals = board?.stages?.find((s) => s.stage === 'FUNDED')?.deals || [];
+  const activeOfferDeals =
+    board?.stages?.filter((s) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage)).flatMap((s) => s.deals) ||
+    [];
+  const nurtureDeals = board?.stages?.find((s) => s.stage === 'NURTURE')?.deals || [];
+
+  return (
+    <div className="team-view">
+      {/* Stat cards */}
+      <div className="team-stats">
+        <div className="stat-card">
+          <div className="stat-label">Active Pipeline</div>
+          <div className="stat-val">{formatCurrency(stats?.pipelineValue)}</div>
+          <div className="stat-sub">{stats?.activeCount || 0} active deals</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Funded MTD</div>
+          <div className="stat-val" style={{ color: 'var(--good)' }}>
+            {formatCurrency(stats?.fundedMTD)}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Hot Deals</div>
+          <div className="stat-val" style={{ color: 'var(--hot)' }}>
+            {stats?.hotCount || 0}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Avg Cycle Time</div>
+          <div className="stat-val">{stats?.avgCycleTime || '—'}d</div>
+        </div>
+      </div>
+
+      {/* Rep scoreboard */}
+      {reps.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">REP SCOREBOARD</div>
+          <div className="team-stats" style={{ gridTemplateColumns: `repeat(${Math.min(reps.length, 4)}, 1fr)` }}>
+            {reps.map((rep) => {
+              const repDeals = board?.stages?.flatMap((s) => s.deals.filter((d) => d.assignedRepId === rep.id)) || [];
+              const repFundedTotal = fundedDeals
+                .filter((d) => d.assignedRepId === rep.id)
+                .reduce((sum, d) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
+              const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
+              const goalCls = goalPct >= 0.75 ? 'on-track' : goalPct >= 0.5 ? 'at-risk' : 'behind';
+              const goalBg = goalPct >= 0.75 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
+
+              return (
+                <div key={rep.id} className="stat-card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                    <div className="av" style={{ background: rep.avatarColor || 'var(--gold)' }}>
+                      {rep.initials || rep.firstName[0]}
+                    </div>
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                      {rep.firstName} {rep.lastName}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <div>
+                      <div className="stat-label">Active</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700 }}>{repDeals.length}</div>
+                    </div>
+                    <div>
+                      <div className="stat-label">Funded</div>
+                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--good)' }}>
+                        {formatCurrency(repFundedTotal)}
+                      </div>
+                    </div>
+                  </div>
+                  {rep.monthlyGoal && rep.monthlyGoal > 0 && (
+                    <div className="goal-bar-wrap">
+                      <div className="goal-bar-track">
+                        <div
+                          className="goal-bar-fill"
+                          style={{
+                            width: `${Math.min(100, goalPct * 100)}%`,
+                            background: goalBg,
+                          }}
+                        />
+                      </div>
+                      <div className={`goal-pct ${goalCls}`}>
+                        {(goalPct * 100).toFixed(0)}% of {formatCurrency(rep.monthlyGoal)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Active offers */}
+      {activeOfferDeals.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">
+            ACTIVE OFFERS
+            <span style={{ fontWeight: 400 }}>{activeOfferDeals.length}</span>
+          </div>
+          <div className="team-cards">
+            {activeOfferDeals.slice(0, 12).map((deal) => (
+              <div
+                key={deal.id}
+                className="deal-tile nb-tile"
+                onClick={() => onDealClick(deal.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="dt-biz">{deal.client?.businessName}</div>
+                <div className="dt-offer">
+                  {deal.offers?.length
+                    ? formatCurrency(deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount)
+                    : formatCurrency(deal.dealAmount)}
+                </div>
+                <div className="dt-meta">
+                  {deal.productType && (
+                    <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
+                  )}
+                </div>
+                {deal.assignedRep && (
+                  <div className="dt-reps">
+                    <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Funded this month */}
+      {fundedDeals.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">
+            FUNDED THIS MONTH
+            <span style={{ fontWeight: 400 }}>{fundedDeals.length}</span>
+          </div>
+          <div className="team-cards">
+            {fundedDeals.slice(0, 12).map((deal) => (
+              <div
+                key={deal.id}
+                className="deal-tile funded-tile"
+                onClick={() => onDealClick(deal.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="dt-biz">{deal.client?.businessName}</div>
+                <div className="dt-offer">
+                  {formatCurrency(deal.fundingEvents?.[0]?.amountFunded || deal.dealAmount)}
+                </div>
+                {deal.fundingEvents?.[0]?.lender && (
+                  <div className="dt-meta">
+                    <span className="t t-sba">{deal.fundingEvents[0].lender}</span>
+                  </div>
+                )}
+                {deal.assignedRep && (
+                  <div className="dt-reps">
+                    <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
+                  </div>
+                )}
+                {deal.fundedDate && (
+                  <div className="dt-fd">Funded {new Date(deal.fundedDate).toLocaleDateString()}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Nurture pool */}
+      {nurtureDeals.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">
+            NURTURE POOL
+            <span style={{ fontWeight: 400 }}>{nurtureDeals.length}</span>
+          </div>
+          <div className="team-cards">
+            {nurtureDeals.slice(0, 8).map((deal) => (
+              <div
+                key={deal.id}
+                className="deal-tile"
+                onClick={() => onDealClick(deal.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="dt-biz">{deal.client?.businessName}</div>
+                {deal.prevOffer && (
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text2)' }}>
+                    Prev: {formatCurrency(deal.prevOffer)}
+                  </div>
+                )}
+                {deal.lostReason && (
+                  <div style={{ fontSize: '9px', color: 'var(--attn)', fontStyle: 'italic', marginTop: '2px' }}>
+                    {deal.lostReason}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// QUEUE VIEW
+// ═══════════════════════════════════════
+
+function QueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (id: string) => void }) {
   const qc = useQueryClient();
+  const now = new Date();
 
   const reopenMutation = useMutation({
     mutationFn: (dealId: string) => dealApi.moveDeal(dealId, { stage: 'ENGAGED_INTERESTED' }),
@@ -495,144 +784,374 @@ function ReviveQueueView({ deals, onDealClick }: { deals: Deal[]; onDealClick: (
     onError: (err: any) => toast.error(err.response?.data?.error || 'Reopen failed'),
   });
 
-  const completeMutation = useMutation({
-    mutationFn: (dealId: string) =>
-      dealApi.completeAction(dealId, {
-        actionType: 'follow_up',
-        nextAction: 'Review and set next steps',
-        nextActionDue: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['deals'] });
-      toast.success('Action completed');
-    },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Complete failed'),
+  const overdue = deals.filter((d) => d.followUpDate && new Date(d.followUpDate) < now);
+  const thisWeek = deals.filter((d) => {
+    if (!d.followUpDate || new Date(d.followUpDate) < now) return false;
+    const weekEnd = new Date();
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    return new Date(d.followUpDate) <= weekEnd;
+  });
+  const upcoming = deals.filter((d) => {
+    if (!d.followUpDate) return false;
+    const weekEnd = new Date();
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    return new Date(d.followUpDate) > weekEnd;
   });
 
-  if (deals.length === 0) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <RotateCcw className="w-12 h-12 text-[var(--text-muted)] mx-auto mb-3" />
-          <p className="text-sm text-[var(--text-muted)]">No deals in the revive queue</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Deals appear here when they need re-engagement</p>
-        </div>
-      </div>
-    );
-  }
-
-  const deal = deals[Math.min(idx, deals.length - 1)];
+  const totalPrev = deals.reduce((s, d) => s + (d.prevOffer || d.dealAmount || 0), 0);
+  const renewalCount = deals.filter((d) => d.followUpType === 'renewal').length;
 
   return (
-    <div className="flex-1 flex items-center justify-center p-8">
-      <div className="w-full max-w-lg">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-xs text-[var(--text-muted)]">
-            {idx + 1} of {deals.length}
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setIdx(Math.max(0, idx - 1))}
-              disabled={idx === 0}
-              className="p-2 rounded-lg border border-[var(--border-primary)] disabled:opacity-30 hover:bg-[var(--bg-tertiary)] transition"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setIdx(Math.min(deals.length - 1, idx + 1))}
-              disabled={idx >= deals.length - 1}
-              className="p-2 rounded-lg border border-[var(--border-primary)] disabled:opacity-30 hover:bg-[var(--bg-tertiary)] transition"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+    <div className="queue-view">
+      <div className="queue-header">
+        <div>
+          <div className="queue-title">🔁 Revive Queue</div>
+          <div className="queue-sub">Deals awaiting re-engagement · {deals.length} total</div>
+        </div>
+      </div>
+
+      <div className="queue-stats">
+        <div className="q-stat">
+          <div className="q-stat-label">Total Queue</div>
+          <div className="q-stat-val">{deals.length}</div>
+        </div>
+        <div className="q-stat">
+          <div className="q-stat-label">Overdue</div>
+          <div className="q-stat-val" style={{ color: 'var(--urgent)' }}>
+            {overdue.length}
           </div>
         </div>
-
-        <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-6 space-y-4">
-          <div>
-            <h2 className="text-xl font-bold text-[var(--text-primary)]">{deal.client?.businessName}</h2>
-            <div className="flex items-center gap-3 mt-1">
-              {deal.dealAmount && (
-                <span className="text-lg font-semibold text-[var(--text-primary)]">
-                  {formatCurrency(deal.dealAmount)}
-                </span>
-              )}
-              {deal.productType && (
-                <span className="text-xs px-2 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
-                  {deal.productType}
-                </span>
-              )}
-              <span className="text-xs text-[var(--text-muted)]">Stage: {deal.stage.replace(/_/g, ' ')}</span>
-            </div>
-            {deal.lostReason && <p className="text-xs text-amber-400 mt-2">Lost: {deal.lostReason}</p>}
-            {deal.followUpDate && (
-              <p className="text-xs text-[var(--text-muted)] mt-1">
-                Follow-up: {new Date(deal.followUpDate).toLocaleDateString()}
-              </p>
-            )}
+        <div className="q-stat">
+          <div className="q-stat-label">Renewals</div>
+          <div className="q-stat-val" style={{ color: 'var(--good)' }}>
+            {renewalCount}
           </div>
+        </div>
+        <div className="q-stat">
+          <div className="q-stat-label">Previous Revenue</div>
+          <div className="q-stat-val">{formatCurrency(totalPrev)}</div>
+        </div>
+      </div>
 
-          {/* Primary actions */}
-          <div className="flex gap-2">
-            <button
+      {/* Overdue section */}
+      {overdue.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">
+            🔴 OVERDUE
+            <span>{overdue.length}</span>
+          </div>
+          {overdue.map((deal) => (
+            <QueueCard
+              key={deal.id}
+              deal={deal}
               onClick={() => onDealClick(deal.id)}
-              className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg bg-scl-500 text-white hover:bg-scl-600 transition"
-            >
-              <FileText className="w-4 h-4 inline mr-1" />
-              Open Deal
-            </button>
-            <button
-              onClick={() => setIdx(Math.min(deals.length - 1, idx + 1))}
-              className="px-4 py-2.5 text-sm font-medium rounded-lg border border-[var(--border-primary)] text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] transition"
-            >
-              <SkipForward className="w-4 h-4 inline mr-1" />
-              Skip
-            </button>
-          </div>
+              onRevive={() => reopenMutation.mutate(deal.id)}
+              isReviving={reopenMutation.isPending}
+            />
+          ))}
+        </div>
+      )}
 
-          {/* Quick actions */}
-          <div className="flex gap-2 pt-1 border-t border-[var(--border-primary)]">
-            <button
-              onClick={() => reopenMutation.mutate(deal.id)}
-              disabled={reopenMutation.isPending}
-              className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 disabled:opacity-50 transition"
-            >
-              <RefreshCw className="w-3.5 h-3.5 inline mr-1" />
-              Reopen
-            </button>
-            {deal.client?.phone && (
-              <a
-                href={`tel:${deal.client.phone}`}
-                className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition text-center"
-              >
-                <Phone className="w-3.5 h-3.5 inline mr-1" />
-                Call Now
-              </a>
-            )}
-            <button
-              onClick={() => completeMutation.mutate(deal.id)}
-              disabled={completeMutation.isPending}
-              className="flex-1 px-3 py-2 text-xs font-medium rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 disabled:opacity-50 transition"
-            >
-              <CheckCircle className="w-3.5 h-3.5 inline mr-1" />
-              Complete
-            </button>
+      {/* This week */}
+      {thisWeek.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">
+            📅 THIS WEEK
+            <span>{thisWeek.length}</span>
           </div>
+          {thisWeek.map((deal) => (
+            <QueueCard
+              key={deal.id}
+              deal={deal}
+              onClick={() => onDealClick(deal.id)}
+              onRevive={() => reopenMutation.mutate(deal.id)}
+              isReviving={reopenMutation.isPending}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Upcoming */}
+      {upcoming.length > 0 && (
+        <div className="q-section">
+          <div className="q-section-head">
+            ⏰ UPCOMING
+            <span>{upcoming.length}</span>
+          </div>
+          {upcoming.map((deal) => (
+            <QueueCard
+              key={deal.id}
+              deal={deal}
+              onClick={() => onDealClick(deal.id)}
+              onRevive={() => reopenMutation.mutate(deal.id)}
+              isReviving={reopenMutation.isPending}
+            />
+          ))}
+        </div>
+      )}
+
+      {deals.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔁</div>
+          <div style={{ fontSize: '13px' }}>No deals in the revive queue</div>
+          <div style={{ fontSize: '11px', marginTop: '4px' }}>Deals appear here when they need re-engagement</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Queue Card ───
+
+function QueueCard({
+  deal,
+  onClick,
+  onRevive,
+  isReviving,
+}: {
+  deal: Deal;
+  onClick: () => void;
+  onRevive: () => void;
+  isReviving: boolean;
+}) {
+  const now = new Date();
+  const followUp = deal.followUpDate ? new Date(deal.followUpDate) : null;
+  const isOverdue = followUp ? followUp < now : false;
+  const isToday = followUp?.toDateString() === now.toDateString();
+
+  const cardClass = isOverdue
+    ? 'qc-overdue'
+    : isToday
+      ? 'qc-today'
+      : deal.followUpType === 'renewal'
+        ? 'qc-renewal'
+        : 'qc-upcoming';
+
+  const reasonMap: Record<string, { cls: string; label: string }> = {
+    renewal: { cls: 'qr-renewal', label: '♻ Renewal' },
+    nurture: { cls: 'qr-reengage', label: '🌱 Nurture' },
+    statement: { cls: 'qr-statement', label: '📄 Statement' },
+    timing: { cls: 'qr-timing', label: '⏰ Timing' },
+    reengage: { cls: 'qr-reengage', label: '↩ Re-engage' },
+  };
+  const reason = deal.followUpType ? reasonMap[deal.followUpType] : null;
+
+  const dueText = isOverdue
+    ? `${Math.floor((now.getTime() - followUp!.getTime()) / 86400000)}d overdue`
+    : isToday
+      ? 'Today'
+      : followUp
+        ? followUp.toLocaleDateString()
+        : '';
+  const dueCls = isOverdue ? 'qd-od' : isToday ? 'qd-td' : 'qd-ok';
+
+  return (
+    <div className={`q-card ${cardClass}`} onClick={onClick}>
+      <div className="q-biz">{deal.client?.businessName || 'Unknown'}</div>
+      {reason && <div className={`q-reason-pill ${reason.cls}`}>{reason.label}</div>}
+      <div className="q-funding-row">
+        {deal.prevOffer ? `Prev offer: ${formatCurrency(deal.prevOffer)}` : ''}
+        {deal.productType && ` · ${deal.productType}`}
+      </div>
+      {deal.followUpNote && <div className="q-script">{deal.followUpNote}</div>}
+      <div className="q-meta">
+        <div className="q-rep">
+          {deal.assignedRep && (
+            <>
+              <div
+                className="av"
+                style={{
+                  background: deal.assignedRep.avatarColor || 'var(--gold)',
+                  width: '14px',
+                  height: '14px',
+                  fontSize: '7px',
+                }}
+              >
+                {deal.assignedRep.initials || deal.assignedRep.firstName[0]}
+              </div>
+              {deal.assignedRep.firstName}
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span className={`q-due ${dueCls}`}>{dueText}</span>
+          <button
+            className="q-revive-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRevive();
+            }}
+            disabled={isReviving}
+          >
+            Revive →
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Stat Card ───
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: string; color: string }) {
+// ═══════════════════════════════════════
+// GOALS MODAL
+// ═══════════════════════════════════════
+
+function GoalsModal({ reps, onClose }: { reps: Rep[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [teamMonthly, setTeamMonthly] = useState('');
+  const [teamAnnual, setTeamAnnual] = useState('');
+
+  const initialGoals = useMemo(() => {
+    const goals: Record<string, { monthly: string; annual: string }> = {};
+    reps.forEach((r) => {
+      goals[r.id] = {
+        monthly: r.monthlyGoal ? String(r.monthlyGoal) : '',
+        annual: r.annualGoal ? String(r.annualGoal) : '',
+      };
+    });
+    return goals;
+  }, [reps]);
+  const [repGoals, setRepGoals] = useState<Record<string, { monthly: string; annual: string }>>(initialGoals);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const promises: Promise<any>[] = [];
+      if (teamMonthly || teamAnnual) {
+        promises.push(
+          repApi.updateTeamGoals({
+            monthlyGoal: teamMonthly ? parseFloat(teamMonthly) : undefined,
+            annualGoal: teamAnnual ? parseFloat(teamAnnual) : undefined,
+          }),
+        );
+      }
+      for (const [repId, goals] of Object.entries(repGoals)) {
+        if (goals.monthly || goals.annual) {
+          promises.push(
+            repApi.updateGoals(repId, {
+              monthlyGoal: goals.monthly ? parseFloat(goals.monthly) : undefined,
+              annualGoal: goals.annual ? parseFloat(goals.annual) : undefined,
+            }),
+          );
+        }
+      }
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reps'] });
+      toast.success('Goals saved');
+      onClose();
+    },
+    onError: () => toast.error('Failed to save goals'),
+  });
+
   return (
-    <div className="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-primary)]">
-      <div className="flex items-center gap-2">
-        <Icon className={clsx('w-4 h-4', color)} />
-        <span className="text-[10px] font-medium text-[var(--text-muted)] uppercase">{label}</span>
+    <div className="modal-ov open" onClick={onClose}>
+      <div className="modal goal-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">
+          ⚡ Team Goals — Admin Only
+          <button className="modal-close" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div style={{ fontSize: '11px', color: 'var(--text2)', marginBottom: '14px' }}>
+          Set monthly funded targets for each rep and the team. Only you can edit these — reps see their own goal and
+          progress.
+        </div>
+
+        {/* Team goal */}
+        <div
+          style={{
+            fontSize: '10px',
+            color: 'var(--text3)',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginBottom: '8px',
+          }}
+        >
+          Team Goal
+        </div>
+        <div className="goal-rep-row">
+          <div className="goal-rep-name" style={{ color: 'var(--gold)' }}>
+            🏆 Full Team
+          </div>
+          <div style={{ flex: 1 }}>
+            <div className="goal-inp-label">Monthly Target</div>
+            <input
+              className="goal-inp"
+              value={teamMonthly}
+              onChange={(e) => setTeamMonthly(e.target.value)}
+              placeholder="$5,800,000"
+            />
+          </div>
+          <div style={{ flex: 1, marginLeft: '8px' }}>
+            <div className="goal-inp-label">Annual Target</div>
+            <input
+              className="goal-inp"
+              value={teamAnnual}
+              onChange={(e) => setTeamAnnual(e.target.value)}
+              placeholder="$70,000,000"
+            />
+          </div>
+        </div>
+
+        {/* Per-rep goals */}
+        <div
+          style={{
+            fontSize: '10px',
+            color: 'var(--text3)',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            margin: '12px 0 8px',
+          }}
+        >
+          Rep Goals
+        </div>
+        {reps.map((rep) => (
+          <div key={rep.id} className="goal-rep-row">
+            <div className="goal-rep-name">
+              {rep.firstName} {rep.lastName}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="goal-inp-label">Monthly</div>
+              <input
+                className="goal-inp"
+                value={repGoals[rep.id]?.monthly || ''}
+                onChange={(e) =>
+                  setRepGoals((prev) => ({
+                    ...prev,
+                    [rep.id]: { ...prev[rep.id], monthly: e.target.value },
+                  }))
+                }
+                placeholder="$0"
+              />
+            </div>
+            <div style={{ flex: 1, marginLeft: '8px' }}>
+              <div className="goal-inp-label">Annual</div>
+              <input
+                className="goal-inp"
+                value={repGoals[rep.id]?.annual || ''}
+                onChange={(e) =>
+                  setRepGoals((prev) => ({
+                    ...prev,
+                    [rep.id]: { ...prev[rep.id], annual: e.target.value },
+                  }))
+                }
+                placeholder="$0"
+              />
+            </div>
+          </div>
+        ))}
+
+        <div className="mfoot">
+          <button className="btn-c" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn-s" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+            Save Goals
+          </button>
+        </div>
       </div>
-      <p className="text-lg font-bold text-[var(--text-primary)] mt-1">{value}</p>
     </div>
   );
 }

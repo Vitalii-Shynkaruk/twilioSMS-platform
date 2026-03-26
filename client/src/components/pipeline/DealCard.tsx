@@ -1,21 +1,21 @@
-import { clsx } from 'clsx';
-import { Flame, Clock, User, AlertTriangle } from 'lucide-react';
-import type { Deal } from '../../types';
+import { Fragment } from 'react';
+import type { Deal, CommitSubStatus } from '../../types';
 
-const STAGE_COLORS: Record<string, string> = {
-  NEW_LEAD: '#6366f1',
-  ENGAGED_INTERESTED: '#3b82f6',
-  QUALIFIED: '#8b5cf6',
-  SUBMITTED_IN_REVIEW: '#f59e0b',
-  APPROVED_OFFERS: '#10b981',
-  COMMITTED_FUNDING: '#06b6d4',
-  FUNDED: '#22c55e',
-  NURTURE: '#f97316',
-  CLOSED: '#ef4444',
+// ─── Exported constants (used by DealPanel, CommandCenter, etc.) ───
+
+export const STAGE_COLORS: Record<string, string> = {
+  NEW_LEAD: '#4A9EE8',
+  ENGAGED_INTERESTED: '#4A9EE8',
+  QUALIFIED: '#D06828',
+  SUBMITTED_IN_REVIEW: '#D4A940',
+  APPROVED_OFFERS: '#3AB97A',
+  COMMITTED_FUNDING: '#3AB97A',
+  FUNDED: '#3AB97A',
+  NURTURE: '#536070',
+  CLOSED: '#3A4A5C',
 };
 
-// Product color system per spec: MCA=gold, SBA=blue, Equipment=green, HELOC=purple, CRE=coral, Bridge=teal
-const PRODUCT_COLORS: Record<string, string> = {
+export const PRODUCT_COLORS: Record<string, string> = {
   MCA: 'bg-amber-500/20 text-amber-400',
   LOC: 'bg-blue-500/20 text-blue-400',
   EQUIPMENT: 'bg-green-500/20 text-green-400',
@@ -25,143 +25,424 @@ const PRODUCT_COLORS: Record<string, string> = {
   BRIDGE: 'bg-teal-500/20 text-teal-400',
 };
 
-function formatCurrency(amount?: number | null): string {
+export function formatCurrency(amount?: number | null): string {
   if (!amount) return '$0';
   if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
   return `$${amount.toLocaleString()}`;
 }
 
+// ─── Internal helpers ───
+
+const PRODUCT_TAG: Record<string, { cls: string; label: string }> = {
+  MCA: { cls: 't-mca', label: '⚡MCA' },
+  LOC: { cls: 't-con', label: 'LOC' },
+  EQUIPMENT: { cls: 't-eq', label: '🔧Equip' },
+  HELOC: { cls: 't-hel', label: '🏠HELOC' },
+  SBA: { cls: 't-sba', label: '🏛SBA' },
+  CRE: { cls: 't-sba', label: '🏢CRE' },
+  BRIDGE: { cls: 't-con', label: 'Bridge' },
+};
+
+const REP_COLORS = ['#C9952A', '#3AB97A', '#4A9EE8', '#9B72E8', '#D06828', '#E24B4A'];
+
+function repColor(rep?: { firstName: string; avatarColor?: string } | null): string {
+  if (!rep) return REP_COLORS[0];
+  return rep.avatarColor || REP_COLORS[rep.firstName.charCodeAt(0) % REP_COLORS.length];
+}
+
+function repInitials(rep?: { firstName: string; lastName?: string; initials?: string } | null): string {
+  if (!rep) return '?';
+  if (rep.initials) return rep.initials;
+  return (rep.firstName[0] + (rep.lastName?.[0] || '')).toUpperCase();
+}
+
+function dueInfo(dateStr?: string | null) {
+  if (!dateStr) return { text: '', cls: 'due-nm', isOverdue: false, isToday: false };
+  const d = new Date(dateStr);
+  const now = new Date();
+  const dNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const nNorm = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.floor((dNorm.getTime() - nNorm.getTime()) / 86400000);
+  if (diff < 0) return { text: `${Math.abs(diff)}d overdue`, cls: 'due-od', isOverdue: true, isToday: false };
+  if (diff === 0) return { text: 'Today', cls: 'due-td', isOverdue: false, isToday: true };
+  if (diff === 1) return { text: 'Tomorrow', cls: 'due-gr', isOverdue: false, isToday: false };
+  return { text: `in ${diff}d`, cls: 'due-nm', isOverdue: false, isToday: false };
+}
+
+function simpleDueInfo(dateStr?: string | null) {
+  if (!dateStr) return { text: '', cls: 'st-nm' };
+  const d = new Date(dateStr);
+  const now = new Date();
+  const dNorm = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const nNorm = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.floor((dNorm.getTime() - nNorm.getTime()) / 86400000);
+  if (diff < 0) return { text: `${Math.abs(diff)}d late`, cls: 'st-od' };
+  if (diff === 0) return { text: 'Today', cls: 'st-td' };
+  if (diff === 1) return { text: 'Tmrw', cls: 'st-good' };
+  return { text: `${diff}d`, cls: 'st-nm' };
+}
+
+function simpleCardState(deal: Deal): string {
+  const due = dueInfo(deal.nextActionDue);
+  if (deal.isHot) return 'sc-hot';
+  if (due.isOverdue) return 'sc-overdue';
+  if (due.isToday) return 'sc-today';
+  if (deal.staleDays <= 0) return 'sc-good';
+  return 'sc-normal';
+}
+
+function cardPriority(deal: Deal): string {
+  if (deal.stage === 'CLOSED') return 'disq';
+  const due = dueInfo(deal.nextActionDue);
+  if (due.isOverdue) return 'p-od';
+  if (!deal.nextAction && !['FUNDED', 'CLOSED', 'NURTURE'].includes(deal.stage)) return 'p-mna';
+  if (deal.isHot) return 'p-hot';
+  if (due.isToday) return 'p-td';
+  if (deal.renewalTasks?.some((t) => t.status === 'PENDING')) return 'p-renew';
+  if (deal.staleDays <= 0) return 'p-good';
+  return 'p-nm';
+}
+
+function staleBarCls(days: number): string {
+  if (days <= 0) return 'sb-fresh';
+  if (days <= 1) return 'sb-warm';
+  if (days <= 3) return 'sb-stale';
+  return 'sb-dead';
+}
+
+function staleTxt(days: number): { text: string; cls: string } {
+  if (days <= 0) return { text: 'Active', cls: 'fresh' };
+  if (days <= 1) return { text: `${days}d ago`, cls: 'warm' };
+  if (days <= 3) return { text: `${days}d ago`, cls: 'stale' };
+  return { text: `${days}d STALE`, cls: 'dead' };
+}
+
+function simpleAmount(deal: Deal): { text: string; cls: string } {
+  if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
+    return { text: formatCurrency(deal.fundingEvents[0].amountFunded), cls: 'sca-green' };
+  }
+  if (deal.offers?.length) {
+    const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
+    return { text: formatCurrency(best.amount), cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
+  }
+  if (deal.stage === 'NURTURE' && deal.prevOffer) {
+    return { text: formatCurrency(deal.prevOffer), cls: 'sca-prev' };
+  }
+  if (deal.dealAmount) {
+    return { text: formatCurrency(deal.dealAmount), cls: deal.dealAmount >= 25000 ? 'sca-green' : 'sca-amber' };
+  }
+  return { text: '—', cls: 'sca-gray' };
+}
+
+function offerStrength(amount: number): string {
+  if (amount >= 100000) return 'ob-strong';
+  if (amount >= 50000) return 'ob-mid';
+  return 'ob-weak';
+}
+
+function csubCls(status?: CommitSubStatus | null): string {
+  if (status === 'DOCS_REQUESTED') return 'csub-docs-req';
+  if (status === 'DOCS_SIGNED') return 'csub-docs-signed';
+  if (status === 'FUNDING') return 'csub-funding';
+  return '';
+}
+
+function csubLabel(status?: CommitSubStatus | null): string {
+  if (status === 'DOCS_REQUESTED') return '📝 Docs Requested';
+  if (status === 'DOCS_SIGNED') return '✍ Docs Signed';
+  if (status === 'FUNDING') return '💰 Funding in Progress';
+  return '';
+}
+
+const CSUB_STEPS: CommitSubStatus[] = ['DOCS_REQUESTED', 'DOCS_SIGNED', 'FUNDING'];
+const CSUB_LABELS = ['Docs Req', 'Signed', 'Funding'];
+
+// ─── Main component ───
+
 interface DealCardProps {
   deal: Deal;
   onClick?: () => void;
+  viewMode?: 'simple' | 'execution';
   compact?: boolean;
 }
 
-export default function DealCard({ deal, onClick, compact }: DealCardProps) {
-  const stageColor = STAGE_COLORS[deal.stage] || '#6366f1';
-  const isOverdue = deal.nextActionDue && new Date(deal.nextActionDue) < new Date();
-  const isStale = (deal.staleDays || 0) > 0;
+export default function DealCard({ deal, onClick, viewMode, compact }: DealCardProps) {
+  const mode = viewMode || (compact ? 'simple' : 'execution');
+  if (mode === 'simple') return <SimpleCard deal={deal} onClick={onClick} />;
+  return <ExecutionCard deal={deal} onClick={onClick} />;
+}
+
+// ═══════════════════════════════════════
+// SIMPLE CARD — scan mode
+// $amount · name · 1 action · time
+// ═══════════════════════════════════════
+
+function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
+  const state = simpleCardState(deal);
+  const amt = simpleAmount(deal);
+  const due = simpleDueInfo(deal.nextActionDue);
 
   return (
-    <div
-      onClick={onClick}
-      className={clsx(
-        'rounded-lg border cursor-pointer transition-all hover:shadow-md group',
-        'bg-[var(--bg-secondary)] border-[var(--border-primary)]',
-        deal.isHot && 'ring-1 ring-orange-500/50',
-        isOverdue && 'ring-1 ring-red-500/60 animate-pulse',
-        compact ? 'p-2' : 'p-3',
-      )}
-    >
-      {/* Header: Business name + hot indicator */}
-      <div className="flex items-start justify-between gap-2">
-        <h4 className="text-sm font-medium text-[var(--text-primary)] truncate flex-1">
-          {deal.client?.businessName || 'Unknown'}
-        </h4>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {deal.isHot && <Flame className="w-3.5 h-3.5 text-orange-500" />}
-          {isOverdue && <AlertTriangle className="w-3 h-3 text-red-400" />}
+    <div className={`s-card ${state}`} onClick={onClick} style={{ padding: '10px 12px' }}>
+      {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
+      <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
+      <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
+      {deal.nextAction ? (
+        <div className="sc-action-row">
+          <span className="sc-action">{deal.nextAction}</span>
+          <span className={`sc-time ${due.cls}`}>{due.text}</span>
         </div>
-      </div>
-
-      {/* Amount + Product */}
-      <div className="flex items-center gap-2 mt-1.5">
-        {deal.dealAmount ? (
-          <span className="text-xs font-semibold text-[var(--text-primary)]">{formatCurrency(deal.dealAmount)}</span>
-        ) : (
-          <span className="text-xs text-[var(--text-muted)] italic">Needs $</span>
-        )}
-        {deal.productType && (
-          <span
-            className={clsx(
-              'text-[10px] px-1.5 py-0.5 rounded font-medium',
-              PRODUCT_COLORS[deal.productType] || 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
-            )}
-          >
-            {deal.productType}
-          </span>
-        )}
-      </div>
-
-      {/* Stale indicator bar */}
-      {!compact && isStale && (
-        <div className="mt-1.5 h-1 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
-          <div
-            className={clsx(
-              'h-full rounded-full',
-              deal.staleDays! >= 3 ? 'bg-red-500' : deal.staleDays! >= 2 ? 'bg-amber-500' : 'bg-yellow-500',
-            )}
-            style={{ width: `${Math.min(100, (deal.staleDays || 0) * 20)}%` }}
-          />
-        </div>
-      )}
-
-      {/* Committed sub-status track (execution mode) */}
-      {!compact && deal.stage === 'COMMITTED_FUNDING' && deal.commitSubStatus && (
-        <div className="flex gap-1 mt-1.5">
-          {(['DOCS_REQUESTED', 'DOCS_SIGNED', 'FUNDING'] as const).map((s, i) => {
-            const steps = ['DOCS_REQUESTED', 'DOCS_SIGNED', 'FUNDING'];
-            const currentIdx = steps.indexOf(deal.commitSubStatus!);
-            return (
-              <div
-                key={s}
-                className={clsx('flex-1 h-1 rounded-full', i <= currentIdx ? 'bg-cyan-500' : 'bg-[var(--bg-tertiary)]')}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {/* Footer: Rep + Days */}
-      {!compact && (
-        <div className="flex items-center justify-between mt-2 pt-2 border-t border-[var(--border-primary)]">
-          {/* Rep pill */}
-          {deal.assignedRep ? (
-            <div className="flex items-center gap-1">
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
-                style={{ backgroundColor: deal.assignedRep.avatarColor || stageColor }}
-              >
-                {deal.assignedRep.initials || deal.assignedRep.firstName[0]}
-              </div>
-            </div>
-          ) : (
-            <User className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-          )}
-
-          {/* Days in stage */}
-          <div className="flex items-center gap-1">
-            <Clock className="w-3 h-3 text-[var(--text-muted)]" />
-            <span
-              className={clsx(
-                'text-[10px] font-medium',
-                deal.daysInStage >= 5
-                  ? 'text-red-400'
-                  : deal.daysInStage >= 3
-                    ? 'text-amber-400'
-                    : 'text-[var(--text-muted)]',
-              )}
-            >
-              {deal.daysInStage}d
-            </span>
-          </div>
-
-          {/* Next action */}
-          {deal.nextAction && (
-            <span
-              className={clsx(
-                'text-[10px] truncate max-w-[80px]',
-                isOverdue ? 'text-red-400 font-medium' : 'text-[var(--text-muted)]',
-              )}
-            >
-              {deal.nextAction}
-            </span>
-          )}
-        </div>
+      ) : (
+        deal.stage !== 'FUNDED' && deal.stage !== 'CLOSED' && <div className="sc-no-action">⚠ No next action set</div>
       )}
     </div>
   );
 }
 
-export { STAGE_COLORS, PRODUCT_COLORS, formatCurrency };
+// ═══════════════════════════════════════
+// EXECUTION CARD — full analytical mode
+// ═══════════════════════════════════════
+
+function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
+  const priority = cardPriority(deal);
+  const sbar = staleBarCls(deal.staleDays);
+  const stale = staleTxt(deal.staleDays);
+  const due = dueInfo(deal.nextActionDue);
+
+  const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
+
+  const naRowCls = due.isOverdue ? 'na-od' : due.isToday ? 'na-td' : '';
+  const naDotBg = due.isOverdue ? 'var(--urgent)' : due.isToday ? 'var(--watch)' : 'var(--text3)';
+
+  return (
+    <div className={`card ${priority}`} onClick={onClick}>
+      {/* Staleness bar */}
+      <div className={`sbar ${sbar}`} />
+
+      <div className="cb">
+        {/* Top: name + badges */}
+        <div className="c-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="c-name">{deal.client?.businessName || 'Unknown'}</div>
+            {deal.client?.contactName && <div className="c-biz">{deal.client.contactName}</div>}
+          </div>
+          <div className="bdgs">
+            {deal.isHot && <span className="b b-hot">🔥HOT</span>}
+            {deal.stage === 'NURTURE' && <span className="b b-lost">LOST</span>}
+            {deal.client && deal.client.fundingCount > 0 && <span className="b b-renew">↻</span>}
+          </div>
+        </div>
+
+        {/* Product tag */}
+        {deal.productType && (
+          <div className="tags">
+            <span className={`t ${PRODUCT_TAG[deal.productType]?.cls || 't-mca'}`}>
+              {PRODUCT_TAG[deal.productType]?.label || deal.productType}
+            </span>
+            {deal.dealAmount && deal.stage !== 'FUNDED' && !bestOffer && (
+              <span className="t t-offer">{formatCurrency(deal.dealAmount)}</span>
+            )}
+          </div>
+        )}
+
+        {/* HOT reason row */}
+        {deal.isHot && (
+          <div className="hot-row">
+            <span>
+              🔥 {deal.lenderEngaged ? 'Lender engaged' : deal.offers?.length ? 'Offer received' : 'Active reply'}
+            </span>
+          </div>
+        )}
+
+        {/* System status pill (QUALIFIED stage) */}
+        {deal.stage === 'QUALIFIED' && (
+          <div
+            className={`status-pill ${
+              !deal.appSubmitted
+                ? 'sp-needs-app'
+                : !deal.offers?.length
+                  ? 'sp-awaiting'
+                  : (deal.offers?.length || 0) > 1
+                    ? 'sp-multi'
+                    : 'sp-offer'
+            }`}
+          >
+            <div className="sp-dot" />
+            <span className="sp-text">
+              {!deal.appSubmitted
+                ? 'Needs app'
+                : !deal.offers?.length
+                  ? 'Awaiting offers'
+                  : (deal.offers?.length || 0) > 1
+                    ? `${deal.offers!.length} offers`
+                    : 'Offer received'}
+            </span>
+          </div>
+        )}
+
+        {/* Returning client */}
+        {deal.client && deal.client.fundingCount > 0 && (
+          <div className="ret-pill">
+            <span>↻ Returning · {deal.client.fundingCount}x funded</span>
+          </div>
+        )}
+
+        {/* Offer block */}
+        {bestOffer && deal.stage !== 'FUNDED' && deal.stage !== 'NURTURE' && (
+          <div className={`offer-block ${offerStrength(bestOffer.amount)}`}>
+            {deal.offers!.length === 1 ? (
+              <>
+                <div className="ob-main">
+                  <span className="ob-amount">{formatCurrency(bestOffer.amount)}</span>
+                </div>
+                <div className="ob-tags">
+                  <span className="ob-lender">{bestOffer.lenderName}</span>
+                  {bestOffer.terms && <span className="ob-best">{bestOffer.terms}</span>}
+                </div>
+              </>
+            ) : (
+              deal.offers!.map((o) => (
+                <div key={o.id} className="ob-multi-row">
+                  <span className="ob-ml">{o.lenderName}</span>
+                  <span className={`ob-ma ${o.amount >= 100000 ? 'g' : o.amount >= 50000 ? 'w' : 'u'}`}>
+                    {formatCurrency(o.amount)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* Funded block */}
+        {deal.stage === 'FUNDED' && deal.fundingEvents?.length ? (
+          <>
+            <div className="funded-block">
+              <div className="fb-amount">{formatCurrency(deal.fundingEvents[0].amountFunded)}</div>
+              <div className="fb-meta">
+                {deal.fundingEvents[0].lender ? `${deal.fundingEvents[0].lender} · ` : ''}
+                {deal.cycleTime ? `${deal.cycleTime}d cycle` : ''}
+              </div>
+            </div>
+            <div className="funded-meta">
+              {deal.fundedDate && <span>{new Date(deal.fundedDate).toLocaleDateString()}</span>}
+              {deal.cycleTime && <span className="funded-cycle">{deal.cycleTime}d</span>}
+            </div>
+          </>
+        ) : null}
+
+        {/* Nurture previous offer + lost reason */}
+        {deal.stage === 'NURTURE' && (
+          <>
+            {deal.prevOffer && (
+              <div className="prev-block">
+                <div className="pb-amount">Prev: {formatCurrency(deal.prevOffer)}</div>
+                <div className="pb-label">Best offer before close</div>
+              </div>
+            )}
+            {deal.lostReason && <div className="lost-r">&ldquo;{deal.lostReason}&rdquo;</div>}
+          </>
+        )}
+
+        {/* Committed sub-status track */}
+        {deal.stage === 'COMMITTED_FUNDING' && deal.commitSubStatus && (
+          <div className={`csub-block ${csubCls(deal.commitSubStatus)}`}>
+            <div className="csub-header">
+              <span className="csub-badge">{csubLabel(deal.commitSubStatus)}</span>
+              {deal.daysInSubStatus > 0 && (
+                <span
+                  className={`csub-dis ${
+                    deal.daysInSubStatus > 5
+                      ? 'csub-dis-alert'
+                      : deal.daysInSubStatus > 3
+                        ? 'csub-dis-warn'
+                        : 'csub-dis-ok'
+                  }`}
+                >
+                  {deal.daysInSubStatus}d
+                </span>
+              )}
+            </div>
+            <div className="csub-progress">
+              {CSUB_STEPS.map((step, i) => {
+                const currentIdx = CSUB_STEPS.indexOf(deal.commitSubStatus!);
+                const isDone = i < currentIdx;
+                const isActive = i === currentIdx;
+                return (
+                  <Fragment key={step}>
+                    {i > 0 && <div className={`csub-connector ${isDone ? 'done' : ''}`} />}
+                    <div className="csub-step">
+                      <div className={`csub-step-dot ${isDone ? 'done' : isActive ? 'active' : ''}`} />
+                      <div className={`csub-step-label ${isDone ? 'done' : isActive ? 'active' : ''}`}>
+                        {CSUB_LABELS[i]}
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Days in stage pill */}
+        {deal.daysInStage > 0 && !['FUNDED', 'CLOSED'].includes(deal.stage) && (
+          <span
+            className={`dis-pill ${deal.daysInStage > 7 ? 'dis-alert' : deal.daysInStage > 3 ? 'dis-warn' : 'dis-ok'}`}
+            style={{ marginBottom: '3px' }}
+          >
+            {deal.daysInStage}d in stage
+          </span>
+        )}
+
+        {/* Rep ownership */}
+        {deal.assignedRep && (
+          <div className="rep-ownership">
+            <div className="rep-primary-block">
+              <div className="av" style={{ background: repColor(deal.assignedRep) }}>
+                {repInitials(deal.assignedRep)}
+              </div>
+              <span className="rep-primary-name">{deal.assignedRep.firstName}</span>
+              <span className="rep-primary-label">Primary</span>
+            </div>
+          </div>
+        )}
+
+        {/* Missing next action warning */}
+        {!deal.nextAction && !['FUNDED', 'CLOSED', 'NURTURE'].includes(deal.stage) && (
+          <div className="mna">
+            <span>⚠ No next action set</span>
+          </div>
+        )}
+
+        {/* Next action row */}
+        {deal.nextAction && (
+          <div className={`na-row ${naRowCls}`}>
+            <div className="na-d" style={{ background: naDotBg }} />
+            <span className="na-t">{deal.nextAction}</span>
+            {deal.nextActionDue && <span className={`na-due ${due.cls}`}>{due.text}</span>}
+          </div>
+        )}
+
+        {/* Renewal pill */}
+        {deal.renewalTasks?.some((t) => t.status === 'PENDING') && (
+          <div className="renew-pill">
+            <span className="rp-t">♻ Renewal due</span>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="c-foot">
+          <span className={`stale-t ${stale.cls}`}>{stale.text}</span>
+          <span className="age-t">{deal.daysInStage}d</span>
+          {deal.assignedRep && (
+            <div className="touched-by">
+              <div className="touched-av" style={{ background: repColor(deal.assignedRep) }}>
+                {repInitials(deal.assignedRep)}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

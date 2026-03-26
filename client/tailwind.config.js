@@ -45,6 +45,10 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        dm: ['DM Sans', 'system-ui', 'sans-serif'],
+        'dm-mono': ['DM Mono', 'monospace'],
+        'plex': ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+        'plex-mono': ['IBM Plex Mono', 'monospace'],
       },
       animation: {
         'slide-in': 'slideIn 0.3s ease-out',

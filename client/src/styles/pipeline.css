@@ -778,3 +778,140 @@ body.simple-view .sbar{display:none;}
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — TABLET (≤1024px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .topbar { flex-wrap: wrap; height: auto; min-height: 46px; padding: 8px 12px; gap: 6px; }
+  .fp-row { flex-wrap: wrap; overflow: visible; }
+  .view-sw { margin-left: 0; }
+  .legend { padding: 4px 12px; gap: 10px; }
+  .board-wrap { padding: 10px 12px 0; }
+  .col { width: 180px; }
+  .mgr-bar { flex-wrap: wrap; }
+  .mc { min-width: 140px; }
+  .sum-bar { flex-wrap: wrap; }
+  .sb2 { min-width: 140px; }
+  .panel { width: 560px; right: -560px; }
+  .panel.open { right: 0; }
+  .team-stats { grid-template-columns: repeat(2, 1fr); }
+  .team-cards { justify-content: center; }
+  .deal-tile { width: 180px; }
+  .queue-stats { gap: 6px; }
+  .q-stat { min-width: 110px; }
+  .modal { width: 380px; }
+  .goal-modal { width: 440px; }
+  .modal-rev-grid { grid-template-columns: 1fr; }
+  .modal-dt { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — MOBILE (≤768px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  html, body { overflow: auto; }
+  #app { height: auto; min-height: 100vh; }
+
+  /* Topbar: stack items */
+  .topbar { flex-wrap: wrap; height: auto; padding: 8px 10px; gap: 6px; }
+  .logo { font-size: 12px; }
+  .role-sw { order: 2; }
+  .fp-row { order: 3; width: 100%; flex-wrap: wrap; overflow: visible; gap: 4px; }
+  .fp { font-size: 10px; padding: 4px 8px; }
+  .view-sw { order: 1; margin-left: auto; gap: 2px; }
+  .vs { padding: 4px 8px; font-size: 10px; }
+  .view-mode-sw { order: 1; }
+  .add-btn { font-size: 11px; padding: 5px 10px; }
+  .goal-btn { font-size: 10px; padding: 3px 8px; }
+
+  /* Legend: hide on mobile */
+  .legend { display: none; }
+
+  /* Board: horizontal swipe columns */
+  .board-wrap { padding: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .board { gap: 6px; }
+  .col { width: 75vw; min-width: 75vw; flex-shrink: 0; }
+
+  /* Stat bars: vertical stack */
+  .mgr-bar { flex-direction: column; }
+  .mc { border-right: none; border-bottom: 1px solid var(--border); padding: 6px 10px; }
+  .mc:last-child { border-bottom: none; }
+  .sum-bar { flex-direction: column; }
+  .sb2 { border-right: none; border-bottom: 1px solid var(--border2); padding: 8px 10px; }
+  .sb2:last-child { border-bottom: none; }
+
+  /* Panel: full screen */
+  .panel { width: 100vw; right: -100vw; }
+  .panel.open { right: 0; }
+  .ph { padding: 10px 12px 0; }
+  .ph-name { font-size: 14px; }
+  .ptab { padding: 6px 10px; font-size: 10px; }
+  .bubble { max-width: 90%; }
+
+  /* Modals: full width */
+  .modal-ov { align-items: flex-end; }
+  .modal { width: 100vw; max-width: 100vw; border-radius: 12px 12px 0 0; max-height: 85vh; }
+  .modal.wide { width: 100vw; }
+  .goal-modal { width: 100vw; max-width: 100vw; }
+  .goal-rep-row { flex-wrap: wrap; gap: 6px; }
+  .goal-rep-name { width: 100%; }
+
+  /* Team view */
+  .team-view { padding: 10px; }
+  .team-stats { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .team-cards { flex-direction: column; align-items: stretch; }
+  .deal-tile { width: 100%; }
+
+  /* Queue view */
+  .queue-view { padding: 10px; }
+  .queue-stats { flex-direction: column; }
+  .q-stat { min-width: unset; }
+  .queue-nav-btn { font-size: 10px; padding: 4px 8px; }
+
+  /* Toast */
+  .toast { font-size: 11px; max-width: 90vw; }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — SMALL MOBILE (≤480px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .topbar { padding: 6px 8px; gap: 4px; }
+  .logo { font-size: 11px; gap: 5px; }
+  .rs { padding: 3px 7px; font-size: 10px; }
+  .fp { font-size: 9px; padding: 3px 6px; }
+  .vs { font-size: 9px; padding: 3px 7px; }
+  .add-btn { font-size: 10px; padding: 4px 8px; }
+  .goal-btn { font-size: 9px; padding: 3px 6px; }
+
+  .board-wrap { padding: 6px 4px; }
+  .col { width: 82vw; min-width: 82vw; }
+  .col-stage { font-size: 9px; }
+
+  .card { padding: 6px 7px; }
+  .card .biz { font-size: 11px; }
+  .card .amt { font-size: 13px; }
+  .card .tag { font-size: 7px; }
+
+  .panel .ph-name { font-size: 13px; }
+  .ptab { font-size: 9px; padding: 5px 8px; }
+  .bubble { font-size: 11px; }
+
+  .stat-card { padding: 8px 10px; }
+  .stat-val { font-size: 16px; }
+  .stat-label { font-size: 8px; }
+
+  .team-stats { grid-template-columns: 1fr; }
+
+  .q-stat-val { font-size: 17px; }
+  .q-card { padding: 8px 10px; }
+
+  .modal { padding: 16px 14px 14px; }
+  .modal-title { font-size: 13px; }
+
+  .sv { font-size: 15px; }
+  .sl { font-size: 8px; }
+
+  .queue-nav-btn { font-size: 9px; }
+}

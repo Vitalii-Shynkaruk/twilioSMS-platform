@@ -675,3 +675,156 @@ button { font-family: var(--mono); cursor: pointer; }
 .rrq-done-sub { font-size: 9px; color: var(--muted); margin-top: 4px; }
 .rrq-reset-btn { margin-top: 10px; padding: 5px 14px; border-radius: 3px; border: 1px solid var(--border2); background: transparent; font-size: 9px; color: var(--muted); font-family: var(--mono); cursor: pointer; }
 .rrq-reset-btn:hover { color: var(--text); }
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — TABLET (≤1024px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .page { padding: 10px 14px; }
+  .topbar { padding: 0 12px; }
+
+  /* Grids: reduce columns */
+  .g-3-2 { grid-template-columns: 1fr 1fr; }
+  .g-pipe { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: 1fr 1fr; }
+  .g5 { grid-template-columns: repeat(3, 1fr); }
+
+  .hero-g { grid-template-columns: auto 1fr; gap: 16px; }
+  .hboxes { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .hbox { min-width: 80px; }
+
+  .sc { padding: 8px 10px; }
+  .scv { font-size: 22px; }
+
+  .risk-banner { flex-wrap: wrap; gap: 8px; }
+  .rb-right { gap: 12px; }
+
+  .rep-tbl td { font-size: 9px; }
+
+  .exec-score-bar { flex-wrap: wrap; gap: 8px; padding: 4px 8px; }
+
+  .csv-box { width: 440px; }
+  .deal-box { width: 360px; }
+  .ca-box { width: 340px; }
+
+  .rrq-detail-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — MOBILE (≤768px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Main layout */
+  .page { padding: 8px 10px; gap: 7px; }
+
+  /* Topbar: stack */
+  .topbar { height: auto; min-height: 44px; padding: 8px 10px; flex-wrap: wrap; gap: 6px; }
+  .logo-wrap { gap: 6px; }
+  .topnav { flex-wrap: wrap; gap: 2px; margin-left: 0; width: 100%; }
+  .tnv { padding: 4px 7px; font-size: 9px; }
+  .tb-right { width: 100%; justify-content: space-between; gap: 6px; }
+  .rsw { font-size: 9px; }
+  .rb { padding: 3px 7px; font-size: 9px; }
+  .clk { font-size: 8px; }
+  .add-btn { font-size: 9px; padding: 4px 9px; }
+
+  /* All grids → single column */
+  .g2, .g3, .g4, .g5, .g-2-1, .g-3-2, .g-pipe { grid-template-columns: 1fr; }
+
+  /* Hero: stack */
+  .hero { padding: 12px 14px; }
+  .hero-g { grid-template-columns: 1fr; gap: 14px; }
+  .hboxes { flex-direction: row; flex-wrap: wrap; }
+  .hbox { flex: 1; min-width: 80px; }
+  .funded-n { font-size: 34px; }
+
+  /* Scorecards */
+  .sc { padding: 9px 11px; }
+  .scv { font-size: 20px; }
+
+  /* Risk banner: stack */
+  .risk-banner { flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 12px; }
+  .rb-right { width: 100%; justify-content: flex-start; gap: 14px; }
+
+  /* Cards */
+  .card { padding: 10px 12px; }
+
+  /* Rep table: horizontal scroll */
+  .rep-tbl { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Execution score bar: wrap */
+  .exec-score-bar { flex-wrap: wrap; gap: 6px; padding: 5px 8px; }
+  .esb-track { width: 36px; }
+
+  /* Product mix */
+  .pm-header { flex-wrap: wrap; gap: 6px; }
+  .pm-prod-r { flex-wrap: wrap; gap: 4px; }
+  .pm-prod-name { width: 50px; font-size: 8px; }
+  .pm-rep-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Renewal queue */
+  .rrq-header { flex-wrap: wrap; gap: 6px; }
+  .rrq-deal-row { grid-template-columns: 1fr; gap: 8px; }
+  .rrq-deal-amounts { text-align: left; }
+  .rrq-detail-grid { grid-template-columns: 1fr 1fr; }
+  .rrq-actions { flex-wrap: wrap; }
+  .rrq-nav { flex-wrap: wrap; gap: 6px; }
+
+  /* Modals: full width */
+  .csv-modal { align-items: flex-end; }
+  .csv-box { width: 100vw; max-width: 100vw; border-radius: 7px 7px 0 0; }
+  .deal-modal { align-items: flex-end; }
+  .deal-box { width: 100vw; max-width: 100vw; border-radius: 7px 7px 0 0; max-height: 85vh; }
+  .ca-modal { align-items: flex-end; }
+  .ca-box { width: 100vw; max-width: 100vw; border-radius: 6px 6px 0 0; }
+
+  /* Toast */
+  .toast { right: 10px; left: 10px; max-width: unset; }
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — SMALL MOBILE (≤480px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .page { padding: 6px 8px; gap: 6px; }
+
+  .topbar { padding: 6px 8px; }
+  .logo-sq { width: 20px; height: 20px; font-size: 9px; }
+  .logo-name { font-size: 11px; }
+  .logo-sub { font-size: 7px; }
+  .tnv { font-size: 9px; padding: 3px 6px; }
+  .rb { padding: 3px 6px; font-size: 8px; }
+  .role-label { font-size: 8px; padding: 2px 5px; }
+  .add-btn { font-size: 8px; padding: 4px 8px; }
+
+  .hero { padding: 10px 12px; }
+  .h-name { font-size: 13px; }
+  .funded-n { font-size: 28px; }
+  .hbox { padding: 5px 8px; min-width: 70px; }
+  .hbv { font-size: 14px; }
+
+  .sc { padding: 7px 9px; }
+  .scl { font-size: 7px; }
+  .scv { font-size: 18px; }
+
+  .card { padding: 8px 10px; }
+  .cl { font-size: 7px; margin-bottom: 7px; }
+
+  .risk-banner { padding: 7px 10px; }
+  .rb-title { font-size: 9px; }
+  .rb-val { font-size: 14px; }
+
+  .exec-score-bar { gap: 5px; padding: 3px 6px; }
+  .esb-track { width: 30px; }
+
+  .dm-title { font-size: 12px; }
+  .ca-deal-name { font-size: 12px; }
+
+  .pm-toggle-btn { font-size: 8px; padding: 2px 6px; }
+  .pm-prod-name { width: 44px; font-size: 7px; }
+
+  .rrq-deal-name { font-size: 14px; }
+  .rrq-detail-grid { grid-template-columns: 1fr; }
+  .rrq-prior-amt { font-size: 17px; }
+  .rrq-btn { font-size: 8px; padding: 5px 9px; }
+}

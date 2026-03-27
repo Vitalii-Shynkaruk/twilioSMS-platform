@@ -126,7 +126,6 @@ async function main() {
   } else {
     console.log('Stage moves already done — skipping');
   }
-  console.log(`Moved ${toNurture.length} → NURTURE with prevOffer`);
 
   // ─── 3. Add nextAction to ALL active deals ───
   const allActive = await prisma.deal.findMany({

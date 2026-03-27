@@ -76,7 +76,7 @@ const ACTIONS = {
   ],
 };
 
-const PRODUCTS = ['TERM_LOAN', 'LINE_OF_CREDIT', 'SBA', 'MCA', 'EQUIPMENT', 'INVOICE_FACTORING', 'REVENUE_BASED'];
+const PRODUCTS = ['MCA', 'LOC', 'EQUIPMENT', 'HELOC', 'SBA', 'CRE', 'BRIDGE'];
 const LENDERS = ['Rapid Finance', 'OnDeck', 'Kabbage', 'BlueVine', 'Fundbox', 'Credibly', 'National Funding', 'Celtic Bank', 'SmartBiz', 'Lendio'];
 
 async function main() {
@@ -89,49 +89,42 @@ async function main() {
   console.log(`Found ${engaged.length} ENGAGED deals`);
 
   // ─── 2. Move some deals to other stages ───
-  // Move 5 → QUALIFIED
-  const toQualified = engaged.slice(0, 5).map((d) => d.id);
-  // Move 10 → SUBMITTED_IN_REVIEW
-  const toSubmitted = engaged.slice(5, 15).map((d) => d.id);
-  // Move 5 → APPROVED_OFFERS
-  const toApproved = engaged.slice(15, 20).map((d) => d.id);
-  // Move 3 → COMMITTED_FUNDING
-  const toCommitted = engaged.slice(20, 23).map((d) => d.id);
-  // Move 15 → NURTURE
-  const toNurture = engaged.slice(23, 38).map((d) => d.id);
+  // SKIP — already moved in previous run
+  if (engaged.length > 350) {
+    // Only run moves if not already done
+    const toQualified = engaged.slice(0, 5).map((d) => d.id);
+    const toSubmitted = engaged.slice(5, 15).map((d) => d.id);
+    const toApproved = engaged.slice(15, 20).map((d) => d.id);
+    const toCommitted = engaged.slice(20, 23).map((d) => d.id);
+    const toNurture = engaged.slice(23, 38).map((d) => d.id);
 
-  await prisma.deal.updateMany({ where: { id: { in: toQualified } }, data: { stage: 'QUALIFIED' } });
-  console.log(`Moved ${toQualified.length} → QUALIFIED`);
+    await prisma.deal.updateMany({ where: { id: { in: toQualified } }, data: { stage: 'QUALIFIED' } });
+    console.log(`Moved ${toQualified.length} → QUALIFIED`);
 
-  await prisma.deal.updateMany({ where: { id: { in: toSubmitted } }, data: { stage: 'SUBMITTED_IN_REVIEW', appSubmitted: true } });
-  console.log(`Moved ${toSubmitted.length} → SUBMITTED_IN_REVIEW`);
+    await prisma.deal.updateMany({ where: { id: { in: toSubmitted } }, data: { stage: 'SUBMITTED_IN_REVIEW', appSubmitted: true } });
+    console.log(`Moved ${toSubmitted.length} → SUBMITTED_IN_REVIEW`);
 
-  await prisma.deal.updateMany({ where: { id: { in: toApproved } }, data: { stage: 'APPROVED_OFFERS', appSubmitted: true, lenderEngaged: true } });
-  console.log(`Moved ${toApproved.length} → APPROVED_OFFERS`);
+    await prisma.deal.updateMany({ where: { id: { in: toApproved } }, data: { stage: 'APPROVED_OFFERS', appSubmitted: true, lenderEngaged: true } });
+    console.log(`Moved ${toApproved.length} → APPROVED_OFFERS`);
 
-  await prisma.deal.updateMany({ where: { id: { in: toCommitted } }, data: { stage: 'COMMITTED_FUNDING', appSubmitted: true, lenderEngaged: true } });
-  console.log(`Moved ${toCommitted.length} → COMMITTED_FUNDING`);
+    await prisma.deal.updateMany({ where: { id: { in: toCommitted } }, data: { stage: 'COMMITTED_FUNDING', appSubmitted: true, lenderEngaged: true } });
+    console.log(`Moved ${toCommitted.length} → COMMITTED_FUNDING`);
 
-  await prisma.deal.updateMany({
-    where: { id: { in: toNurture } },
-    data: {
-      stage: 'NURTURE',
-      prevOffer: randomBetween(15000, 85000),
-      followUpType: randomItem(['RENEWAL', 'NURTURE', 'RE_ENGAGE', 'CHECK_TIMING']),
-      followUpDate: daysFromNow(randomBetween(14, 90)),
-      followUpNote: 'Previous engagement — re-engage when ready',
-    },
-  });
-  // Set per-deal prevOffer since updateMany can't set unique values
-  for (const id of toNurture) {
-    await prisma.deal.update({
-      where: { id },
-      data: {
-        prevOffer: randomBetween(15000, 85000),
-        followUpDate: daysFromNow(randomBetween(14, 90)),
-        followUpType: randomItem(['RENEWAL', 'NURTURE', 'RE_ENGAGE', 'CHECK_TIMING']),
-      },
-    });
+    for (const id of toNurture) {
+      await prisma.deal.update({
+        where: { id },
+        data: {
+          stage: 'NURTURE',
+          prevOffer: randomBetween(15000, 85000),
+          followUpDate: daysFromNow(randomBetween(14, 90)),
+          followUpType: randomItem(['RENEWAL', 'NURTURE', 'RE_ENGAGE', 'CHECK_TIMING']),
+          followUpNote: 'Previous engagement — re-engage when ready',
+        },
+      });
+    }
+    console.log(`Moved ${toNurture.length} → NURTURE with prevOffer`);
+  } else {
+    console.log('Stage moves already done — skipping');
   }
   console.log(`Moved ${toNurture.length} → NURTURE with prevOffer`);
 

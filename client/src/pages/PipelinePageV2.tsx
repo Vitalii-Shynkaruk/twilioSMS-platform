@@ -1039,6 +1039,49 @@ function DraggableDealCard({ deal, viewMode, onClick }: { deal: Deal; viewMode: 
 // TEAM VIEW
 // ═══════════════════════════════════════
 
+const TEAM_PRODUCT_TAG: Record<string, { cls: string; icon: string; label: string }> = {
+  MCA: { cls: 't-mca', icon: '⚡', label: 'MCA' },
+  LOC: { cls: 't-con', icon: '💳', label: 'LOC' },
+  EQUIPMENT: { cls: 't-eq', icon: '🔧', label: 'Equipment' },
+  HELOC: { cls: 't-hel', icon: '🏠', label: 'HELOC' },
+  SBA: { cls: 't-sba', icon: '🏛', label: 'SBA' },
+  CRE: { cls: 't-sba', icon: '🏢', label: 'CRE' },
+  BRIDGE: { cls: 't-con', icon: '🌉', label: 'Bridge' },
+};
+
+function teamProductTag(productType?: string) {
+  if (!productType) return null;
+  const tag = TEAM_PRODUCT_TAG[productType] || { cls: 't-mca', icon: '', label: productType };
+  return (
+    <span className={`t ${tag.cls}`}>
+      {tag.icon}
+      {tag.label}
+    </span>
+  );
+}
+
+function repFullName(deal: Deal, reps: Rep[]) {
+  const primary = deal.assignedRep;
+  if (!primary) return null;
+  const name = `${primary.firstName} ${primary.lastName || ''}`.trim();
+  const coIds = deal.assistingRepIds?.filter((id) => id !== deal.assignedRepId) || [];
+  if (coIds.length === 0) return <span className="dt-rep-primary">{name}</span>;
+  const coRep = reps.find((r) => coIds.includes(r.id));
+  const coName = coRep ? `${coRep.firstName} ${(coRep.lastName || '')[0] || ''}`.trim() : null;
+  return (
+    <>
+      <span className="dt-rep-primary">{name}</span>
+      {coName && (
+        <span style={{ color: 'var(--text3)', fontSize: '9px' }}>
+          {' '}
+          + {coName}
+          {coIds.length > 1 ? '…' : ''}
+        </span>
+      )}
+    </>
+  );
+}
+
 function TeamView({
   stats,
   board,
@@ -1118,7 +1161,7 @@ function TeamView({
           <div style={{ fontSize: '20px', fontWeight: 800, color: convColor, fontVariantNumeric: 'tabular-nums' }}>
             {conversionPct.toFixed(0)}%
           </div>
-          <div className="stat-sub">Funded / deployed</div>
+          <div className="stat-sub">Funded / submitted+</div>
         </div>
       </div>
 
@@ -1295,20 +1338,14 @@ function TeamView({
                     : formatCurrency(deal.dealAmount)}
                 </div>
                 <div className="dt-meta">
-                  {deal.productType && (
-                    <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
-                  )}
+                  {teamProductTag(deal.productType)}
                   {(deal.offers?.length || 0) > 1 && (
                     <span className="t" style={{ background: 'var(--good-bg)', color: 'var(--good)' }}>
                       {deal.offers!.length} offers
                     </span>
                   )}
                 </div>
-                {deal.assignedRep && (
-                  <div className="dt-reps">
-                    <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
-                  </div>
-                )}
+                {deal.assignedRep && <div className="dt-reps">{repFullName(deal, reps)}</div>}
               </div>
             ))}
           </div>
@@ -1342,16 +1379,8 @@ function TeamView({
                 <div className="dt-offer">
                   {formatCurrency(deal.fundingEvents?.[0]?.amountFunded || deal.dealAmount)}
                 </div>
-                <div className="dt-meta">
-                  {deal.productType && (
-                    <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
-                  )}
-                </div>
-                {deal.assignedRep && (
-                  <div className="dt-reps">
-                    <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
-                  </div>
-                )}
+                <div className="dt-meta">{teamProductTag(deal.productType)}</div>
+                {deal.assignedRep && <div className="dt-reps">{repFullName(deal, reps)}</div>}
                 {deal.fundedDate && (
                   <div className="dt-fd">
                     Funded {new Date(deal.fundedDate).toLocaleDateString()}
@@ -1402,19 +1431,11 @@ function TeamView({
                 >
                   {deal.prevOffer ? `${formatCurrency(deal.prevOffer)} prev` : 'No offer'}
                 </div>
-                <div className="dt-meta">
-                  {deal.productType && (
-                    <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
-                  )}
-                </div>
+                <div className="dt-meta">{teamProductTag(deal.productType)}</div>
                 {deal.lostReason && (
                   <div style={{ fontSize: '9px', color: 'var(--attn)', marginTop: '3px' }}>{deal.lostReason}</div>
                 )}
-                {deal.assignedRep && (
-                  <div className="dt-reps">
-                    <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
-                  </div>
-                )}
+                {deal.assignedRep && <div className="dt-reps">{repFullName(deal, reps)}</div>}
               </div>
             ))}
           </div>

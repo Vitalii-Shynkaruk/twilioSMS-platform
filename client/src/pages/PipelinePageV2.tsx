@@ -26,7 +26,13 @@ interface StageConfig {
 
 const STAGES: StageConfig[] = [
   { value: 'NEW_LEAD', label: 'New Lead', short: 'New Lead', color: '#4A9EE8', opacity: 0.28 },
-  { value: 'ENGAGED_INTERESTED', label: 'Engaged / Interested', short: 'Engaged', color: '#9B72E8', opacity: 0.38 },
+  {
+    value: 'ENGAGED_INTERESTED',
+    label: 'Engaged / Interested',
+    short: 'Engaged / Interested',
+    color: '#9B72E8',
+    opacity: 0.38,
+  },
   {
     value: 'QUALIFIED',
     label: 'Qualified',
@@ -34,7 +40,13 @@ const STAGES: StageConfig[] = [
     color: '#C9952A',
     opacity: 0.45,
   },
-  { value: 'SUBMITTED_IN_REVIEW', label: 'Submitted (In Review)', short: 'Submitted', color: '#4A9EE8', opacity: 0.55 },
+  {
+    value: 'SUBMITTED_IN_REVIEW',
+    label: 'Submitted (In Review)',
+    short: 'Submitted (In Review)',
+    color: '#4A9EE8',
+    opacity: 0.55,
+  },
   {
     value: 'APPROVED_OFFERS',
     label: 'Approved / Offers',
@@ -47,7 +59,7 @@ const STAGES: StageConfig[] = [
   {
     value: 'COMMITTED_FUNDING',
     label: 'Committed (Funding)',
-    short: 'Committed',
+    short: 'Committed (Funding)',
     color: '#3AB97A',
     opacity: 0.95,
     colClass: 'nb-col',

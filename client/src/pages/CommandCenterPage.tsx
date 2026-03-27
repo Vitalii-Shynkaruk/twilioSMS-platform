@@ -11,11 +11,11 @@ import '../styles/command-center.css';
 
 const STAGE_LABELS: Record<string, string> = {
   NEW_LEAD: 'New Lead',
-  ENGAGED_INTERESTED: 'Engaged',
+  ENGAGED_INTERESTED: 'Engaged / Interested',
   QUALIFIED: 'Qualified',
-  SUBMITTED_IN_REVIEW: 'Submitted',
-  APPROVED_OFFERS: 'Approved',
-  COMMITTED_FUNDING: 'Committed',
+  SUBMITTED_IN_REVIEW: 'Submitted (In Review)',
+  APPROVED_OFFERS: 'Approved / Offers',
+  COMMITTED_FUNDING: 'Committed (Funding)',
   FUNDED: 'Funded',
   NURTURE: 'Nurture',
   CLOSED: 'Closed',
@@ -1581,7 +1581,9 @@ function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?:
 
   return (
     <div className="card">
-      <div className="cl">{title || 'Conversion Funnel \u2014 team-wide'}</div>
+      <div className="cl">
+        {title || 'Conversion Funnel \u2014 team-wide \u00b7 from deal_events stage transitions'}
+      </div>
       <div className="cv-rows">
         {transitions.map((t, i) => (
           <div className={`cv-r ${t.rate >= 50 ? 'up' : 'dn'}`} key={i}>
@@ -1611,7 +1613,7 @@ function ActivityFeedCard({ events, title }: { events?: ActivityEvent[]; title?:
   return (
     <div className="card">
       <div className="cl">
-        <span>{title || 'Activity Feed \u2014 deal_events'}</span>
+        <span>{title || 'Activity Feed \u2014 deal_events \u00b7 all reps'}</span>
         <span className="cl-live">{'\u25CF'} Streaming</span>
       </div>
       <div className="act-list">

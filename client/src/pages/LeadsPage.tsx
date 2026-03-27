@@ -199,16 +199,16 @@ export default function LeadsPage() {
           <p className="text-sm text-dark-400 mt-1">{total} total leads</p>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" />
+            Add Lead
+          </button>
           {canManage && (
             <button onClick={() => setShowImport(true)} className="btn-ghost flex items-center gap-2">
               <Upload className="w-4 h-4" />
               Import CSV
             </button>
           )}
-          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            Add Lead
-          </button>
         </div>
       </div>
 

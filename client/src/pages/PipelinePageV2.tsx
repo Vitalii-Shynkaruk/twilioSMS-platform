@@ -305,18 +305,20 @@ export default function PipelinePage() {
           </div>
         )}
 
-        {/* Filter pills */}
-        <div className="fp-row">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              className={`fp ${quickFilter === f.key ? f.activeCls : ''}`}
-              onClick={() => setQuickFilter(f.key)}
-            >
-              {filterLabels[f.key]}
-            </button>
-          ))}
-        </div>
+        {/* Filter pills (hidden in team view) */}
+        {viewTab !== 'team' && (
+          <div className="fp-row">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                className={`fp ${quickFilter === f.key ? f.activeCls : ''}`}
+                onClick={() => setQuickFilter(f.key)}
+              >
+                {filterLabels[f.key]}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* View switches */}
         <div className="view-sw">
@@ -375,10 +377,12 @@ export default function PipelinePage() {
           </button>
         )}
 
-        {/* Add lead button */}
-        <button className="add-btn" onClick={() => setShowCreateDeal(true)}>
-          + Add Lead
-        </button>
+        {/* Add lead button (hidden in team view) */}
+        {viewTab !== 'team' && (
+          <button className="add-btn" onClick={() => setShowCreateDeal(true)}>
+            + Add Lead
+          </button>
+        )}
       </div>
 
       {/* ═══ LEGEND (hidden in simple mode via CSS) ═══ */}
@@ -804,6 +808,88 @@ export default function PipelinePage() {
         <TeamView stats={stats} board={board} reps={reps || []} onDealClick={(id) => setSelectedDealId(id)} />
       )}
 
+      {/* Bottom sum-bar for team view (same as pipeline sum-bar) */}
+      {viewTab === 'team' && stats && (
+        <div className="sum-bar">
+          <div className="sb2">
+            <div className="sl">Active Pipeline</div>
+            <div className="sv" style={{ color: 'var(--good)' }}>
+              {formatCurrency(stats.activePipeline)}
+            </div>
+            <div className="ss">Approved + Committed</div>
+          </div>
+          <div className="sb2 goal-block">
+            <div className="sl">Funded MTD</div>
+            <div className="sv" style={{ color: 'var(--good)' }}>
+              {formatCurrency(stats.fundedMTD)}
+            </div>
+            <div className="ss">Goal: {formatCurrency(stats.monthlyGoal)}</div>
+            {stats.monthlyGoal &&
+              stats.monthlyGoal > 0 &&
+              (() => {
+                const pct = Math.round(((stats.fundedMTD || 0) / stats.monthlyGoal) * 100);
+                const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
+                const goalCls = pct >= 75 ? 'on-track' : pct >= 50 ? 'at-risk' : 'behind';
+                return (
+                  <div className="goal-bar-wrap">
+                    <div className="goal-bar-track">
+                      <div
+                        className="goal-bar-fill"
+                        style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
+                      />
+                    </div>
+                    <div className={`goal-pct ${goalCls}`}>
+                      {pct}% of {formatCurrency(stats.monthlyGoal)} monthly goal
+                    </div>
+                  </div>
+                );
+              })()}
+          </div>
+          <div className="sb2">
+            <div className="sl">Lifetime Funded</div>
+            <div className="sv" style={{ color: 'var(--gold)' }}>
+              {formatCurrency(stats.lifetimeFunded)}
+            </div>
+            <div className="ss">All clients</div>
+          </div>
+          <div className="sb2">
+            <div className="sl">⚠ At Risk</div>
+            <div className="sv" style={{ color: (stats.atRisk || 0) > 0 ? 'var(--urgent)' : 'var(--text3)' }}>
+              {formatCurrency(stats.atRisk)}
+            </div>
+            <div className="ss">Overdue / stale / no action</div>
+          </div>
+          <div className="sb2">
+            <div className="sl">🔥 Hot</div>
+            <div className="sv" style={{ color: 'var(--hot)' }}>
+              {stats.hotCount}
+            </div>
+            <div className="ss">Offer / replied / engaged</div>
+          </div>
+          <div className="sb2">
+            <div className="sl">No Next Action</div>
+            <div className="sv" style={{ color: 'var(--urgent)' }}>
+              {stats.noNextAction ?? 0}
+            </div>
+            <div className="ss">Blocking progress</div>
+          </div>
+          <div className="sb2">
+            <div className="sl">Renewals Due</div>
+            <div className="sv" style={{ color: 'var(--good)' }}>
+              {stats.renewalsDue ?? 0}
+            </div>
+            <div className="ss">Re-engage funded</div>
+          </div>
+          <div className="sb2">
+            <div className="sl">🔁 Queue Today</div>
+            <div className="sv" style={{ color: 'var(--info)' }}>
+              {stats.queueToday ?? 0}
+            </div>
+            <div className="ss">Scheduled follow-ups due</div>
+          </div>
+        </div>
+      )}
+
       {viewTab === 'queue' && <QueueView deals={reviveQueue || []} onDealClick={(id) => setSelectedDealId(id)} />}
 
       {/* ═══ PANELS & MODALS ═══ */}
@@ -963,81 +1049,126 @@ function TeamView({
     board?.stages
       ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
       .reduce((sum, s) => sum + s.deals.length, 0) || 0;
+  const activeOfferValue = activeOfferDeals.reduce((sum, d) => sum + (d.dealAmount || 0), 0);
   const totalSubmittedAndBeyond = submittedDeals.length + activeOfferDeals.length + fundedDeals.length;
   const conversionPct = totalSubmittedAndBeyond > 0 ? (fundedDeals.length / totalSubmittedAndBeyond) * 100 : 0;
+  const convColor = conversionPct >= 60 ? 'var(--good)' : conversionPct >= 40 ? 'var(--watch)' : 'var(--urgent)';
   const teamGoalPct =
     stats?.monthlyGoal && stats.monthlyGoal > 0 ? ((stats?.fundedMTD || 0) / stats.monthlyGoal) * 100 : 0;
 
   return (
     <div className="team-view">
+      {/* Title */}
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '2px' }}>SCL Team Pipeline</div>
+        <div style={{ fontSize: '11px', color: 'var(--text2)' }}>All stages · no contact info</div>
+      </div>
+
       {/* Stat cards — 6 cards matching prototype */}
-      <div className="team-stats" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
-        <div className="stat-card">
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' as const }}>
+        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Funded MTD</div>
-          <div className="stat-val" style={{ color: 'var(--good)' }}>
+          <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(stats?.fundedMTD)}
           </div>
+          <div className="stat-sub">Goal: {formatCurrency(stats?.monthlyGoal)}</div>
         </div>
-        <div className="stat-card">
+        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Active Pipeline $</div>
-          <div className="stat-val">{formatCurrency(stats?.activePipeline)}</div>
+          <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--gold)', fontVariantNumeric: 'tabular-nums' }}>
+            {formatCurrency(stats?.activePipeline)}
+          </div>
+          <div className="stat-sub">Approved + Committed</div>
         </div>
-        <div className="stat-card">
+        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Active Deals</div>
-          <div className="stat-val">{activeDealsCount}</div>
+          <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--info)', fontVariantNumeric: 'tabular-nums' }}>
+            {activeDealsCount}
+          </div>
+          <div className="stat-sub">All stages excl. funded</div>
         </div>
-        <div className="stat-card">
+        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Nurture Pool</div>
-          <div className="stat-val">{formatCurrency(nurtureValue)}</div>
+          <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
+            {formatCurrency(nurtureValue)}
+          </div>
           <div className="stat-sub">{nurtureDeals.length} deals · prev offer totals</div>
         </div>
-        <div className="stat-card">
+        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Deals Funded</div>
-          <div className="stat-val" style={{ color: 'var(--good)' }}>
+          <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
             {fundedDeals.length}
           </div>
-          <div className="stat-sub">this month</div>
+          <div className="stat-sub">This month</div>
         </div>
-        <div className="stat-card">
+        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Conversion</div>
-          <div className="stat-val">{conversionPct.toFixed(0)}%</div>
-          <div className="stat-sub">Funded / submitted</div>
+          <div style={{ fontSize: '20px', fontWeight: 800, color: convColor, fontVariantNumeric: 'tabular-nums' }}>
+            {conversionPct.toFixed(0)}%
+          </div>
+          <div className="stat-sub">Funded / deployed</div>
         </div>
       </div>
 
-      {/* Team goal progress */}
+      {/* Team goal progress — in container like prototype */}
       {stats?.monthlyGoal && stats.monthlyGoal > 0 && (
-        <div className="goal-bar-wrap" style={{ margin: '0 0 12px' }}>
-          <div className="goal-bar-track">
-            <div
-              className="goal-bar-fill"
-              style={{
-                width: `${Math.min(100, teamGoalPct)}%`,
-                background: teamGoalPct >= 75 ? 'var(--good)' : teamGoalPct >= 50 ? 'var(--watch)' : 'var(--urgent)',
-              }}
-            />
-          </div>
-          <div className="goal-pct" style={{ color: 'var(--text3)' }}>
-            {teamGoalPct.toFixed(0)}% of {formatCurrency(stats.monthlyGoal)} monthly team goal
+        <div
+          style={{
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r)',
+            padding: '10px 16px',
+            marginBottom: '12px',
+          }}
+        >
+          <div className="goal-bar-wrap">
+            <div className="goal-bar-track">
+              <div
+                className="goal-bar-fill"
+                style={{
+                  width: `${Math.min(100, teamGoalPct)}%`,
+                  background: teamGoalPct >= 80 ? 'var(--good)' : teamGoalPct >= 50 ? 'var(--watch)' : 'var(--urgent)',
+                }}
+              />
+            </div>
+            <div className={`goal-pct ${teamGoalPct >= 80 ? 'on-track' : teamGoalPct >= 50 ? 'at-risk' : 'behind'}`}>
+              {teamGoalPct.toFixed(0)}% of {formatCurrency(stats.monthlyGoal)} monthly team goal
+            </div>
           </div>
         </div>
       )}
 
-      {/* Rep scoreboard — only reps with deals */}
+      {/* Rep scoreboard — flex layout like prototype */}
       {reps.length > 0 &&
         (() => {
-          const repsWithDeals = reps.filter((rep) => {
-            const hasDeal = board?.stages?.some((s) => s.deals.some((d) => d.assignedRepId === rep.id));
-            return hasDeal;
-          });
+          const repsWithDeals = reps.filter((rep) =>
+            board?.stages?.some((s) => s.deals.some((d) => d.assignedRepId === rep.id)),
+          );
           const displayReps = repsWithDeals.length > 0 ? repsWithDeals : reps.filter((r) => r.isActive).slice(0, 4);
           return displayReps.length > 0 ? (
-            <div className="q-section">
-              <div className="q-section-head">REP SCOREBOARD</div>
+            <div
+              style={{
+                background: 'var(--bg3)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--r)',
+                marginBottom: '14px',
+                overflow: 'hidden',
+              }}
+            >
               <div
-                className="team-stats"
-                style={{ gridTemplateColumns: `repeat(${Math.min(displayReps.length, 4)}, 1fr)` }}
+                style={{
+                  padding: '8px 12px',
+                  borderBottom: '1px solid var(--border)',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase' as const,
+                  letterSpacing: '.05em',
+                  color: 'var(--text3)',
+                }}
               >
+                Rep Scoreboard
+              </div>
+              <div style={{ display: 'flex' }}>
                 {displayReps.map((rep) => {
                   const repActiveDeals =
                     board?.stages
@@ -1048,51 +1179,70 @@ function TeamView({
                     .filter((d) => d.assignedRepId === rep.id)
                     .reduce((sum, d) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
                   const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
-                  const goalCls = goalPct >= 0.75 ? 'on-track' : goalPct >= 0.5 ? 'at-risk' : 'behind';
-                  const goalBg = goalPct >= 0.75 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
+                  const goalBg = goalPct >= 0.8 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
 
                   return (
-                    <div key={rep.id} className="stat-card">
+                    <div
+                      key={rep.id}
+                      style={{ flex: 1, padding: '10px 12px', borderRight: '1px solid var(--border)', minWidth: 0 }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                        <div className="av" style={{ background: rep.avatarColor || 'var(--gold)' }}>
+                        <div
+                          className="av"
+                          style={{
+                            background: rep.avatarColor || 'var(--gold)',
+                            width: '20px',
+                            height: '20px',
+                            fontSize: '9px',
+                          }}
+                        >
                           {rep.initials || rep.firstName[0]}
                         </div>
-                        <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600 }}>
                           {rep.firstName} {rep.lastName}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', gap: '12px' }}>
+                      <div
+                        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '5px' }}
+                      >
                         <div>
-                          <div className="stat-label">Funded MTD</div>
-                          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--good)' }}>
+                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>Funded MTD</div>
+                          <div
+                            style={{
+                              fontSize: '14px',
+                              fontWeight: 800,
+                              color: 'var(--good)',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
                             {formatCurrency(repFundedTotal)}
                           </div>
                         </div>
                         <div>
-                          <div className="stat-label">Active</div>
-                          <div style={{ fontSize: '14px', fontWeight: 700 }}>{repActiveDeals.length}</div>
+                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>Active</div>
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--info)' }}>
+                            {repActiveDeals.length}
+                          </div>
                         </div>
                         <div>
-                          <div className="stat-label">Nurture</div>
-                          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text3)' }}>
+                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>Nurture</div>
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text2)' }}>
                             {repNurtureCount}
                           </div>
                         </div>
                       </div>
+                      <div style={{ fontSize: '9px', color: 'var(--text3)' }}>
+                        Goal: {formatCurrency(rep.monthlyGoal || 0)}
+                        {goalPct > 0 && (
+                          <span style={{ color: goalBg, fontWeight: 600 }}> · {(goalPct * 100).toFixed(0)}%</span>
+                        )}
+                      </div>
                       {rep.monthlyGoal && rep.monthlyGoal > 0 && (
-                        <div className="goal-bar-wrap">
-                          <div className="goal-bar-track">
-                            <div
-                              className="goal-bar-fill"
-                              style={{
-                                width: `${Math.min(100, goalPct * 100)}%`,
-                                background: goalBg,
-                              }}
-                            />
-                          </div>
-                          <div className={`goal-pct ${goalCls}`}>
-                            {(goalPct * 100).toFixed(0)}% of {formatCurrency(rep.monthlyGoal)}
-                          </div>
+                        <div className="goal-bar-track" style={{ marginTop: '5px' }}>
+                          <div
+                            className="goal-bar-fill"
+                            style={{ width: `${Math.min(100, goalPct * 100)}%`, background: goalBg }}
+                          />
                         </div>
                       )}
                     </div>
@@ -1105,16 +1255,24 @@ function TeamView({
 
       {/* Active offers */}
       {activeOfferDeals.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">
-            ACTIVE OFFERS
-            <span style={{ fontWeight: 400 }}>{activeOfferDeals.length}</span>
+        <div style={{ marginBottom: '14px' }}>
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase' as const,
+              letterSpacing: '.05em',
+              color: 'var(--text3)',
+              marginBottom: '7px',
+            }}
+          >
+            Active Offers — {formatCurrency(activeOfferValue)} in play · {activeOfferDeals.length} deals
           </div>
           <div className="team-cards">
-            {activeOfferDeals.slice(0, 12).map((deal) => (
+            {activeOfferDeals.slice(0, 12).map((deal, i) => (
               <div
                 key={deal.id}
-                className="deal-tile nb-tile"
+                className={`deal-tile nb-tile${i === 0 ? ' top-tile' : ''}`}
                 onClick={() => onDealClick(deal.id)}
                 style={{ cursor: 'pointer' }}
               >
@@ -1127,6 +1285,11 @@ function TeamView({
                 <div className="dt-meta">
                   {deal.productType && (
                     <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
+                  )}
+                  {(deal.offers?.length || 0) > 1 && (
+                    <span className="t" style={{ background: 'var(--good-bg)', color: 'var(--good)' }}>
+                      {deal.offers!.length} offers
+                    </span>
                   )}
                 </div>
                 {deal.assignedRep && (
@@ -1142,10 +1305,18 @@ function TeamView({
 
       {/* Funded this month */}
       {fundedDeals.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">
-            FUNDED THIS MONTH
-            <span style={{ fontWeight: 400 }}>{fundedDeals.length}</span>
+        <div style={{ marginBottom: '14px' }}>
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase' as const,
+              letterSpacing: '.05em',
+              color: 'var(--text3)',
+              marginBottom: '7px',
+            }}
+          >
+            Funded This Month — originating rep shown bold
           </div>
           <div className="team-cards">
             {fundedDeals.slice(0, 12).map((deal) => (
@@ -1159,18 +1330,21 @@ function TeamView({
                 <div className="dt-offer">
                   {formatCurrency(deal.fundingEvents?.[0]?.amountFunded || deal.dealAmount)}
                 </div>
-                {deal.fundingEvents?.[0]?.lender && (
-                  <div className="dt-meta">
-                    <span className="t t-sba">{deal.fundingEvents[0].lender}</span>
-                  </div>
-                )}
+                <div className="dt-meta">
+                  {deal.productType && (
+                    <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
+                  )}
+                </div>
                 {deal.assignedRep && (
                   <div className="dt-reps">
                     <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
                   </div>
                 )}
                 {deal.fundedDate && (
-                  <div className="dt-fd">Funded {new Date(deal.fundedDate).toLocaleDateString()}</div>
+                  <div className="dt-fd">
+                    Funded {new Date(deal.fundedDate).toLocaleDateString()}
+                    {deal.fundingEvents?.[0]?.lender ? ` · ${deal.fundingEvents[0].lender}` : ''}
+                  </div>
                 )}
               </div>
             ))}
@@ -1180,28 +1354,53 @@ function TeamView({
 
       {/* Nurture pool */}
       {nurtureDeals.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">
-            NURTURE POOL
-            <span style={{ fontWeight: 400 }}>{nurtureDeals.length}</span>
+        <div>
+          <div
+            style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'uppercase' as const,
+              letterSpacing: '.05em',
+              color: 'var(--text3)',
+              marginBottom: '7px',
+            }}
+          >
+            Nurture Pool — {nurtureDeals.length} deals · {formatCurrency(nurtureValue)} prev offer value
           </div>
           <div className="team-cards">
-            {nurtureDeals.slice(0, 8).map((deal) => (
+            {nurtureDeals.slice(0, 12).map((deal) => (
               <div
                 key={deal.id}
                 className="deal-tile"
                 onClick={() => onDealClick(deal.id)}
-                style={{ cursor: 'pointer' }}
+                style={{
+                  cursor: 'pointer',
+                  borderLeft: '2px solid var(--info-b)',
+                  borderRadius: '0 var(--r) var(--r) 0',
+                }}
               >
                 <div className="dt-biz">{deal.client?.businessName}</div>
-                {deal.prevOffer && (
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text2)' }}>
-                    Prev: {formatCurrency(deal.prevOffer)}
-                  </div>
-                )}
+                <div
+                  style={{
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    color: 'var(--text2)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {deal.prevOffer ? `${formatCurrency(deal.prevOffer)} prev` : 'No offer'}
+                </div>
+                <div className="dt-meta">
+                  {deal.productType && (
+                    <span className={`t ${deal.productType === 'MCA' ? 't-mca' : 't-sba'}`}>{deal.productType}</span>
+                  )}
+                </div>
                 {deal.lostReason && (
-                  <div style={{ fontSize: '9px', color: 'var(--attn)', fontStyle: 'italic', marginTop: '2px' }}>
-                    {deal.lostReason}
+                  <div style={{ fontSize: '9px', color: 'var(--attn)', marginTop: '3px' }}>{deal.lostReason}</div>
+                )}
+                {deal.assignedRep && (
+                  <div className="dt-reps">
+                    <span className="dt-rep-primary">{deal.assignedRep.firstName}</span>
                   </div>
                 )}
               </div>

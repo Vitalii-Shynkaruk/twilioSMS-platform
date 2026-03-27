@@ -415,7 +415,17 @@ export default function PipelinePage() {
 
       {/* ═══ BANNER (role + context) ═══ */}
       <div className="banner">
-        {isAdmin && !repFilter ? (
+        {viewTab === 'team' ? (
+          <>
+            <span
+              className="vb"
+              style={{ background: 'var(--good-bg)', color: 'var(--good)', border: '1px solid var(--good-b)' }}
+            >
+              Team Pipeline
+            </span>
+            <span className="btext">Shared view · Approved/Offers + Committed + Funded only · no contact info</span>
+          </>
+        ) : isAdmin && !repFilter ? (
           <>
             <span
               className="vb"
@@ -441,16 +451,6 @@ export default function PipelinePage() {
               My Pipeline ({reps.find((r) => r.id === repFilter)?.initials || '?'})
             </span>
             <span className="btext">Your deals only</span>
-          </>
-        ) : viewTab === 'team' ? (
-          <>
-            <span
-              className="vb"
-              style={{ background: 'var(--good-bg)', color: 'var(--good)', border: '1px solid var(--good-b)' }}
-            >
-              Team Pipeline
-            </span>
-            <span className="btext">Shared view · Approved/Offers + Committed + Funded only · no contact info</span>
           </>
         ) : (
           <>
@@ -957,16 +957,21 @@ function TeamView({
     board?.stages?.filter((s) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage)).flatMap((s) => s.deals) ||
     [];
   const nurtureDeals = board?.stages?.find((s) => s.stage === 'NURTURE')?.deals || [];
+  const submittedDeals = board?.stages?.find((s) => s.stage === 'SUBMITTED_IN_REVIEW')?.deals || [];
+  const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
+  const activeDealsCount =
+    board?.stages
+      ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
+      .reduce((sum, s) => sum + s.deals.length, 0) || 0;
+  const totalSubmittedAndBeyond = submittedDeals.length + activeOfferDeals.length + fundedDeals.length;
+  const conversionPct = totalSubmittedAndBeyond > 0 ? (fundedDeals.length / totalSubmittedAndBeyond) * 100 : 0;
+  const teamGoalPct =
+    stats?.monthlyGoal && stats.monthlyGoal > 0 ? ((stats?.fundedMTD || 0) / stats.monthlyGoal) * 100 : 0;
 
   return (
     <div className="team-view">
-      {/* Stat cards */}
-      <div className="team-stats">
-        <div className="stat-card">
-          <div className="stat-label">Active Pipeline</div>
-          <div className="stat-val">{formatCurrency(stats?.pipelineValue)}</div>
-          <div className="stat-sub">{stats?.activeCount || 0} active deals</div>
-        </div>
+      {/* Stat cards — 6 cards matching prototype */}
+      <div className="team-stats" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
         <div className="stat-card">
           <div className="stat-label">Funded MTD</div>
           <div className="stat-val" style={{ color: 'var(--good)' }}>
@@ -974,75 +979,129 @@ function TeamView({
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Hot Deals</div>
-          <div className="stat-val" style={{ color: 'var(--hot)' }}>
-            {stats?.hotCount || 0}
-          </div>
+          <div className="stat-label">Active Pipeline $</div>
+          <div className="stat-val">{formatCurrency(stats?.activePipeline)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Avg Cycle Time</div>
-          <div className="stat-val">{stats?.avgCycleTime || '—'}d</div>
+          <div className="stat-label">Active Deals</div>
+          <div className="stat-val">{activeDealsCount}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Nurture Pool</div>
+          <div className="stat-val">{formatCurrency(nurtureValue)}</div>
+          <div className="stat-sub">{nurtureDeals.length} deals · prev offer totals</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Deals Funded</div>
+          <div className="stat-val" style={{ color: 'var(--good)' }}>
+            {fundedDeals.length}
+          </div>
+          <div className="stat-sub">this month</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Conversion</div>
+          <div className="stat-val">{conversionPct.toFixed(0)}%</div>
+          <div className="stat-sub">Funded / submitted</div>
         </div>
       </div>
 
-      {/* Rep scoreboard */}
-      {reps.length > 0 && (
-        <div className="q-section">
-          <div className="q-section-head">REP SCOREBOARD</div>
-          <div className="team-stats" style={{ gridTemplateColumns: `repeat(${Math.min(reps.length, 4)}, 1fr)` }}>
-            {reps.map((rep) => {
-              const repDeals = board?.stages?.flatMap((s) => s.deals.filter((d) => d.assignedRepId === rep.id)) || [];
-              const repFundedTotal = fundedDeals
-                .filter((d) => d.assignedRepId === rep.id)
-                .reduce((sum, d) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
-              const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
-              const goalCls = goalPct >= 0.75 ? 'on-track' : goalPct >= 0.5 ? 'at-risk' : 'behind';
-              const goalBg = goalPct >= 0.75 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
-
-              return (
-                <div key={rep.id} className="stat-card">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                    <div className="av" style={{ background: rep.avatarColor || 'var(--gold)' }}>
-                      {rep.initials || rep.firstName[0]}
-                    </div>
-                    <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                      {rep.firstName} {rep.lastName}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <div>
-                      <div className="stat-label">Active</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700 }}>{repDeals.length}</div>
-                    </div>
-                    <div>
-                      <div className="stat-label">Funded</div>
-                      <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--good)' }}>
-                        {formatCurrency(repFundedTotal)}
-                      </div>
-                    </div>
-                  </div>
-                  {rep.monthlyGoal && rep.monthlyGoal > 0 && (
-                    <div className="goal-bar-wrap">
-                      <div className="goal-bar-track">
-                        <div
-                          className="goal-bar-fill"
-                          style={{
-                            width: `${Math.min(100, goalPct * 100)}%`,
-                            background: goalBg,
-                          }}
-                        />
-                      </div>
-                      <div className={`goal-pct ${goalCls}`}>
-                        {(goalPct * 100).toFixed(0)}% of {formatCurrency(rep.monthlyGoal)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      {/* Team goal progress */}
+      {stats?.monthlyGoal && stats.monthlyGoal > 0 && (
+        <div className="goal-bar-wrap" style={{ margin: '0 0 12px' }}>
+          <div className="goal-bar-track">
+            <div
+              className="goal-bar-fill"
+              style={{
+                width: `${Math.min(100, teamGoalPct)}%`,
+                background: teamGoalPct >= 75 ? 'var(--good)' : teamGoalPct >= 50 ? 'var(--watch)' : 'var(--urgent)',
+              }}
+            />
+          </div>
+          <div className="goal-pct" style={{ color: 'var(--text3)' }}>
+            {teamGoalPct.toFixed(0)}% of {formatCurrency(stats.monthlyGoal)} monthly team goal
           </div>
         </div>
       )}
+
+      {/* Rep scoreboard — only reps with deals */}
+      {reps.length > 0 &&
+        (() => {
+          const repsWithDeals = reps.filter((rep) => {
+            const hasDeal = board?.stages?.some((s) => s.deals.some((d) => d.assignedRepId === rep.id));
+            return hasDeal;
+          });
+          const displayReps = repsWithDeals.length > 0 ? repsWithDeals : reps.filter((r) => r.isActive).slice(0, 4);
+          return displayReps.length > 0 ? (
+            <div className="q-section">
+              <div className="q-section-head">REP SCOREBOARD</div>
+              <div
+                className="team-stats"
+                style={{ gridTemplateColumns: `repeat(${Math.min(displayReps.length, 4)}, 1fr)` }}
+              >
+                {displayReps.map((rep) => {
+                  const repActiveDeals =
+                    board?.stages
+                      ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
+                      .flatMap((s) => s.deals.filter((d) => d.assignedRepId === rep.id)) || [];
+                  const repNurtureCount = nurtureDeals.filter((d) => d.assignedRepId === rep.id).length;
+                  const repFundedTotal = fundedDeals
+                    .filter((d) => d.assignedRepId === rep.id)
+                    .reduce((sum, d) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
+                  const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
+                  const goalCls = goalPct >= 0.75 ? 'on-track' : goalPct >= 0.5 ? 'at-risk' : 'behind';
+                  const goalBg = goalPct >= 0.75 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
+
+                  return (
+                    <div key={rep.id} className="stat-card">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                        <div className="av" style={{ background: rep.avatarColor || 'var(--gold)' }}>
+                          {rep.initials || rep.firstName[0]}
+                        </div>
+                        <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                          {rep.firstName} {rep.lastName}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <div>
+                          <div className="stat-label">Funded MTD</div>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--good)' }}>
+                            {formatCurrency(repFundedTotal)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="stat-label">Active</div>
+                          <div style={{ fontSize: '14px', fontWeight: 700 }}>{repActiveDeals.length}</div>
+                        </div>
+                        <div>
+                          <div className="stat-label">Nurture</div>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text3)' }}>
+                            {repNurtureCount}
+                          </div>
+                        </div>
+                      </div>
+                      {rep.monthlyGoal && rep.monthlyGoal > 0 && (
+                        <div className="goal-bar-wrap">
+                          <div className="goal-bar-track">
+                            <div
+                              className="goal-bar-fill"
+                              style={{
+                                width: `${Math.min(100, goalPct * 100)}%`,
+                                background: goalBg,
+                              }}
+                            />
+                          </div>
+                          <div className={`goal-pct ${goalCls}`}>
+                            {(goalPct * 100).toFixed(0)}% of {formatCurrency(rep.monthlyGoal)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null;
+        })()}
 
       {/* Active offers */}
       {activeOfferDeals.length > 0 && (

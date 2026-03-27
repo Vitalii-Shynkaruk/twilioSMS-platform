@@ -12,11 +12,22 @@ router.use(authenticate);
 router.get('/', asyncHandler(CampaignController.list));
 router.get('/:id', asyncHandler(CampaignController.get));
 router.get('/:id/analytics', asyncHandler(CampaignController.getAnalytics));
-router.post('/', requireRole('ADMIN', 'MANAGER'), validate(createCampaignSchema), asyncHandler(CampaignController.create));
-router.put('/:id', requireRole('ADMIN', 'MANAGER'), validate(updateCampaignSchema), asyncHandler(CampaignController.update));
+router.post(
+  '/',
+  requireRole('ADMIN', 'MANAGER'),
+  validate(createCampaignSchema),
+  asyncHandler(CampaignController.create),
+);
+router.put(
+  '/:id',
+  requireRole('ADMIN', 'MANAGER'),
+  validate(updateCampaignSchema),
+  asyncHandler(CampaignController.update),
+);
 router.delete('/:id', requireRole('ADMIN', 'MANAGER'), asyncHandler(CampaignController.delete));
 router.post('/:id/start', requireRole('ADMIN', 'MANAGER'), asyncHandler(CampaignController.start));
 router.post('/:id/pause', requireRole('ADMIN', 'MANAGER'), asyncHandler(CampaignController.pause));
 router.post('/:id/cancel', requireRole('ADMIN', 'MANAGER'), asyncHandler(CampaignController.cancel));
+router.post('/:id/sync', requireRole('ADMIN', 'MANAGER'), asyncHandler(CampaignController.syncStatuses));
 
 export default router;

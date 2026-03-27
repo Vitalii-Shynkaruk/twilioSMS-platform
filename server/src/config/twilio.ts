@@ -11,7 +11,7 @@ let _liveToken: string | null = null;
 /**
  * Get live credentials from DB settings (with Redis cache), falling back to env vars.
  */
-async function getLiveCredentials(): Promise<{ sid: string; token: string } | null> {
+export async function getLiveCredentials(): Promise<{ sid: string; token: string } | null> {
   try {
     const cachedSid = await redis.get('setting:twilioAccountSid');
     const cachedToken = await redis.get('setting:twilioAuthToken');

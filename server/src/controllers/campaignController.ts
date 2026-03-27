@@ -5,6 +5,8 @@ import { AppError } from '../middleware/errorHandler';
 import { SendingEngine, campaignQueue } from '../services/sendingEngine';
 import { ComplianceService } from '../services/complianceService';
 import { NumberService } from '../services/numberService';
+import { getActiveTwilioClient } from '../config/twilio';
+import logger from '../config/logger';
 
 export class CampaignController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
@@ -322,5 +324,109 @@ export class CampaignController {
     ]);
 
     res.json({ message: 'Campaign deleted successfully' });
+  }
+
+  /**
+   * Sync stuck message statuses from Twilio API.
+   * Queries Twilio for actual status of messages stuck in SENT/QUEUED/SENDING.
+   */
+  static async syncStatuses(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const campaign = await prisma.campaign.findUnique({ where: { id } });
+    if (!campaign) throw new AppError('Campaign not found', 404);
+
+    const stuckMessages = await prisma.message.findMany({
+      where: {
+        campaignId: id,
+        status: { in: ['SENT', 'QUEUED', 'SENDING'] },
+        twilioMessageSid: { not: null },
+      },
+      select: { id: true, twilioMessageSid: true, status: true, phoneNumberId: true, conversationId: true },
+    });
+
+    if (stuckMessages.length === 0) {
+      res.json({ message: 'No stuck messages to sync', synced: 0 });
+      return;
+    }
+
+    const client = await getActiveTwilioClient();
+    if (!client) throw new AppError('Twilio client not configured', 500);
+
+    let delivered = 0;
+    let failed = 0;
+    let unchanged = 0;
+    let errors = 0;
+
+    for (const msg of stuckMessages) {
+      try {
+        const twilioMsg = await client.messages(msg.twilioMessageSid!).fetch();
+        const statusMap: Record<string, string> = {
+          queued: 'QUEUED',
+          sending: 'SENDING',
+          sent: 'SENT',
+          delivered: 'DELIVERED',
+          failed: 'FAILED',
+          undelivered: 'UNDELIVERED',
+        };
+        const newStatus = statusMap[twilioMsg.status] || twilioMsg.status.toUpperCase();
+        const isBlocked = twilioMsg.errorCode === 30007 || twilioMsg.errorCode === 30034;
+        const finalStatus = isBlocked ? 'BLOCKED' : newStatus;
+
+        if (finalStatus === msg.status) {
+          unchanged++;
+          continue;
+        }
+
+        await prisma.message.update({
+          where: { id: msg.id },
+          data: {
+            status: finalStatus as any,
+            ...(finalStatus === 'DELIVERED' && { deliveredAt: new Date() }),
+            ...(finalStatus === 'FAILED' || finalStatus === 'UNDELIVERED' || isBlocked
+              ? {
+                  failedAt: new Date(),
+                  errorCode: String(twilioMsg.errorCode || ''),
+                  errorMessage: twilioMsg.errorMessage || '',
+                }
+              : {}),
+          },
+        });
+
+        if (finalStatus === 'DELIVERED') delivered++;
+        else if (['FAILED', 'UNDELIVERED', 'BLOCKED'].includes(finalStatus)) failed++;
+        else unchanged++;
+      } catch (err: any) {
+        logger.error(`Sync error for ${msg.twilioMessageSid}: ${err.message}`);
+        errors++;
+      }
+    }
+
+    // Recalculate campaign counters from actual data
+    const statusCounts = await prisma.message.groupBy({
+      by: ['status'],
+      where: { campaignId: id },
+      _count: true,
+    });
+
+    const counts: Record<string, number> = {};
+    for (const s of statusCounts) counts[s.status] = s._count;
+
+    await prisma.campaign.update({
+      where: { id },
+      data: {
+        totalDelivered: counts['DELIVERED'] || 0,
+        totalFailed: (counts['FAILED'] || 0) + (counts['UNDELIVERED'] || 0),
+        totalBlocked: counts['BLOCKED'] || 0,
+      },
+    });
+
+    res.json({
+      message: `Synced ${stuckMessages.length} messages`,
+      delivered,
+      failed,
+      unchanged,
+      errors,
+    });
   }
 }

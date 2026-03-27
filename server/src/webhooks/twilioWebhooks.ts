@@ -6,6 +6,7 @@ import { AutomationService } from '../services/automationService';
 import { AutoTagService } from '../services/autoTagService';
 import { WebhookService } from '../services/webhookService';
 import '../config/twilio';
+import { getLiveCredentials } from '../config/twilio';
 import { config } from '../config';
 import { validateRequest } from 'twilio';
 import { Queue, Worker } from 'bullmq';
@@ -15,9 +16,11 @@ const router = Router();
 
 /**
  * Twilio webhook signature validation middleware
- * Validates that incoming requests are genuinely from Twilio
+ * Validates that incoming requests are genuinely from Twilio.
+ * Uses DB-stored auth token (via getLiveCredentials) so it stays in sync
+ * with whatever token the user configured in Settings.
  */
-function validateTwilioSignature(req: Request, res: Response, next: () => void): void {
+async function validateTwilioSignature(req: Request, res: Response, next: () => void): Promise<void> {
   // Skip validation in development if no auth token configured
   if (config.env === 'development' && !config.twilio.authToken) {
     return next();
@@ -30,8 +33,12 @@ function validateTwilioSignature(req: Request, res: Response, next: () => void):
     return;
   }
 
+  // Use live credentials from DB (matches the token Twilio uses to sign)
+  const creds = await getLiveCredentials();
+  const authToken = creds?.token || config.twilio.authToken;
+
   const url = `${config.webhookBaseUrl}${req.originalUrl}`;
-  const isValid = validateRequest(config.twilio.authToken, twilioSignature, url, req.body);
+  const isValid = validateRequest(authToken, twilioSignature, url, req.body);
 
   if (!isValid) {
     logger.warn('Invalid Twilio signature', { url, signature: twilioSignature });

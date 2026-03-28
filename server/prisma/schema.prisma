@@ -801,6 +801,7 @@ model Deal {
   originatorName    String?         // preserved text for imported deals
   lender            String?
   notes             String?         @db.Text
+  clientNotes       String?         @db.Text
   isHot             Boolean         @default(false)
 
   createdAt         DateTime        @default(now())

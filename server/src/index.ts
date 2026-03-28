@@ -26,6 +26,7 @@ import jwt from 'jsonwebtoken';
 import './jobs/worker';
 import { stopAutomationWorker } from './jobs/automationWorker';
 import { startDealCron, stopDealCron } from './jobs/dealCron';
+import { ensureDefaultTeamUsers } from './bootstrap/defaultUsers';
 
 const httpServer = createServer(app);
 
@@ -131,6 +132,7 @@ async function start() {
 
     // Ensure admin user exists (from .env credentials)
     await ensureAdminUser();
+    await ensureDefaultTeamUsers();
 
     // Start Phase 2 deal maintenance cron
     startDealCron();

@@ -304,11 +304,11 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
                   to={item.href}
                   end={item.href === '/'}
                   className={({ isActive }) =>
-                    clsx('sidebar-link relative', isActive && 'active', collapsed && 'justify-center px-2')
+                    clsx('sidebar-link relative', isActive && 'active', collapsed && 'justify-center')
                   }
                   title={collapsed ? item.name : undefined}
                 >
-                  <item.icon className="w-5 h-5 shrink-0" />
+                  <item.icon className="w-5 h-5 shrink-0 min-w-5 min-h-5" />
                   {!collapsed && <span className="text-sm font-medium">{item.name}</span>}
                   {item.name === 'Inbox' && unreadCount > 0 && (
                     <span
@@ -337,7 +337,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             'flex items-center gap-2 rounded-lg px-3 py-2 transition-colors cursor-pointer',
             modeConfig.bg,
             'hover:opacity-80',
-            collapsed && 'justify-center px-2',
+            collapsed && 'justify-center',
           )}
           title={collapsed ? `SMS: ${modeConfig.label}` : undefined}
         >
@@ -355,7 +355,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
           )}
         </NavLink>
 
-        <div className={clsx('flex items-center gap-3 px-3 py-2 rounded-lg', collapsed && 'justify-center px-0')}>
+        <div className={clsx('flex items-center gap-3 px-3 py-2 rounded-lg', collapsed && 'justify-center')}>
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
             style={{

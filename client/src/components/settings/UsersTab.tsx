@@ -1,14 +1,26 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
-import { Plus, Edit3, X } from 'lucide-react';
+import { Plus, Edit3, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 export default function UsersTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [deletingUser, setDeletingUser] = useState<any>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; user: any } | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handler = () => setCtxMenu(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [ctxMenu]);
 
   const { data } = useQuery({
     queryKey: ['users'],
@@ -16,6 +28,16 @@ export default function UsersTab() {
       const { data } = await api.get('/auth/users');
       return data;
     },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/auth/users/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User deleted');
+      setDeletingUser(null);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to delete'),
   });
 
   const users = data?.users || [];
@@ -34,7 +56,10 @@ export default function UsersTab() {
         {users.map((user: any) => (
           <div
             key={user.id}
-            onContextMenu={(e) => { e.preventDefault(); setEditingUser(user); }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu({ x: e.clientX, y: e.clientY, user });
+            }}
             className="flex items-center justify-between p-3 bg-dark-800/50 rounded-lg group cursor-pointer hover:bg-dark-700/50 transition-colors"
           >
             <div className="flex items-center gap-3">
@@ -60,22 +85,68 @@ export default function UsersTab() {
               </span>
               <button
                 onClick={() => setEditingUser(user)}
-                className="btn-ghost p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="btn-ghost p-1.5 transition-opacity"
+                title="Edit"
               >
                 <Edit3 className="w-3.5 h-3.5 text-dark-400" />
+              </button>
+              <button
+                onClick={() => setDeletingUser(user)}
+                className="btn-ghost p-1.5 transition-opacity text-red-400 hover:text-red-300"
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
         ))}
       </div>
 
+      {/* Context menu */}
+      {ctxMenu && (
+        <div
+          ref={ctxRef}
+          style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 9999 }}
+          className="bg-dark-800 border border-dark-600 rounded-lg shadow-xl py-1 min-w-[140px]"
+        >
+          <button
+            onClick={() => { setEditingUser(ctxMenu.user); setCtxMenu(null); }}
+            className="w-full text-left px-4 py-2 text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
+          >
+            <Edit3 className="w-3.5 h-3.5" /> Edit
+          </button>
+          <button
+            onClick={() => { setDeletingUser(ctxMenu.user); setCtxMenu(null); }}
+            className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
+      )}
+
       {showCreate && <UserFormModal onClose={() => setShowCreate(false)} />}
-      {editingUser && <UserFormModal user={editingUser} onClose={() => setEditingUser(null)} />}
+      {editingUser && (
+        <UserFormModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onDelete={() => { setDeletingUser(editingUser); setEditingUser(null); }}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!deletingUser}
+        title="Delete User"
+        message={`Are you sure you want to delete ${deletingUser?.firstName} ${deletingUser?.lastName}? This will deactivate the account.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => deleteMutation.mutate(deletingUser.id)}
+        onCancel={() => setDeletingUser(null)}
+      />
     </div>
   );
 }
 
-function UserFormModal({ user, onClose }: { user?: any; onClose: () => void }) {
+function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () => void; onDelete?: () => void }) {
   const isEdit = !!user;
   const [form, setForm] = useState({
     firstName: user?.firstName || '',
@@ -153,11 +224,22 @@ function UserFormModal({ user, onClose }: { user?: any; onClose: () => void }) {
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-            <button type="submit" disabled={mutation.isPending} className="btn-primary">
-              {mutation.isPending ? 'Saving...' : isEdit ? 'Update User' : 'Create User'}
-            </button>
+          <div className="flex items-center justify-between pt-2">
+            {isEdit && onDelete ? (
+              <button
+                type="button"
+                onClick={onDelete}
+                className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete User
+              </button>
+            ) : <span />}
+            <div className="flex gap-3">
+              <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+              <button type="submit" disabled={mutation.isPending} className="btn-primary">
+                {mutation.isPending ? 'Saving...' : isEdit ? 'Update User' : 'Create User'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

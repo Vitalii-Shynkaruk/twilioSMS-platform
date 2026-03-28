@@ -284,4 +284,40 @@ export class AuthController {
 
     res.json({ user });
   }
+
+  static async deleteUser(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const requestId = req.requestId || '-';
+
+    authLogger.info('User delete attempt', {
+      requestId,
+      targetUserId: id,
+      deletedBy: req.user?.id,
+    });
+
+    // Prevent self-deletion
+    if (id === req.user?.id) {
+      throw new AppError('Cannot delete your own account', 400);
+    }
+
+    const target = await prisma.user.findUnique({ where: { id } });
+    if (!target) {
+      throw new AppError('User not found', 404);
+    }
+
+    // Soft-delete: deactivate and anonymise so the row stays for FK integrity
+    await prisma.user.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    authLogger.info('User deleted (deactivated)', {
+      requestId,
+      targetUserId: id,
+      email: target.email,
+      deletedBy: req.user?.id,
+    });
+
+    res.json({ message: 'User deleted' });
+  }
 }

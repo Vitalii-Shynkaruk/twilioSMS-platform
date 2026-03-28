@@ -1,12 +1,8 @@
-import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import dotenv from 'dotenv';
+import prisma from '../config/database';
+import logger from '../config/logger';
 
-dotenv.config();
-
-const prisma = new PrismaClient();
-
-type Phase2User = {
+type DefaultUser = {
   email: string;
   firstName: string;
   lastName: string;
@@ -17,7 +13,7 @@ type Phase2User = {
   avatarColor: string;
 };
 
-const PHASE2_USERS: Phase2User[] = [
+const DEFAULT_TEAM_USERS: DefaultUser[] = [
   {
     email: 'jb@securecreditlines.com',
     firstName: 'Jonathan',
@@ -90,12 +86,16 @@ const PHASE2_USERS: Phase2User[] = [
   },
 ];
 
-async function seedPhase2() {
-  console.log('🌱 Seeding Phase 2 team users...');
+export async function ensureDefaultTeamUsers() {
+  if (process.env.SEED_DEFAULT_TEAM_USERS === 'false') {
+    logger.info('Skipping default team user seed (SEED_DEFAULT_TEAM_USERS=false)');
+    return;
+  }
 
-  const defaultPassword = await bcrypt.hash(process.env.DEFAULT_TEAM_USER_PASSWORD || 'SCLRep2026!', 12);
+  const defaultPassword = process.env.DEFAULT_TEAM_USER_PASSWORD || 'SCLRep2026!';
+  const passwordHash = await bcrypt.hash(defaultPassword, 12);
 
-  for (const user of PHASE2_USERS) {
+  for (const user of DEFAULT_TEAM_USERS) {
     const existing = await prisma.user.findFirst({
       where: {
         OR: [{ initials: user.initials }, { email: user.email }],
@@ -123,14 +123,14 @@ async function seedPhase2() {
           annualGoal: existing.annualGoal > 0 ? existing.annualGoal : user.annualGoal,
         },
       });
-      console.log(`  ✅ Updated ${user.initials} (${existing.email})`);
+      logger.info(`👥 Default team user ensured: ${user.initials} (${existing.email})`);
       continue;
     }
 
     await prisma.user.create({
       data: {
         email: user.email,
-        passwordHash: defaultPassword,
+        passwordHash,
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
@@ -141,23 +141,7 @@ async function seedPhase2() {
         isActive: true,
       },
     });
-    console.log(`  ✅ Created ${user.initials} (${user.email})`);
+    logger.info(`👥 Default team user created: ${user.initials} (${user.email})`);
   }
-
-  await prisma.goal.upsert({
-    where: { entityType_entityId: { entityType: 'team', entityId: 'team' } },
-    update: { monthlyGoal: 5_800_000, annualGoal: 69_600_000 },
-    create: { entityType: 'team', entityId: 'team', monthlyGoal: 5_800_000, annualGoal: 69_600_000 },
-  });
-  console.log('  ✅ Team goal set: $5.8M/month, $69.6M/year');
-
-  console.log('\n✅ Phase 2 seed complete!');
 }
-
-seedPhase2()
-  .catch((e) => {
-    console.error('Seed failed:', e);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
 

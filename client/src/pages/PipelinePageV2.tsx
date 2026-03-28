@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { dealApi, repApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import DealCard, { formatCurrency } from '../components/pipeline/DealCard';
-import DealPanel from '../components/pipeline/DealPanel';
+import DealPanel, { ScheduleFollowUpModal } from '../components/pipeline/DealPanel';
 import CreateDealModal from '../components/pipeline/CreateDealModal';
 import type { Deal, DealStage, DealBoard, DealStats, Rep } from '../types';
 import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -182,6 +182,19 @@ export default function PipelinePage() {
     },
   });
 
+  const activeUsers = useMemo(() => (reps || []).filter((r) => r.isActive), [reps]);
+  const displayReps = useMemo(() => {
+    const roleReps = activeUsers.filter((r) => r.role === 'REP');
+    if (roleReps.length > 0) return roleReps;
+    return activeUsers.filter((r) => r.role !== 'MANAGER');
+  }, [activeUsers]);
+
+  useEffect(() => {
+    if (repFilter && !displayReps.some((r) => r.id === repFilter)) {
+      setRepFilter('');
+    }
+  }, [repFilter, displayReps]);
+
   // ─── Move mutation ───
   const moveMutation = useMutation({
     mutationFn: ({ dealId, stage }: { dealId: string; stage: string }) => dealApi.moveDeal(dealId, { stage }),
@@ -292,7 +305,7 @@ export default function PipelinePage() {
 
   // ═══ RENDER ═══
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="pipeline-root" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* ═══ TOPBAR ═══ */}
       <div className="topbar">
         <div className="logo">
@@ -309,7 +322,7 @@ export default function PipelinePage() {
             <button className={`rs ${!repFilter ? 'act' : ''}`} onClick={() => setRepFilter('')}>
               Admin
             </button>
-            {reps.slice(0, 4).map((r) => (
+            {displayReps.map((r) => (
               <button key={r.id} className={`rs ${repFilter === r.id ? 'act' : ''}`} onClick={() => setRepFilter(r.id)}>
                 {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
               </button>
@@ -458,13 +471,13 @@ export default function PipelinePage() {
               {quickFilter === 'this_week' ? ' · 📅 This Week — likely to close' : ''}
             </span>
           </>
-        ) : repFilter && reps ? (
+        ) : repFilter && displayReps.length > 0 ? (
           <>
             <span
               className="vb"
               style={{ background: 'var(--info-bg)', color: 'var(--info)', border: '1px solid var(--info-b)' }}
             >
-              My Pipeline ({reps.find((r) => r.id === repFilter)?.initials || '?'})
+              My Pipeline ({displayReps.find((r) => r.id === repFilter)?.initials || '?'})
             </span>
             <span className="btext">Your deals only</span>
           </>
@@ -532,13 +545,13 @@ export default function PipelinePage() {
           </div>
 
           {/* Manager bar (hidden in simple via CSS) */}
-          {isAdmin && stats && reps && reps.length > 0 && (
+          {isAdmin && stats && displayReps.length > 0 && (
             <div className="mgr-bar">
               {/* Rep names column */}
               <div className="mc">
                 <div className="ml">Rep</div>
                 <div className="mr2">
-                  {reps.map((rep) => (
+                  {displayReps.map((rep) => (
                     <div key={rep.id} className="mri">
                       <div
                         className="av"
@@ -560,7 +573,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">Active</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const v =
                       board?.stages
                         ?.flatMap((s: any) => s.deals)
@@ -580,7 +593,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">Overdue</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const now = new Date();
                     const v =
                       board?.stages
@@ -602,7 +615,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">🔥 Hot</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const v =
                       board?.stages
                         ?.flatMap((s: any) => s.deals)
@@ -621,7 +634,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">Pipeline $</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const total =
                       board?.stages
                         ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
@@ -647,7 +660,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">Funded MTD</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const total =
                       board?.stages
                         ?.find((s: any) => s.stage === 'FUNDED')
@@ -667,7 +680,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">Shared</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const count =
                       board?.stages?.reduce(
                         (acc: number, s: any) =>
@@ -690,7 +703,7 @@ export default function PipelinePage() {
               <div className="mc">
                 <div className="ml">MTD Goal %</div>
                 <div className="mr2">
-                  {reps.map((rep) => {
+                  {displayReps.map((rep) => {
                     const funded =
                       board?.stages
                         ?.find((s: any) => s.stage === 'FUNDED')
@@ -817,7 +830,7 @@ export default function PipelinePage() {
       )}
 
       {viewTab === 'team' && (
-        <TeamView stats={stats} board={board} reps={reps || []} onDealClick={(id) => setSelectedDealId(id)} />
+        <TeamView stats={stats} board={board} reps={displayReps} onDealClick={(id) => setSelectedDealId(id)} />
       )}
 
       {/* Bottom sum-bar for team view (same as pipeline sum-bar) */}
@@ -905,8 +918,10 @@ export default function PipelinePage() {
       {viewTab === 'queue' && (
         <QueueView
           deals={reviveQueue || []}
-          reps={reps || []}
+          reps={displayReps}
           isAdmin={isAdmin}
+          board={board}
+          stats={stats}
           onDealClick={(id) => setSelectedDealId(id)}
         />
       )}
@@ -914,7 +929,7 @@ export default function PipelinePage() {
       {/* ═══ PANELS & MODALS ═══ */}
       {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
       {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
-      {showGoals && <GoalsModal reps={reps || []} onClose={() => setShowGoals(false)} />}
+      {showGoals && <GoalsModal reps={displayReps} onClose={() => setShowGoals(false)} />}
     </div>
   );
 }
@@ -997,10 +1012,24 @@ function StageColumn({
         ) : (
           <>
             <div className={`col-stage ${config.stageClass || ''}`}>{config.short}</div>
-            <div className={`col-vol ${value ? '' : 'dim'}`}>{value ? formatCurrency(value) : '—'}</div>
-            <div className="col-ct">
-              {count} {count === 1 ? 'deal' : 'deals'}
-            </div>
+            {/* Only show dollar values for stages where lender offers/funding exist */}
+            {['APPROVED_OFFERS', 'COMMITTED_FUNDING', 'FUNDED'].includes(config.value) ? (
+              <>
+                <div className={`col-vol ${value ? '' : 'dim'}`}>
+                  {value ? `${formatCurrency(value)}${config.value === 'FUNDED' ? ' total' : ''}` : '—'}
+                </div>
+                <div className="col-ct">
+                  {count} {count === 1 ? 'deal' : 'deals'}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="col-vol dim">—</div>
+                <div className="col-ct">
+                  {count} {count === 1 ? 'lead' : 'leads'} · no $
+                </div>
+              </>
+            )}
             {(config.value === 'APPROVED_OFFERS' || config.value === 'COMMITTED_FUNDING') &&
               (() => {
                 const offerCount = deals.reduce((acc, d) => acc + (d.offers?.length || 0), 0);
@@ -1206,7 +1235,7 @@ function TeamView({
           const repsWithDeals = reps.filter((rep) =>
             board?.stages?.some((s) => s.deals.some((d) => d.assignedRepId === rep.id)),
           );
-          const displayReps = repsWithDeals.length > 0 ? repsWithDeals : reps.filter((r) => r.isActive).slice(0, 4);
+          const displayReps = repsWithDeals.length > 0 ? repsWithDeals : reps.filter((r) => r.isActive);
           return displayReps.length > 0 ? (
             <div
               style={{
@@ -1460,11 +1489,15 @@ function QueueView({
   deals,
   reps,
   isAdmin,
+  board,
+  stats,
   onDealClick,
 }: {
   deals: Deal[];
   reps: Rep[];
   isAdmin: boolean;
+  board?: DealBoard;
+  stats?: DealStats;
   onDealClick: (id: string) => void;
 }) {
   function getReasonTag(d: Deal): { cls: string; label: string; icon: string } {
@@ -1479,6 +1512,18 @@ function QueueView({
     if (d.stage === 'FUNDED') return { cls: 'qr-renewal', label: 'Renewal', icon: '♻️' };
     return { cls: 'qr-timing', label: 'Re-engage', icon: '⏰' };
   }
+
+  const qc = useQueryClient();
+  const [scheduleDeal, setScheduleDeal] = useState<Deal | null>(null);
+  const scheduleFollowUpMutation = useMutation({
+    mutationFn: ({ dealId, data }: { dealId: string; data: any }) => dealApi.updateDeal(dealId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deals', 'revive'] });
+      toast.success('Follow-up scheduled');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.error || 'Failed to schedule follow-up'),
+  });
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1537,9 +1582,16 @@ function QueueView({
     return { text: `Due in ${diffDays}d`, cls: 'qd-ok' };
   }
 
+  function getScheduleTarget(): Deal | null {
+    const boardDeals = (board?.stages || []).flatMap((s: any) => s.deals || []) as Deal[];
+    const all = [...deals, ...boardDeals].filter((d, i, arr) => arr.findIndex((x) => x.id === d.id) === i);
+    return all.find((d) => ['NURTURE', 'CLOSED', 'FUNDED'].includes(d.stage)) || all[0] || null;
+  }
+
   function renderCard(d: Deal, variant: string) {
     const reason = getReasonTag(d);
     const due = getDueLabel(d);
+    const rep = reps.find((r) => r.id === d.assignedRepId) || d.assignedRep;
     const pt = d.productType
       ? TEAM_PRODUCT_TAG[d.productType] || { cls: 't-mca', icon: '', label: d.productType }
       : null;
@@ -1564,7 +1616,7 @@ function QueueView({
             className="q-revive-btn"
             onClick={(e) => {
               e.stopPropagation();
-              onDealClick(d.id);
+              setScheduleDeal(d);
             }}
           >
             Reschedule
@@ -1603,15 +1655,12 @@ function QueueView({
         {d.followUpNote && <div className="q-script">💬 &ldquo;{d.followUpNote}&rdquo;</div>}
         <div className="q-meta">
           <div className="q-rep">
-            {d.assignedRep && (
+            {rep && (
               <>
-                <div
-                  className="av"
-                  style={{ background: d.assignedRep.avatarColor || 'var(--gold)', width: 20, height: 20, fontSize: 8 }}
-                >
-                  {d.assignedRep.initials || d.assignedRep.firstName?.[0] || '?'}
+                <div className="av" style={{ background: rep.avatarColor || 'var(--gold)', width: 16, height: 16, fontSize: 7 }}>
+                  {rep.initials || rep.firstName?.[0] || '?'}
                 </div>
-                {d.assignedRep.firstName} {d.assignedRep.lastName}
+                {rep.firstName} {rep.lastName}
               </>
             )}
           </div>
@@ -1643,16 +1692,39 @@ function QueueView({
     return (
       <div className="queue-view">
         <div className="queue-header">
-          <div>
+          <div className="queue-header-main">
             <div className="queue-title">🔁 Renewal / Revive Queue</div>
             <div className="queue-sub">Time-delayed revenue engine · every scheduled deal is a future close</div>
           </div>
+          <button
+            className="queue-schedule-bar"
+            onClick={() => {
+              const target = getScheduleTarget();
+              if (!target) {
+                toast.error('No deals available for scheduling');
+                return;
+              }
+              setScheduleDeal(target);
+            }}
+          >
+            + Schedule Follow-Up
+          </button>
         </div>
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
-          <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔁</div>
-          <div style={{ fontSize: '13px' }}>No deals in the revive queue</div>
-          <div style={{ fontSize: '11px', marginTop: '4px' }}>Deals appear here when they need re-engagement</div>
+          <div style={{ fontSize: '32px', marginBottom: '8px' }}>✅</div>
+          <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>Queue is clear</div>
+          <div style={{ fontSize: '11px' }}>No scheduled follow-ups due. Schedule one on any Nurture or Closed deal.</div>
         </div>
+        {scheduleDeal && (
+          <ScheduleFollowUpModal
+            deal={scheduleDeal}
+            onClose={() => setScheduleDeal(null)}
+            onSubmit={(data) => {
+              scheduleFollowUpMutation.mutate({ dealId: scheduleDeal.id, data });
+              setScheduleDeal(null);
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -1661,24 +1733,37 @@ function QueueView({
     <div className="queue-view">
       {/* Header */}
       <div className="queue-header">
-        <div>
+        <div className="queue-header-main">
           <div className="queue-title">🔁 Renewal / Revive Queue</div>
           <div className="queue-sub">Time-delayed revenue engine · every scheduled deal is a future close</div>
         </div>
+        <button
+          className="queue-schedule-bar"
+          onClick={() => {
+            const target = getScheduleTarget();
+            if (!target) {
+              toast.error('No deals available for scheduling');
+              return;
+            }
+            setScheduleDeal(target);
+          }}
+        >
+          + Schedule Follow-Up
+        </button>
       </div>
 
       {/* Stats row — 5 cards */}
       <div className="queue-stats">
         <div className="q-stat">
           <div className="q-stat-label">Overdue</div>
-          <div className="q-stat-val" style={{ color: 'var(--urgent)' }}>
+          <div className="q-stat-val" style={{ color: overdue.length > 0 ? 'var(--urgent)' : 'var(--text3)' }}>
             {overdue.length}
           </div>
           <div className="q-stat-sub">Action required now</div>
         </div>
         <div className="q-stat">
           <div className="q-stat-label">Due Today</div>
-          <div className="q-stat-val" style={{ color: 'var(--watch)' }}>
+          <div className="q-stat-val" style={{ color: dueToday.length > 0 ? 'var(--watch)' : 'var(--text3)' }}>
             {dueToday.length}
           </div>
           <div className="q-stat-sub">Reach out now</div>
@@ -1787,7 +1872,7 @@ function QueueView({
                     {td} today
                   </span>
                 )}
-                {up > 0 && <span style={{ fontSize: 10, color: 'var(--text3)' }}>{up} upcoming</span>}
+                <span style={{ fontSize: 10, color: 'var(--text3)' }}>{up} upcoming</span>
               </div>
             ))}
           </div>
@@ -1795,10 +1880,287 @@ function QueueView({
       )}
 
       {/* Sections */}
-      {renderSection('🔴', 'OVERDUE — ACT NOW', overdue.length, overdue, 'qc-overdue')}
-      {renderSection('🟡', 'DUE TODAY', dueToday.length, dueToday, 'qc-today')}
-      {renderSection('📅', 'THIS WEEK', thisWeek.length, thisWeek, 'qc-upcoming')}
-      {renderSection('⏳', 'UPCOMING', upcoming.length, upcoming, 'qc-upcoming')}
+      {renderSection('🔴', 'Overdue — Act Now', overdue.length, overdue, 'qc-overdue')}
+      {renderSection('🟡', 'Due Today', dueToday.length, dueToday, 'qc-today')}
+      {renderSection('📅', 'This Week', thisWeek.length, thisWeek, 'qc-upcoming')}
+      {renderSection('⏳', 'Upcoming', upcoming.length, upcoming, 'qc-upcoming')}
+
+      {(stats || (isAdmin && board && reps.length > 0)) && (
+        <div className="queue-dock">
+          {isAdmin && board && reps.length > 0 && <QueueManagerBar board={board} reps={reps} />}
+          {stats && <QueueSummaryBar stats={stats} />}
+        </div>
+      )}
+
+      {scheduleDeal && (
+        <ScheduleFollowUpModal
+          deal={scheduleDeal}
+          onClose={() => setScheduleDeal(null)}
+          onSubmit={(data) => {
+            scheduleFollowUpMutation.mutate({ dealId: scheduleDeal.id, data });
+            setScheduleDeal(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
+  const allDeals = board?.stages?.flatMap((s: any) => s.deals) || [];
+  const fundedDeals = board?.stages?.find((s: any) => s.stage === 'FUNDED')?.deals || [];
+  const pipelineDeals =
+    board?.stages
+      ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
+      .flatMap((s: any) => s.deals) || [];
+  const now = new Date();
+
+  return (
+    <div className="mgr-bar">
+      <div className="mc">
+        <div className="ml">Rep</div>
+        <div className="mr2">
+          {reps.map((rep) => (
+            <div key={rep.id} className="mri">
+              <div
+                className="av"
+                style={{
+                  width: '15px',
+                  height: '15px',
+                  background: rep.avatarColor || 'var(--gold)',
+                  fontSize: '7px',
+                }}
+              >
+                {rep.initials || rep.firstName[0]}
+              </div>
+              {rep.firstName} {rep.lastName}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">Active</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const value = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage))
+              .length;
+            return (
+              <div key={rep.id} className="mri">
+                <span className="mgr-val" style={{ color: value ? 'var(--text)' : 'var(--text3)' }}>
+                  {value}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">Overdue</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const value = allDeals.filter(
+              (d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now,
+            ).length;
+            return (
+              <div key={rep.id} className="mri">
+                <span className="mgr-val" style={{ color: value ? 'var(--urgent)' : 'var(--text3)' }}>
+                  {value}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">🔥 Hot</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const value = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.isHot).length;
+            return (
+              <div key={rep.id} className="mri">
+                <span className="mgr-val" style={{ color: value ? 'var(--hot)' : 'var(--text3)' }}>
+                  {value}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">Pipeline $</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const value = pipelineDeals
+              .filter((d: Deal) => d.assignedRepId === rep.id)
+              .reduce((sum: number, d: Deal) => {
+                const best = d.offers?.length ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount : 0;
+                return sum + best;
+              }, 0);
+            return (
+              <div key={rep.id} className="mri">
+                <span className="mgr-val" style={{ color: value ? 'var(--good)' : 'var(--text3)' }}>
+                  {value ? formatCurrency(value) : '$0'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">Funded MTD</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const value = fundedDeals
+              .filter((d: Deal) => d.assignedRepId === rep.id)
+              .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
+            return (
+              <div key={rep.id} className="mri">
+                <span className="mgr-val" style={{ color: value ? 'var(--good)' : 'var(--text3)' }}>
+                  {value ? formatCurrency(value) : '$0'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">Shared</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const value = allDeals.filter(
+              (d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id,
+            ).length;
+            return (
+              <div key={rep.id} className="mri">
+                <span className="mgr-val" style={{ color: value ? 'var(--info)' : 'var(--text3)' }}>
+                  {value}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mc">
+        <div className="ml">MTD Goal %</div>
+        <div className="mr2">
+          {reps.map((rep) => {
+            const funded = fundedDeals
+              .filter((d: Deal) => d.assignedRepId === rep.id)
+              .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
+            const goal = rep.monthlyGoal || 0;
+            if (!goal) {
+              return (
+                <div key={rep.id} className="mri">
+                  <span className="mgr-val" style={{ color: 'var(--text3)' }}>
+                    —
+                  </span>
+                </div>
+              );
+            }
+            const pct = Math.round((funded / goal) * 100);
+            const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
+            return (
+              <div key={rep.id} className="mri" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+                <span className="mgr-val" style={{ color: barColor }}>
+                  {pct}%
+                </span>
+                <div style={{ width: 60 }}>
+                  <div className="goal-bar-track">
+                    <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QueueSummaryBar({ stats }: { stats: DealStats }) {
+  return (
+    <div className="sum-bar">
+      <div className="sb2">
+        <div className="sl">Active Pipeline</div>
+        <div className="sv" style={{ color: 'var(--good)' }}>
+          {formatCurrency(stats.pipelineValue)}
+        </div>
+        <div className="ss">Approved + Committed</div>
+      </div>
+      <div className="sb2 goal-block">
+        <div className="sl">Funded MTD</div>
+        <div className="sv" style={{ color: 'var(--good)' }}>
+          {formatCurrency(stats.fundedMTD)}
+        </div>
+        <div className="ss">Goal: {formatCurrency(stats.monthlyGoal)}</div>
+        {stats.monthlyGoal &&
+          stats.monthlyGoal > 0 &&
+          (() => {
+            const pct = Math.round(((stats.fundedMTD || 0) / stats.monthlyGoal) * 100);
+            const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
+            const goalCls = pct >= 75 ? 'on-track' : pct >= 50 ? 'at-risk' : 'behind';
+            return (
+              <div className="goal-bar-wrap">
+                <div className="goal-bar-track">
+                  <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                </div>
+                <div className={`goal-pct ${goalCls}`}>
+                  {pct}% of {formatCurrency(stats.monthlyGoal)} monthly goal
+                </div>
+              </div>
+            );
+          })()}
+      </div>
+      <div className="sb2">
+        <div className="sl">Lifetime Funded</div>
+        <div className="sv" style={{ color: 'var(--gold)' }}>
+          {formatCurrency(stats.lifetimeFunded)}
+        </div>
+        <div className="ss">All clients</div>
+      </div>
+      <div className="sb2">
+        <div className="sl">⚠ At Risk</div>
+        <div className="sv" style={{ color: (stats.atRisk || 0) > 0 ? 'var(--urgent)' : 'var(--text3)' }}>
+          {formatCurrency(stats.atRisk)}
+        </div>
+        <div className="ss">Overdue / stale / no action</div>
+      </div>
+      <div className="sb2">
+        <div className="sl">🔥 Hot</div>
+        <div className="sv" style={{ color: 'var(--hot)' }}>
+          {stats.hotCount}
+        </div>
+        <div className="ss">Offer / replied / engaged</div>
+      </div>
+      <div className="sb2">
+        <div className="sl">No Next Action</div>
+        <div className="sv" style={{ color: 'var(--urgent)' }}>
+          {stats.noNextAction ?? 0}
+        </div>
+        <div className="ss">Blocking progress</div>
+      </div>
+      <div className="sb2">
+        <div className="sl">Renewals Due</div>
+        <div className="sv" style={{ color: 'var(--good)' }}>
+          {stats.renewalsDue ?? 0}
+        </div>
+        <div className="ss">Re-engage funded</div>
+      </div>
+      <div className="sb2">
+        <div className="sl">🔁 Queue Today</div>
+        <div className="sv" style={{ color: 'var(--info)' }}>
+          {stats.queueToday ?? 0}
+        </div>
+        <div className="ss">Scheduled follow-ups due</div>
+      </div>
     </div>
   );
 }

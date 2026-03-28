@@ -369,11 +369,23 @@ export default function CommandCenterPage() {
   // ── View helpers ──
 
   const isAdmin = activeView === 'admin';
+  const displayReps = useMemo(() => {
+    const active = (reps || []).filter((r) => r.isActive);
+    const roleReps = active.filter((r) => r.role === 'REP');
+    if (roleReps.length > 0) return roleReps;
+    return active.filter((r) => r.role !== 'MANAGER' && r.role !== 'ADMIN');
+  }, [reps]);
+
+  useEffect(() => {
+    if (activeView !== 'admin' && (displayReps.length === 0 || !displayReps.some((r) => r.id === activeView))) {
+      setActiveView('admin');
+    }
+  }, [activeView, displayReps]);
 
   const activeRep = useMemo(() => {
-    if (isAdmin || !reps) return null;
-    return reps.find((r) => r.id === activeView) ?? null;
-  }, [isAdmin, activeView, reps]);
+    if (isAdmin || displayReps.length === 0) return null;
+    return displayReps.find((r) => r.id === activeView) ?? null;
+  }, [isAdmin, activeView, displayReps]);
 
   const activeRepInitials = activeRep
     ? activeRep.initials || (activeRep.firstName[0] + activeRep.lastName[0]).toUpperCase()
@@ -513,18 +525,15 @@ export default function CommandCenterPage() {
             <button className={`rb ${isAdmin ? 'on on-admin' : ''}`} onClick={() => handleViewSwitch('admin')}>
               Admin
             </button>
-            {reps
-              ?.filter((r) => r.role !== 'MANAGER')
-              .slice(0, 3)
-              .map((rep) => (
-                <button
-                  key={rep.id}
-                  className={`rb ${activeView === rep.id ? 'on' : ''}`}
-                  onClick={() => handleViewSwitch(rep.id)}
-                >
-                  Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
-                </button>
-              ))}
+            {displayReps.map((rep) => (
+              <button
+                key={rep.id}
+                className={`rb ${activeView === rep.id ? 'on' : ''}`}
+                onClick={() => handleViewSwitch(rep.id)}
+              >
+                Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
+              </button>
+            ))}
           </div>
 
           <div className="live-pip">

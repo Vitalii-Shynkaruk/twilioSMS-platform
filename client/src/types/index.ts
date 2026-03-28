@@ -279,6 +279,7 @@ export interface Deal {
   originatorName?: string;
   lender?: string;
   notes?: string;
+  clientNotes?: string;
   isHot: boolean;
   createdAt: string;
   updatedAt: string;

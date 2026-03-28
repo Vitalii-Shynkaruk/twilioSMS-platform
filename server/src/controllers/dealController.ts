@@ -172,15 +172,30 @@ export class DealController {
     }
 
     // Stage metadata
+    const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED', 'SUBMITTED_IN_REVIEW'];
     const stages = STAGE_ORDER.map((stage, index) => {
       const deals = board[stage] || [];
+      // Dollar value ONLY from lender offers (Approved/Committed) or funding events (Funded)
+      let value = 0;
+      if (!NO_AMOUNT_STAGES.includes(stage)) {
+        if (stage === 'FUNDED') {
+          // Use dealAmount as fallback for funded deals (it's set from actual funding)
+          value = deals.reduce((sum: number, d: any) => sum + (d.dealAmount || 0), 0);
+        } else {
+          // For Approved/Committed/Nurture: use best offer amount
+          value = deals.reduce((sum: number, d: any) => {
+            const bestOffer = (d.offers || []).reduce((best: any, o: any) => (!best || o.amount > best.amount ? o : best), null);
+            return sum + (bestOffer?.amount || 0);
+          }, 0);
+        }
+      }
       return {
         stage,
         label: STAGE_LABELS[stage],
         order: index,
         deals,
         count: deals.length,
-        value: deals.reduce((sum: number, d: any) => sum + (d.dealAmount || 0), 0),
+        value,
       };
     });
 
@@ -713,10 +728,10 @@ export class DealController {
     res.json(updated);
   }
 
-  // POST /api/deals/:id/share - Share deal with assisting rep(s)
+  // POST /api/deals/:id/share - Share deal with assisting rep(s) + change primary
   static async shareDeal(req: AuthRequest, res: Response) {
     const { id } = req.params;
-    const { assistingRepIds } = req.body;
+    const { assistingRepIds, assignedRepId } = req.body;
 
     // Only admin or primary rep can share
     const deal = await prisma.deal.findUnique({ where: { id } });
@@ -726,17 +741,29 @@ export class DealController {
       return res.status(403).json({ error: 'Only the primary rep or admin can share deals' });
     }
 
+    const updateData: any = {};
+    if (assistingRepIds !== undefined) updateData.assistingRepIds = assistingRepIds || [];
+    if (assignedRepId !== undefined) updateData.assignedRepId = assignedRepId;
+
     const updated = await prisma.deal.update({
       where: { id },
-      data: { assistingRepIds: assistingRepIds || [] },
+      data: updateData,
     });
+
+    const noteFragments: string[] = [];
+    if (assignedRepId && assignedRepId !== deal.assignedRepId) {
+      noteFragments.push(`Primary rep changed`);
+    }
+    if (assistingRepIds) {
+      noteFragments.push(`Shared with ${(assistingRepIds || []).length} rep(s)`);
+    }
 
     await prisma.dealEvent.create({
       data: {
         dealId: id,
         repId: req.user!.id,
         eventType: 'deal_shared',
-        note: `Deal shared with ${(assistingRepIds || []).length} rep(s)`,
+        note: noteFragments.join('; ') || 'Deal sharing updated',
       },
     });
 
@@ -1156,6 +1183,55 @@ export class DealController {
 
     const messages = conversations.flatMap((c) => c.messages);
     messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    res.json({ messages });
+    const conversationId = conversations.length > 0 ? conversations[0].id : null;
+    res.json({ messages, conversationId });
+  }
+
+  // POST /api/deals/:id/sms/send — Send SMS from the deal conversation
+  static async sendDealSms(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { body } = req.body;
+
+    if (!body || !body.trim()) {
+      return res.status(400).json({ error: 'Message body is required' });
+    }
+
+    const deal = await prisma.deal.findFirst({
+      where: { id },
+      select: { leadId: true, client: { select: { phone: true } } },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    let leadId = deal.leadId;
+    if (!leadId && deal.client?.phone) {
+      const lead = await prisma.lead.findFirst({ where: { phone: deal.client.phone }, select: { id: true } });
+      if (lead) leadId = lead.id;
+    }
+    if (!leadId) return res.status(400).json({ error: 'No lead linked to this deal — cannot send SMS' });
+
+    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { phone: true } });
+    if (!lead?.phone) return res.status(400).json({ error: 'Lead has no phone number' });
+
+    // Find existing conversation or let SendingEngine create one
+    const conversation = await prisma.conversation.findFirst({ where: { leadId } });
+
+    const { SendingEngine } = await import('../services/sendingEngine');
+    const messageId = await SendingEngine.queueMessage({
+      toNumber: lead.phone,
+      body: body.trim(),
+      leadId,
+      sentByUserId: req.user!.id,
+      preferredNumberId: conversation?.stickyNumberId || undefined,
+      priority: 10,
+    });
+
+    if (conversation) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date(), lastDirection: 'outbound' },
+      });
+    }
+
+    res.json({ messageId });
   }
 }

@@ -1,23 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dealApi, repApi } from '../../services/api';
-import {
-  X,
-  Phone,
-  MessageSquare,
-  DollarSign,
-  Clock,
-  Flame,
-  ChevronRight,
-  Plus,
-  CheckCircle2,
-  Calendar,
-  Shield,
-} from 'lucide-react';
+import { Phone, MessageSquare, ChevronRight, Plus, CheckCircle2, Calendar, Shield } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import type { Deal, DealStage, Rep, Offer, ProductType } from '../../types';
-import { STAGE_COLORS, formatCurrency } from './DealCard';
+import { formatCurrency } from './DealCard';
 import { useAuthStore } from '../../stores/authStore';
 
 const STAGE_LABELS: Record<DealStage, string> = {
@@ -38,7 +26,7 @@ interface DealPanelProps {
 }
 
 export default function DealPanel({ dealId, onClose }: DealPanelProps) {
-  const [tab, setTab] = useState<'details' | 'activity' | 'offers' | 'sms'>('details');
+  const [tab, setTab] = useState<'convo' | 'deal' | 'history'>('deal');
   const [showActionModal, setShowActionModal] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -118,162 +106,77 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 
   if (isLoading || !deal) {
     return (
-      <div className="fixed inset-y-0 right-0 w-[480px] bg-[var(--bg-primary)] border-l border-[var(--border-primary)] shadow-2xl z-50 flex items-center justify-center">
+      <div className="panel open" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="w-6 h-6 border-2 border-scl-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  const stageColor = STAGE_COLORS[deal.stage] || '#6366f1';
+  const clientName = deal.client?.contactName || deal.client?.businessName || 'Unknown';
+  const repLabel = deal.assignedRep ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}` : 'Unassigned';
 
   return (
     <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-
-      {/* Panel */}
-      <div className="fixed inset-y-0 right-0 w-[480px] max-w-full bg-[var(--bg-primary)] border-l border-[var(--border-primary)] shadow-2xl z-50 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-[var(--border-primary)]">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stageColor }} />
-              <span className="text-xs font-medium text-[var(--text-secondary)]">{STAGE_LABELS[deal.stage]}</span>
-              {deal.isHot && <Flame className="w-3.5 h-3.5 text-orange-500" />}
-            </div>
-            <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-tertiary)]">
-              <X className="w-4 h-4 text-[var(--text-muted)]" />
-            </button>
-          </div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{deal.client?.businessName || 'Unknown'}</h2>
-          <div className="flex items-center gap-3 mt-1">
-            {deal.dealAmount ? (
-              <span className="text-sm font-semibold text-[var(--text-primary)]">
-                {formatCurrency(deal.dealAmount)}
-              </span>
-            ) : (
-              <span className="text-sm text-amber-400 italic">Needs amount</span>
-            )}
-            {deal.productType && (
-              <span className="text-xs px-2 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
-                {deal.productType}
-              </span>
-            )}
-            <span className="text-xs text-[var(--text-muted)]">
-              <Clock className="w-3 h-3 inline mr-0.5" />
-              {deal.daysInStage}d in stage
-            </span>
-          </div>
-
-          {/* Quick actions */}
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={() => setShowActionModal(true)}
-              className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-scl-500 text-white hover:bg-scl-600 transition"
-            >
-              <CheckCircle2 className="w-3 h-3 inline mr-1" />
-              Complete Action
-            </button>
-            <button
-              onClick={() => setShowMoveModal(true)}
-              className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] transition"
-            >
-              <ChevronRight className="w-3 h-3 inline mr-1" />
-              Move Stage
-            </button>
-            {deal.stage === 'COMMITTED_FUNDING' && (
-              <button
-                onClick={() => setShowFundedModal(true)}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition"
-              >
-                <DollarSign className="w-3 h-3 inline mr-1" />
-                Fund
-              </button>
-            )}
-          </div>
-
-          {/* Secondary actions */}
-          <div className="flex gap-2 mt-2">
-            <button
-              onClick={() => setShowFollowUpModal(true)}
-              className="px-2.5 py-1 text-[10px] font-medium rounded border border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition"
-            >
-              <Calendar className="w-3 h-3 inline mr-0.5" />
-              Follow-Up
-            </button>
-            <button
-              onClick={() => setShowNQModal(true)}
-              className="px-2.5 py-1 text-[10px] font-medium rounded border border-[var(--border-primary)] text-[var(--text-muted)] hover:text-red-400 transition"
-            >
-              Lost / NQ
-            </button>
-            {deal.client?.phone && (
-              <>
-                <a
-                  href={`tel:${deal.client.phone}`}
-                  className="px-2.5 py-1 text-[10px] font-medium rounded border border-[var(--border-primary)] text-[var(--text-muted)] hover:text-green-400 transition"
+      <div className="overlay open" onClick={onClose} />
+      <div className="panel open">
+        <div className="ph">
+          <div className="ph-top">
+            <div>
+              <div className="ph-name">{deal.client?.businessName || 'Unknown'}</div>
+              <div className="ph-sub">
+                <span style={{ color: 'var(--text3)' }}>{clientName}</span>
+                <span style={{ color: 'var(--text3)' }}>·</span>
+                {deal.client?.phone && <span>{deal.client.phone}</span>}
+                {deal.client?.email ? (
+                  <span style={{ color: 'var(--info)' }}>✉ {deal.client.email}</span>
+                ) : (
+                  <span style={{ color: 'var(--text3)' }}>+ Add email</span>
+                )}
+                <span
+                  className="ph-badge"
+                  style={{ background: deal.assignedRep?.avatarColor ? `${deal.assignedRep.avatarColor}26` : 'var(--bg4)', color: deal.assignedRep?.avatarColor || 'var(--text2)' }}
                 >
-                  <Phone className="w-3 h-3 inline mr-0.5" />
-                  Call
-                </a>
-                <a
-                  href={`sms:${deal.client.phone}`}
-                  className="px-2.5 py-1 text-[10px] font-medium rounded border border-[var(--border-primary)] text-[var(--text-muted)] hover:text-blue-400 transition"
-                >
-                  <MessageSquare className="w-3 h-3 inline mr-0.5" />
-                  Text
-                </a>
-              </>
-            )}
-          </div>
-
-          {/* HELOC Rescission Window Notice — Rule #10/#20 */}
-          {deal.productType === 'HELOC' && deal.commitSubStatus === 'DOCS_SIGNED' && (
-            <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-              <Shield className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-amber-400">HELOC Rescission Window</p>
-                <p className="text-[10px] text-amber-300/70">
-                  3-day right of rescission applies. Do not proceed with funding until the rescission period has
-                  expired.
-                </p>
+                  {repLabel}
+                </span>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-[var(--border-primary)]">
-          {(['details', 'activity', 'offers', 'sms'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={clsx(
-                'flex-1 px-4 py-2.5 text-xs font-medium capitalize transition',
-                tab === t
-                  ? 'text-scl-500 border-b-2 border-scl-500'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]',
-              )}
-            >
-              {t} {t === 'offers' && deal.offers?.length ? `(${deal.offers.length})` : ''}
+            <button className="ph-close" onClick={onClose}>
+              ×
             </button>
-          ))}
+          </div>
+
+          <div className="panel-tabs">
+            <button className={`ptab ${tab === 'convo' ? 'act' : ''}`} onClick={() => setTab('convo')}>
+              Conversation
+            </button>
+            <button className={`ptab ${tab === 'deal' ? 'act' : ''}`} onClick={() => setTab('deal')}>
+              Deal + Client
+            </button>
+            <button className={`ptab ${tab === 'history' ? 'act' : ''}`} onClick={() => setTab('history')}>
+              Funding History
+            </button>
+          </div>
         </div>
 
-        {/* Tab content */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {tab === 'details' && (
-            <DetailsTab
+        <div className="panel-body">
+          {tab === 'convo' && <ConversationTab deal={deal} />}
+          {tab === 'deal' && (
+            <DealClientTab
               deal={deal}
-              onUpdate={(data: any) => updateMutation.mutate(data)}
               isAdmin={isAdmin}
+              onUpdate={(data: any) => updateMutation.mutate(data)}
               onShare={(data: any) => shareMutation.mutate(data)}
+              onMove={(data: any) => moveMutation.mutate(data)}
               onEditFundEvent={(feId: string) => setShowEditFundModal(feId)}
+              onAddOffer={() => setShowOfferModal(true)}
+              onOpenActionModal={() => setShowActionModal(true)}
+              onOpenMoveModal={() => setShowMoveModal(true)}
+              onOpenFollowUpModal={() => setShowFollowUpModal(true)}
+              onOpenNQModal={() => setShowNQModal(true)}
+              onOpenFundedModal={() => setShowFundedModal(true)}
             />
           )}
-          {tab === 'activity' && <ActivityTab deal={deal} />}
-          {tab === 'offers' && <OffersTab deal={deal} onAddOffer={() => setShowOfferModal(true)} />}
-          {tab === 'sms' && <SmsTab dealId={deal.id} />}
+          {tab === 'history' && <FundingHistoryTab deal={deal} />}
         </div>
 
         {/* Modals */}
@@ -335,6 +238,681 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
         )}
       </div>
     </>
+  );
+}
+
+function ConversationTab({ deal }: { deal: Deal }) {
+  const [draft, setDraft] = useState('');
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['deal-sms', deal.id],
+    queryFn: async () => {
+      const { data } = await dealApi.getSms(deal.id);
+      return data as {
+        messages: Array<{
+          id: string;
+          body: string;
+          direction: string;
+          status: string;
+          createdAt: string;
+        }>;
+        conversationId: string | null;
+      };
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: (body: string) => dealApi.sendSms(deal.id, body),
+    onSuccess: () => {
+      setDraft('');
+      queryClient.invalidateQueries({ queryKey: ['deal-sms', deal.id] });
+      toast.success('SMS sent');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to send SMS'),
+  });
+
+  const messages = data?.messages || [];
+
+  const handleSend = () => {
+    if (!draft.trim()) return;
+    sendMutation.mutate(draft.trim());
+  };
+
+  return (
+    <div className="sms-pane">
+      <div className="sms-thread">
+        {isLoading && <div className="msg-meta">Loading messages...</div>}
+        {!isLoading && messages.length === 0 && <div className="msg-meta">No messages yet.</div>}
+        {messages.map((msg) => {
+          const isOut = msg.direction.toLowerCase() === 'outbound';
+          return (
+            <div key={msg.id} className={`msg ${isOut ? 'out' : 'in'}`}>
+              <div className="bubble">{msg.body}</div>
+              <div className="msg-meta">
+                {new Date(msg.createdAt).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="sms-bar">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Reply via SMS..."
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && draft.trim()) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+        />
+        <button
+          className="sms-send"
+          onClick={handleSend}
+          disabled={!draft.trim() || sendMutation.isPending}
+        >
+          {sendMutation.isPending ? '...' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DealClientTab({
+  deal,
+  onUpdate,
+  isAdmin,
+  onShare,
+  onMove,
+  onEditFundEvent,
+  onAddOffer,
+  onOpenActionModal,
+  onOpenMoveModal,
+  onOpenFollowUpModal,
+  onOpenNQModal,
+  onOpenFundedModal,
+}: {
+  deal: Deal;
+  onUpdate: (data: any) => void;
+  isAdmin: boolean;
+  onShare: (data: any) => void;
+  onMove: (data: any) => void;
+  onEditFundEvent: (feId: string) => void;
+  onAddOffer: () => void;
+  onOpenActionModal: () => void;
+  onOpenMoveModal: () => void;
+  onOpenFollowUpModal: () => void;
+  onOpenNQModal: () => void;
+  onOpenFundedModal: () => void;
+}) {
+  const isClosed = deal.stage === 'CLOSED';
+  const isFunded = deal.stage === 'FUNDED';
+  const canEdit = isAdmin || !!deal.assignedRepId;
+  const stages: DealStage[] = [
+    'NEW_LEAD',
+    'ENGAGED_INTERESTED',
+    'QUALIFIED',
+    'SUBMITTED_IN_REVIEW',
+    'APPROVED_OFFERS',
+    'COMMITTED_FUNDING',
+    'FUNDED',
+    'NURTURE',
+    'CLOSED',
+  ];
+  const dealTypeOptions: Array<{ label: string; value: ProductType }> = [
+    { label: 'MCA', value: 'MCA' },
+    { label: 'LOC', value: 'LOC' },
+    { label: 'HELOC', value: 'HELOC' },
+    { label: 'Equipment', value: 'EQUIPMENT' },
+    { label: 'SBA', value: 'SBA' },
+    { label: 'CRE', value: 'CRE' },
+  ];
+  const revenueRanges = ['Under $10k', '$10k–$25k', '$25k–$50k', '$50k–$100k', '$100k–$250k', '$250k–$500k', '$500k–$1M', '$1M+', 'Custom'];
+  const sourceOptions = ['Cold Calling', 'Email', 'SMS', 'Referral'];
+  const clientMetaKey = `scl_client_meta_${deal.clientId}`;
+  const [clientMeta, setClientMeta] = useState<Record<string, string>>({});
+  const [nextActionDraft, setNextActionDraft] = useState(deal.nextAction || '');
+  const [exactDueDate, setExactDueDate] = useState(deal.nextActionDue?.split('T')[0] || '');
+  const [showFutureDate, setShowFutureDate] = useState(false);
+  const [noteDraft, setNoteDraft] = useState(deal.notes || '');
+  const [clientNoteDraft, setClientNoteDraft] = useState(deal.clientNotes || '');
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(clientMetaKey);
+      setClientMeta(raw ? JSON.parse(raw) : {});
+    } catch {
+      setClientMeta({});
+    }
+  }, [clientMetaKey]);
+
+  useEffect(() => setNextActionDraft(deal.nextAction || ''), [deal.id, deal.nextAction]);
+  useEffect(() => setNoteDraft(deal.notes || ''), [deal.id, deal.notes]);
+  useEffect(() => setClientNoteDraft(deal.clientNotes || ''), [deal.id, deal.clientNotes]);
+  useEffect(() => {
+    const date = deal.nextActionDue?.split('T')[0] || '';
+    setExactDueDate(date);
+    if (!date) {
+      setShowFutureDate(true);
+      return;
+    }
+    const diff = Math.round((new Date(date + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000);
+    setShowFutureDate(diff > 7);
+  }, [deal.id, deal.nextActionDue]);
+
+  function saveClientMeta(patch: Record<string, string>) {
+    const next = { ...clientMeta, ...patch };
+    setClientMeta(next);
+    try {
+      localStorage.setItem(clientMetaKey, JSON.stringify(next));
+    } catch {
+      // no-op
+    }
+  }
+
+  function applyDuePreset(preset: 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date') {
+    const d = new Date();
+    if (preset === 'Future date') {
+      setShowFutureDate(true);
+      return;
+    }
+    if (preset === 'Overdue') d.setDate(d.getDate() - 1);
+    if (preset === 'Tomorrow') d.setDate(d.getDate() + 1);
+    if (preset === 'This week') d.setDate(d.getDate() + 4);
+    const iso = d.toISOString().split('T')[0];
+    setExactDueDate(iso);
+    setShowFutureDate(false);
+    onUpdate({ nextActionDue: iso });
+  }
+
+  function currentDuePreset(): 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date' {
+    if (!exactDueDate) return 'Future date';
+    const diff = Math.round((new Date(exactDueDate + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000);
+    if (diff < 0) return 'Overdue';
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    if (diff <= 7) return 'This week';
+    return 'Future date';
+  }
+
+  const duePreset = currentDuePreset();
+  const clientPhone = clientMeta.phone ?? deal.client?.phone ?? '';
+  const clientEmail = clientMeta.email ?? deal.client?.email ?? '';
+  const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
+  const clientRevenue = clientMeta.monthlyRevenue ?? '';
+  const clientSource = clientMeta.source ?? '';
+
+  const offers = deal.offers || [];
+  const fundingEvent = (deal.fundingEvents || [])[0];
+
+  return (
+    <div className="deal-tab">
+      <div className="dsb">
+        <div className="dsbt">Deal</div>
+        <div className="sf">
+          <div className="sf-l">Stage</div>
+          <select
+            className="si"
+            value={deal.stage}
+            onChange={(e) => {
+              const nextStage = e.target.value as DealStage;
+              if (nextStage === deal.stage) return;
+              if (nextStage === 'NURTURE' || nextStage === 'CLOSED') {
+                onOpenMoveModal();
+                return;
+              }
+              onMove({ stage: nextStage });
+            }}
+            disabled={!canEdit}
+          >
+            {stages.map((s) => (
+              <option key={s} value={s}>
+                {STAGE_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="sf">
+          <div className="sf-l">Deal types</div>
+          <div className="dt-grid">
+            {dealTypeOptions.map((opt) => {
+              const selected = deal.productType === opt.value;
+              return (
+                <div
+                  key={opt.value}
+                  className={clsx('dt-opt', selected && 'sel')}
+                  onClick={() => canEdit && onUpdate({ productType: opt.value })}
+                >
+                  <div className="dt-chk">{selected ? '✓' : ''}</div>
+                  <span>{opt.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="sf">
+          <div className="sf-l">
+            Ownership {!isAdmin && <span style={{ fontSize: 9, color: 'var(--text3)' }}>(admin only)</span>}
+          </div>
+          <RepOwnershipSection deal={deal} isAdmin={isAdmin} onShare={onShare} onUpdate={onUpdate} />
+        </div>
+      </div>
+
+      {!isClosed && (
+        <div className="dsb">
+          <div className="dsbt">
+            <span>Lender Offers ({offers.length})</span>
+            <button className="dsbt-action" onClick={onAddOffer}>
+              + Add offer
+            </button>
+          </div>
+          {offers.length > 0 ? (
+            <div className="offer-list">
+              {offers.map((offer) => (
+                <div key={offer.id} className={clsx('offer-item', offer.isAccepted && 'selected-offer')}>
+                  <div className="oi-left">
+                    <div className="oi-lender">{offer.lenderName}</div>
+                    <div className="oi-detail">{offer.terms || offer.productType || '—'}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <div className="oi-amount">{formatCurrency(offer.amount)}</div>
+                    {offer.isAccepted ? <span style={{ fontSize: 9, color: 'var(--good)' }}>✓ Accepted</span> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--text3)', padding: '4px 0 8px' }}>
+              No offers yet. {deal.appSubmitted ? 'Awaiting lender response.' : 'Submit app to start receiving offers.'}
+            </div>
+          )}
+          <button className="add-offer-btn" onClick={onAddOffer}>
+            + Record lender offer
+          </button>
+        </div>
+      )}
+
+      <div className="dsb">
+        <div className="dsbt">
+          Client Info
+          {clientBusiness ? (
+            <span style={{ color: 'var(--good)', fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>
+              · {clientBusiness}
+            </span>
+          ) : null}
+        </div>
+        <div className="sf">
+          <div className="sf-l">Monthly revenue</div>
+          <div className="rev-grid">
+            {revenueRanges.map((range) => (
+              <div
+                key={range}
+                className={clsx('rev-opt', clientRevenue === range && 'sel')}
+                onClick={() => saveClientMeta({ monthlyRevenue: range })}
+              >
+                {range}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="sf">
+          <div className="sf-l">Source</div>
+          <div className="src-row">
+            {sourceOptions.map((src) => (
+              <button
+                key={src}
+                type="button"
+                className={clsx('src-chip', clientSource === src && 'sel')}
+                onClick={() => saveClientMeta({ source: src })}
+              >
+                {src}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="sf">
+          <div className="sf-l">Phone</div>
+          <input
+            className="si"
+            value={clientPhone}
+            onChange={(e) => saveClientMeta({ phone: e.target.value })}
+            placeholder="(555) 000-0000"
+          />
+        </div>
+        <div className="sf">
+          <div className="sf-l" style={{ color: 'var(--info)' }}>
+            ✉ Email
+          </div>
+          <input
+            className="si"
+            value={clientEmail}
+            onChange={(e) => saveClientMeta({ email: e.target.value })}
+            placeholder="email@company.com"
+          />
+        </div>
+        <div className="sf">
+          <div className="sf-l">Business</div>
+          <input
+            className="si"
+            value={clientBusiness}
+            onChange={(e) => saveClientMeta({ businessName: e.target.value })}
+            placeholder="Business name"
+          />
+        </div>
+      </div>
+
+      {/* Scheduled Follow-Up section for NURTURE deals */}
+      {deal.stage === 'NURTURE' && deal.followUpType && (
+        <div className="dsb">
+          <div className="dsbt">
+            Scheduled Follow-Up
+            <button className="dsbt-action" onClick={onOpenFollowUpModal}>Edit</button>
+          </div>
+          <div style={{ background: 'var(--bg4)', borderRadius: 7, padding: '8px 10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <span className={`q-reason-pill qr-${deal.followUpType}`}>
+                {deal.followUpType === 'renewal' ? '♻️ Renewal' :
+                 deal.followUpType === 'reengage' ? '↩ Re-engage' :
+                 deal.followUpType === 'timing' ? '⏰ Check Timing' :
+                 deal.followUpType === 'nurture' ? '🌱 Nurture' :
+                 deal.followUpType === 'statement' ? '📄 Statement' : deal.followUpType}
+              </span>
+              {deal.followUpDate && (
+                <span className={`q-due ${new Date(deal.followUpDate) < new Date() ? 'qd-overdue' : 'qd-ok'}`}>
+                  Due {new Date(deal.followUpDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+              )}
+            </div>
+            {deal.externalFundedDate && (
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3 }}>
+                External funded: {new Date(deal.externalFundedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · {Math.round((Date.now() - new Date(deal.externalFundedDate).getTime()) / 86400000)}d ago
+              </div>
+            )}
+            {deal.followUpNote && (
+              <div style={{ fontSize: 10, color: 'var(--text2)' }}>{deal.followUpNote}</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {isFunded && fundingEvent && (
+        <div className="dsb">
+          <div className="dsbt">
+            Funded Details
+            <button className="dsbt-action" onClick={() => onEditFundEvent(fundingEvent.id)}>
+              Edit
+            </button>
+          </div>
+          <div className="sf-row">
+            <div className="sf">
+              <div className="sf-l">Amount</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--good)' }}>{formatCurrency(fundingEvent.amountFunded)}</div>
+            </div>
+            <div className="sf">
+              <div className="sf-l">Funder</div>
+              <div style={{ fontSize: 12 }}>{fundingEvent.lender || '—'}</div>
+            </div>
+            <div className="sf">
+              <div className="sf-l">Product</div>
+              <div style={{ fontSize: 12 }}>{fundingEvent.productType || deal.productType || '—'}</div>
+            </div>
+            <div className="sf">
+              <div className="sf-l">Funded date</div>
+              <div style={{ fontSize: 12 }}>
+                {fundingEvent.fundedDate ? new Date(fundingEvent.fundedDate).toLocaleDateString('en-US') : '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isClosed && (
+        <div className="dsb">
+          <div className="dsbt">Next Action</div>
+          <div className="sf">
+            <div className="sf-l">Action</div>
+            <input
+              className="si"
+              value={nextActionDraft}
+              onChange={(e) => setNextActionDraft(e.target.value)}
+              onBlur={() => {
+                if (nextActionDraft !== (deal.nextAction || '')) onUpdate({ nextAction: nextActionDraft });
+              }}
+              placeholder="e.g. Present offer, Follow up..."
+              disabled={!canEdit}
+            />
+          </div>
+          <div className="sf">
+            <div className="sf-l">Due</div>
+            <div className="due-row">
+              {(['Overdue', 'Today', 'Tomorrow', 'This week', 'Future date'] as const).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className={clsx('due-chip', duePreset === opt && 'sel')}
+                  onClick={() => applyDuePreset(opt)}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <div className={clsx('dp-wrap', showFutureDate && 'show')}>
+              <input
+                type="date"
+                className="dp-inp"
+                value={exactDueDate}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setExactDueDate(v);
+                  setShowFutureDate(true);
+                  onUpdate({ nextActionDue: v || null });
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {canEdit && !isClosed && (
+        <div className="dsb">
+          <div className="dsbt">Actions</div>
+          {deal.stage !== 'NURTURE' && deal.stage !== 'FUNDED' && (
+            <button
+              className="act-btn"
+              style={{ background: 'var(--info-bg)', borderColor: 'var(--info-b)', color: 'var(--info)' }}
+              onClick={onOpenActionModal}
+            >
+              <CheckCircle2 className="w-3 h-3 inline mr-1" />
+              Complete Action
+            </button>
+          )}
+          {deal.stage !== 'NURTURE' && deal.stage !== 'FUNDED' && (
+            <button className="act-btn" onClick={onOpenMoveModal}>
+              <ChevronRight className="w-3 h-3 inline mr-1" />
+              Move Stage
+            </button>
+          )}
+          {deal.stage === 'APPROVED_OFFERS' && (
+            <button
+              className="act-btn"
+              style={{ background: 'var(--good-bg)', borderColor: 'var(--good-b)', color: 'var(--good)' }}
+              onClick={() => onMove({ stage: 'COMMITTED_FUNDING' })}
+            >
+              ✅ Client Accepted Terms → Committed
+            </button>
+          )}
+          {deal.stage === 'COMMITTED_FUNDING' && (
+            <button className="act-btn act-funded" onClick={onOpenFundedModal}>
+              🎉 Mark as Funded ✓
+            </button>
+          )}
+          <button
+            className="act-btn"
+            style={{ background: 'var(--info-bg)', borderColor: 'var(--info-b)', color: 'var(--info)' }}
+            onClick={onOpenFollowUpModal}
+          >
+            {deal.stage === 'NURTURE' ? '📅 Schedule Follow-Up' : <><Calendar className="w-3 h-3 inline mr-1" />Schedule Follow-Up</>}
+          </button>
+          <button className="act-btn act-nq" onClick={onOpenNQModal}>
+            Lost / NQ / Close Deal
+          </button>
+          {deal.stage !== 'NURTURE' && deal.stage !== 'FUNDED' && deal.client?.phone && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+              <a href={`tel:${deal.client.phone}`} className="due-chip">
+                <Phone className="w-3 h-3 inline mr-0.5" />
+                Call
+              </a>
+              <a href={`sms:${deal.client.phone}`} className="due-chip">
+                <MessageSquare className="w-3 h-3 inline mr-0.5" />
+                Text
+              </a>
+            </div>
+          )}
+          {deal.productType === 'HELOC' && deal.commitSubStatus === 'DOCS_SIGNED' && (
+            <div className="renew-info" style={{ marginTop: 2 }}>
+              <Shield className="w-4 h-4 text-amber-400 inline mr-1" />
+              HELOC rescission window: wait 3 days before funding.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="dsb">
+        <div className="dsbt">Notes</div>
+        <textarea
+          className="note-box"
+          value={noteDraft}
+          onChange={(e) => setNoteDraft(e.target.value)}
+          onBlur={() => {
+            if (noteDraft !== (deal.notes || '')) onUpdate({ notes: noteDraft });
+          }}
+          disabled={!canEdit}
+          placeholder="Add notes..."
+        />
+        <div className="sf-l" style={{ marginTop: 8 }}>Client notes</div>
+        <textarea
+          className="note-box"
+          value={clientNoteDraft}
+          onChange={(e) => setClientNoteDraft(e.target.value)}
+          onBlur={() => {
+            if (clientNoteDraft !== (deal.clientNotes || '')) onUpdate({ clientNotes: clientNoteDraft });
+          }}
+          disabled={!canEdit}
+          placeholder="Notes about the client relationship..."
+        />
+      </div>
+
+      <div className="dsb">
+        <div className="dsbt">Activity</div>
+        {(deal.dealEvents || []).length === 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--text3)' }}>No activity yet.</div>
+        ) : (
+          (deal.dealEvents || []).slice(0, 8).map((event) => (
+            <div key={event.id} className="tl-item">
+              <div className="tl-dot" style={{ background: 'var(--gold)' }} />
+              <div>
+                <div className="tl-text">
+                  {event.eventType.replace(/_/g, ' ')}
+                  {event.note ? ` — ${event.note}` : ''}
+                </div>
+                <div className="tl-time">{new Date(event.createdAt).toLocaleString('en-US')}</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FundingHistoryTab({ deal }: { deal: Deal }) {
+  const events = deal.fundingEvents || [];
+  const total = events.reduce((sum, e) => sum + (e.amountFunded || 0), 0);
+
+  return (
+    <div className="fund-history">
+      <div className="client-summary">
+        <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+          {deal.client?.businessName || 'Client'}
+        </div>
+        <div className="cs-row">
+          <div className="cs-item">
+            <div className="cs-label">Total Funded</div>
+            <div className="cs-val" style={{ color: 'var(--good)' }}>
+              {formatCurrency(total)}
+            </div>
+          </div>
+          <div className="cs-item">
+            <div className="cs-label">Events</div>
+            <div className="cs-val" style={{ color: 'var(--watch)' }}>
+              {events.length}
+            </div>
+          </div>
+          <div className="cs-item">
+            <div className="cs-label">Phone</div>
+            <div className="cs-val" style={{ fontSize: 12, color: 'var(--text)' }}>
+              {deal.client?.phone || '—'}
+            </div>
+          </div>
+          <div className="cs-item">
+            <div className="cs-label">Email</div>
+            <div className="cs-val" style={{ fontSize: 12, color: 'var(--info)' }}>
+              {deal.client?.email || '—'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button className="add-deal-btn" onClick={() => toast('Use + Add Lead to create a new deal')}>
+        + New Deal for {deal.client?.businessName || 'Client'}
+      </button>
+
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}>
+        Funding History ({events.length})
+      </div>
+
+      {events.length === 0 && <div className="msg-meta">No funding events yet.</div>}
+      {events.map((event) => (
+        <div key={event.id} className="fund-event">
+          <div className="fe-header">
+            <div className="fe-title">{event.lender || 'Funding Event'}</div>
+            <div className="fe-date">
+              {event.fundedDate ? new Date(event.fundedDate).toLocaleDateString() : new Date(event.createdAt).toLocaleDateString()}
+            </div>
+          </div>
+          <div className="fe-grid">
+            <div className="fe-item">
+              <div className="fe-label">Amount</div>
+              <div className="fe-val g">{formatCurrency(event.amountFunded)}</div>
+            </div>
+            <div className="fe-item">
+              <div className="fe-label">Product</div>
+              <div className="fe-val">{event.productType || '—'}</div>
+            </div>
+            <div className="fe-item">
+              <div className="fe-label">Rep</div>
+              <div className="fe-val">{deal.assignedRep?.firstName || '—'}</div>
+            </div>
+          </div>
+          {event.notes && (
+            <div className="fe-milestones">
+              <div className="ms-item">
+                <span className="ms-label">Notes</span>
+                <span className="ms-date done">{event.notes}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -581,18 +1159,28 @@ function SmsTab({ dealId }: { dealId: string }) {
 }
 
 // ─── Offers Tab ───
-function OffersTab({ deal, onAddOffer }: { deal: Deal; onAddOffer: () => void }) {
+function OffersTab({
+  deal,
+  onAddOffer,
+  showAddButton = true,
+}: {
+  deal: Deal;
+  onAddOffer: () => void;
+  showAddButton?: boolean;
+}) {
   const offers = deal.offers || [];
 
   return (
     <div>
-      <button
-        onClick={onAddOffer}
-        className="w-full mb-3 px-3 py-2 text-xs font-medium rounded-lg border border-dashed border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-scl-500 transition"
-      >
-        <Plus className="w-3 h-3 inline mr-1" />
-        Add Offer
-      </button>
+      {showAddButton && (
+        <button
+          onClick={onAddOffer}
+          className="w-full mb-3 px-3 py-2 text-xs font-medium rounded-lg border border-dashed border-[var(--border-primary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-scl-500 transition"
+        >
+          <Plus className="w-3 h-3 inline mr-1" />
+          Add Offer
+        </button>
+      )}
       {offers.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)] text-center py-8">No offers yet</p>
       ) : (
@@ -1086,7 +1674,7 @@ function fmtDateLabel(dateStr: string): string {
   });
 }
 
-function ScheduleFollowUpModal({
+export function ScheduleFollowUpModal({
   deal,
   onClose,
   onSubmit,
@@ -1492,9 +2080,16 @@ function RepOwnershipSection({
     staleTime: 60_000,
   });
 
-  const allReps = reps || [];
-  const primary = allReps.find((r) => r.id === deal.assignedRepId);
   const assistIds: string[] = (deal.assistingRepIds as string[]) || [];
+  const activeReps = (reps || []).filter((r) => r.isActive !== false);
+  const repOnly = activeReps.filter((r) => r.role === 'REP');
+  const requiredIds = new Set<string>([deal.assignedRepId, ...assistIds].filter(Boolean) as string[]);
+  const basePool = repOnly.length > 0 ? repOnly : activeReps;
+  const allReps = [
+    ...basePool,
+    ...activeReps.filter((r) => requiredIds.has(r.id) && !basePool.some((b) => b.id === r.id)),
+  ].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+  const primary = allReps.find((r) => r.id === deal.assignedRepId);
   const assists = allReps.filter((r) => assistIds.includes(r.id));
 
   function setPrimary(repId: string) {
@@ -1509,8 +2104,7 @@ function RepOwnershipSection({
   }
 
   return (
-    <Section title="Rep Ownership">
-      {/* Primary row */}
+    <>
       <div className="own-row">
         <span className="own-label pl">Primary</span>
         {allReps.map((r) => {
@@ -1536,7 +2130,6 @@ function RepOwnershipSection({
         })}
       </div>
 
-      {/* Assist row */}
       <div className="own-row">
         <span className="own-label al">Assist</span>
         {allReps
@@ -1569,14 +2162,12 @@ function RepOwnershipSection({
         {assists.length === 0 && <span style={{ fontSize: 9, color: 'var(--text3)' }}>None — click rep to add</span>}
       </div>
 
-      {/* Shared note */}
       {assists.length > 0 && primary && (
         <div style={{ fontSize: 10, color: 'var(--info)', marginTop: 3 }}>
-          👥 This deal appears on {assists.map((r) => r.firstName).join(', ')}&apos;s pipeline too. They can view and
-          work it but {primary.firstName} is the primary owner.
+          👥 Shared with {assists.map((r) => r.firstName).join(', ')}. Primary owner: {primary.firstName}.
         </div>
       )}
-    </Section>
+    </>
   );
 }
 

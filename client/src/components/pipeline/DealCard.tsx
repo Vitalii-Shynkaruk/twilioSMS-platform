@@ -130,37 +130,37 @@ function staleTxt(days: number): { text: string; cls: string } {
   return { text: `${days}d STALE`, cls: 'dead' };
 }
 
+// Stages where dollar amounts should NEVER appear unless a real lender offer exists
+const NO_AMOUNT_STAGES: string[] = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED', 'SUBMITTED_IN_REVIEW'];
+
 function simpleAmount(deal: Deal): { text: string; cls: string } {
+  // FUNDED — show from funding events
   if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
     return { text: `💰 ${formatCurrency(deal.fundingEvents[0].amountFunded)}`, cls: 'sca-green' };
   }
+  // APPROVED / COMMITTED — show best offer
   if ((deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.offers?.length) {
     const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
     const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
     return { text: `${prefix}${formatCurrency(best.amount)}`, cls: best.amount >= 300000 ? 'sca-green' : 'sca-amber' };
   }
-  if (deal.offers?.length) {
-    const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
-    return { text: `💲${formatCurrency(best.amount)}`, cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
-  }
+  // NURTURE — show previous offer if it existed
   if (deal.stage === 'NURTURE' && deal.prevOffer) {
     return { text: `💰 ${formatCurrency(deal.prevOffer)} prev`, cls: 'sca-prev' };
   }
-  if (deal.stage === 'SUBMITTED_IN_REVIEW') {
-    const icon =
-      deal.productType === 'MCA'
-        ? '⚡'
-        : deal.productType === 'EQUIPMENT'
-          ? '🔧'
-          : deal.productType === 'HELOC'
-            ? '🏠'
-            : deal.productType === 'SBA'
-              ? '🏛'
-              : '📋';
-    return { text: `${icon} In review`, cls: 'sca-gray' };
+  // Early stages — NO dollar amounts unless a real lender offer exists
+  if (NO_AMOUNT_STAGES.includes(deal.stage)) {
+    // Only show if there are actual lender offers recorded
+    if (deal.offers?.length) {
+      const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
+      return { text: `💲${formatCurrency(best.amount)}`, cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
+    }
+    return { text: '', cls: 'sca-hide' };
   }
-  if (deal.dealAmount) {
-    return { text: `💲${formatCurrency(deal.dealAmount)}`, cls: deal.dealAmount >= 25000 ? 'sca-green' : 'sca-amber' };
+  // Other stages with offers
+  if (deal.offers?.length) {
+    const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
+    return { text: `💲${formatCurrency(best.amount)}`, cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
   }
   return { text: '—', cls: 'sca-gray' };
 }
@@ -205,20 +205,21 @@ export default function DealCard({ deal, onClick, viewMode, compact }: DealCardP
 
 // ═══════════════════════════════════════
 // SIMPLE CARD — scan mode
-// $amount · name · 1 action · time
+// name · $amount (if offer) · 1 action · time
 // ═══════════════════════════════════════
 
 function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
   const state = simpleCardState(deal);
   const amt = simpleAmount(deal);
   const due = simpleDueInfo(deal.nextActionDue);
+  const hasAmount = amt.text && amt.cls !== 'sca-hide' && amt.cls !== 'sca-gray';
 
   return (
     <div className={`s-card ${state}`} onClick={onClick}>
       <div style={{ padding: '10px 11px 8px' }}>
         {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
-        <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
         <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
+        {hasAmount && <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>}
         {deal.nextAction ? (
           <div className="sc-action-row">
             <span className="sc-action">{deal.nextAction}</span>
@@ -421,6 +422,17 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
               </div>
             )}
             {deal.lostReason && <div className="lost-r">&ldquo;{deal.lostReason}&rdquo;</div>}
+            {/* Decay pill */}
+            {deal.daysInStage > 0 && (() => {
+              const d = deal.daysInStage;
+              const cls = d >= 90 ? 'nd-90' : d >= 60 ? 'nd-60' : d >= 30 ? 'nd-30' : '';
+              if (!cls) return null;
+              return (
+                <span className={`nd-pill ${cls}`}>
+                  {d >= 90 ? '🔴' : d >= 60 ? '🟠' : '🟡'} {d}d in nurture
+                </span>
+              );
+            })()}
           </>
         )}
 

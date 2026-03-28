@@ -214,10 +214,18 @@ function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
   const due = simpleDueInfo(deal.nextActionDue);
   const hasAmount = amt.text && amt.cls !== 'sca-hide';
 
+  // "In review" badge for SUBMITTED_IN_REVIEW
+  const reviewBadge = deal.stage === 'SUBMITTED_IN_REVIEW' ? (
+    <div className="sc-review-badge">
+      {deal.productType === 'EQUIPMENT' ? '🔧' : deal.productType === 'SBA' || deal.productType === 'CRE' ? '🏛' : '⚡'} In review
+    </div>
+  ) : null;
+
   return (
     <div className={`s-card ${state}`} onClick={onClick}>
       <div style={{ padding: '10px 11px 8px' }}>
         {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
+        {reviewBadge}
         {hasAmount && <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>}
         <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
         {deal.nextAction ? (

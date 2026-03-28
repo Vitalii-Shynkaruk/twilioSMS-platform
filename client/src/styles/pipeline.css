@@ -88,7 +88,7 @@
 .col-stage{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);}
 .col-stage.pipe{color:var(--good);font-size:11px;font-weight:700;letter-spacing:.04em;}
 .col-stage.app-req{color:var(--attn);}
-.col.nb-col{background:rgba(58,185,122,0.025);border-radius:10px;padding:0 4px;margin:0 -4px;}
+.col.nb-col{background:rgba(58,185,122,0.06);border-radius:10px;padding:0 4px;margin:0 -4px;}
 .col.nb-col .col-bar{height:3px;opacity:1 !important;}
 .nb-total{font-size:10px;color:var(--good);margin-top:2px;font-weight:500;}
 .col-stage.closed-s{color:var(--text4);}
@@ -194,6 +194,7 @@ body.simple-view .s-card.sc-hot:hover{box-shadow:0 4px 18px rgba(255,87,34,.3);}
 .sc-time.st-nm{color:var(--text3);}
 .sc-time.st-good{color:var(--good);}
 .sc-no-action{font-size:10px;color:var(--urgent);font-weight:500;padding:4px 0 0;}
+.sc-review-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:var(--purple);background:var(--purple-bg);padding:2px 8px;border-radius:4px;margin-bottom:5px;}
 
 /* Simple board: more gap between columns, less noise */
 body.simple-view .board-wrap{padding:14px 20px 0;}

@@ -150,6 +150,7 @@ export class DealController {
           select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
         },
         offers: { orderBy: { createdAt: 'desc' }, take: 3 },
+        fundingEvents: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: { lastActivityAt: 'desc' },
     });

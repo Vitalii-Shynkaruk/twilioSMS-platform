@@ -109,8 +109,8 @@
   .sidebar-link.active {
     color: var(--scl-blue-br);
     background: rgba(43, 127, 232, 0.12);
-    border-right: 2px solid var(--scl-blue);
-    border-left: none;
+    border-left: 2px solid var(--scl-blue);
+    border-right: none;
   }
 
   .card {

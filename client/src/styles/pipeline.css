@@ -130,7 +130,7 @@ body.simple-view .sum-bar{display:none !important;}
 body.simple-view .legend{display:none !important;}
 
 /* Simple columns: wider + breathable */
-body.simple-view .col{width:230px;}
+body.simple-view .col{width:210px;}
 body.simple-view .col-head{padding-bottom:8px;}
 body.simple-view .col-vol{display:none;}
 body.simple-view .col-ct{display:none;}

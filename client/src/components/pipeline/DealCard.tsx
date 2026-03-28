@@ -212,14 +212,14 @@ function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
   const state = simpleCardState(deal);
   const amt = simpleAmount(deal);
   const due = simpleDueInfo(deal.nextActionDue);
-  const hasAmount = amt.text && amt.cls !== 'sca-hide' && amt.cls !== 'sca-gray';
+  const hasAmount = amt.text && amt.cls !== 'sca-hide';
 
   return (
     <div className={`s-card ${state}`} onClick={onClick}>
       <div style={{ padding: '10px 11px 8px' }}>
         {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
-        <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
         {hasAmount && <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>}
+        <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
         {deal.nextAction ? (
           <div className="sc-action-row">
             <span className="sc-action">{deal.nextAction}</span>

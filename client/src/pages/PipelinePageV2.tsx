@@ -547,200 +547,89 @@ export default function PipelinePage() {
           {/* Manager bar (hidden in simple via CSS) */}
           {isAdmin && stats && displayReps.length > 0 && (
             <div className="mgr-bar">
-              {/* Rep names column */}
-              <div className="mc">
-                <div className="ml">Rep</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => (
-                    <div key={rep.id} className="mri">
-                      <div
-                        className="av"
-                        style={{
-                          width: '15px',
-                          height: '15px',
-                          background: rep.avatarColor || 'var(--gold)',
-                          fontSize: '7px',
-                        }}
-                      >
-                        {rep.initials || rep.firstName[0]}
-                      </div>
-                      {rep.firstName} {rep.lastName}
-                    </div>
-                  ))}
-                </div>
+              {/* Header row */}
+              <div className="mgr-head">
+                <div className="mh" style={{ flex: 1.5 }}>Rep</div>
+                <div className="mh">Active</div>
+                <div className="mh">Overdue</div>
+                <div className="mh">🔥 Hot</div>
+                <div className="mh">Pipeline $</div>
+                <div className="mh">Funded MTD</div>
+                <div className="mh">Shared</div>
+                <div className="mh">MTD Goal %</div>
               </div>
-              {/* Active */}
-              <div className="mc">
-                <div className="ml">Active</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const v =
-                      board?.stages
-                        ?.flatMap((s: any) => s.deals)
-                        .filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage))
-                        .length || 0;
-                    return (
-                      <div key={rep.id} className="mri">
-                        <span className="mgr-val" style={{ color: v ? 'var(--text)' : 'var(--text3)' }}>
-                          {v}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Overdue */}
-              <div className="mc">
-                <div className="ml">Overdue</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const now = new Date();
-                    const v =
-                      board?.stages
-                        ?.flatMap((s: any) => s.deals)
-                        .filter(
-                          (d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now,
-                        ).length || 0;
-                    return (
-                      <div key={rep.id} className="mri">
-                        <span className="mgr-val" style={{ color: v ? 'var(--urgent)' : 'var(--text3)' }}>
-                          {v}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Hot */}
-              <div className="mc">
-                <div className="ml">🔥 Hot</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const v =
-                      board?.stages
-                        ?.flatMap((s: any) => s.deals)
-                        .filter((d: Deal) => d.assignedRepId === rep.id && d.isHot).length || 0;
-                    return (
-                      <div key={rep.id} className="mri">
-                        <span className="mgr-val" style={{ color: v ? 'var(--hot)' : 'var(--text3)' }}>
-                          {v}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Pipeline $ */}
-              <div className="mc">
-                <div className="ml">Pipeline $</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const total =
-                      board?.stages
-                        ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
-                        .flatMap((s: any) => s.deals)
-                        .filter((d: Deal) => d.assignedRepId === rep.id)
-                        .reduce((sum: number, d: Deal) => {
-                          const best = d.offers?.length
-                            ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount
-                            : 0;
-                          return sum + best;
-                        }, 0) || 0;
-                    return (
-                      <div key={rep.id} className="mri">
-                        <span className="mgr-val" style={{ color: total ? 'var(--good)' : 'var(--text3)' }}>
-                          {total ? formatCurrency(total) : '$0'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Funded MTD */}
-              <div className="mc">
-                <div className="ml">Funded MTD</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const total =
-                      board?.stages
-                        ?.find((s: any) => s.stage === 'FUNDED')
-                        ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
-                        .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0) || 0;
-                    return (
-                      <div key={rep.id} className="mri">
-                        <span className="mgr-val" style={{ color: total ? 'var(--good)' : 'var(--text3)' }}>
-                          {total ? formatCurrency(total) : '$0'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* Shared */}
-              <div className="mc">
-                <div className="ml">Shared</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const count =
-                      board?.stages?.reduce(
-                        (acc: number, s: any) =>
-                          acc +
-                          s.deals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id)
-                            .length,
-                        0,
-                      ) || 0;
-                    return (
-                      <div key={rep.id} className="mri">
-                        <span className="mgr-val" style={{ color: count ? 'var(--info)' : 'var(--text3)' }}>
-                          {count}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {/* MTD Goal % */}
-              <div className="mc">
-                <div className="ml">MTD Goal %</div>
-                <div className="mr2">
-                  {displayReps.map((rep) => {
-                    const funded =
-                      board?.stages
-                        ?.find((s: any) => s.stage === 'FUNDED')
-                        ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
-                        .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0) || 0;
-                    const goal = rep.monthlyGoal || 0;
-                    if (!goal)
-                      return (
-                        <div key={rep.id} className="mri">
-                          <span className="mgr-val" style={{ color: 'var(--text3)' }}>
-                            —
-                          </span>
+              {/* Scrollable body */}
+              <div className="mgr-body">
+                {displayReps.map((rep) => {
+                  const allDeals = board?.stages?.flatMap((s: any) => s.deals) || [];
+                  const repDeals = allDeals.filter((d: Deal) => d.assignedRepId === rep.id);
+                  const now = new Date();
+                  const active = repDeals.filter((d: Deal) => !['FUNDED', 'CLOSED'].includes(d.stage)).length;
+                  const overdue = repDeals.filter((d: Deal) => d.nextActionDue && new Date(d.nextActionDue) < now).length;
+                  const hot = repDeals.filter((d: Deal) => d.isHot).length;
+                  const pipeline = (board?.stages
+                    ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
+                    .flatMap((s: any) => s.deals)
+                    .filter((d: Deal) => d.assignedRepId === rep.id)
+                    .reduce((sum: number, d: Deal) => {
+                      const best = d.offers?.length ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount : 0;
+                      return sum + best;
+                    }, 0)) || 0;
+                  const funded = (board?.stages
+                    ?.find((s: any) => s.stage === 'FUNDED')
+                    ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
+                    .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0)) || 0;
+                  const shared = board?.stages?.reduce(
+                    (acc: number, s: any) => acc + s.deals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id).length,
+                    0,
+                  ) || 0;
+                  const goal = rep.monthlyGoal || 0;
+                  const pct = goal ? Math.round((funded / goal) * 100) : 0;
+                  const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
+
+                  return (
+                    <div key={rep.id} className="mgr-row">
+                      <div className="mgr-cell" style={{ flex: 1.5 }}>
+                        <div className="av" style={{ width: '15px', height: '15px', background: rep.avatarColor || 'var(--gold)', fontSize: '7px' }}>
+                          {rep.initials || rep.firstName[0]}
                         </div>
-                      );
-                    const pct = Math.round((funded / goal) * 100);
-                    const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
-                    return (
-                      <div
-                        key={rep.id}
-                        className="mri"
-                        style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}
-                      >
-                        <span className="mgr-val" style={{ color: barColor }}>
-                          {pct}%
-                        </span>
-                        <div style={{ width: '60px' }}>
-                          <div className="goal-bar-track">
-                            <div
-                              className="goal-bar-fill"
-                              style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
-                            />
+                        {rep.firstName} {rep.lastName}
+                      </div>
+                      <div className="mgr-cell">
+                        <span className="mgr-val" style={{ color: active ? 'var(--text)' : 'var(--text3)' }}>{active}</span>
+                      </div>
+                      <div className="mgr-cell">
+                        <span className="mgr-val" style={{ color: overdue ? 'var(--urgent)' : 'var(--text3)' }}>{overdue}</span>
+                      </div>
+                      <div className="mgr-cell">
+                        <span className="mgr-val" style={{ color: hot ? 'var(--hot)' : 'var(--text3)' }}>{hot}</span>
+                      </div>
+                      <div className="mgr-cell">
+                        <span className="mgr-val" style={{ color: pipeline ? 'var(--good)' : 'var(--text3)' }}>{pipeline ? formatCurrency(pipeline) : '$0'}</span>
+                      </div>
+                      <div className="mgr-cell">
+                        <span className="mgr-val" style={{ color: funded ? 'var(--good)' : 'var(--text3)' }}>{funded ? formatCurrency(funded) : '$0'}</span>
+                      </div>
+                      <div className="mgr-cell">
+                        <span className="mgr-val" style={{ color: shared ? 'var(--info)' : 'var(--text3)' }}>{shared}</span>
+                      </div>
+                      <div className="mgr-cell">
+                        {!goal ? (
+                          <span className="mgr-val" style={{ color: 'var(--text3)' }}>—</span>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span className="mgr-val" style={{ color: barColor }}>{pct}%</span>
+                            <div style={{ width: '60px' }}>
+                              <div className="goal-bar-track">
+                                <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1917,169 +1806,78 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
 
   return (
     <div className="mgr-bar">
-      <div className="mc">
-        <div className="ml">Rep</div>
-        <div className="mr2">
-          {reps.map((rep) => (
-            <div key={rep.id} className="mri">
-              <div
-                className="av"
-                style={{
-                  width: '15px',
-                  height: '15px',
-                  background: rep.avatarColor || 'var(--gold)',
-                  fontSize: '7px',
-                }}
-              >
-                {rep.initials || rep.firstName[0]}
-              </div>
-              {rep.firstName} {rep.lastName}
-            </div>
-          ))}
-        </div>
+      <div className="mgr-head">
+        <div className="mh" style={{ flex: 1.5 }}>Rep</div>
+        <div className="mh">Active</div>
+        <div className="mh">Overdue</div>
+        <div className="mh">🔥 Hot</div>
+        <div className="mh">Pipeline $</div>
+        <div className="mh">Funded MTD</div>
+        <div className="mh">Shared</div>
+        <div className="mh">MTD Goal %</div>
       </div>
+      <div className="mgr-body">
+        {reps.map((rep) => {
+          const active = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
+          const overdue = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now).length;
+          const hot = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.isHot).length;
+          const pipeline = pipelineDeals
+            .filter((d: Deal) => d.assignedRepId === rep.id)
+            .reduce((sum: number, d: Deal) => {
+              const best = d.offers?.length ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount : 0;
+              return sum + best;
+            }, 0);
+          const funded = fundedDeals
+            .filter((d: Deal) => d.assignedRepId === rep.id)
+            .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
+          const shared = allDeals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id).length;
+          const goal = rep.monthlyGoal || 0;
+          const pct = goal ? Math.round((funded / goal) * 100) : 0;
+          const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
 
-      <div className="mc">
-        <div className="ml">Active</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const value = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage))
-              .length;
-            return (
-              <div key={rep.id} className="mri">
-                <span className="mgr-val" style={{ color: value ? 'var(--text)' : 'var(--text3)' }}>
-                  {value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mc">
-        <div className="ml">Overdue</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const value = allDeals.filter(
-              (d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now,
-            ).length;
-            return (
-              <div key={rep.id} className="mri">
-                <span className="mgr-val" style={{ color: value ? 'var(--urgent)' : 'var(--text3)' }}>
-                  {value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mc">
-        <div className="ml">🔥 Hot</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const value = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.isHot).length;
-            return (
-              <div key={rep.id} className="mri">
-                <span className="mgr-val" style={{ color: value ? 'var(--hot)' : 'var(--text3)' }}>
-                  {value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mc">
-        <div className="ml">Pipeline $</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const value = pipelineDeals
-              .filter((d: Deal) => d.assignedRepId === rep.id)
-              .reduce((sum: number, d: Deal) => {
-                const best = d.offers?.length ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount : 0;
-                return sum + best;
-              }, 0);
-            return (
-              <div key={rep.id} className="mri">
-                <span className="mgr-val" style={{ color: value ? 'var(--good)' : 'var(--text3)' }}>
-                  {value ? formatCurrency(value) : '$0'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mc">
-        <div className="ml">Funded MTD</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const value = fundedDeals
-              .filter((d: Deal) => d.assignedRepId === rep.id)
-              .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
-            return (
-              <div key={rep.id} className="mri">
-                <span className="mgr-val" style={{ color: value ? 'var(--good)' : 'var(--text3)' }}>
-                  {value ? formatCurrency(value) : '$0'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mc">
-        <div className="ml">Shared</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const value = allDeals.filter(
-              (d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id,
-            ).length;
-            return (
-              <div key={rep.id} className="mri">
-                <span className="mgr-val" style={{ color: value ? 'var(--info)' : 'var(--text3)' }}>
-                  {value}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mc">
-        <div className="ml">MTD Goal %</div>
-        <div className="mr2">
-          {reps.map((rep) => {
-            const funded = fundedDeals
-              .filter((d: Deal) => d.assignedRepId === rep.id)
-              .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
-            const goal = rep.monthlyGoal || 0;
-            if (!goal) {
-              return (
-                <div key={rep.id} className="mri">
-                  <span className="mgr-val" style={{ color: 'var(--text3)' }}>
-                    —
-                  </span>
+          return (
+            <div key={rep.id} className="mgr-row">
+              <div className="mgr-cell" style={{ flex: 1.5 }}>
+                <div className="av" style={{ width: '15px', height: '15px', background: rep.avatarColor || 'var(--gold)', fontSize: '7px' }}>
+                  {rep.initials || rep.firstName[0]}
                 </div>
-              );
-            }
-            const pct = Math.round((funded / goal) * 100);
-            const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
-            return (
-              <div key={rep.id} className="mri" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                <span className="mgr-val" style={{ color: barColor }}>
-                  {pct}%
-                </span>
-                <div style={{ width: 60 }}>
-                  <div className="goal-bar-track">
-                    <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                {rep.firstName} {rep.lastName}
+              </div>
+              <div className="mgr-cell">
+                <span className="mgr-val" style={{ color: active ? 'var(--text)' : 'var(--text3)' }}>{active}</span>
+              </div>
+              <div className="mgr-cell">
+                <span className="mgr-val" style={{ color: overdue ? 'var(--urgent)' : 'var(--text3)' }}>{overdue}</span>
+              </div>
+              <div className="mgr-cell">
+                <span className="mgr-val" style={{ color: hot ? 'var(--hot)' : 'var(--text3)' }}>{hot}</span>
+              </div>
+              <div className="mgr-cell">
+                <span className="mgr-val" style={{ color: pipeline ? 'var(--good)' : 'var(--text3)' }}>{pipeline ? formatCurrency(pipeline) : '$0'}</span>
+              </div>
+              <div className="mgr-cell">
+                <span className="mgr-val" style={{ color: funded ? 'var(--good)' : 'var(--text3)' }}>{funded ? formatCurrency(funded) : '$0'}</span>
+              </div>
+              <div className="mgr-cell">
+                <span className="mgr-val" style={{ color: shared ? 'var(--info)' : 'var(--text3)' }}>{shared}</span>
+              </div>
+              <div className="mgr-cell">
+                {!goal ? (
+                  <span className="mgr-val" style={{ color: 'var(--text3)' }}>—</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span className="mgr-val" style={{ color: barColor }}>{pct}%</span>
+                    <div style={{ width: '60px' }}>
+                      <div className="goal-bar-track">
+                        <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

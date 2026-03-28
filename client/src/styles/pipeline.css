@@ -23,7 +23,7 @@
   ─────────────────────────────────────────────
 */
 :root{
-  --bg:#0B0F16;--bg2:#111720;--bg3:#161D28;--bg4:#1C2535;--bg5:#212D3F;
+  --bg:#0A1628;--bg2:#111720;--bg3:#161D28;--bg4:#1C2535;--bg5:#212D3F;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
   --text:#E2E8F0;--text2:#8B95A5;--text3:#536070;--text4:#3A4A5C;
   --urgent:#E24B4A;--urgent-bg:rgba(226,75,74,0.1);--urgent-b:rgba(226,75,74,0.28);
@@ -449,12 +449,13 @@ body.execution-view .touched-by{display:flex;}
 .touched-av{width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:700;flex-shrink:0;}
 
 /* BARS */
-.mgr-bar{display:flex;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0;}
-.mc{flex:1;padding:5px 10px;border-right:1px solid var(--border);}
-.mc:last-child{border-right:none;}
-.ml{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:600;margin-bottom:3px;}
-.mr2{display:flex;flex-direction:column;gap:3px;max-height:63px;overflow-y:auto;scrollbar-width:thin;}
-.mri{display:flex;align-items:center;gap:5px;font-size:11px;}
+.mgr-bar{display:flex;flex-direction:column;border-top:1px solid var(--border);background:var(--bg2);flex-shrink:0;}
+.mgr-head{display:flex;border-bottom:1px solid var(--border);}
+.mh{flex:1;padding:4px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:600;}
+.mgr-body{max-height:63px;overflow-y:auto;scrollbar-width:thin;}
+.mgr-row{display:flex;border-bottom:1px solid rgba(255,255,255,.04);}
+.mgr-row:last-child{border-bottom:none;}
+.mgr-cell{flex:1;display:flex;align-items:center;gap:5px;padding:3px 10px;font-size:11px;}
 .mgr-val{font-size:12px;font-weight:600;}
 .sum-bar{display:flex;border-top:2px solid rgba(201,149,42,0.25);background:var(--bg);flex-shrink:0;box-shadow:0 -2px 20px rgba(0,0,0,.4);}
 .sb2{flex:1;padding:8px 12px;border-right:1px solid var(--border2);}
@@ -895,7 +896,9 @@ body.simple-view .queue-dock .sum-bar{
   .board-wrap { padding: 10px 12px 0; }
   .col { width: 180px; }
   .mgr-bar { flex-wrap: wrap; }
-  .mc { min-width: 140px; }
+  .mgr-head { flex-wrap: wrap; }
+  .mgr-row { flex-wrap: wrap; }
+  .mgr-cell { min-width: 140px; }
   .sum-bar { flex-wrap: wrap; }
   .sb2 { min-width: 140px; }
   .panel { width: 560px; right: -560px; }
@@ -946,10 +949,11 @@ body.simple-view .queue-dock .sum-bar{
 
   /* Stat bars: vertical stack */
   .mgr-bar { flex-direction: column; }
-  .mc { border-right: none; border-bottom: 1px solid var(--border); padding: 6px 10px; }
-  .mc:last-child { border-bottom: none; }
-  .mr2 { flex-direction: row; flex-wrap: wrap; gap: 6px; }
-  .mri { min-width: 100px; }
+  .mgr-head { display: none; }
+  .mgr-body { max-height: none; overflow-y: visible; }
+  .mgr-row { flex-direction: column; border-bottom: 1px solid var(--border); padding: 6px 10px; }
+  .mgr-row:last-child { border-bottom: none; }
+  .mgr-cell { min-width: 100px; padding: 2px 0; }
   .sum-bar { flex-direction: column; }
   .sb2 { border-right: none; border-bottom: 1px solid var(--border2); padding: 8px 10px; }
   .sb2:last-child { border-bottom: none; }

@@ -833,37 +833,6 @@ function DealClientTab({
   );
 }
 
-function NewDealButton({ deal }: { deal: Deal }) {
-  const queryClient = useQueryClient();
-  const { user } = useAuthStore();
-  const mutation = useMutation({
-    mutationFn: (data: any) => dealApi.createDeal(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deals'] });
-      toast.success('New deal created');
-    },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to create deal'),
-  });
-
-  return (
-    <button
-      className="add-deal-btn"
-      disabled={mutation.isPending}
-      onClick={() => {
-        mutation.mutate({
-          businessName: deal.client?.businessName || '',
-          contactName: deal.client?.contactName || undefined,
-          phone: deal.client?.phone || undefined,
-          email: deal.client?.email || undefined,
-          assignedRepId: user?.id || deal.assignedRepId,
-        });
-      }}
-    >
-      {mutation.isPending ? 'Creating...' : `+ New Deal for ${deal.client?.businessName || 'Client'}`}
-    </button>
-  );
-}
-
 function FundingHistoryTab({ deal }: { deal: Deal }) {
   const events = deal.fundingEvents || [];
   const total = events.reduce((sum, e) => sum + (e.amountFunded || 0), 0);
@@ -902,7 +871,9 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
         </div>
       </div>
 
-      <NewDealButton deal={deal} />
+      <button className="add-deal-btn" onClick={() => toast('Use + Add Lead to create a new deal')}>
+        + New Deal for {deal.client?.businessName || 'Client'}
+      </button>
 
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}>
         Funding History ({events.length})

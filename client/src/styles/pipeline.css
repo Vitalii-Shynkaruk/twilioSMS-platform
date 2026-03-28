@@ -135,6 +135,7 @@ body.simple-view .col-head{padding-bottom:8px;}
 body.simple-view .col-vol{display:none;}
 body.simple-view .col-ct{display:none;}
 body.simple-view .nb-total{display:none;}
+body.simple-view .col.nb-col{background:none;}
 
 /* Simple cards: clean white canvas feel */
 body.simple-view .s-card{
@@ -194,7 +195,7 @@ body.simple-view .s-card.sc-hot:hover{box-shadow:0 4px 18px rgba(255,87,34,.3);}
 .sc-time.st-nm{color:var(--text3);}
 .sc-time.st-good{color:var(--good);}
 .sc-no-action{font-size:10px;color:var(--urgent);font-weight:500;padding:4px 0 0;}
-.sc-review-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;color:var(--purple);background:var(--purple-bg);padding:2px 8px;border-radius:4px;margin-bottom:5px;}
+.sc-review-badge{font-size:10px;font-weight:500;color:var(--text3);margin-bottom:3px;}
 
 /* Simple board: more gap between columns, less noise */
 body.simple-view .board-wrap{padding:14px 20px 0;}

@@ -130,7 +130,7 @@ body.simple-view .sum-bar{display:none !important;}
 body.simple-view .legend{display:none !important;}
 
 /* Simple columns: wider + breathable */
-body.simple-view .col{width:210px;}
+body.simple-view .col{width:230px;}
 body.simple-view .col-head{padding-bottom:8px;}
 body.simple-view .col-vol{display:none;}
 body.simple-view .col-ct{display:none;}
@@ -453,7 +453,7 @@ body.execution-view .touched-by{display:flex;}
 .mc{flex:1;padding:5px 10px;border-right:1px solid var(--border);}
 .mc:last-child{border-right:none;}
 .ml{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:600;margin-bottom:3px;}
-.mr2{display:flex;flex-direction:column;gap:3px;}
+.mr2{display:flex;flex-direction:column;gap:3px;max-height:63px;overflow-y:auto;scrollbar-width:thin;}
 .mri{display:flex;align-items:center;gap:5px;font-size:11px;}
 .mgr-val{font-size:12px;font-weight:600;}
 .sum-bar{display:flex;border-top:2px solid rgba(201,149,42,0.25);background:var(--bg);flex-shrink:0;box-shadow:0 -2px 20px rgba(0,0,0,.4);}

@@ -82,6 +82,13 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   const [commandQuery, setCommandQuery] = useState('');
   const commandInputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-collapse sidebar on Pipeline page for maximum board visibility
+  useEffect(() => {
+    if (location.pathname === '/pipeline') {
+      setCollapsed(true);
+    }
+  }, [location.pathname]);
+
   // Global WebSocket connection — connect on mount, disconnect on logout
   const { connect, disconnect } = useWebSocketStore();
   useEffect(() => {

@@ -141,7 +141,7 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
   }
   if (deal.offers?.length) {
     const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
-    return { text: formatCurrency(best.amount), cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
+    return { text: `💲${formatCurrency(best.amount)}`, cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
   }
   if (deal.stage === 'NURTURE' && deal.prevOffer) {
     return { text: `💰 ${formatCurrency(deal.prevOffer)} prev`, cls: 'sca-prev' };
@@ -160,7 +160,7 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
     return { text: `${icon} In review`, cls: 'sca-gray' };
   }
   if (deal.dealAmount) {
-    return { text: formatCurrency(deal.dealAmount), cls: deal.dealAmount >= 25000 ? 'sca-green' : 'sca-amber' };
+    return { text: `💲${formatCurrency(deal.dealAmount)}`, cls: deal.dealAmount >= 25000 ? 'sca-green' : 'sca-amber' };
   }
   return { text: '—', cls: 'sca-gray' };
 }

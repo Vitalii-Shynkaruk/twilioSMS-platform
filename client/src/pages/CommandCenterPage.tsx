@@ -570,7 +570,7 @@ export default function CommandCenterPage() {
             <div className="rsw-slider" ref={sliderRef} />
             {userIsAdmin && (
               <button className={`rb ${isAdmin ? 'on on-admin' : ''}`} onClick={() => handleViewSwitch('admin')}>
-                admin
+                Admin
               </button>
             )}
             {displayReps.filter(r => userIsAdmin || r.id === user?.id).map((rep) => (
@@ -579,7 +579,7 @@ export default function CommandCenterPage() {
                 className={`rb ${activeView === rep.id ? 'on' : ''}`}
                 onClick={() => handleViewSwitch(rep.id)}
               >
-                {rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()}
+                Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
               </button>
             ))}
           </div>
@@ -594,7 +594,7 @@ export default function CommandCenterPage() {
           </button>
           {userIsAdmin && (
             <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
-              ↑ Import CSV
+              ⬆ Import CSV
             </button>
           )}
         </div>

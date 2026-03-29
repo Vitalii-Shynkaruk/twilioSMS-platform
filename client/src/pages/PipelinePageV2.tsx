@@ -540,7 +540,7 @@ export default function PipelinePage() {
                 onDragCancel={() => setActiveDragId(null)}
               >
                 <div className="board">
-                  {STAGES.map((stageDef) => {
+                  {(viewMode === 'simple' ? STAGES.filter((s) => s.value !== 'CLOSED') : STAGES).map((stageDef) => {
                     const stageData = filteredBoard?.stages?.find((s: any) => s.stage === stageDef.value);
                     const deals = stageData?.deals || [];
                     const count = stageData?.count || deals.length;

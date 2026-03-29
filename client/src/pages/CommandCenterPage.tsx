@@ -254,6 +254,7 @@ export default function CommandCenterPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [rrqIndex, setRrqIndex] = useState(0);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   useEffect(() => {
     function tick() {
@@ -432,6 +433,19 @@ export default function CommandCenterPage() {
   }, [staleDeals]);
 
   const daysLeft = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate();
+
+  // ── Find selected deal from all data sources ──
+  const selectedDeal = useMemo(() => {
+    if (!selectedDealId) return null;
+    const allDeals: Deal[] = [
+      ...(operatorQueue || []),
+      ...(hotLeads || []),
+      ...(staleDeals || []),
+      ...(overdueTasks || []),
+      ...(reviveQueue || []),
+    ];
+    return allDeals.find((d) => d.id === selectedDealId) || null;
+  }, [selectedDealId, operatorQueue, hotLeads, staleDeals, overdueTasks, reviveQueue]);
 
   // ══════════════════════════════════════
   // RENDER
@@ -754,7 +768,7 @@ export default function CommandCenterPage() {
               Execution Zone \u2014 Operator Tools
             </div>
 
-            <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => navigate(`/pipeline?deal=${id}`)} />
+            <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => setSelectedDealId(id)} />
 
             <div className="g3">
               <PriorityCard
@@ -763,7 +777,7 @@ export default function CommandCenterPage() {
                 subtitle="System-wide \u00b7 immediate action"
                 deals={hotLeads}
                 count={metrics?.hotCount ?? hotLeads?.length ?? 0}
-                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
+                onDealClick={(id) => setSelectedDealId(id)}
               />
               <PriorityCard
                 type="stale"
@@ -772,7 +786,7 @@ export default function CommandCenterPage() {
                 deals={staleDeals}
                 count={metrics?.staleCount ?? staleDeals?.length ?? 0}
                 riskValue={staleRevenue}
-                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
+                onDealClick={(id) => setSelectedDealId(id)}
               />
               <PriorityCard
                 type="over"
@@ -780,7 +794,7 @@ export default function CommandCenterPage() {
                 subtitle="next_action_due_date < now"
                 deals={overdueTasks}
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
-                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
+                onDealClick={(id) => setSelectedDealId(id)}
               />
             </div>
 
@@ -952,7 +966,7 @@ export default function CommandCenterPage() {
               Execution Zone \u2014 My Deals Only
             </div>
 
-            <OperatorQueue deals={operatorQueue} onDealClick={(id) => navigate(`/pipeline?deal=${id}`)} />
+            <OperatorQueue deals={operatorQueue} onDealClick={(id) => setSelectedDealId(id)} />
 
             <div className="g3">
               <PriorityCard
@@ -961,7 +975,7 @@ export default function CommandCenterPage() {
                 subtitle={`Your deals only (owner_id = ${activeRepInitials})`}
                 deals={hotLeads}
                 count={metrics?.hotCount ?? hotLeads?.length ?? 0}
-                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
+                onDealClick={(id) => setSelectedDealId(id)}
               />
               <PriorityCard
                 type="stale"
@@ -970,7 +984,7 @@ export default function CommandCenterPage() {
                 deals={staleDeals}
                 count={metrics?.staleCount ?? staleDeals?.length ?? 0}
                 riskValue={staleRevenue}
-                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
+                onDealClick={(id) => setSelectedDealId(id)}
               />
               <PriorityCard
                 type="over"
@@ -978,7 +992,7 @@ export default function CommandCenterPage() {
                 subtitle="next_action_due_date < now"
                 deals={overdueTasks}
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
-                onDealClick={(id) => navigate(`/pipeline?deal=${id}`)}
+                onDealClick={(id) => setSelectedDealId(id)}
               />
             </div>
 
@@ -1097,6 +1111,18 @@ export default function CommandCenterPage() {
 
       {/* LIVE FEED TOAST */}
       <LiveFeedToast events={activityFeed} />
+
+      {/* DEAL DETAIL MODAL */}
+      {selectedDeal && (
+        <DealDetailModal
+          deal={selectedDeal}
+          onClose={() => setSelectedDealId(null)}
+          onNavigate={() => {
+            setSelectedDealId(null);
+            navigate(`/pipeline?deal=${selectedDeal.id}`);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1104,6 +1130,115 @@ export default function CommandCenterPage() {
 // ══════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
 // ══════════════════════════════════════════════════════════════
+
+function DealDetailModal({
+  deal,
+  onClose,
+  onNavigate,
+}: {
+  deal: Deal;
+  onClose: () => void;
+  onNavigate: () => void;
+}) {
+  const repName = deal.assignedRep
+    ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}`
+    : '';
+  const stageLabel = STAGE_LABELS[deal.stage] || deal.stage;
+
+  // Build status text
+  const statusParts: string[] = [];
+  if (deal.offers && deal.offers.length > 0) {
+    const offer = deal.offers[0];
+    statusParts.push(
+      `Offer from ${offer.lenderName || 'lender'} \u2014 ${offer.terms || ''} \u2014 ${fmtCurrency(offer.amount)}. Offer expires in ${offer.expiryDays ?? '?'} days.`
+    );
+  }
+  if (deal.notes) statusParts.push(deal.notes);
+  if (deal.nextAction) statusParts.push(`Action: ${deal.nextAction}`);
+  if (deal.isHot) statusParts.push('HOT flag active.');
+  const statusText = statusParts.length > 0 ? statusParts.join(' ') : `${stageLabel} \u2014 ${deal.productType || 'N/A'}`;
+
+  // Urgency
+  const urgencyParts: string[] = [];
+  if (deal.staleDays > 2) urgencyParts.push(`${deal.staleDays}d since last activity`);
+  if (deal.offers?.some((o) => (o.expiryDays ?? 99) <= 7))
+    urgencyParts.push('Offer expiring soon \u2014 act now');
+  if (deal.isHot) urgencyParts.push('High close probability');
+
+  const dueLabel = deal.nextActionDue
+    ? (() => {
+        const d = new Date(deal.nextActionDue);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        d.setHours(0, 0, 0, 0);
+        const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+        if (diff === 0) return 'Today';
+        if (diff === 1) return 'Tomorrow';
+        if (diff < 0) return `${Math.abs(diff)}d overdue`;
+        return `${diff} days`;
+      })()
+    : '\u2014';
+
+  return (
+    <div className="deal-modal open" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="deal-box">
+        <div className="dm-head">
+          <div>
+            <div className="dm-title">{deal.client?.businessName || 'Unknown'}</div>
+            <div className="dm-badge">
+              <span className={`stage-badge-sm ${deal.stage === 'FUNDED' ? 'sbs-f' : deal.stage === 'APPROVED_OFFERS' ? 'sbs-a' : deal.stage === 'SUBMITTED_IN_REVIEW' ? 'sbs-s' : 'sbs-h'}`}>
+                {stageLabel}
+              </span>
+            </div>
+          </div>
+          <button className="dm-x" onClick={onClose}>{'\u2715'}</button>
+        </div>
+
+        <div className="dm-sec">
+          <div className="dm-sec-lbl">Deal Info</div>
+          <div className="dm-row"><span className="dm-k">Amount</span><span className="dm-v gold">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</span></div>
+          <div className="dm-row"><span className="dm-k">Product</span><span className="dm-v">{deal.productType || '\u2014'}</span></div>
+          <div className="dm-row"><span className="dm-k">Stage</span><span className="dm-v">{stageLabel}</span></div>
+          <div className="dm-row"><span className="dm-k">Assigned Rep</span><span className="dm-v">{repName || '\u2014'}</span></div>
+        </div>
+
+        <div className="dm-sec">
+          <div className="dm-sec-lbl">Status</div>
+          <div className="dm-note">{statusText}</div>
+          {urgencyParts.length > 0 && (
+            <div className="dm-urgency">
+              <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> \u2014 {urgencyParts.join('. ')}
+            </div>
+          )}
+        </div>
+
+        <div className="dm-sec">
+          <div className="dm-sec-lbl">Next Action</div>
+          <div className="dm-row"><span className="dm-k">Task</span><span className="dm-v green">{deal.nextAction || '\u2014'}</span></div>
+          <div className="dm-row"><span className="dm-k">Due</span><span className="dm-v">{dueLabel}</span></div>
+        </div>
+
+        <div className="dm-sec" style={{ marginBottom: 0 }}>
+          <div className="dm-sec-lbl">Quick Contact \u2014 logs to Twilio</div>
+          <div className="dm-comms">
+            <button className="dm-comm-btn dm-call" onClick={() => { if (deal.client?.phone) window.open(`tel:${deal.client.phone}`); }}>
+              {'\uD83D\uDCDE'} Call
+            </button>
+            <button className="dm-comm-btn dm-text" onClick={onNavigate}>
+              {'\uD83D\uDCAC'} Text
+            </button>
+          </div>
+        </div>
+
+        <div className="dm-acts">
+          <button className="dma dma-p" onClick={onNavigate}>Complete Action</button>
+          <button className="dma dma-s" onClick={onNavigate}>Add Note</button>
+          <button className="dma dma-d" onClick={onClose}>Lost / NQ</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function LiveFeedToast({ events }: { events?: ActivityEvent[] }) {
   const [visible, setVisible] = useState(false);

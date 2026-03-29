@@ -193,6 +193,20 @@ export class CommandCenterController {
     const goalProgress = monthlyGoal > 0 ? (fundedMTD / monthlyGoal) * 100 : 0;
     const projectedMonthEnd = daysElapsed > 0 ? (fundedMTD / daysElapsed) * daysInMonth : 0;
 
+    // Conversion rate: Submitted → Funded
+    const [submittedCount, fundedCount] = await Promise.all([
+      prisma.deal.count({
+        where: {
+          ...effectiveFilter,
+          stage: { in: [DealStage.SUBMITTED_IN_REVIEW, DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING, DealStage.FUNDED] },
+        },
+      }),
+      prisma.deal.count({
+        where: { ...effectiveFilter, stage: DealStage.FUNDED },
+      }),
+    ]);
+    const conversionRate = submittedCount > 0 ? Math.round((fundedCount / submittedCount) * 100) : 0;
+
     res.json({
       // Money Zone
       fundedMTD,
@@ -211,6 +225,9 @@ export class CommandCenterController {
       overdueCount: overdueDeals.length,
       noNextAction: noNextActionCount,
       idleRepsCount,
+
+      // Conversion
+      conversionRate,
 
       // Future Opportunities
       futureNext7: followUps7d,

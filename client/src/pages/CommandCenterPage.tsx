@@ -243,7 +243,8 @@ export default function CommandCenterPage() {
   const clock = useClock();
   const navigate = useNavigate();
 
-  const [activeView, setActiveView] = useState<string>('admin');
+  const userIsAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const [activeView, setActiveView] = useState<string>(userIsAdmin ? 'admin' : user?.id || 'admin');
   const [execPopupOpen, setExecPopupOpen] = useState<string | null>(null);
   const [execDropdownOpen, setExecDropdownOpen] = useState(false);
   const [repTableSort, setRepTableSort] = useState<{ col: string; asc: boolean }>({ col: 'funded', asc: false });
@@ -328,7 +329,7 @@ export default function CommandCenterPage() {
   const { data: intelligence } = useQuery<IntelligenceData>({
     queryKey: ['cc-intelligence'],
     queryFn: async () => (await commandCenterApi.getIntelligence()).data,
-    enabled: activeView === 'admin',
+    enabled: activeView === 'admin' && userIsAdmin,
     staleTime: 30000,
   });
 
@@ -378,9 +379,15 @@ export default function CommandCenterPage() {
 
   useEffect(() => {
     if (activeView !== 'admin' && (displayReps.length === 0 || !displayReps.some((r) => r.id === activeView))) {
-      setActiveView('admin');
+      if (userIsAdmin) {
+        setActiveView('admin');
+      } else if (displayReps.length > 0) {
+        // REP user: find their own rep entry, or fallback to first rep
+        const ownRep = displayReps.find((r) => r.id === user?.id);
+        setActiveView(ownRep?.id || displayReps[0].id);
+      }
     }
-  }, [activeView, displayReps]);
+  }, [activeView, displayReps, userIsAdmin, user?.id]);
 
   const activeRep = useMemo(() => {
     if (isAdmin || displayReps.length === 0) return null;
@@ -434,7 +441,9 @@ export default function CommandCenterPage() {
         <span className="cc-title-label">Command Center</span>
         <div className="tb-right">
           <span className={`role-label ${isAdmin ? 'rl-admin' : 'rl-rep'}`}>
-            {isAdmin ? 'Operator Mode' : `Rep View \u2014 ${activeRepInitials}`}
+            {isAdmin
+              ? `Operator Mode \u2014 ${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`
+              : `Rep View \u2014 ${activeRepInitials} Only`}
           </span>
 
           {/* Execution Score Bar */}
@@ -522,9 +531,11 @@ export default function CommandCenterPage() {
           {/* Role Switch */}
           <div className="rsw" ref={rswRef}>
             <div className="rsw-slider" ref={sliderRef} />
-            <button className={`rb ${isAdmin ? 'on on-admin' : ''}`} onClick={() => handleViewSwitch('admin')}>
-              Admin
-            </button>
+            {userIsAdmin && (
+              <button className={`rb ${isAdmin ? 'on on-admin' : ''}`} onClick={() => handleViewSwitch('admin')}>
+                Admin
+              </button>
+            )}
             {displayReps.map((rep) => (
               <button
                 key={rep.id}
@@ -916,9 +927,9 @@ export default function CommandCenterPage() {
                 <div className="rbs-sub">Client accepted \u00b7 closing stage</div>
               </div>
               <div className="rbs" style={{ borderTop: '1px solid var(--green)' }}>
-                <div className="rbs-lbl">Hot Deals</div>
-                <div className="rbs-val green">{metrics?.hotCount ?? 0}</div>
-                <div className="rbs-sub">Active hot deals</div>
+                <div className="rbs-lbl">My Conversion</div>
+                <div className="rbs-val green">{metrics?.conversionRate ?? 0}%</div>
+                <div className="rbs-sub">Sub → Funded</div>
               </div>
             </div>
 

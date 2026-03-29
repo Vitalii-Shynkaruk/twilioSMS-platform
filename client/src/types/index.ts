@@ -404,6 +404,7 @@ export interface CommandCenterMetrics {
   futureNext30: number;
   futureTotal: number;
   renewalsDue: number;
+  conversionRate: number;
 }
 
 export interface Goal {

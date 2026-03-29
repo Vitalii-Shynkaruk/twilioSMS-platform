@@ -586,7 +586,7 @@ export default function CommandCenterPage() {
             {/* Money Zone */}
             <div className="zone">
               <div className="zd" style={{ background: 'var(--gold)' }} />
-              Money Zone \u2014 Team-Wide
+              Money Zone — Team-Wide
             </div>
 
             {/* Hero */}
@@ -604,7 +604,7 @@ export default function CommandCenterPage() {
                 </div>
                 <div>
                   <div className="funded-lbl">
-                    Total Funded MTD \u2014 all reps \u00b7 stage = &quot;Funded&quot; \u00b7 current month
+                    Total Funded MTD — all reps · stage = &quot;Funded&quot; · current month
                   </div>
                   <div className="funded-n">{fmtCurrency(Math.round(animatedFunded))}</div>
                   <div className="funded-meta">
@@ -685,7 +685,7 @@ export default function CommandCenterPage() {
               <div className="sc" style={{ borderTop: '1px solid var(--green2)' }}>
                 <div className="scl">Committed (Funding)</div>
                 <div className="scv green">{fmtCurrency(metrics?.committedValue)}</div>
-                <div className="scd">Client accepted \u00b7 closing in progress</div>
+                <div className="scd">Client accepted {' \u00b7 '} closing in progress</div>
               </div>
               <div className="sc tor">
                 <div className="scl">At Risk</div>
@@ -765,7 +765,7 @@ export default function CommandCenterPage() {
             {/* Execution Zone */}
             <div className="zone">
               <div className="zd" style={{ background: 'var(--orange)' }} />
-              Execution Zone \u2014 Operator Tools
+              Execution Zone — Operator Tools
             </div>
 
             <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => setSelectedDealId(id)} />
@@ -805,7 +805,7 @@ export default function CommandCenterPage() {
             {/* Intelligence Zone */}
             <div className="zone">
               <div className="zd" style={{ background: 'var(--muted)' }} />
-              Intelligence Zone \u2014 Operator Oversight
+              Intelligence Zone — Operator Oversight
             </div>
 
             {intelligence && (
@@ -828,7 +828,7 @@ export default function CommandCenterPage() {
                 />
                 <PipelineSnapshotCard stages={intelligence.stageSnapshot} />
                 <div className="card">
-                  <div className="cl">Product Mix \u2014 quick view</div>
+                  <div className="cl">Product Mix {' \u2014 '} quick view</div>
                   <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 8 }}>
                     Team funded \u00b7 see full module below
                   </div>
@@ -854,7 +854,7 @@ export default function CommandCenterPage() {
             {intelligence && (
               <div className="g-2-1">
                 <div className="card">
-                  <div className="cl">Next Actions \u2014 ranked by value + urgency + proximity to funded</div>
+                  <div className="cl">Next Actions {' \u2014 '} ranked by value + urgency + proximity to funded</div>
                   <Next5Actions deals={operatorQueue?.slice(0, 5)} />
                 </div>
                 <div>
@@ -910,7 +910,7 @@ export default function CommandCenterPage() {
           <div className="view on">
             <div className="zone">
               <div className="zd" style={{ background: activeRep.avatarColor || 'var(--gold)' }} />
-              My Performance \u2014 {activeRepInitials} \u00b7 owner_id filtered
+              My Performance — {activeRepInitials} · owner_id filtered
             </div>
 
             <div className="rep-hero">
@@ -941,7 +941,7 @@ export default function CommandCenterPage() {
               <div className="rbs" style={{ borderTop: '1px solid var(--green2)' }}>
                 <div className="rbs-lbl">Committed (Funding)</div>
                 <div className="rbs-val green">{fmtCurrency(metrics?.committedValue)}</div>
-                <div className="rbs-sub">Client accepted \u00b7 closing stage</div>
+                <div className="rbs-sub">Client accepted {' \u00b7 '} closing stage</div>
               </div>
               <div className="rbs" style={{ borderTop: '1px solid var(--green)' }}>
                 <div className="rbs-lbl">My Conversion</div>
@@ -957,13 +957,13 @@ export default function CommandCenterPage() {
                 {fmtCurrency(metrics?.monthlyGoal)} goal
               </span>
               <span style={{ color: 'var(--muted)' }}>
-                {(metrics?.goalProgress ?? 0) >= 50 ? 'On pace' : 'Behind pace \u2014 action needed'}
+                {(metrics?.goalProgress ?? 0) >= 50 ? 'On pace' : 'Behind pace — action needed'}
               </span>
             </div>
 
             <div className="zone" style={{ marginTop: 2 }}>
               <div className="zd" style={{ background: 'var(--orange)' }} />
-              Execution Zone \u2014 My Deals Only
+              Execution Zone — My Deals Only
             </div>
 
             <OperatorQueue deals={operatorQueue} onDealClick={(id) => setSelectedDealId(id)} />
@@ -1003,7 +1003,7 @@ export default function CommandCenterPage() {
 
             <div className="zone" style={{ marginTop: 2 }}>
               <div className="zd" style={{ background: 'var(--muted)' }} />
-              My Intelligence \u2014 Personal Metrics
+              My Intelligence — Personal Metrics
             </div>
 
             <div className="g-pipe">
@@ -1025,7 +1025,7 @@ export default function CommandCenterPage() {
               )}
 
               <div className="card">
-                <div className="cl">My Product Mix \u2014 funded</div>
+                <div className="cl">My Product Mix — funded</div>
                 {productMix && (
                   <>
                     <div className="pb-rows">
@@ -1207,7 +1207,7 @@ function DealDetailModal({
           <div className="dm-note">{statusText}</div>
           {urgencyParts.length > 0 && (
             <div className="dm-urgency">
-              <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> \u2014 {urgencyParts.join('. ')}
+              <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' \u2014 '}{urgencyParts.join('. ')}
             </div>
           )}
         </div>
@@ -1219,7 +1219,7 @@ function DealDetailModal({
         </div>
 
         <div className="dm-sec" style={{ marginBottom: 0 }}>
-          <div className="dm-sec-lbl">Quick Contact \u2014 logs to Twilio</div>
+          <div className="dm-sec-lbl">Quick Contact {' \u2014 '} logs to Twilio</div>
           <div className="dm-comms">
             <button className="dm-comm-btn dm-call" onClick={() => { if (deal.client?.phone) window.open(`tel:${deal.client.phone}`); }}>
               {'\uD83D\uDCDE'} Call
@@ -1463,7 +1463,7 @@ function BottleneckCard({ bottlenecks }: { bottlenecks: Bottleneck[] }) {
   return (
     <div className="card">
       <div className="cl">
-        <span>System Bottlenecks \u2014 owner assigned</span>
+        <span>System Bottlenecks — owner assigned</span>
         <span className="cl-action">Drill Down {'\u2192'}</span>
       </div>
       <div className="bn-list">
@@ -1972,11 +1972,11 @@ function ProductMixModule({
             {data.products[0].percentage >= 70 ? (
               <>
                 <strong>Over-concentrated:</strong> {data.products[0].type} is {data.products[0].percentage}% of funded
-                volume \u2014 single-product risk. <strong>{'\u2192'} Diversify</strong> into underrepresented products.
+                volume — single-product risk. <strong>{'\u2192'} Diversify</strong> into underrepresented products.
               </>
             ) : (
               <>
-                <strong>Balanced mix.</strong> Continue diversifying \u2014 each product strengthens pipeline
+                <strong>Balanced mix.</strong> Continue diversifying — each product strengthens pipeline
                 resilience.
               </>
             )}
@@ -1986,7 +1986,7 @@ function ProductMixModule({
         {isAdmin && data.repBreakdown && data.repBreakdown.length > 0 && (
           <>
             <div className="pm-section-divider" />
-            <div className="pm-section-lbl">Rep Breakdown \u2014 vs team average</div>
+            <div className="pm-section-lbl">Rep Breakdown — vs team average</div>
             <table className="pm-rep-table">
               <thead>
                 <tr>

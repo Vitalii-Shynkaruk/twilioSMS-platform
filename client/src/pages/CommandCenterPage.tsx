@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { commandCenterApi, repApi, dealApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { CommandCenterMetrics, Rep, Deal } from '../types';
@@ -1162,6 +1162,23 @@ export default function CommandCenterPage() {
 // SUB-COMPONENTS
 // ══════════════════════════════════════════════════════════════
 
+// ── Auto followup suggestions by product type ──
+const AUTO_FOLLOWUP: Record<string, Record<string, { next: string; days: number }>> = {
+  MCA: { 'Called client': { next: 'Gather docs', days: 0 }, 'Sent documents': { next: 'Review docs', days: 3 }, 'Submitted application': { next: 'Check with lender', days: 1 }, 'Sent offer': { next: 'Follow up on offer', days: 1 }, 'Left voicemail': { next: 'Call again', days: 1 } },
+  SBA: { 'Called client': { next: 'Schedule call', days: 1 }, 'Sent documents': { next: 'Review & gather', days: 7 }, 'Submitted application': { next: 'Lender review', days: 14 }, 'Sent offer': { next: 'Follow up on offer', days: 3 }, 'Left voicemail': { next: 'Call again', days: 2 } },
+};
+const DEFAULT_FOLLOWUP: Record<string, { next: string; days: number }> = {
+  'Called client': { next: 'Follow up', days: 1 }, 'Sent documents': { next: 'Review docs', days: 3 }, 'Submitted application': { next: 'Check status', days: 2 }, 'Sent offer': { next: 'Follow up on offer', days: 1 }, 'Left voicemail': { next: 'Call again', days: 1 }, 'Presented offer': { next: 'Awaiting decision', days: 2 }, 'Texted': { next: 'Follow up', days: 1 },
+};
+
+const CA_ACTION_TYPES = ['Called client', 'Left voicemail', 'Sent documents', 'Submitted application', 'Sent offer', 'Presented offer', 'Texted'];
+const CA_DUE_OPTIONS = [
+  { label: 'Today', days: 0 },
+  { label: 'Tomorrow', days: 1 },
+  { label: '+3 days', days: 3 },
+  { label: 'Next week', days: 7 },
+];
+
 function DealDetailModal({
   deal,
   onClose,
@@ -1171,10 +1188,32 @@ function DealDetailModal({
   onClose: () => void;
   onNavigate: () => void;
 }) {
+  const qc = useQueryClient();
   const repName = deal.assignedRep
     ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}`
     : '';
   const stageLabel = STAGE_LABELS[deal.stage] || deal.stage;
+
+  // Sub-modal state
+  const [subModal, setSubModal] = useState<'none' | 'complete-action' | 'add-note' | 'lost-nq'>('none');
+  const [caStep, setCaStep] = useState(1);
+  const [caType, setCaType] = useState('');
+  const [caNext, setCaNext] = useState('');
+  const [caDue, setCaDue] = useState('');
+  const [caNote, setCaNote] = useState('');
+  const [caSubmitting, setCaSubmitting] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [noteSubmitting, setNoteSubmitting] = useState(false);
+  const [nqMode, setNqMode] = useState<'lost' | 'disqualified'>('lost');
+  const [nqReason, setNqReason] = useState('');
+  const [nqFollowUp, setNqFollowUp] = useState(30);
+  const [nqSubmitting, setNqSubmitting] = useState(false);
+  const [internalToast, setInternalToast] = useState<string | null>(null);
+
+  function showInternalToast(msg: string) {
+    setInternalToast(msg);
+    setTimeout(() => setInternalToast(null), 2500);
+  }
 
   // Build status text
   const statusParts: string[] = [];
@@ -1210,9 +1249,102 @@ function DealDetailModal({
       })()
     : '—';
 
+  // ── Complete Action: pick action type → auto-suggest next ──
+  function handleCaTypeSelect(type: string) {
+    setCaType(type);
+    const pt = deal.productType || '';
+    const map = AUTO_FOLLOWUP[pt] || DEFAULT_FOLLOWUP;
+    const suggestion = map[type] || DEFAULT_FOLLOWUP[type] || { next: 'Follow up', days: 1 };
+    setCaNext(suggestion.next);
+    const d = new Date();
+    d.setDate(d.getDate() + suggestion.days);
+    setCaDue(d.toISOString().slice(0, 10));
+    setCaStep(2);
+  }
+
+  async function handleCaSubmit() {
+    if (!caNext || !caDue) return;
+    setCaSubmitting(true);
+    try {
+      await dealApi.completeAction(deal.id, {
+        actionType: caType,
+        nextAction: caNext,
+        nextActionDue: new Date(caDue).toISOString(),
+        note: caNote || undefined,
+      });
+      qc.invalidateQueries({ queryKey: ['cc-'] });
+      showInternalToast(`Action logged — next: ${caNext}`);
+      setTimeout(() => { setSubModal('none'); setCaStep(1); setCaType(''); setCaNext(''); setCaDue(''); setCaNote(''); }, 1200);
+    } catch {
+      toast.error('Failed to complete action');
+    } finally {
+      setCaSubmitting(false);
+    }
+  }
+
+  // ── Add Note ──
+  async function handleAddNote() {
+    if (!noteText.trim()) return;
+    setNoteSubmitting(true);
+    try {
+      await dealApi.updateDeal(deal.id, { notes: (deal.notes ? deal.notes + '\n' : '') + noteText.trim() });
+      qc.invalidateQueries({ queryKey: ['cc-'] });
+      showInternalToast('Note added');
+      setTimeout(() => { setSubModal('none'); setNoteText(''); }, 1200);
+    } catch {
+      toast.error('Failed to add note');
+    } finally {
+      setNoteSubmitting(false);
+    }
+  }
+
+  // ── Lost / NQ ──
+  async function handleLostNq() {
+    if (!nqReason.trim()) return;
+    setNqSubmitting(true);
+    try {
+      const stage = nqMode === 'lost' ? 'NURTURE' : 'CLOSED';
+      const followUpDate = new Date();
+      followUpDate.setDate(followUpDate.getDate() + nqFollowUp);
+      await dealApi.moveDeal(deal.id, {
+        stage,
+        ...(nqMode === 'lost'
+          ? { lostReason: nqReason.trim(), followUpDate: followUpDate.toISOString(), followUpType: 'nurture' }
+          : { disqualReason: nqReason.trim() }),
+      });
+      qc.invalidateQueries({ queryKey: ['cc-'] });
+      showInternalToast(nqMode === 'lost' ? 'Moved to Nurture' : 'Deal closed');
+      setTimeout(() => { setSubModal('none'); onClose(); }, 1200);
+    } catch {
+      toast.error('Failed to update deal');
+    } finally {
+      setNqSubmitting(false);
+    }
+  }
+
+  // ── Call with logging ──
+  async function handleCall() {
+    if (deal.client?.phone) {
+      window.open(`tel:${deal.client.phone}`);
+      try {
+        await dealApi.logCall(deal.id, { note: 'Call initiated from Command Center' });
+        qc.invalidateQueries({ queryKey: ['cc-'] });
+      } catch { /* silent */ }
+    } else {
+      showInternalToast('No phone number on file');
+    }
+  }
+
   return (
-    <div className="deal-modal open" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="deal-modal open" onClick={(e) => { if (e.target === e.currentTarget && subModal === 'none') onClose(); }}>
       <div className="deal-box">
+        {/* ── Internal toast ── */}
+        {internalToast && (
+          <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50)', zIndex: 10, background: 'var(--bg4)', border: '1px solid var(--gold)', borderRadius: 4, padding: '5px 12px', fontSize: 10, color: 'var(--gold)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+            {internalToast}
+          </div>
+        )}
+
         <div className="dm-head">
           <div>
             <div className="dm-title">{deal.client?.businessName || 'Unknown'}</div>
@@ -1222,50 +1354,144 @@ function DealDetailModal({
               </span>
             </div>
           </div>
-          <button className="dm-x" onClick={onClose}>{'✕'}</button>
+          <button className="dm-x" onClick={() => { if (subModal !== 'none') setSubModal('none'); else onClose(); }}>{'✕'}</button>
         </div>
 
-        <div className="dm-sec">
-          <div className="dm-sec-lbl">Deal Info</div>
-          <div className="dm-row"><span className="dm-k">Amount</span><span className="dm-v gold">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</span></div>
-          <div className="dm-row"><span className="dm-k">Product</span><span className="dm-v">{deal.productType || '—'}</span></div>
-          <div className="dm-row"><span className="dm-k">Stage</span><span className="dm-v">{stageLabel}</span></div>
-          <div className="dm-row"><span className="dm-k">Assigned Rep</span><span className="dm-v">{repName || '—'}</span></div>
-        </div>
-
-        <div className="dm-sec">
-          <div className="dm-sec-lbl">Status</div>
-          <div className="dm-note">{statusText}</div>
-          {urgencyParts.length > 0 && (
-            <div className="dm-urgency">
-              <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' — '}{urgencyParts.join('. ')}
+        {/* ── MAIN VIEW ── */}
+        {subModal === 'none' && (
+          <>
+            <div className="dm-sec">
+              <div className="dm-sec-lbl">Deal Info</div>
+              <div className="dm-row"><span className="dm-k">Amount</span><span className="dm-v gold">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</span></div>
+              <div className="dm-row"><span className="dm-k">Product</span><span className="dm-v">{deal.productType || '—'}</span></div>
+              <div className="dm-row"><span className="dm-k">Stage</span><span className="dm-v">{stageLabel}</span></div>
+              <div className="dm-row"><span className="dm-k">Assigned Rep</span><span className="dm-v">{repName || '—'}</span></div>
             </div>
-          )}
-        </div>
 
-        <div className="dm-sec">
-          <div className="dm-sec-lbl">Next Action</div>
-          <div className="dm-row"><span className="dm-k">Task</span><span className="dm-v green">{deal.nextAction || '—'}</span></div>
-          <div className="dm-row"><span className="dm-k">Due</span><span className="dm-v">{dueLabel}</span></div>
-        </div>
+            <div className="dm-sec">
+              <div className="dm-sec-lbl">Status</div>
+              <div className="dm-note">{statusText}</div>
+              {urgencyParts.length > 0 && (
+                <div className="dm-urgency">
+                  <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' — '}{urgencyParts.join('. ')}
+                </div>
+              )}
+            </div>
 
-        <div className="dm-sec" style={{ marginBottom: 0 }}>
-          <div className="dm-sec-lbl">Quick Contact {' — '} logs to Twilio</div>
-          <div className="dm-comms">
-            <button className="dm-comm-btn dm-call" onClick={() => { if (deal.client?.phone) window.open(`tel:${deal.client.phone}`); }}>
-              📞 Call
-            </button>
-            <button className="dm-comm-btn dm-text" onClick={onNavigate}>
-              💬 Text
-            </button>
+            <div className="dm-sec">
+              <div className="dm-sec-lbl">Next Action</div>
+              <div className="dm-row"><span className="dm-k">Task</span><span className="dm-v green">{deal.nextAction || '—'}</span></div>
+              <div className="dm-row"><span className="dm-k">Due</span><span className="dm-v">{dueLabel}</span></div>
+            </div>
+
+            <div className="dm-sec" style={{ marginBottom: 0 }}>
+              <div className="dm-sec-lbl">Quick Contact — logs to Twilio</div>
+              <div className="dm-comms">
+                <button className="dm-comm-btn dm-call" onClick={handleCall}>📞 Call</button>
+                <button className="dm-comm-btn dm-text" onClick={onNavigate}>💬 Text</button>
+              </div>
+            </div>
+
+            <div className="dm-acts">
+              <button className="dma dma-p" onClick={() => setSubModal('complete-action')}>Complete Action</button>
+              <button className="dma dma-s" onClick={() => setSubModal('add-note')}>Add Note</button>
+              <button className="dma dma-d" onClick={() => setSubModal('lost-nq')}>Lost / NQ</button>
+            </div>
+          </>
+        )}
+
+        {/* ── COMPLETE ACTION: Step 1 — action type ── */}
+        {subModal === 'complete-action' && caStep === 1 && (
+          <div className="dm-sec">
+            <div className="dm-sec-lbl">Complete Action — Step 1</div>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>What did you do?</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              {CA_ACTION_TYPES.map((t) => (
+                <button key={t} className="dma dma-s" style={{ fontSize: 9, padding: '7px 6px' }} onClick={() => handleCaTypeSelect(t)}>{t}</button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="dm-acts">
-          <button className="dma dma-p" onClick={onNavigate}>Complete Action</button>
-          <button className="dma dma-s" onClick={onNavigate}>Add Note</button>
-          <button className="dma dma-d" onClick={onClose}>Lost / NQ</button>
-        </div>
+        {/* ── COMPLETE ACTION: Step 2 — next action + due ── */}
+        {subModal === 'complete-action' && caStep === 2 && (
+          <div className="dm-sec">
+            <div className="dm-sec-lbl">Complete Action — Step 2</div>
+            <div style={{ background: '#1c0c00', border: '1px solid var(--orange2)', borderRadius: 3, padding: '5px 8px', fontSize: 9, color: 'var(--orange)', marginBottom: 8 }}>
+              Follow-up auto-set based on {deal.productType || 'product'}
+            </div>
+            <div style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Next Action</label>
+              <input type="text" value={caNext} onChange={(e) => setCaNext(e.target.value)} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '5px 7px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Due Date</label>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                {CA_DUE_OPTIONS.map((opt) => {
+                  const d = new Date(); d.setDate(d.getDate() + opt.days);
+                  const val = d.toISOString().slice(0, 10);
+                  return <button key={opt.label} className={`dma ${caDue === val ? 'dma-p' : 'dma-s'}`} style={{ fontSize: 8, padding: '4px 6px', flex: 1 }} onClick={() => setCaDue(val)}>{opt.label}</button>;
+                })}
+              </div>
+              <input type="date" value={caDue} onChange={(e) => setCaDue(e.target.value)} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '4px 7px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Note (optional)</label>
+              <input type="text" value={caNote} onChange={(e) => setCaNote(e.target.value)} placeholder="Additional context..." style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '5px 7px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 5 }}>
+              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => setCaStep(1)}>← Back</button>
+              <button className="dma dma-p" style={{ flex: 2, opacity: caSubmitting ? 0.5 : 1 }} disabled={caSubmitting || !caNext || !caDue} onClick={handleCaSubmit}>
+                {caSubmitting ? 'Saving...' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── ADD NOTE ── */}
+        {subModal === 'add-note' && (
+          <div className="dm-sec">
+            <div className="dm-sec-lbl">Add Note</div>
+            <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Enter note..." rows={4} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '6px 8px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', resize: 'vertical', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => { setSubModal('none'); setNoteText(''); }}>Cancel</button>
+              <button className="dma dma-p" style={{ flex: 2, opacity: noteSubmitting ? 0.5 : 1 }} disabled={noteSubmitting || !noteText.trim()} onClick={handleAddNote}>
+                {noteSubmitting ? 'Saving...' : 'Save Note'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── LOST / NQ ── */}
+        {subModal === 'lost-nq' && (
+          <div className="dm-sec">
+            <div className="dm-sec-lbl">Close Deal</div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+              <button className={`dma ${nqMode === 'lost' ? 'dma-p' : 'dma-s'}`} style={{ flex: 1, fontSize: 9 }} onClick={() => setNqMode('lost')}>Lost → Nurture</button>
+              <button className={`dma ${nqMode === 'disqualified' ? 'dma-d' : 'dma-s'}`} style={{ flex: 1, fontSize: 9 }} onClick={() => setNqMode('disqualified')}>Disqualified → Closed</button>
+            </div>
+            <div style={{ marginBottom: 6 }}>
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>{nqMode === 'lost' ? 'Lost Reason' : 'Disqualification Reason'} *</label>
+              <textarea value={nqReason} onChange={(e) => setNqReason(e.target.value)} placeholder={nqMode === 'lost' ? 'Why was this deal lost?' : 'Why is this deal disqualified?'} rows={3} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '6px 8px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', resize: 'vertical', boxSizing: 'border-box' }} />
+            </div>
+            {nqMode === 'lost' && (
+              <div style={{ marginBottom: 6 }}>
+                <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Follow-up in</label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {[{ label: '30d', v: 30 }, { label: '60d', v: 60 }, { label: '90d', v: 90 }].map((opt) => (
+                    <button key={opt.v} className={`dma ${nqFollowUp === opt.v ? 'dma-p' : 'dma-s'}`} style={{ flex: 1, fontSize: 8 }} onClick={() => setNqFollowUp(opt.v)}>{opt.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
+              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => { setSubModal('none'); setNqReason(''); }}>Cancel</button>
+              <button className={`dma ${nqMode === 'lost' ? 'dma-p' : 'dma-d'}`} style={{ flex: 2, opacity: nqSubmitting ? 0.5 : 1 }} disabled={nqSubmitting || !nqReason.trim()} onClick={handleLostNq}>
+                {nqSubmitting ? 'Saving...' : nqMode === 'lost' ? 'Move to Nurture' : 'Close Deal'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

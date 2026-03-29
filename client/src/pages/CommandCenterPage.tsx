@@ -58,6 +58,15 @@ function getGreeting(): string {
   return 'Good Evening';
 }
 
+const REP_COLORS: Record<string, string> = {
+  JB: 'var(--gold)', SB: '#3fb950', MC: '#e07b54', AN: '#a371f7',
+  AR: '#4a9eff', HB: '#64b5d4', JJ: '#c9a227',
+};
+
+function repAvatarColor(initials: string): string {
+  return REP_COLORS[initials] || 'var(--faint)';
+}
+
 function getActionButtonStyle(action: string): string {
   switch (action) {
     case 'Call Now':
@@ -467,8 +476,8 @@ export default function CommandCenterPage() {
         <div className="tb-right">
           <span className={`role-label ${isAdmin ? 'rl-admin' : 'rl-rep'}`}>
             {isAdmin
-              ? `Operator Mode \u2014 ${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`
-              : `Rep View \u2014 ${activeRepInitials} Only`}
+              ? `Operator Mode — ${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`
+              : `Rep View — ${activeRepInitials} Only`}
           </span>
 
           {/* Execution Score Bar */}
@@ -519,7 +528,7 @@ export default function CommandCenterPage() {
                       <div className="esb-dd-head">
                         <span>All Reps ({execScores.length})</span>
                         <button className="esb-dd-close" onClick={() => setExecDropdownOpen(false)}>
-                          {'\u2715'}
+                          {'✕'}
                         </button>
                       </div>
                       {execScores.map((es) => (
@@ -606,7 +615,7 @@ export default function CommandCenterPage() {
                     {user?.firstName} {user?.lastName}
                   </div>
                   <div className="h-sub">
-                    Admin \u00b7 All Reps \u00b7{' '}
+                    Admin · All Reps ·{' '}
                     {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                   </div>
                 </div>
@@ -616,13 +625,13 @@ export default function CommandCenterPage() {
                   </div>
                   <div className="funded-n">{fmtCurrency(Math.round(animatedFunded))}</div>
                   <div className="funded-meta">
-                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} \u00b7 real-time from
+                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · real-time from
                     pipeline
                   </div>
                   <div className="prog">
                     <div className="prog-top">
                       <span className="prog-goal">
-                        Team Goal: {fmtCurrency(metrics?.monthlyGoal)} \u00b7 {daysLeft} days remaining
+                        Team Goal: {fmtCurrency(metrics?.monthlyGoal)} · {daysLeft} days remaining
                       </span>
                       <span className="prog-pct">{Math.round(metrics?.goalProgress ?? 0)}%</span>
                     </div>
@@ -637,7 +646,7 @@ export default function CommandCenterPage() {
                     <div className="prog-row2">
                       <span className="proj">
                         Projected month-end: <span className="proj-hi">{fmtCurrency(metrics?.projectedMonthEnd)}</span>{' '}
-                        \u00b7 based on current daily pace
+                        · based on current daily pace
                       </span>
                       <span className="proj-need">
                         Need{' '}
@@ -682,7 +691,7 @@ export default function CommandCenterPage() {
                 <div className="scl">Funded MTD</div>
                 <div className="scv gold">{fmtCurrency(metrics?.fundedMTD)}</div>
                 <div className="scd">
-                  Goal: {fmtCurrency(metrics?.monthlyGoal)} \u00b7 {Math.round(metrics?.goalProgress ?? 0)}%
+                  Goal: {fmtCurrency(metrics?.monthlyGoal)} · {Math.round(metrics?.goalProgress ?? 0)}%
                 </div>
               </div>
               <div className="sc tp">
@@ -693,7 +702,7 @@ export default function CommandCenterPage() {
               <div className="sc" style={{ borderTop: '1px solid var(--green2)' }}>
                 <div className="scl">Committed (Funding)</div>
                 <div className="scv green">{fmtCurrency(metrics?.committedValue)}</div>
-                <div className="scd">Client accepted {' \u00b7 '} closing in progress</div>
+                <div className="scd">Client accepted {' · '} closing in progress</div>
               </div>
               <div className="sc tor">
                 <div className="scl">At Risk</div>
@@ -741,11 +750,11 @@ export default function CommandCenterPage() {
             {(metrics?.atRisk ?? 0) > 0 && (
               <div className="risk-banner">
                 <div className="rb-left">
-                  <div className="rb-icon">{'\u26A0'}</div>
+                  <div className="rb-icon">{'⚠'}</div>
                   <div>
                     <div className="rb-title">System Revenue at Risk</div>
                     <div className="rb-sub">
-                      Approved + Committed deals \u00b7 overdue next actions \u00b7 stalled activity
+                      Approved + Committed deals · overdue next actions · stalled activity
                     </div>
                   </div>
                 </div>
@@ -839,9 +848,9 @@ export default function CommandCenterPage() {
                 />
                 <PipelineSnapshotCard stages={intelligence.stageSnapshot} />
                 <div className="card">
-                  <div className="cl">Product Mix {' \u2014 '} quick view</div>
+                  <div className="cl">Product Mix {' — '} quick view</div>
                   <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 8 }}>
-                    Team funded \u00b7 see full module below
+                    Team funded · see full module below
                   </div>
                   {productMix && (
                     <>
@@ -865,7 +874,7 @@ export default function CommandCenterPage() {
             {intelligence && (
               <div className="g-2-1">
                 <div className="card">
-                  <div className="cl">Next Actions {' \u2014 '} ranked by value + urgency + proximity to funded</div>
+                  <div className="cl">Next Actions {' — '} ranked by value + urgency + proximity to funded</div>
                   <Next5Actions deals={operatorQueue?.slice(0, 5)} />
                 </div>
                 <div>
@@ -952,7 +961,7 @@ export default function CommandCenterPage() {
               <div className="rbs" style={{ borderTop: '1px solid var(--green2)' }}>
                 <div className="rbs-lbl">Committed (Funding)</div>
                 <div className="rbs-val green">{fmtCurrency(metrics?.committedValue)}</div>
-                <div className="rbs-sub">Client accepted {' \u00b7 '} closing stage</div>
+                <div className="rbs-sub">Client accepted {' · '} closing stage</div>
               </div>
               <div className="rbs" style={{ borderTop: '1px solid var(--green)' }}>
                 <div className="rbs-lbl">My Conversion</div>
@@ -963,7 +972,7 @@ export default function CommandCenterPage() {
 
             <div className={`pace-banner ${(metrics?.goalProgress ?? 0) >= 50 ? 'pace-good' : 'pace-warn'}`}>
               <span>
-                Projected month-end: <strong>{fmtCurrency(metrics?.projectedMonthEnd)}</strong> \u00b7{' '}
+                Projected month-end: <strong>{fmtCurrency(metrics?.projectedMonthEnd)}</strong> ·{' '}
                 {fmtCurrency(Math.max(0, (metrics?.monthlyGoal ?? 0) - (metrics?.fundedMTD ?? 0)))} remaining to hit{' '}
                 {fmtCurrency(metrics?.monthlyGoal)} goal
               </span>
@@ -1172,19 +1181,19 @@ function DealDetailModal({
   if (deal.offers && deal.offers.length > 0) {
     const offer = deal.offers[0];
     statusParts.push(
-      `Offer from ${offer.lenderName || 'lender'} \u2014 ${offer.terms || ''} \u2014 ${fmtCurrency(offer.amount)}. Offer expires in ${offer.expiryDays ?? '?'} days.`
+      `Offer from ${offer.lenderName || 'lender'} — ${offer.terms || ''} — ${fmtCurrency(offer.amount)}. Offer expires in ${offer.expiryDays ?? '?'} days.`
     );
   }
   if (deal.notes) statusParts.push(deal.notes);
   if (deal.nextAction) statusParts.push(`Action: ${deal.nextAction}`);
   if (deal.isHot) statusParts.push('HOT flag active.');
-  const statusText = statusParts.length > 0 ? statusParts.join(' ') : `${stageLabel} \u2014 ${deal.productType || 'N/A'}`;
+  const statusText = statusParts.length > 0 ? statusParts.join(' ') : `${stageLabel} — ${deal.productType || 'N/A'}`;
 
   // Urgency
   const urgencyParts: string[] = [];
   if (deal.staleDays > 2) urgencyParts.push(`${deal.staleDays}d since last activity`);
   if (deal.offers?.some((o) => (o.expiryDays ?? 99) <= 7))
-    urgencyParts.push('Offer expiring soon \u2014 act now');
+    urgencyParts.push('Offer expiring soon — act now');
   if (deal.isHot) urgencyParts.push('High close probability');
 
   const dueLabel = deal.nextActionDue
@@ -1199,7 +1208,7 @@ function DealDetailModal({
         if (diff < 0) return `${Math.abs(diff)}d overdue`;
         return `${diff} days`;
       })()
-    : '\u2014';
+    : '—';
 
   return (
     <div className="deal-modal open" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -1213,15 +1222,15 @@ function DealDetailModal({
               </span>
             </div>
           </div>
-          <button className="dm-x" onClick={onClose}>{'\u2715'}</button>
+          <button className="dm-x" onClick={onClose}>{'✕'}</button>
         </div>
 
         <div className="dm-sec">
           <div className="dm-sec-lbl">Deal Info</div>
           <div className="dm-row"><span className="dm-k">Amount</span><span className="dm-v gold">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</span></div>
-          <div className="dm-row"><span className="dm-k">Product</span><span className="dm-v">{deal.productType || '\u2014'}</span></div>
+          <div className="dm-row"><span className="dm-k">Product</span><span className="dm-v">{deal.productType || '—'}</span></div>
           <div className="dm-row"><span className="dm-k">Stage</span><span className="dm-v">{stageLabel}</span></div>
-          <div className="dm-row"><span className="dm-k">Assigned Rep</span><span className="dm-v">{repName || '\u2014'}</span></div>
+          <div className="dm-row"><span className="dm-k">Assigned Rep</span><span className="dm-v">{repName || '—'}</span></div>
         </div>
 
         <div className="dm-sec">
@@ -1229,25 +1238,25 @@ function DealDetailModal({
           <div className="dm-note">{statusText}</div>
           {urgencyParts.length > 0 && (
             <div className="dm-urgency">
-              <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' \u2014 '}{urgencyParts.join('. ')}
+              <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' — '}{urgencyParts.join('. ')}
             </div>
           )}
         </div>
 
         <div className="dm-sec">
           <div className="dm-sec-lbl">Next Action</div>
-          <div className="dm-row"><span className="dm-k">Task</span><span className="dm-v green">{deal.nextAction || '\u2014'}</span></div>
+          <div className="dm-row"><span className="dm-k">Task</span><span className="dm-v green">{deal.nextAction || '—'}</span></div>
           <div className="dm-row"><span className="dm-k">Due</span><span className="dm-v">{dueLabel}</span></div>
         </div>
 
         <div className="dm-sec" style={{ marginBottom: 0 }}>
-          <div className="dm-sec-lbl">Quick Contact {' \u2014 '} logs to Twilio</div>
+          <div className="dm-sec-lbl">Quick Contact {' — '} logs to Twilio</div>
           <div className="dm-comms">
             <button className="dm-comm-btn dm-call" onClick={() => { if (deal.client?.phone) window.open(`tel:${deal.client.phone}`); }}>
-              {'\uD83D\uDCDE'} Call
+              📞 Call
             </button>
             <button className="dm-comm-btn dm-text" onClick={onNavigate}>
-              {'\uD83D\uDCAC'} Text
+              💬 Text
             </button>
           </div>
         </div>
@@ -1274,12 +1283,12 @@ function LiveFeedToast({ events }: { events?: ActivityEvent[] }) {
       const biz = ev.deal?.client?.businessName || 'Unknown';
       const rep = ev.rep?.initials || ev.rep?.firstName || '';
       if (ev.toStage === 'FUNDED')
-        return { title: 'Live Feed', text: `${rep} closed ${biz} \u2014 funded` };
+        return { title: 'Live Feed', text: `${rep} closed ${biz} — funded` };
       if (ev.eventType === 'stage_changed')
-        return { title: 'Live Feed', text: `${rep}: ${biz} \u2014 ${STAGE_LABELS[ev.toStage || ''] || ev.toStage || 'moved'}` };
+        return { title: 'Live Feed', text: `${rep}: ${biz} — ${STAGE_LABELS[ev.toStage || ''] || ev.toStage || 'moved'}` };
       if (ev.eventType?.includes('alert') || ev.eventType?.includes('system'))
-        return { title: 'System Alert', text: `${biz} (${rep}) \u2014 ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'attention needed'}` };
-      return { title: 'Live Feed', text: `${rep}: ${biz} \u2014 ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'update'}` };
+        return { title: 'System Alert', text: `${biz} (${rep}) — ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'attention needed'}` };
+      return { title: 'Live Feed', text: `${rep}: ${biz} — ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'update'}` };
     }
 
     function showNext() {
@@ -1311,7 +1320,7 @@ function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () =
   return (
     <div className="esb-popup open" onClick={(e) => e.stopPropagation()}>
       <div className="esb-popup-rep">
-        {data.firstName} {'\u2014'} {data.score}%
+        {data.firstName} {'—'} {data.score}%
       </div>
       <div className="esb-popup-row">
         <span className="esb-popup-key">Actions completed</span>
@@ -1346,7 +1355,7 @@ function OperatorQueue({
   return (
     <div className="op-q">
       <div className="oq-head">
-        <span style={{ color: 'var(--orange)', fontSize: 13 }}>{'\u2605'}</span>
+        <span style={{ color: 'var(--orange)', fontSize: 13 }}>{'★'}</span>
         <span className="oq-title">
           {isAdmin ? 'Operator Queue — Admin Hit List' : 'Close These Today — My Deals'}
         </span>
@@ -1543,7 +1552,7 @@ function PriorityCard({
         )}
         {(deals?.length ?? 0) > 3 && (
           <div className="pc-more">
-            + {(deals?.length ?? 0) - 3} more {'\u2192'}
+            + {(deals?.length ?? 0) - 3} more {'→'}
           </div>
         )}
       </div>
@@ -1564,7 +1573,7 @@ function BottleneckCard({ bottlenecks }: { bottlenecks: Bottleneck[] }) {
     <div className="card">
       <div className="cl">
         <span>System Bottlenecks — owner assigned</span>
-        <span className="cl-action">Drill Down {'\u2192'}</span>
+        <span className="cl-action">Drill Down {'→'}</span>
       </div>
       <div className="bn-list">
         {bottlenecks.slice(0, 5).map((b) => {
@@ -1582,10 +1591,10 @@ function BottleneckCard({ bottlenecks }: { bottlenecks: Bottleneck[] }) {
                         fontWeight: 700,
                       }}
                     >
-                      {' \u00b7 '}
+                      {' · '}
                       {Object.entries(b.reps)
                         .map(([init, cnt]) => `${init} (${cnt})`)
-                        .join(' \u00b7 ')}
+                        .join(' · ')}
                     </span>
                   )}
                 </div>
@@ -1624,7 +1633,7 @@ function RepMonitorCard({
     <div className="card">
       <div className="cl">
         <span>Rep Activity Monitor</span>
-        <span className="cl-live">{'\u25CF'} Live</span>
+        <span className="cl-live">{'●'} Live</span>
       </div>
       <div className="rm-list">
         {repActivity.map((rep) => {
@@ -1653,7 +1662,7 @@ function RepMonitorCard({
                   {rep.name} <span className={`act-flag ${flagCls}`}>{flagLabel}</span>
                 </div>
                 <div className="rm-status">
-                  {rep.activeDeals} active deals \u00b7 {rep.overdueCount} actions due
+                  {rep.activeDeals} active deals · {rep.overdueCount} actions due
                 </div>
                 {(rep.dealsAtRisk > 0 || rep.overdueCount > 0) && (
                   <div
@@ -1663,7 +1672,7 @@ function RepMonitorCard({
                       marginTop: 2,
                     }}
                   >
-                    Deals at risk: <strong>{fmtCurrency(rep.pipelineValue)}</strong> \u00b7 Overdue:{' '}
+                    Deals at risk: <strong>{fmtCurrency(rep.pipelineValue)}</strong> · Overdue:{' '}
                     <strong>{rep.overdueCount}</strong>
                   </div>
                 )}
@@ -1738,7 +1747,7 @@ function RepPerformanceTable({
     <div className="card">
       <div className="cl">
         <span>Rep Performance Table</span>
-        <span className="cl-action">Click headers to sort {'\u2195'}</span>
+        <span className="cl-action">Click headers to sort {'↕'}</span>
       </div>
       <table className="rep-tbl">
         <thead>
@@ -1834,7 +1843,7 @@ function PipelineSnapshotCard({ stages, title }: { stages: StageSnapshot[]; titl
 
   return (
     <div className="card">
-      <div className="cl">{title || 'Pipeline Snapshot \u2014 all reps \u00b7 all stages'}</div>
+      <div className="cl">{title || 'Pipeline Snapshot — all reps · all stages'}</div>
       <div className="pipe-rows">
         {stages
           .filter((s) => s.stage !== 'CLOSED')
@@ -1861,7 +1870,7 @@ function PipelineSnapshotCard({ stages, title }: { stages: StageSnapshot[]; titl
                 {s.count}
               </div>
               <div className={`ps-v ${!s.hideDollar && s.volume > 0 ? 'live' : ''}`}>
-                {s.hideDollar ? 'count only' : s.volume > 0 ? fmtCurrency(s.volume) : '\u2014'}
+                {s.hideDollar ? 'count only' : s.volume > 0 ? fmtCurrency(s.volume) : '—'}
               </div>
             </div>
           ))}
@@ -1892,13 +1901,13 @@ function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?:
   return (
     <div className="card">
       <div className="cl">
-        {title || 'Conversion Funnel \u2014 team-wide \u00b7 from deal_events stage transitions'}
+        {title || 'Conversion Funnel — team-wide · from deal_events stage transitions'}
       </div>
       <div className="cv-rows">
         {transitions.map((t, i) => (
           <div className={`cv-r ${t.rate >= 50 ? 'up' : 'dn'}`} key={i}>
             <div className="cv-lbl">
-              {t.from} {'\u2192'} {t.to}
+              {t.from} {'→'} {t.to}
             </div>
             <div className="cv-right">
               <div className="cv-val">{t.rate}%</div>
@@ -1911,7 +1920,7 @@ function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?:
           const weakest = transitions.reduce((min, t) => (t.rate < min.rate ? t : min), transitions[0]);
           return weakest.rate < 50 ? (
             <div className="cv-alert">
-              Weakest stage: {weakest.from} {'\u2192'} {weakest.to} at {weakest.rate}%
+              Weakest stage: {weakest.from} {'→'} {weakest.to} at {weakest.rate}%
             </div>
           ) : null;
         })()}
@@ -1923,8 +1932,8 @@ function ActivityFeedCard({ events, title }: { events?: ActivityEvent[]; title?:
   return (
     <div className="card">
       <div className="cl">
-        <span>{title || 'Activity Feed \u2014 deal_events \u00b7 all reps'}</span>
-        <span className="cl-live">{'\u25CF'} Streaming</span>
+        <span>{title || 'Activity Feed — deal_events · all reps'}</span>
+        <span className="cl-live">{'●'} Streaming</span>
       </div>
       <div className="act-list">
         {events?.slice(0, 8).map((event) => (
@@ -1956,13 +1965,13 @@ function getActivityPipClass(event: ActivityEvent): string {
 function getActivityText(event: ActivityEvent): string {
   const biz = event.deal?.client?.businessName || 'Unknown';
   const repInit = event.rep?.initials || event.rep?.firstName || '';
-  if (event.toStage === 'FUNDED') return `${repInit} closed ${biz} \u2014 funded`;
+  if (event.toStage === 'FUNDED') return `${repInit} closed ${biz} — funded`;
   if (event.eventType === 'stage_changed')
-    return `${repInit} moved ${biz} \u2192 ${STAGE_LABELS[event.toStage || ''] || event.toStage || ''}`;
+    return `${repInit} moved ${biz} → ${STAGE_LABELS[event.toStage || ''] || event.toStage || ''}`;
   if (event.eventType === 'action_completed')
-    return `${repInit} completed action on ${biz}${event.note ? ` \u2014 ${event.note}` : ''}`;
-  if (event.eventType === 'note_added') return `${repInit} note on ${biz}${event.note ? ` \u2014 ${event.note}` : ''}`;
-  return `${repInit}: ${biz} \u2014 ${event.eventType?.replace(/_/g, ' ') || 'update'}`;
+    return `${repInit} completed action on ${biz}${event.note ? ` — ${event.note}` : ''}`;
+  if (event.eventType === 'note_added') return `${repInit} note on ${biz}${event.note ? ` — ${event.note}` : ''}`;
+  return `${repInit}: ${biz} — ${event.eventType?.replace(/_/g, ' ') || 'update'}`;
 }
 
 function SegBar({ products }: { products: ProductMixItem[] }) {
@@ -2017,7 +2026,7 @@ function ProductMixModule({
     <div className="pm-wrap">
       <div className="pm-header">
         <span className="pm-title">
-          Product Mix{isAdmin ? ' \u2014 Team Intelligence' : ` \u2014 ${repInitials || ''}`}
+          Product Mix{isAdmin ? ' — Team Intelligence' : ` — ${repInitials || ''}`}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="pm-toggle">
@@ -2072,7 +2081,7 @@ function ProductMixModule({
             {data.products[0].percentage >= 70 ? (
               <>
                 <strong>Over-concentrated:</strong> {data.products[0].type} is {data.products[0].percentage}% of funded
-                volume — single-product risk. <strong>{'\u2192'} Diversify</strong> into underrepresented products.
+                volume — single-product risk. <strong>{'→'} Diversify</strong> into underrepresented products.
               </>
             ) : (
               <>
@@ -2103,11 +2112,14 @@ function ProductMixModule({
                   const topProduct =
                     rep.mix.length > 0
                       ? rep.mix.reduce((a, b) => (a.percentage > b.percentage ? a : b)).type
-                      : '\u2014';
+                      : '—';
                   return (
                     <tr key={rep.id}>
                       <td>
                         <div className="r-nc">
+                          <div className="r-av" style={{ background: repAvatarColor(rep.initials), color: repAvatarColor(rep.initials) !== 'var(--faint)' ? 'var(--bg)' : 'var(--muted)' }}>
+                            {rep.initials}
+                          </div>
                           <span style={{ fontWeight: 600 }}>{rep.initials}</span>
                         </div>
                       </td>
@@ -2209,7 +2221,7 @@ function SmsBar({ metrics, label }: { metrics: SmsMetricsData; label?: string })
   const deliveredPct = metrics.sent24h > 0 ? Math.round((metrics.delivered24h / metrics.sent24h) * 100) : 0;
   return (
     <div className="sms-bar">
-      <div className="sms-lbl">{label || 'SMS / Outreach \u2014 secondary metrics'}</div>
+      <div className="sms-lbl">{label || 'SMS / Outreach — secondary metrics'}</div>
       <div className="sms-items">
         <div>
           <div className="si-v">{metrics.sent24h}</div>
@@ -2302,7 +2314,7 @@ function CSVImportModal({
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
         >
-          <div className="csv-drop-icon">{file ? '\u2705' : '\u2B06'}</div>
+          <div className="csv-drop-icon">{file ? '✅' : '⬆'}</div>
           <div className="csv-drop-txt">{file ? file.name : 'Drop CSV here or click to browse'}</div>
           <div className="csv-drop-sub">{file ? `${(file.size / 1024).toFixed(1)} KB` : '.csv files only'}</div>
         </div>
@@ -2321,7 +2333,7 @@ function CSVImportModal({
             Cancel
           </button>
           <button className="csv-btn csv-import" disabled={!file || importing} onClick={onImport}>
-            {importing ? 'Importing\u2026' : 'Import'}
+            {importing ? 'Importing…' : 'Import'}
           </button>
         </div>
       </div>
@@ -2350,10 +2362,10 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
     <div className="rrq-wrap">
       <div className="rrq-header">
         <div className="rrq-title-row">
-          <div className="rrq-icon">{'\uD83D\uDD01'}</div>
+          <div className="rrq-icon">🔁</div>
           <div>
             <div className="rrq-title">Renewal / Revive Queue</div>
-            <div className="rrq-sub">One deal at a time \u00b7 system-prioritized</div>
+            <div className="rrq-sub">One deal at a time · system-prioritized</div>
           </div>
         </div>
         <div className="rrq-meta-row">

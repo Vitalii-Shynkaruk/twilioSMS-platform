@@ -125,6 +125,7 @@ export default function PipelinePage() {
   const [showCreateDeal, setShowCreateDeal] = useState(initialNewDeal === '1');
   const [showGoals, setShowGoals] = useState(false);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; dealId: string; dealName: string } | null>(null);
 
   // ─── Clear URL params after reading ───
   useEffect(() => {
@@ -554,6 +555,10 @@ export default function PipelinePage() {
                         value={value}
                         viewMode={viewMode}
                         onDealClick={(id) => setSelectedDealId(id)}
+                        onCardContextMenu={(e, deal) => {
+                          e.preventDefault();
+                          setCtxMenu({ x: e.clientX, y: e.clientY, dealId: deal.id, dealName: deal.client?.businessName || 'this deal' });
+                        }}
                       />
                     );
                   })}
@@ -838,6 +843,40 @@ export default function PipelinePage() {
       {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
       {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
       {showGoals && <GoalsModal reps={displayReps} onClose={() => setShowGoals(false)} />}
+
+      {/* RIGHT-CLICK CONTEXT MENU */}
+      {ctxMenu && isAdmin && (
+        <>
+          <div className="ctx-overlay" onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null); }} />
+          <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+            <button
+              className="ctx-item ctx-open"
+              onClick={() => { setSelectedDealId(ctxMenu.dealId); setCtxMenu(null); }}
+            >
+              📋 Open Deal
+            </button>
+            <button
+              className="ctx-item ctx-delete"
+              onClick={async () => {
+                if (!confirm(`Delete "${ctxMenu.dealName}"? This cannot be undone.`)) {
+                  setCtxMenu(null);
+                  return;
+                }
+                try {
+                  await dealApi.deleteDeal(ctxMenu.dealId);
+                  toast.success('Deal deleted');
+                  qc.invalidateQueries({ queryKey: ['deals'] });
+                } catch {
+                  toast.error('Delete failed');
+                }
+                setCtxMenu(null);
+              }}
+            >
+              🗑 Delete Deal
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -871,6 +910,7 @@ function StageColumn({
   value,
   viewMode,
   onDealClick,
+  onCardContextMenu,
 }: {
   config: StageConfig;
   deals: Deal[];
@@ -878,6 +918,7 @@ function StageColumn({
   value: number;
   viewMode: ViewMode;
   onDealClick: (id: string) => void;
+  onCardContextMenu?: (e: React.MouseEvent, deal: Deal) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: config.value });
   const urgentCount = deals.filter(
@@ -964,7 +1005,7 @@ function StageColumn({
         {[...deals]
           .sort((a, b) => sortPri(a) - sortPri(b) || (a.staleDays || 0) - (b.staleDays || 0))
           .map((deal) => (
-            <DraggableDealCard key={deal.id} deal={deal} viewMode={viewMode} onClick={() => onDealClick(deal.id)} />
+            <DraggableDealCard key={deal.id} deal={deal} viewMode={viewMode} onClick={() => onDealClick(deal.id)} onContextMenu={onCardContextMenu ? (e) => onCardContextMenu(e, deal) : undefined} />
           ))}
       </div>
     </div>
@@ -975,14 +1016,14 @@ function StageColumn({
 // DRAGGABLE CARD WRAPPER
 // ═══════════════════════════════════════
 
-function DraggableDealCard({ deal, viewMode, onClick }: { deal: Deal; viewMode: ViewMode; onClick: () => void }) {
+function DraggableDealCard({ deal, viewMode, onClick, onContextMenu }: { deal: Deal; viewMode: ViewMode; onClick: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.25 : 1 }
     : undefined;
 
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+    <div ref={setNodeRef} style={style} {...listeners} {...attributes} onContextMenu={onContextMenu}>
       <DealCard deal={deal} onClick={onClick} viewMode={viewMode} />
     </div>
   );

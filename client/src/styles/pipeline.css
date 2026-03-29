@@ -1039,3 +1039,25 @@ body.simple-view .queue-dock .sum-bar{
 
   .queue-nav-btn { font-size: 9px; }
 }
+
+/* ── Right-click context menu ── */
+.ctx-overlay {
+  position: fixed; inset: 0; z-index: 9998; background: transparent;
+}
+.ctx-menu {
+  position: fixed; z-index: 9999;
+  background: var(--surface2, #1e2030); border: 1px solid var(--border2, #333);
+  border-radius: 8px; padding: 4px; min-width: 160px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  animation: ctx-in .12s ease-out;
+}
+@keyframes ctx-in { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
+.ctx-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; border: none; background: transparent;
+  color: var(--text, #ccc); font-size: 11px; border-radius: 5px;
+  cursor: pointer; text-align: left;
+}
+.ctx-item:hover { background: var(--faint, #ffffff10); }
+.ctx-delete { color: #e5534b; }
+.ctx-delete:hover { background: rgba(229,83,75,.12); }

@@ -704,7 +704,10 @@ export class CommandCenterController {
   // GET /api/command-center/activity-feed - Activity Feed
   static async getActivityFeed(req: AuthRequest, res: Response) {
     const filter: any = {};
-    if (req.user?.role !== 'ADMIN') {
+    const { repId } = req.query;
+    if (req.user?.role === 'ADMIN' && repId) {
+      filter.repId = repId as string;
+    } else if (req.user?.role !== 'ADMIN') {
       filter.repId = req.user!.id;
     }
 

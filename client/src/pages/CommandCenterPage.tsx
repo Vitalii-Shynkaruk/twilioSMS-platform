@@ -255,6 +255,14 @@ export default function CommandCenterPage() {
   const [csvImporting, setCsvImporting] = useState(false);
   const [rrqIndex, setRrqIndex] = useState(0);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [actionToast, setActionToast] = useState<{ title: string; text: string } | null>(null);
+  const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showActionToast = useCallback((title: string, text: string) => {
+    if (actionToastTimer.current) clearTimeout(actionToastTimer.current);
+    setActionToast({ title, text });
+    actionToastTimer.current = setTimeout(() => setActionToast(null), 3200);
+  }, []);
 
   useEffect(() => {
     function tick() {
@@ -768,16 +776,17 @@ export default function CommandCenterPage() {
               Execution Zone — Operator Tools
             </div>
 
-            <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => setSelectedDealId(id)} />
+            <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => setSelectedDealId(id)} onToast={showActionToast} />
 
             <div className="g3">
               <PriorityCard
                 type="hot"
                 title="Hot Leads"
-                subtitle="System-wide \u00b7 immediate action"
+                subtitle="System-wide · immediate action"
                 deals={hotLeads}
                 count={metrics?.hotCount ?? hotLeads?.length ?? 0}
                 onDealClick={(id) => setSelectedDealId(id)}
+                onToast={showActionToast}
               />
               <PriorityCard
                 type="stale"
@@ -787,6 +796,7 @@ export default function CommandCenterPage() {
                 count={metrics?.staleCount ?? staleDeals?.length ?? 0}
                 riskValue={staleRevenue}
                 onDealClick={(id) => setSelectedDealId(id)}
+                onToast={showActionToast}
               />
               <PriorityCard
                 type="over"
@@ -795,6 +805,7 @@ export default function CommandCenterPage() {
                 deals={overdueTasks}
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
                 onDealClick={(id) => setSelectedDealId(id)}
+                onToast={showActionToast}
               />
             </div>
 
@@ -966,7 +977,7 @@ export default function CommandCenterPage() {
               Execution Zone — My Deals Only
             </div>
 
-            <OperatorQueue deals={operatorQueue} onDealClick={(id) => setSelectedDealId(id)} />
+            <OperatorQueue deals={operatorQueue} onDealClick={(id) => setSelectedDealId(id)} onToast={showActionToast} />
 
             <div className="g3">
               <PriorityCard
@@ -976,6 +987,7 @@ export default function CommandCenterPage() {
                 deals={hotLeads}
                 count={metrics?.hotCount ?? hotLeads?.length ?? 0}
                 onDealClick={(id) => setSelectedDealId(id)}
+                onToast={showActionToast}
               />
               <PriorityCard
                 type="stale"
@@ -985,6 +997,7 @@ export default function CommandCenterPage() {
                 count={metrics?.staleCount ?? staleDeals?.length ?? 0}
                 riskValue={staleRevenue}
                 onDealClick={(id) => setSelectedDealId(id)}
+                onToast={showActionToast}
               />
               <PriorityCard
                 type="over"
@@ -993,6 +1006,7 @@ export default function CommandCenterPage() {
                 deals={overdueTasks}
                 count={metrics?.overdueCount ?? overdueTasks?.length ?? 0}
                 onDealClick={(id) => setSelectedDealId(id)}
+                onToast={showActionToast}
               />
             </div>
 
@@ -1111,6 +1125,14 @@ export default function CommandCenterPage() {
 
       {/* LIVE FEED TOAST */}
       <LiveFeedToast events={activityFeed} />
+
+      {/* ACTION TOAST (click-triggered) */}
+      {actionToast && (
+        <div className="toast show" style={{ zIndex: 10001 }}>
+          <div className="toast-title">{actionToast.title}</div>
+          {actionToast.text}
+        </div>
+      )}
 
       {/* DEAL DETAIL MODAL */}
       {selectedDeal && (
@@ -1313,10 +1335,12 @@ function OperatorQueue({
   deals,
   isAdmin,
   onDealClick,
+  onToast,
 }: {
   deals?: QueueDeal[];
   isAdmin?: boolean;
   onDealClick: (id: string) => void;
+  onToast?: (title: string, text: string) => void;
 }) {
   if (!deals || deals.length === 0) return null;
   return (
@@ -1324,9 +1348,9 @@ function OperatorQueue({
       <div className="oq-head">
         <span style={{ color: 'var(--orange)', fontSize: 13 }}>{'\u2605'}</span>
         <span className="oq-title">
-          {isAdmin ? 'Operator Queue \u2014 Admin Hit List' : 'Close These Today \u2014 My Deals'}
+          {isAdmin ? 'Operator Queue — Admin Hit List' : 'Close These Today — My Deals'}
         </span>
-        <span className="oq-sub">One action per deal \u00b7 system-determined by stage + urgency</span>
+        <span className="oq-sub">One action per deal · system-determined by stage + urgency</span>
       </div>
       <div className="oq-list">
         {deals.slice(0, 5).map((deal, i) => (
@@ -1337,7 +1361,7 @@ function OperatorQueue({
                 {deal.client?.businessName || 'Unknown'}
                 {isAdmin && deal.assignedRep && (
                   <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
-                    {' \u00b7 '}
+                    {' · '}
                     {deal.assignedRep.initials ||
                       (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
                   </span>
@@ -1345,7 +1369,7 @@ function OperatorQueue({
               </div>
               <div className="oqi-detail">
                 {deal.productType || ''} {STAGE_LABELS[deal.stage] || deal.stage}
-                {deal.nextAction ? ` \u00b7 ${deal.nextAction}` : ''}
+                {deal.nextAction ? ` · ${deal.nextAction}` : ''}
               </div>
             </div>
             <div className="oqi-right">
@@ -1354,7 +1378,15 @@ function OperatorQueue({
                 className={`oqi-action ${getActionButtonStyle(deal.primaryAction)}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDealClick(deal.id);
+                  if (onToast) {
+                    const biz = deal.client?.businessName || 'Unknown';
+                    const action = (deal.primaryAction || '').toLowerCase();
+                    let msg = `${deal.primaryAction}...`;
+                    if (action.includes('call')) msg = 'Calling client to present offer...';
+                    else if (action.includes('send')) msg = 'Sending offer summary to client...';
+                    else if (action.includes('follow')) msg = 'Following up with lender...';
+                    onToast(biz, msg);
+                  }
                 }}
               >
                 {deal.primaryAction}
@@ -1375,6 +1407,7 @@ function PriorityCard({
   count,
   riskValue,
   onDealClick,
+  onToast,
 }: {
   type: 'hot' | 'stale' | 'over';
   title: string;
@@ -1383,6 +1416,7 @@ function PriorityCard({
   count: number;
   riskValue?: number;
   onDealClick: (id: string) => void;
+  onToast: (title: string, text: string) => void;
 }) {
   const ctaClass = type === 'hot' ? 'cta-h' : type === 'stale' ? 'cta-s' : 'cta-o';
 
@@ -1403,10 +1437,71 @@ function PriorityCard({
     return 'Follow Up';
   }
 
+  function buildToastText(deal: Deal): string {
+    const biz = deal.client?.businessName || 'Unknown';
+    const rep = deal.assignedRep?.initials || '';
+    const stage = STAGE_LABELS[deal.stage] || deal.stage;
+    if (type === 'stale') {
+      const idle = deal.staleDays > 0 ? `${deal.staleDays}h idle` : 'idle';
+      const val = deal.dealAmount ? ` · ${fmtCurrency(deal.dealAmount)}` : '';
+      return `${idle}${val} · ${stage}`;
+    }
+    if (type === 'over') {
+      const action = deal.nextAction || 'action needed';
+      return `${action} · overdue${rep ? ` (${rep})` : ''}`;
+    }
+    return `${biz} — ${stage}`;
+  }
+
+  function getCtaToastText(deal: Deal, cta: string): string {
+    const action = cta.toLowerCase();
+    if (action.includes('call')) return 'Calling client...';
+    if (action.includes('schedule')) return 'Opening scheduler...';
+    if (action.includes('follow')) return 'Following up...';
+    if (action.includes('send')) return 'Sending document request...';
+    if (action.includes('assign')) return 'Opening assignment...';
+    if (action.includes('act')) return 'Acting on deal...';
+    return `${cta}...`;
+  }
+
+  function handleRowClick(deal: Deal) {
+    if (type === 'hot') {
+      onDealClick(deal.id);
+    } else {
+      const biz = deal.client?.businessName || 'Unknown';
+      onToast(biz, buildToastText(deal));
+    }
+  }
+
+  function handleCtaClick(e: React.MouseEvent, deal: Deal, cta: string) {
+    e.stopPropagation();
+    const biz = deal.client?.businessName || 'Unknown';
+    onToast(biz, getCtaToastText(deal, cta));
+  }
+
+  const icon =
+    type === 'hot' ? (
+      <svg width="10" height="10" viewBox="0 0 16 16" fill="var(--orange)">
+        <path d="M8 1C5.5 5 3 7.5 3 11a5 5 0 0010 0C13 7.5 10.5 5 8 1z" />
+      </svg>
+    ) : type === 'stale' ? (
+      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="var(--amber)" strokeWidth="1.5">
+        <circle cx="8" cy="8" r="6" />
+        <path d="M8 4v4l2.5 2.5" strokeLinecap="round" />
+      </svg>
+    ) : (
+      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="var(--red)" strokeWidth="1.5">
+        <circle cx="8" cy="8" r="6" />
+        <path d="M8 5v3l2 2" strokeLinecap="round" />
+        <path d="M5 1.5h6" strokeLinecap="round" />
+      </svg>
+    );
+
   return (
     <div className={`pcard ${type}`}>
       <div className="pc-head">
         <div className="pc-hl">
+          {icon}
           <div>
             <div className="pc-title">{title}</div>
             <div className="pc-sub">{subtitle}</div>
@@ -1415,26 +1510,31 @@ function PriorityCard({
         <div className="pc-ct">{count}</div>
       </div>
       <div className="pc-body">
-        {deals?.slice(0, 3).map((deal) => (
-          <div className="pdi" key={deal.id} onClick={() => onDealClick(deal.id)}>
-            <div>
-              <div className="pdi-name">
-                {deal.client?.businessName || 'Unknown'}
-                {deal.assignedRep && (
-                  <span style={{ fontSize: 9, color: 'var(--muted)' }}>
-                    {' '}
-                    ({deal.assignedRep.initials || deal.assignedRep.firstName[0]})
-                  </span>
-                )}
+        {deals?.slice(0, 3).map((deal) => {
+          const cta = getDealCta(deal);
+          return (
+            <div className="pdi" key={deal.id} onClick={() => handleRowClick(deal)}>
+              <div>
+                <div className="pdi-name">
+                  {deal.client?.businessName || 'Unknown'}
+                  {deal.assignedRep && (
+                    <span style={{ fontSize: 9, color: 'var(--muted)' }}>
+                      {' '}
+                      ({deal.assignedRep.initials || deal.assignedRep.firstName[0]})
+                    </span>
+                  )}
+                </div>
+                <div className="pdi-note">
+                  {deal.nextAction || STAGE_LABELS[deal.stage] || deal.stage}
+                  {deal.staleDays > 0 ? ` · ${deal.staleDays}d idle` : ''}
+                </div>
               </div>
-              <div className="pdi-note">
-                {deal.nextAction || STAGE_LABELS[deal.stage] || deal.stage}
-                {deal.staleDays > 0 ? ` \u00b7 ${deal.staleDays}d idle` : ''}
-              </div>
+              <button className={`cta ${ctaClass}`} onClick={(e) => handleCtaClick(e, deal, cta)}>
+                {cta}
+              </button>
             </div>
-            <button className={`cta ${ctaClass}`}>{getDealCta(deal)}</button>
-          </div>
-        ))}
+          );
+        })}
         {riskValue != null && riskValue > 0 && (
           <div className="pc-risk">
             <span className="pc-risk-lbl">Revenue at risk</span>

@@ -586,14 +586,14 @@ export default function CommandCenterPage() {
             LIVE
           </div>
           <span className="clk">{clock}</span>
-          {userIsAdmin && (
-            <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
-              ↑ Import
-            </button>
-          )}
           <button className="add-btn" onClick={() => navigate('/pipeline?newDeal=1')}>
             + Add Lead
           </button>
+          {userIsAdmin && (
+            <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
+              ↑ Import CSV
+            </button>
+          )}
         </div>
       </div>
 

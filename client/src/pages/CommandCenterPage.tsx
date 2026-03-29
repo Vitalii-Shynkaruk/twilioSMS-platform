@@ -1289,7 +1289,7 @@ function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () =
   return (
     <div className="esb-popup open" onClick={(e) => e.stopPropagation()}>
       <div className="esb-popup-rep">
-        {data.firstName} \u2014 {data.score}%
+        {data.firstName} {'\u2014'} {data.score}%
       </div>
       <div className="esb-popup-row">
         <span className="esb-popup-key">Actions completed</span>

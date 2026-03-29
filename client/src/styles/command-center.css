@@ -410,7 +410,7 @@ button { font-family: var(--mono); cursor: pointer; }
 /* EXECUTION SCORE BAR — compact topbar strip */
 .exec-score-bar { display: flex; align-items: center; gap: 14px; background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 4px 10px; }
 .esb-label { font-size: 8px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; flex-shrink: 0; }
-.esb-rep { display: flex; align-items: center; gap: 5px; }
+.esb-rep { display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .esb-init { font-size: 9px; font-weight: 700; color: var(--muted); min-width: 14px; }
 .esb-track { width: 44px; height: 3px; background: var(--faint); border-radius: 1px; }
 .esb-fill { height: 3px; border-radius: 1px; transition: width .6s ease; }
@@ -522,7 +522,7 @@ button { font-family: var(--mono); cursor: pointer; }
 .ca-cancel { padding: 8px 12px; border-radius: 3px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 10px; font-family: var(--mono); cursor: pointer; }
 
 /* ── EXEC SCORE BREAKDOWN POPUP ── */
-.esb-popup { position: absolute; top: 36px; right: 0; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; padding: 10px 12px; min-width: 200px; z-index: 50; display: none; animation: fi .15s ease; }
+.esb-popup { position: absolute; top: 36px; right: 0; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; padding: 10px 12px; min-width: 200px; z-index: 300; display: none; animation: fi .15s ease; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 .esb-popup.open { display: block; }
 .esb-popup-rep { font-size: 9px; font-weight: 700; color: var(--gold); margin-bottom: 6px; letter-spacing: .06em; }
 .esb-popup-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 9px; border-bottom: 1px solid var(--faint); }

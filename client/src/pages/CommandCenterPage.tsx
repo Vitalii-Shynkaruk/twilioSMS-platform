@@ -284,18 +284,19 @@ export default function CommandCenterPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Close exec dropdown on outside click
+  // Close exec dropdown/popup on outside click
   const execBarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!execDropdownOpen) return;
+    if (!execDropdownOpen && !execPopupOpen) return;
     const handler = (e: MouseEvent) => {
       if (execBarRef.current && !execBarRef.current.contains(e.target as Node)) {
         setExecDropdownOpen(false);
+        setExecPopupOpen(null);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [execDropdownOpen]);
+  }, [execDropdownOpen, execPopupOpen]);
 
   const sliderRef = useRef<HTMLDivElement>(null);
   const rswRef = useRef<HTMLDivElement>(null);

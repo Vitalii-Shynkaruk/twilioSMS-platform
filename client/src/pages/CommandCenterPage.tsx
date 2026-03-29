@@ -2549,16 +2549,16 @@ function CSVImportModal({
       <div className="csv-box" onClick={(e) => e.stopPropagation()}>
         <div className="csv-title">Import Funded Deals</div>
         <div className="csv-sub">
-          Upload a CSV with historical funded deals. Required columns: business_name, rep_name, product_type,
-          funded_amount, funded_date
+          Upload a CSV with historical funded deals. Supports multiple formats — auto-detects columns.
         </div>
         <div className="csv-schema">
+          <div style={{ fontSize: '8px', color: 'var(--muted)', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: '4px' }}>Format 1 — Standard</div>
           <div>
             <span className="field">business_name</span> <span className="type">text</span>{' '}
             <span className="req">required</span>
           </div>
           <div>
-            <span className="field">rep_name</span> <span className="type">text (initials)</span>{' '}
+            <span className="field">rep_name</span> <span className="type">text (initials or full name)</span>{' '}
             <span className="req">required</span>
           </div>
           <div>
@@ -2570,8 +2570,26 @@ function CSVImportModal({
             <span className="req">required</span>
           </div>
           <div>
-            <span className="field">funded_date</span> <span className="type">YYYY-MM-DD</span>{' '}
+            <span className="field">funded_date</span> <span className="type">YYYY-MM-DD</span>
+          </div>
+          <div style={{ fontSize: '8px', color: 'var(--muted)', letterSpacing: '.08em', textTransform: 'uppercase', marginTop: '8px', marginBottom: '4px' }}>Format 2 — FDR Export</div>
+          <div>
+            <span className="field">Contact</span> <span className="type">text</span>{' '}
             <span className="req">required</span>
+          </div>
+          <div>
+            <span className="field">FDR Originator</span> <span className="type">rep full name</span>{' '}
+            <span className="req">required</span>
+          </div>
+          <div>
+            <span className="field">Funded Amount (last)</span> <span className="type">$number</span>{' '}
+            <span className="req">required</span>
+          </div>
+          <div>
+            <span className="field">Contact Phone Number</span> <span className="type">phone</span>
+          </div>
+          <div>
+            <span className="field">Contact Email</span> <span className="type">email</span>
           </div>
         </div>
         <div

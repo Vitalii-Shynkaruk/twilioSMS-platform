@@ -1047,32 +1047,44 @@ export class DealController {
     const errors: string[] = [];
 
     for (const row of records) {
-      const businessName = row.business_name || row.BusinessName || row.company || '';
-      const repName = row.rep_name || row.RepName || row.rep || row.originator || '';
+      // Support multiple CSV column naming conventions
+      const businessName = row.business_name || row.BusinessName || row.company || row.Contact || '';
+      const contactName = row.contact_name || row.ContactName || row.Contact || businessName;
+      const repName = row.rep_name || row.RepName || row.rep || row.originator || row['FDR Originator'] || '';
       const productRaw = (row.product_type || row.ProductType || row.product || '').toUpperCase();
-      const amountStr = (row.funded_amount || row.FundedAmount || row.amount || '0').replace(/[$,]/g, '');
+      const amountStr = (row.funded_amount || row.FundedAmount || row.amount || row['Funded Amount (last)'] || '0').replace(/[$,]/g, '');
       const dateStr = row.funded_date || row.FundedDate || row.date || '';
+      const phone = row.phone || row.Phone || row['Contact Phone Number'] || null;
+      const email = row.email || row.Email || row['Contact Email'] || null;
+      const lender = row.lender || row.Lender || row['FDR Funded By'] || undefined;
+      const state = row.state || row.State || row['State of Incorporation'] || undefined;
 
       if (!businessName) {
         skipped++;
-        errors.push('Row missing business_name');
+        errors.push('Row missing business_name / Contact');
         continue;
       }
 
       const amount = parseFloat(amountStr) || 0;
       const fundedDate = dateStr ? new Date(dateStr) : new Date();
-      if (isNaN(fundedDate.getTime())) {
+      if (dateStr && isNaN(fundedDate.getTime())) {
         skipped++;
         errors.push(`Invalid date: ${dateStr}`);
         continue;
       }
 
-      // Match rep by initials or partial name
+      // Match rep by full name or initials
       const repMatch = reps.find(
-        (r) =>
-          r.initials?.toLowerCase() === repName.toLowerCase() ||
-          `${r.firstName} ${r.lastName}`.toLowerCase().includes(repName.toLowerCase()) ||
-          repName.toLowerCase().includes((r.initials || '').toLowerCase()),
+        (r) => {
+          const fullName = `${r.firstName} ${r.lastName}`.toLowerCase();
+          const rn = repName.toLowerCase().trim();
+          if (!rn) return false;
+          return fullName === rn ||
+            (r.initials && r.initials.toLowerCase() === rn) ||
+            fullName.includes(rn) ||
+            rn.includes(fullName) ||
+            (r.initials && r.initials.length > 0 && rn.includes(r.initials.toLowerCase()));
+        },
       );
       const repId = repMatch?.id || req.user!.id;
 
@@ -1088,19 +1100,41 @@ export class DealController {
       };
       const productType = productMap[productRaw] || null;
 
+      // Normalize phone to E.164 format
+      const normalizedPhone = phone ? phone.replace(/[^\d+]/g, '').replace(/^(\d{10})$/, '+1$1') : null;
+
+      // Check for existing client by phone to avoid duplicates
+      let client;
+      if (normalizedPhone) {
+        client = await prisma.client.findFirst({ where: { phone: normalizedPhone } });
+      }
+
       try {
-        // Upsert client
-        const client = await prisma.client.create({
-          data: {
-            businessName,
-            contactName: row.contact_name || row.ContactName || businessName,
-            phone: row.phone || row.Phone || null,
-            email: row.email || row.Email || null,
-            totalFunded: amount,
-            fundingCount: 1,
-            lastFundedDate: fundedDate,
-          },
-        });
+        if (client) {
+          // Update existing client's funding totals
+          await prisma.client.update({
+            where: { id: client.id },
+            data: {
+              totalFunded: { increment: amount },
+              fundingCount: { increment: 1 },
+              lastFundedDate: fundedDate,
+              state: state || undefined,
+            },
+          });
+        } else {
+          client = await prisma.client.create({
+            data: {
+              businessName,
+              contactName,
+              phone: normalizedPhone,
+              email,
+              state: state || undefined,
+              totalFunded: amount,
+              fundingCount: 1,
+              lastFundedDate: fundedDate,
+            },
+          });
+        }
 
         // Create deal in FUNDED stage
         const deal = await prisma.deal.create({
@@ -1115,7 +1149,7 @@ export class DealController {
             lastActivityAt: fundedDate,
             importBatch: batchId,
             originatorName: repName || undefined,
-            lender: row.lender || row.Lender || undefined,
+            lender,
             notes: row.notes || row.Notes || undefined,
           },
         });
@@ -1128,7 +1162,7 @@ export class DealController {
             amountFunded: amount,
             productType,
             fundedDate,
-            lender: row.lender || row.Lender || undefined,
+            lender,
           },
         });
 

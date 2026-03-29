@@ -198,7 +198,7 @@ interface IntelligenceData {
   repActivity: RepActivity[];
   stageSnapshot: StageSnapshot[];
   conversionFunnel: FunnelStep[];
-  pipelineHealth: { withNextAction: number; touched48h: number; properlyStaged: number };
+  pipelineHealth: { withNextAction: number; touched48h: number; properlyStaged: number; totalDeals?: number; withNextActionCount?: number; touchedRecentlyCount?: number };
 }
 
 interface ProductMixItem {
@@ -630,13 +630,13 @@ export default function CommandCenterPage() {
                   </div>
                   <div className="funded-n">{fmtCurrency(Math.round(animatedFunded))}</div>
                   <div className="funded-meta">
-                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · real-time from
+                    {metrics?.fundedDealCount ?? 0} deals · {metrics?.fundedRepCount ?? 0} reps · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · real-time from
                     pipeline
                   </div>
                   <div className="prog">
                     <div className="prog-top">
                       <span className="prog-goal">
-                        Team Goal: {fmtCurrency(metrics?.monthlyGoal)} · {daysLeft} days remaining
+                        Team Goal: {(metrics?.monthlyGoal ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} · {daysLeft} days remaining in {new Date().toLocaleDateString('en-US', { month: 'long' })}
                       </span>
                       <span className="prog-pct">{Math.round(metrics?.goalProgress ?? 0)}%</span>
                     </div>
@@ -702,23 +702,23 @@ export default function CommandCenterPage() {
               <div className="sc tp">
                 <div className="scl">Pipeline Value</div>
                 <div className="scv purple">{fmtCurrency(metrics?.pipelineValue)}</div>
-                <div className="scd up">Approved + Committed + Nurture offers</div>
+                <div className="scd up">Approved {fmtCurrency(metrics?.atRisk)} + Nurture prior offers</div>
               </div>
               <div className="sc" style={{ borderTop: '1px solid var(--green2)' }}>
                 <div className="scl">Committed (Funding)</div>
                 <div className="scv green">{fmtCurrency(metrics?.committedValue)}</div>
-                <div className="scd">Client accepted {' · '} closing in progress</div>
+                <div className="scd">Client accepted · closing in progress</div>
               </div>
               <div className="sc tor">
                 <div className="scl">At Risk</div>
                 <div className="scv orange">{fmtCurrency(metrics?.atRisk)}</div>
-                <div className="scd dn">Overdue tasks + stalled deals</div>
+                <div className="scd dn">{metrics?.overdueCount ?? 0} approved offers · expiring soon</div>
               </div>
               <div className="future-opps">
                 <div className="fo-label">Future Opportunities</div>
                 <div
                   style={{
-                    fontSize: 9,
+                    fontSize: 7,
                     color: 'var(--muted)',
                     marginBottom: 6,
                     lineHeight: 1.4,
@@ -730,23 +730,25 @@ export default function CommandCenterPage() {
                   <div className="fo-row">
                     <span className="fo-lbl">Next 7 days</span>
                     <div style={{ textAlign: 'right' }}>
-                      <div className="fo-val" style={{ fontSize: 12 }}>
-                        {metrics?.futureNext7 ?? 0} deals
+                      <div className="fo-val" style={{ fontSize: 11 }}>
+                        {fmtCurrency(metrics?.futureNext7Value)}
                       </div>
+                      <div style={{ fontSize: 7, color: 'var(--muted)' }}>{metrics?.futureNext7 ?? 0} deals</div>
                     </div>
                   </div>
                   <div className="fo-row">
                     <span className="fo-lbl">Next 30 days</span>
                     <div style={{ textAlign: 'right' }}>
-                      <div className="fo-val" style={{ fontSize: 12 }}>
-                        {metrics?.futureNext30 ?? 0} deals
+                      <div className="fo-val" style={{ fontSize: 11 }}>
+                        {fmtCurrency(metrics?.futureNext30Value)}
                       </div>
+                      <div style={{ fontSize: 7, color: 'var(--muted)' }}>{metrics?.futureNext30 ?? 0} deals</div>
                     </div>
                   </div>
                 </div>
                 <div className="fo-total">
                   <span className="fo-total-lbl">Total scheduled</span>
-                  <span className="fo-total-val">{metrics?.futureTotal ?? 0}</span>
+                  <span className="fo-total-val">{fmtCurrency((metrics?.futureNext7Value ?? 0) + (metrics?.futureNext30Value ?? 0))}</span>
                 </div>
               </div>
             </div>
@@ -759,7 +761,7 @@ export default function CommandCenterPage() {
                   <div>
                     <div className="rb-title">System Revenue at Risk</div>
                     <div className="rb-sub">
-                      Approved + Committed deals · overdue next actions · stalled activity
+                      Approved + Committed deals only · overdue next actions · stalled activity · source: last_activity_at on offers only
                     </div>
                   </div>
                 </div>
@@ -883,7 +885,7 @@ export default function CommandCenterPage() {
                   <Next5Actions deals={operatorQueue?.slice(0, 5)} />
                 </div>
                 <div>
-                  <div className="cl" style={{ marginBottom: 6 }}>
+                  <div className="cl" style={{ marginBottom: 6, fontSize: 8, color: 'var(--muted)', letterSpacing: '.12em', textTransform: 'uppercase' as const, fontWeight: 600 }}>
                     Pipeline Health
                   </div>
                   <div className="pipe-health">
@@ -900,6 +902,7 @@ export default function CommandCenterPage() {
                       >
                         {intelligence.pipelineHealth.withNextAction}%
                       </div>
+                      <div className="ph-sub">{intelligence.pipelineHealth.withNextActionCount ?? '?'} of {intelligence.pipelineHealth.totalDeals ?? '?'} deals</div>
                     </div>
                     <div className="ph-cell">
                       <div className="ph-lbl">Touched 48h</div>
@@ -914,12 +917,14 @@ export default function CommandCenterPage() {
                       >
                         {intelligence.pipelineHealth.touched48h}%
                       </div>
+                      <div className="ph-sub">{intelligence.pipelineHealth.touchedRecentlyCount ?? '?'} of {intelligence.pipelineHealth.totalDeals ?? '?'} deals</div>
                     </div>
                     <div className="ph-cell">
                       <div className="ph-lbl">Properly Staged</div>
                       <div className={`ph-val ${intelligence.pipelineHealth.properlyStaged >= 90 ? 'ok' : 'warn'}`}>
                         {intelligence.pipelineHealth.properlyStaged}%
                       </div>
+                      <div className="ph-sub">{intelligence.pipelineHealth.totalDeals ?? '?'} of {intelligence.pipelineHealth.totalDeals ?? '?'} deals</div>
                     </div>
                   </div>
                 </div>
@@ -1916,6 +1921,23 @@ function RepMonitorCard({
             </div>
           );
         })}
+      </div>
+      <div className="rm-footer">
+        {(() => {
+          const topMover = repActivity.filter(r => r.status === 'active').sort((a, b) => b.fundedMTD - a.fundedMTD)[0];
+          const inactive = repActivity.filter(r => r.status !== 'active');
+          const worstIdle = inactive.sort((a, b) => {
+            const at = a.lastTouch ? new Date(a.lastTouch).getTime() : 0;
+            const bt = b.lastTouch ? new Date(b.lastTouch).getTime() : 0;
+            return at - bt;
+          })[0];
+          return (
+            <>
+              {topMover && <>Top mover: <strong style={{ color: 'var(--green2)' }}>{topMover.initials}</strong></>}
+              {worstIdle && <> · Inactive: <strong style={{ color: 'var(--red)' }}>{worstIdle.name} — needs attention</strong></>}
+            </>
+          );
+        })()}
       </div>
     </div>
   );

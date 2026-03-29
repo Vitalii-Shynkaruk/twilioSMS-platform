@@ -45,6 +45,10 @@ export class CommandCenterController {
       followUpsTotal,
       renewalsDue,
       lifetimeFundedAgg,
+      fundedDealCount,
+      fundedRepCount,
+      futureNext7Value,
+      futureNext30Value,
     ] = await Promise.all([
       // Funded MTD
       prisma.fundingEvent.aggregate({
@@ -113,6 +117,31 @@ export class CommandCenterController {
       prisma.fundingEvent.aggregate({
         where: { ...effectiveFundingFilter },
         _sum: { amountFunded: true },
+      }),
+      // Funded deal count MTD
+      prisma.fundingEvent.count({
+        where: { ...effectiveFundingFilter, fundedDate: { gte: startOfMonth } },
+      }),
+      // Funded rep count MTD (distinct reps)
+      prisma.fundingEvent.groupBy({
+        by: ['repId'],
+        where: { ...effectiveFundingFilter, fundedDate: { gte: startOfMonth } },
+      }).then((r) => r.length),
+      // Future 7d value
+      prisma.deal.aggregate({
+        where: {
+          ...effectiveFilter,
+          followUpDate: { gte: now, lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) },
+        },
+        _sum: { dealAmount: true },
+      }),
+      // Future 30d value
+      prisma.deal.aggregate({
+        where: {
+          ...effectiveFilter,
+          followUpDate: { gte: now, lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) },
+        },
+        _sum: { dealAmount: true },
       }),
     ]);
 
@@ -233,7 +262,14 @@ export class CommandCenterController {
       futureNext7: followUps7d,
       futureNext30: followUps30d,
       futureTotal: followUpsTotal,
+      futureNext7Value: futureNext7Value._sum.dealAmount || 0,
+      futureNext30Value: futureNext30Value._sum.dealAmount || 0,
       renewalsDue,
+
+      // Funded meta
+      fundedDealCount,
+      fundedRepCount,
+      totalActiveDeals: allActiveDeals.length,
     });
   }
 
@@ -563,6 +599,9 @@ export class CommandCenterController {
         withNextAction: Math.round((withNextAction / totalActive) * 100),
         touched48h: Math.round((touchedRecently / totalActive) * 100),
         properlyStaged: 100, // all have Stage set
+        totalDeals: activeDeals.length,
+        withNextActionCount: withNextAction,
+        touchedRecentlyCount: touchedRecently,
       },
     });
   }

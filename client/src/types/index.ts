@@ -403,8 +403,13 @@ export interface CommandCenterMetrics {
   futureNext7: number;
   futureNext30: number;
   futureTotal: number;
+  futureNext7Value: number;
+  futureNext30Value: number;
   renewalsDue: number;
   conversionRate: number;
+  fundedDealCount: number;
+  fundedRepCount: number;
+  totalActiveDeals: number;
 }
 
 export interface Goal {

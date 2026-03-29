@@ -2614,29 +2614,53 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
   const deal = deals[clampedIndex];
   if (!deal) return null;
 
-  function getReasonTag(d: Deal): { cls: string; label: string } {
-    if (d.stage === 'FUNDED') return { cls: 'rr-renewal', label: 'Renewal' };
-    if (d.stage === 'NURTURE') return { cls: 'rr-nurture', label: 'Nurture' };
-    if (d.stage === 'APPROVED_OFFERS') return { cls: 'rr-revive', label: 'Revive' };
-    if (d.stage === 'SUBMITTED_IN_REVIEW') return { cls: 'rr-stmts', label: 'Statements' };
-    return { cls: 'rr-expired', label: 'Expired' };
+  function getReasonTag(d: Deal): { cls: string; label: string; icon: string } {
+    const src = (d as any).reviveSource as string | undefined;
+    if (src === 'renewal' || d.stage === 'FUNDED') return { cls: 'rr-renewal', label: 'Renewal Eligible', icon: '↻' };
+    if (src === 'revive' || d.stage === 'APPROVED_OFFERS') return { cls: 'rr-revive', label: 'Revive', icon: '⚡' };
+    if (src === 'statement_refresh' || d.stage === 'SUBMITTED_IN_REVIEW') return { cls: 'rr-stmts', label: 'Statement Refresh', icon: '📄' };
+    if (d.stage === 'NURTURE') return { cls: 'rr-nurture', label: 'Nurture', icon: '🌱' };
+    if (src === 'follow_up') return { cls: 'rr-expired', label: 'Follow-Up Due', icon: '📅' };
+    return { cls: 'rr-expired', label: 'Expired', icon: '⏳' };
+  }
+
+  function getQueueReason(d: Deal): string {
+    const src = (d as any).reviveSource as string | undefined;
+    if (src === 'renewal') {
+      const days = d.fundedDate ? Math.floor((Date.now() - new Date(d.fundedDate).getTime()) / 86400000) : 0;
+      return `Prior funded client — last funded ${days} days ago. ${d.productType || 'MCA'} product with ${fmtCurrency(d.dealAmount || 0)} prior amount. Eligible for renewal outreach.`;
+    }
+    if (src === 'revive') return `Deal in ${STAGE_LABELS[d.stage] || d.stage} with no activity for ${d.staleDays || 30}+ days. Consider re-engaging or closing.`;
+    if (src === 'statement_refresh') return `Submitted ${d.staleDays || 21}+ days ago with no lender update. Request fresh statements or follow up with lender.`;
+    if (src === 'follow_up') return `Follow-up was scheduled and is now past due. Contact client to maintain momentum.`;
+    return `This deal requires attention based on pipeline analysis.`;
   }
 
   const reason = getReasonTag(deal);
+  const queueReason = getQueueReason(deal);
+  const renewalPotential = deal.stage === 'FUNDED' && deal.dealAmount
+    ? `~${fmtCurrency(Math.round(deal.dealAmount * 0.8))}–${fmtCurrency(Math.round(deal.dealAmount * 1.2))} renewal`
+    : null;
+
+  const lastActivityAgo = deal.lastActivityAt
+    ? Math.floor((Date.now() - new Date(deal.lastActivityAt).getTime()) / 86400000)
+    : null;
 
   return (
     <div className="rrq-wrap">
       <div className="rrq-header">
         <div className="rrq-title-row">
-          <div className="rrq-icon">🔁</div>
+          <div className="rrq-icon">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0110.9-3.5M14 8a6 6 0 01-10.9 3.5M14 4.5v-3h-3M2 11.5v3h3" stroke="#a8b4d8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </div>
           <div>
             <div className="rrq-title">Renewal / Revive Queue</div>
-            <div className="rrq-sub">One deal at a time · system-prioritized</div>
+            <div className="rrq-sub">Prior clients · expired offers · nurtures · statement refreshes · derived from pipeline history</div>
           </div>
         </div>
         <div className="rrq-meta-row">
           <div className="rrq-counter">
-            <strong>{clampedIndex + 1}</strong> of <strong>{deals.length}</strong>
+            0 / <strong>{deals.length}</strong> worked today
           </div>
           <div className="rrq-progress-pills">
             {deals.slice(0, 10).map((_, i) => (
@@ -2650,40 +2674,48 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
       </div>
       <div className="rrq-body">
         <div className="rrq-card">
-          <div className={`rrq-reason-tag ${reason.cls}`}>{reason.label}</div>
+          <div className={`rrq-reason-tag ${reason.cls}`}>{reason.icon} {reason.label}</div>
           <div className="rrq-deal-row">
             <div>
               <div className="rrq-deal-name">{deal.client?.businessName || 'Unknown'}</div>
               <div className="rrq-deal-meta">
                 {deal.productType && <span className="rrq-meta-pill highlight">{deal.productType}</span>}
-                <span className="rrq-meta-pill">{STAGE_LABELS[deal.stage] || deal.stage}</span>
+                <span className="rrq-meta-pill">prior funded</span>
                 {deal.assignedRep && (
                   <span className="rrq-meta-pill">
                     {deal.assignedRep.initials ||
                       (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
                   </span>
                 )}
-                {deal.staleDays > 0 && <span className="rrq-meta-pill">{deal.staleDays}d idle</span>}
+                {deal.fundedDate && (
+                  <span className="rrq-meta-pill">funded {new Date(deal.fundedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                )}
               </div>
             </div>
             <div className="rrq-deal-amounts">
               <div className="rrq-prior-amt">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</div>
               <div className="rrq-prior-lbl">Prior amount</div>
+              {renewalPotential && <div className="rrq-renewal-potential">{renewalPotential}</div>}
             </div>
           </div>
           <div className="rrq-detail-grid">
             <div className="rrq-detail-cell">
-              <div className="rrq-detail-lbl">Stage</div>
-              <div className="rrq-detail-val">{STAGE_LABELS[deal.stage] || deal.stage}</div>
+              <div className="rrq-detail-lbl">Queue Reason</div>
+              <div className="rrq-detail-val">{reason.label}</div>
             </div>
             <div className="rrq-detail-cell">
-              <div className="rrq-detail-lbl">Days Idle</div>
-              <div className={`rrq-detail-val ${deal.staleDays > 30 ? 'warn' : 'ok'}`}>{deal.staleDays ?? 0}d</div>
+              <div className="rrq-detail-lbl">Last Activity</div>
+              <div className={`rrq-detail-val ${(lastActivityAgo ?? 0) > 30 ? 'warn' : 'ok'}`}>{lastActivityAgo ?? 0}d ago</div>
             </div>
             <div className="rrq-detail-cell">
-              <div className="rrq-detail-lbl">Next Action</div>
-              <div className="rrq-detail-val neutral">{deal.nextAction || 'None set'}</div>
+              <div className="rrq-detail-lbl">Data Source</div>
+              <div className="rrq-detail-val neutral">{(deal as any).reviveSource === 'renewal' ? 'Funded History' : (deal as any).reviveSource === 'statement_refresh' ? 'Pipeline Age' : (deal as any).reviveSource === 'follow_up' ? 'Follow-Up Log' : 'Stage Tracker'}</div>
             </div>
+          </div>
+          <div className="rrq-reason-box">
+            <div className="rrq-reason-lbl">Why this is in your queue</div>
+            <div className="rrq-reason-text">{queueReason}</div>
+            <div className="rrq-rec">Recommendation: {deal.stage === 'FUNDED' ? 'Call to check renewal interest and request updated statements.' : deal.stage === 'SUBMITTED_IN_REVIEW' ? 'Follow up with lender for status update.' : 'Re-engage client with a check-in call.'}</div>
           </div>
           <div className="rrq-actions">
             <button className="rrq-btn rrq-btn-primary" onClick={() => toast('Request Statements')}>
@@ -2694,6 +2726,12 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
             </button>
             <button className="rrq-btn rrq-btn-reopen" onClick={() => toast('Reopen')}>
               Reopen
+            </button>
+            <button className="rrq-btn rrq-btn-complete" onClick={() => {
+              toast('Marked complete');
+              onNav(Math.min(clampedIndex + 1, deals.length - 1));
+            }}>
+              ✓ Complete
             </button>
             <button
               className="rrq-btn rrq-btn-skip"
@@ -2717,8 +2755,11 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
             Next →
           </button>
           <span className="rrq-nav-pos">
-            <strong>{clampedIndex + 1}</strong> / {deals.length}
+            Item <strong>{clampedIndex + 1}</strong> of {deals.length}
           </span>
+        </div>
+        <div className="rrq-nav-right">
+          <span className="rrq-complete-all" onClick={() => toast('All items marked complete')}>Mark All Complete ✓</span>
         </div>
       </div>
     </div>

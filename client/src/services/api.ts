@@ -105,11 +105,15 @@ export const dealApi = {
   logCall: (id: string, data: any) => api.post(`/deals/${id}/call-log`, data),
   getSms: (id: string) => api.get(`/deals/${id}/sms`),
   sendSms: (id: string, body: string) => api.post(`/deals/${id}/sms/send`, { body }),
-  importCSV: (file: File) => {
+  importCSV: (file: File, assignToRepId?: string) => {
     const form = new FormData();
     form.append('file', file);
+    if (assignToRepId) form.append('assignToRepId', assignToRepId);
     return api.post('/deals/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
+  getImportBatches: () => api.get('/deals/import-batches'),
+  deleteImportBatch: (batchId: string) => api.delete(`/deals/import-batch/${encodeURIComponent(batchId)}`),
+  deleteDeal: (id: string) => api.delete(`/deals/${id}`),
 };
 
 export const commandCenterApi = {

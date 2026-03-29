@@ -1044,6 +1044,13 @@ export class DealController {
     // Load reps for initials matching
     const reps = await prisma.user.findMany({ select: { id: true, firstName: true, lastName: true, initials: true } });
 
+    // Admin can assign all deals to a specific rep
+    const assignToRepId = req.body?.assignToRepId || null;
+    if (assignToRepId) {
+      const repExists = reps.some(r => r.id === assignToRepId);
+      if (!repExists) return res.status(400).json({ error: 'Invalid rep ID' });
+    }
+
     const batchId = `import_${Date.now()}`;
     let imported = 0;
     let skipped = 0;
@@ -1089,7 +1096,7 @@ export class DealController {
             (r.initials && r.initials.length > 0 && rn.includes(r.initials.toLowerCase()));
         },
       );
-      const repId = repMatch?.id || req.user!.id;
+      const repId = assignToRepId || repMatch?.id || req.user!.id;
 
       // Map product type
       const productMap: Record<string, ProductType> = {
@@ -1275,5 +1282,75 @@ export class DealController {
     }
 
     res.json({ messageId });
+  }
+
+  // DELETE /api/deals/import-batch/:batchId - Delete all deals from an import batch
+  static async deleteImportBatch(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { batchId } = req.params;
+    if (!batchId || !batchId.startsWith('import_')) {
+      return res.status(400).json({ error: 'Invalid batch ID' });
+    }
+
+    const deals = await prisma.deal.findMany({ where: { importBatch: batchId }, select: { id: true, clientId: true } });
+    if (deals.length === 0) return res.status(404).json({ error: 'No deals found for this batch' });
+
+    const dealIds = deals.map(d => d.id);
+
+    // Delete related records
+    await prisma.fundingEvent.deleteMany({ where: { dealId: { in: dealIds } } });
+    await prisma.offer.deleteMany({ where: { dealId: { in: dealIds } } });
+    await prisma.renewalTask.deleteMany({ where: { dealId: { in: dealIds } } });
+    await prisma.deal.deleteMany({ where: { importBatch: batchId } });
+
+    // Clean orphan clients
+    const clientIds = [...new Set(deals.map(d => d.clientId))];
+    for (const cid of clientIds) {
+      const remaining = await prisma.deal.count({ where: { clientId: cid } });
+      if (remaining === 0) await prisma.client.delete({ where: { id: cid } }).catch(() => {});
+    }
+
+    res.json({ deleted: deals.length, batchId });
+  }
+
+  // GET /api/deals/import-batches - List import batches
+  static async getImportBatches(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const batches = await prisma.deal.groupBy({
+      by: ['importBatch'],
+      where: { importBatch: { not: null } },
+      _count: { id: true },
+      _min: { createdAt: true },
+    });
+    res.json(batches.map(b => ({
+      batchId: b.importBatch,
+      count: b._count.id,
+      importedAt: b._min.createdAt,
+    })));
+  }
+
+  // DELETE /api/deals/:id - Delete a single deal
+  static async deleteDeal(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { id } = req.params;
+    const deal = await prisma.deal.findUnique({ where: { id }, select: { id: true, clientId: true } });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    await prisma.fundingEvent.deleteMany({ where: { dealId: id } });
+    await prisma.offer.deleteMany({ where: { dealId: id } });
+    await prisma.renewalTask.deleteMany({ where: { dealId: id } });
+    await prisma.deal.delete({ where: { id } });
+
+    // Clean orphan client
+    const remaining = await prisma.deal.count({ where: { clientId: deal.clientId } });
+    if (remaining === 0) await prisma.client.delete({ where: { id: deal.clientId } }).catch(() => {});
+
+    res.json({ deleted: true });
   }
 }

@@ -134,6 +134,17 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => dealApi.deleteDeal(dealId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['board'] });
+      toast.success('Deal deleted');
+      onClose();
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Delete failed'),
+  });
+
   if (isLoading || !deal) {
     return (
       <div className="panel open" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -182,9 +193,23 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                 </span>
               </div>
             </div>
-            <button className="ph-close" onClick={onClose}>
-              ×
-            </button>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              {isAdmin && (
+                <button
+                  className="ph-close"
+                  title="Delete deal"
+                  onClick={() => {
+                    if (confirm('Delete this deal? This cannot be undone.')) deleteMutation.mutate();
+                  }}
+                  style={{ color: 'var(--red, #e5534b)', fontSize: '14px' }}
+                >
+                  🗑
+                </button>
+              )}
+              <button className="ph-close" onClick={onClose}>
+                ×
+              </button>
+            </div>
           </div>
 
           <div className="panel-tabs">

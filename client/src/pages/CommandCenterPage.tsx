@@ -253,6 +253,7 @@ export default function CommandCenterPage() {
   const { user } = useAuthStore();
   const clock = useClock();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const userIsAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [activeView, setActiveView] = useState<string>(userIsAdmin ? 'admin' : user?.id || 'admin');
@@ -264,6 +265,8 @@ export default function CommandCenterPage() {
   const [csvModalOpen, setCsvModalOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
+  const [csvAssignRep, setCsvAssignRep] = useState<string>('');
+  const [lastImportBatch, setLastImportBatch] = useState<{ batchId: string; count: number } | null>(null);
   const [rrqIndex, setRrqIndex] = useState(0);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<{ title: string; text: string } | null>(null);
@@ -1120,24 +1123,43 @@ export default function CommandCenterPage() {
         <CSVImportModal
           file={csvFile}
           importing={csvImporting}
+          reps={displayReps}
+          assignRepId={csvAssignRep}
+          onAssignRepChange={setCsvAssignRep}
+          lastImportBatch={lastImportBatch}
           onFileSelect={setCsvFile}
           onImport={async () => {
             if (!csvFile) return;
             setCsvImporting(true);
             try {
-              await dealApi.importCSV(csvFile);
-              toast.success('CSV imported successfully');
-              setCsvModalOpen(false);
+              const res = await dealApi.importCSV(csvFile, csvAssignRep || undefined);
+              const { imported, skipped, batchId } = res.data;
+              toast.success(`Imported ${imported} deals${skipped ? ` (${skipped} skipped)` : ''}`);
+              setLastImportBatch({ batchId, count: imported });
               setCsvFile(null);
+              queryClient.invalidateQueries({ queryKey: ['deals'] });
+              queryClient.invalidateQueries({ queryKey: ['board'] });
             } catch {
               toast.error('Import failed — check file format');
             } finally {
               setCsvImporting(false);
             }
           }}
+          onUndoImport={async (batchId: string) => {
+            try {
+              const res = await dealApi.deleteImportBatch(batchId);
+              toast.success(`Deleted ${res.data.deleted} imported deals`);
+              setLastImportBatch(null);
+              queryClient.invalidateQueries({ queryKey: ['deals'] });
+              queryClient.invalidateQueries({ queryKey: ['board'] });
+            } catch {
+              toast.error('Failed to undo import');
+            }
+          }}
           onClose={() => {
             setCsvModalOpen(false);
             setCsvFile(null);
+            setCsvAssignRep('');
           }}
         />
       )}
@@ -2523,14 +2545,24 @@ function SmsBar({ metrics, label }: { metrics: SmsMetricsData; label?: string })
 function CSVImportModal({
   file,
   importing,
+  reps,
+  assignRepId,
+  onAssignRepChange,
+  lastImportBatch,
   onFileSelect,
   onImport,
+  onUndoImport,
   onClose,
 }: {
   file: File | null;
   importing: boolean;
+  reps: Rep[];
+  assignRepId: string;
+  onAssignRepChange: (id: string) => void;
+  lastImportBatch: { batchId: string; count: number } | null;
   onFileSelect: (f: File | null) => void;
   onImport: () => void;
+  onUndoImport: (batchId: string) => void;
   onClose: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2592,6 +2624,28 @@ function CSVImportModal({
             <span className="field">Contact Email</span> <span className="type">email</span>
           </div>
         </div>
+
+        {/* ASSIGN TO REP */}
+        <div className="csv-assign">
+          <label style={{ fontSize: '9px', color: 'var(--muted)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+            Assign all deals to rep
+          </label>
+          <select
+            value={assignRepId}
+            onChange={e => onAssignRepChange(e.target.value)}
+            style={{
+              width: '100%', padding: '6px 8px', marginTop: '4px',
+              background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--faint)',
+              borderRadius: '6px', fontSize: '11px', outline: 'none',
+            }}
+          >
+            <option value="">Auto-detect from CSV (rep_name column)</option>
+            {reps.map(r => (
+              <option key={r.id} value={r.id}>{r.firstName} {r.lastName} ({r.initials})</option>
+            ))}
+          </select>
+        </div>
+
         <div
           className="csv-drop"
           onDragOver={(e) => e.preventDefault()}
@@ -2612,6 +2666,30 @@ function CSVImportModal({
             onFileSelect(f);
           }}
         />
+
+        {/* UNDO LAST IMPORT */}
+        {lastImportBatch && (
+          <div style={{
+            background: 'rgba(201,162,39,0.1)', border: '1px solid var(--gold)',
+            borderRadius: '6px', padding: '8px 10px', marginBottom: '8px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <span style={{ fontSize: '10px', color: 'var(--text)' }}>
+              Last import: {lastImportBatch.count} deals
+            </span>
+            <button
+              onClick={() => onUndoImport(lastImportBatch.batchId)}
+              style={{
+                background: 'var(--red)', color: '#fff', border: 'none',
+                borderRadius: '4px', padding: '4px 10px', fontSize: '10px',
+                cursor: 'pointer', fontWeight: 600,
+              }}
+            >
+              ↩ Undo Import
+            </button>
+          </div>
+        )}
+
         <div className="csv-acts">
           <button className="csv-btn csv-cancel" onClick={onClose}>
             Cancel

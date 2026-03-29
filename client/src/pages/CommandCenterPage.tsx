@@ -371,7 +371,13 @@ export default function CommandCenterPage() {
 
   const isAdmin = activeView === 'admin';
   const displayReps = useMemo(() => {
-    return (reps || []).filter((r) => r.isActive);
+    const active = (reps || []).filter((r) => r.isActive);
+    // Sort: ADMIN users first (JB), then REPs alphabetically
+    return active.sort((a, b) => {
+      if (a.role === 'ADMIN' && b.role !== 'ADMIN') return -1;
+      if (a.role !== 'ADMIN' && b.role === 'ADMIN') return 1;
+      return a.firstName.localeCompare(b.firstName);
+    });
   }, [reps]);
 
   useEffect(() => {

@@ -982,6 +982,11 @@ export default function CommandCenterPage() {
               />
             </div>
 
+            {/* Renewal / Revive Queue */}
+            {reviveQueue && reviveQueue.length > 0 && (
+              <RenewalQueueCard deals={reviveQueue} index={rrqIndex} onNav={setRrqIndex} />
+            )}
+
             <div className="zone" style={{ marginTop: 2 }}>
               <div className="zd" style={{ background: 'var(--muted)' }} />
               My Intelligence \u2014 Personal Metrics

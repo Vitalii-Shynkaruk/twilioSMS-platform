@@ -724,7 +724,7 @@ export default function CommandCenterPage() {
                     lineHeight: 1.4,
                   }}
                 >
-                  Scheduled follow-ups &amp; renewals
+                  Scheduled follow-ups &amp; renewals expected to re-enter pipeline
                 </div>
                 <div className="fo-rows">
                   <div className="fo-row">
@@ -766,7 +766,7 @@ export default function CommandCenterPage() {
                 <div className="rb-right">
                   <div className="rb-stat">
                     <div className="rb-val">{fmtCurrency(metrics?.atRisk)}</div>
-                    <div className="rb-lbl">At risk value</div>
+                    <div className="rb-lbl">Approved offers at risk</div>
                   </div>
                   <div className="rb-stat">
                     <div className="rb-val">{metrics?.overdueCount ?? 0}</div>
@@ -855,7 +855,7 @@ export default function CommandCenterPage() {
                 <div className="card">
                   <div className="cl">Product Mix {' — '} quick view</div>
                   <div style={{ fontSize: 9, color: 'var(--muted)', marginBottom: 8 }}>
-                    Team funded · see full module below
+                    Team funded · lifetime · see full module below
                   </div>
                   {productMix && (
                     <>
@@ -879,7 +879,7 @@ export default function CommandCenterPage() {
             {intelligence && (
               <div className="g-2-1">
                 <div className="card">
-                  <div className="cl">Next Actions {' — '} ranked by value + urgency + proximity to funded</div>
+                  <div className="cl">Next 5 Actions {' — '} {activeRepInitials || 'JB'} · ranked by value + urgency + proximity to funded</div>
                   <Next5Actions deals={operatorQueue?.slice(0, 5)} />
                 </div>
                 <div>
@@ -1776,7 +1776,7 @@ function PriorityCard({
         })}
         {riskValue != null && riskValue > 0 && (
           <div className="pc-risk">
-            <span className="pc-risk-lbl">Revenue at risk</span>
+            <span className="pc-risk-lbl">Revenue at risk (48h+)</span>
             <span className="pc-risk-val">{fmtCurrency(riskValue)}</span>
           </div>
         )}
@@ -1909,7 +1909,9 @@ function RepMonitorCard({
               </div>
               <div className="rm-right">
                 <div className={`rm-time ${timeCls}`}>{timeAgo(rep.lastTouch)}</div>
-                <div className="rm-tag">{fmtCurrency(rep.fundedMTD)} MTD</div>
+                <div className="rm-tag">
+                  {fmtCurrency(rep.fundedMTD)} MTD · {rep.submittedCount > 0 ? Math.round((rep.fundedCount / rep.submittedCount) * 100) : 0}% conv · <span style={{ color: (() => { const exec = rep.activeDeals > 0 ? Math.round(((rep.activeDeals - rep.overdueCount) / rep.activeDeals) * 100) : 0; return exec >= 75 ? 'var(--green2)' : exec >= 50 ? 'var(--amber)' : 'var(--red)'; })() }}>{rep.activeDeals > 0 ? Math.round(((rep.activeDeals - rep.overdueCount) / rep.activeDeals) * 100) : 0}% exec</span>
+                </div>
               </div>
             </div>
           );
@@ -2149,9 +2151,14 @@ function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?:
         (() => {
           const weakest = transitions.reduce((min, t) => (t.rate < min.rate ? t : min), transitions[0]);
           return weakest.rate < 50 ? (
-            <div className="cv-alert">
-              Weakest stage: {weakest.from} {'→'} {weakest.to} at {weakest.rate}%
-            </div>
+            <>
+              <div className="cv-alert">
+                Weakest stage: {weakest.from} {'→'} {weakest.to} at {weakest.rate}%
+              </div>
+              <div className="cv-rec">
+                Leads are reaching reps but not converting to qualified. Recommendation: add revenue + TIB filter at first touch. Review low-conversion reps{'\''}  qualification approach specifically.
+              </div>
+            </>
           ) : null;
         })()}
     </div>
@@ -2270,9 +2277,13 @@ function ProductMixModule({
               30 Days
             </button>
           </div>
+          {isAdmin && (
+            <span style={{ fontSize: 8, color: 'var(--muted)' }}>Sort by: <span style={{ color: 'var(--text)', cursor: 'pointer' }}>Funded $ {'↓'}</span></span>
+          )}
         </div>
       </div>
       <div style={{ padding: '14px 16px' }}>
+        {isAdmin && <div className="pm-section-lbl">Team Aggregate — all reps combined</div>}
         <div className="pm-lifetime">
           <div className="pm-lifetime-val">{fmtCurrency(data.total)}</div>
           <div className="pm-lifetime-lbl">{period === 'lifetime' ? 'Lifetime Funded' : 'Last 30 Days'}</div>
@@ -2325,7 +2336,10 @@ function ProductMixModule({
         {isAdmin && data.repBreakdown && data.repBreakdown.length > 0 && (
           <>
             <div className="pm-section-divider" />
-            <div className="pm-section-lbl">Rep Breakdown — vs team average</div>
+            <div className="pm-section-lbl" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Rep Breakdown — vs team average</span>
+              <span style={{ fontSize: 8, color: 'var(--muted)' }}>Click column headers to sort</span>
+            </div>
             <table className="pm-rep-table">
               <thead>
                 <tr>

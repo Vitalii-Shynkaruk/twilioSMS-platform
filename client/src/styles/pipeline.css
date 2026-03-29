@@ -129,8 +129,9 @@ body.simple-view .mgr-bar{display:none !important;}
 body.simple-view .sum-bar{display:none !important;}
 body.simple-view .legend{display:none !important;}
 
-/* Simple columns: wider + breathable */
-body.simple-view .col{width:210px;}
+/* Simple columns: flex to fit all 9 stages without scrolling */
+body.simple-view .board{min-width:0;}
+body.simple-view .col{width:0;flex:1 1 0;min-width:140px;flex-shrink:1;}
 body.simple-view .col-head{padding-bottom:8px;}
 body.simple-view .col-vol{display:none;}
 body.simple-view .col-ct{display:none;}
@@ -196,8 +197,8 @@ body.simple-view .s-card.sc-hot:hover{box-shadow:0 4px 18px rgba(255,87,34,.3);}
 .sc-no-action{font-size:10px;color:var(--urgent);font-weight:500;padding:4px 0 0;}
 
 /* Simple board: more gap between columns, less noise */
-body.simple-view .board-wrap{padding:14px 20px 0;}
-body.simple-view .board{gap:10px;}
+body.simple-view .board-wrap{padding:14px 12px 0;overflow-x:hidden;}
+body.simple-view .board{gap:8px;}
 body.simple-view .col-bar{height:3px;margin-bottom:10px;}
 
 /* Simple column header */

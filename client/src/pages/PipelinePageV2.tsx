@@ -930,6 +930,15 @@ function StageColumn({
                   {count} {count === 1 ? 'deal' : 'deals'}
                 </div>
               </>
+            ) : config.value === 'NURTURE' ? (
+              <>
+                <div className={`col-vol ${value ? '' : 'dim'}`}>
+                  {value ? `${formatCurrency(value)} prev` : '—'}
+                </div>
+                <div className="col-ct">
+                  {count} {count === 1 ? 'deal' : 'deals'} · prev offer totals
+                </div>
+              </>
             ) : (
               <>
                 <div className="col-vol dim">—</div>

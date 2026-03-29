@@ -182,6 +182,9 @@ export class DealController {
         if (stage === 'FUNDED') {
           // Use dealAmount as fallback for funded deals (it's set from actual funding)
           value = deals.reduce((sum: number, d: any) => sum + (d.dealAmount || 0), 0);
+        } else if (stage === 'NURTURE') {
+          // Nurture: use prevOffer (prior funded amount before they went to nurture)
+          value = deals.reduce((sum: number, d: any) => sum + (d.prevOffer || d.dealAmount || 0), 0);
         } else {
           // For Approved/Committed/Nurture: use best offer amount
           value = deals.reduce((sum: number, d: any) => {

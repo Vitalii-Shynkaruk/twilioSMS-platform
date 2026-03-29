@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dealApi, repApi } from '../../services/api';
-import { Phone, MessageSquare, ChevronRight, Plus, CheckCircle2, Calendar, Shield } from 'lucide-react';
+import { MessageSquare, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import type { Deal, DealStage, Rep, Offer, ProductType } from '../../types';
 import { formatCurrency } from './DealCard';
+import CreateDealModal from './CreateDealModal';
 import { useAuthStore } from '../../stores/authStore';
 
 const STAGE_LABELS: Record<DealStage, string> = {
@@ -14,11 +15,40 @@ const STAGE_LABELS: Record<DealStage, string> = {
   QUALIFIED: 'Qualified',
   SUBMITTED_IN_REVIEW: 'Submitted (In Review)',
   APPROVED_OFFERS: 'Approved / Offers',
-  COMMITTED_FUNDING: 'Committed → Funding',
+  COMMITTED_FUNDING: 'Committed (Funding)',
   FUNDED: 'Funded',
-  NURTURE: 'Nurture (Lost)',
-  CLOSED: 'Closed (DQ)',
+  NURTURE: 'Nurture',
+  CLOSED: 'Closed',
 };
+
+function dealSystemStatus(deal: Deal): { label: string; cls: string } | null {
+  if (deal.stage === 'QUALIFIED' && !deal.appSubmitted) return { label: 'Needs app', cls: 'sp-needs-app' };
+  if (deal.stage === 'QUALIFIED' && deal.appSubmitted && (deal.offers?.length || 0) === 0) return { label: 'Awaiting offers', cls: 'sp-awaiting' };
+  if (deal.stage === 'QUALIFIED' && (deal.offers?.length || 0) === 1) return { label: 'Offer received', cls: 'sp-offer' };
+  if (deal.stage === 'QUALIFIED' && (deal.offers?.length || 0) > 1) return { label: 'Multiple offers', cls: 'sp-multi' };
+  if (deal.stage === 'SUBMITTED_IN_REVIEW') return { label: 'In review · Awaiting lender decision', cls: 'sp-awaiting' };
+  if (deal.stage === 'APPROVED_OFFERS' && (deal.offers?.length || 0) > 0) return { label: 'Offer in — present to client', cls: 'sp-offer' };
+  if (deal.stage === 'APPROVED_OFFERS') return { label: 'Approved — awaiting offers', cls: 'sp-awaiting' };
+  if (deal.stage === 'COMMITTED_FUNDING') return { label: 'Committed — funding in progress', cls: 'sp-offer' };
+  if (deal.stage === 'FUNDED') return { label: 'Funded', cls: 'sp-offer' };
+  return null;
+}
+
+function hotReason(deal: Deal): string | null {
+  if (['FUNDED', 'NURTURE', 'CLOSED'].includes(deal.stage)) return null;
+  if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') {
+    const best = deal.offers?.reduce((a, b) => (a.amount > b.amount ? a : b), deal.offers[0]);
+    if (best) return `Offer received from ${best.lenderName || 'lender'}`;
+  }
+  if ((deal.offers?.length || 0) > 0) return 'Offer received';
+  if (deal.lastReplyAt) {
+    const hours = (Date.now() - new Date(deal.lastReplyAt).getTime()) / 3600000;
+    if (hours <= 48) return 'Client replied recently';
+  }
+  if (deal.lenderEngaged && deal.appSubmitted) return 'Lender engaged';
+  if (deal.isHot) return 'Marked hot';
+  return null;
+}
 
 interface DealPanelProps {
   dealId: string;
@@ -114,6 +144,8 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 
   const clientName = deal.client?.contactName || deal.client?.businessName || 'Unknown';
   const repLabel = deal.assignedRep ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}` : 'Unassigned';
+  const sysStatus = dealSystemStatus(deal);
+  const hotText = hotReason(deal);
 
   return (
     <>
@@ -132,9 +164,19 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                 ) : (
                   <span style={{ color: 'var(--text3)' }}>+ Add email</span>
                 )}
+                {deal.nextAction && (
+                  <span className="ph-badge" style={{ background: 'var(--bg4)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                    {deal.nextAction}
+                  </span>
+                )}
+                {hotText && (
+                  <span className="ph-badge" style={{ background: 'var(--hot-bg)', color: 'var(--hot)', border: '1px solid var(--hot-b)' }}>
+                    🔥 {hotText}
+                  </span>
+                )}
                 <span
                   className="ph-badge"
-                  style={{ background: deal.assignedRep?.avatarColor ? `${deal.assignedRep.avatarColor}26` : 'var(--bg4)', color: deal.assignedRep?.avatarColor || 'var(--text2)' }}
+                  style={{ background: deal.assignedRep?.avatarColor ? `${deal.assignedRep.avatarColor}26` : 'rgba(74,158,232,0.16)', color: deal.assignedRep?.avatarColor || '#4A9EE8' }}
                 >
                   {repLabel}
                 </span>
@@ -164,6 +206,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
             <DealClientTab
               deal={deal}
               isAdmin={isAdmin}
+              sysStatus={dealSystemStatus(deal)}
               onUpdate={(data: any) => updateMutation.mutate(data)}
               onShare={(data: any) => shareMutation.mutate(data)}
               onMove={(data: any) => moveMutation.mutate(data)}
@@ -328,6 +371,7 @@ function DealClientTab({
   deal,
   onUpdate,
   isAdmin,
+  sysStatus,
   onShare,
   onMove,
   onEditFundEvent,
@@ -341,6 +385,7 @@ function DealClientTab({
   deal: Deal;
   onUpdate: (data: any) => void;
   isAdmin: boolean;
+  sysStatus: { label: string; cls: string } | null;
   onShare: (data: any) => void;
   onMove: (data: any) => void;
   onEditFundEvent: (feId: string) => void;
@@ -453,6 +498,16 @@ function DealClientTab({
 
   return (
     <div className="deal-tab">
+      {sysStatus && (
+        <div className="dsb">
+          <div className="dsbt">System Status</div>
+          <div className={`status-pill ${sysStatus.cls}`} style={{ display: 'inline-flex' }}>
+            <div className="sp-dot" />
+            <span className="sp-text">{sysStatus.label}</span>
+          </div>
+        </div>
+      )}
+
       <div className="dsb">
         <div className="dsbt">Deal</div>
         <div className="sf">
@@ -490,7 +545,7 @@ function DealClientTab({
                   className={clsx('dt-opt', selected && 'sel')}
                   onClick={() => canEdit && onUpdate({ productType: opt.value })}
                 >
-                  <div className="dt-chk">{selected ? '✓' : ''}</div>
+                  <div className="dt-chk">{selected ? <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> : ''}</div>
                   <span>{opt.label}</span>
                 </div>
               );
@@ -724,22 +779,6 @@ function DealClientTab({
       {canEdit && !isClosed && (
         <div className="dsb">
           <div className="dsbt">Actions</div>
-          {deal.stage !== 'NURTURE' && deal.stage !== 'FUNDED' && (
-            <button
-              className="act-btn"
-              style={{ background: 'var(--info-bg)', borderColor: 'var(--info-b)', color: 'var(--info)' }}
-              onClick={onOpenActionModal}
-            >
-              <CheckCircle2 className="w-3 h-3 inline mr-1" />
-              Complete Action
-            </button>
-          )}
-          {deal.stage !== 'NURTURE' && deal.stage !== 'FUNDED' && (
-            <button className="act-btn" onClick={onOpenMoveModal}>
-              <ChevronRight className="w-3 h-3 inline mr-1" />
-              Move Stage
-            </button>
-          )}
           {deal.stage === 'APPROVED_OFFERS' && (
             <button
               className="act-btn"
@@ -759,29 +798,11 @@ function DealClientTab({
             style={{ background: 'var(--info-bg)', borderColor: 'var(--info-b)', color: 'var(--info)' }}
             onClick={onOpenFollowUpModal}
           >
-            {deal.stage === 'NURTURE' ? '📅 Schedule Follow-Up' : <><Calendar className="w-3 h-3 inline mr-1" />Schedule Follow-Up</>}
+            📅 Schedule Follow-Up
           </button>
           <button className="act-btn act-nq" onClick={onOpenNQModal}>
             Lost / NQ / Close Deal
           </button>
-          {deal.stage !== 'NURTURE' && deal.stage !== 'FUNDED' && deal.client?.phone && (
-            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              <a href={`tel:${deal.client.phone}`} className="due-chip">
-                <Phone className="w-3 h-3 inline mr-0.5" />
-                Call
-              </a>
-              <a href={`sms:${deal.client.phone}`} className="due-chip">
-                <MessageSquare className="w-3 h-3 inline mr-0.5" />
-                Text
-              </a>
-            </div>
-          )}
-          {deal.productType === 'HELOC' && deal.commitSubStatus === 'DOCS_SIGNED' && (
-            <div className="renew-info" style={{ marginTop: 2 }}>
-              <Shield className="w-4 h-4 text-amber-400 inline mr-1" />
-              HELOC rescission window: wait 3 days before funding.
-            </div>
-          )}
         </div>
       )}
 
@@ -815,18 +836,27 @@ function DealClientTab({
         {(deal.dealEvents || []).length === 0 ? (
           <div style={{ fontSize: 11, color: 'var(--text3)' }}>No activity yet.</div>
         ) : (
-          (deal.dealEvents || []).slice(0, 8).map((event) => (
-            <div key={event.id} className="tl-item">
-              <div className="tl-dot" style={{ background: 'var(--gold)' }} />
-              <div>
-                <div className="tl-text">
-                  {event.eventType.replace(/_/g, ' ')}
-                  {event.note ? ` — ${event.note}` : ''}
+          (deal.dealEvents || []).slice(0, 8).map((event) => {
+            const type = event.eventType?.toLowerCase() || '';
+            let dotColor = 'var(--text3)';
+            if (type.includes('funded') || type.includes('offer')) dotColor = 'var(--good)';
+            else if (type.includes('submit') || type.includes('app')) dotColor = 'var(--watch)';
+            else if (type.includes('stage') || type.includes('move') || type.includes('created')) dotColor = 'var(--gold)';
+            else if (type.includes('sms') || type.includes('reply') || type.includes('message')) dotColor = 'var(--info)';
+            else if (type.includes('action') || type.includes('complete')) dotColor = 'var(--good)';
+            return (
+              <div key={event.id} className="tl-item">
+                <div className="tl-dot" style={{ background: dotColor }} />
+                <div>
+                  <div className="tl-text">
+                    {event.eventType.replace(/_/g, ' ')}
+                    {event.note ? ` — ${event.note}` : ''}
+                  </div>
+                  <div className="tl-time">{new Date(event.createdAt).toLocaleString('en-US')}</div>
                 </div>
-                <div className="tl-time">{new Date(event.createdAt).toLocaleString('en-US')}</div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -834,6 +864,7 @@ function DealClientTab({
 }
 
 function FundingHistoryTab({ deal }: { deal: Deal }) {
+  const [showNewDeal, setShowNewDeal] = useState(false);
   const events = deal.fundingEvents || [];
   const total = events.reduce((sum, e) => sum + (e.amountFunded || 0), 0);
 
@@ -852,28 +883,39 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
           </div>
           <div className="cs-item">
             <div className="cs-label">Events</div>
-            <div className="cs-val" style={{ color: 'var(--watch)' }}>
+            <div className="cs-val" style={{ color: 'var(--gold)' }}>
               {events.length}
             </div>
           </div>
           <div className="cs-item">
             <div className="cs-label">Phone</div>
-            <div className="cs-val" style={{ fontSize: 12, color: 'var(--text)' }}>
+            <div className="cs-val" style={{ fontSize: 12, fontWeight: 400 }}>
               {deal.client?.phone || '—'}
             </div>
           </div>
           <div className="cs-item">
             <div className="cs-label">Email</div>
-            <div className="cs-val" style={{ fontSize: 12, color: 'var(--info)' }}>
+            <div className="cs-val" style={{ fontSize: 12, fontWeight: 400, color: 'var(--info)' }}>
               {deal.client?.email || '—'}
             </div>
           </div>
         </div>
       </div>
 
-      <button className="add-deal-btn" onClick={() => toast('Use + Add Lead to create a new deal')}>
+      <button className="add-deal-btn" onClick={() => setShowNewDeal(true)}>
         + New Deal for {deal.client?.businessName || 'Client'}
       </button>
+      {showNewDeal && (
+        <CreateDealModal
+          onClose={() => setShowNewDeal(false)}
+          prefill={{
+            businessName: deal.client?.businessName,
+            contactName: deal.client?.contactName,
+            phone: deal.client?.phone,
+            email: deal.client?.email,
+          }}
+        />
+      )}
 
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}>
         Funding History ({events.length})
@@ -2118,10 +2160,10 @@ function RepOwnershipSection({
               title={`${r.firstName} ${r.lastName}${isSel ? ' (primary)' : ''}`}
             >
               <div
-                className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-white"
-                style={{ backgroundColor: r.avatarColor || '#6366f1' }}
+                className="av"
+                style={{ background: `${r.avatarColor || '#6366f1'}2e`, color: r.avatarColor || '#6366f1', width: 16, height: 16, fontSize: 7 }}
               >
-                {r.initials || r.firstName[0]}
+                {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
               </div>
               {r.firstName}
               {isSel && <span style={{ fontSize: 9, opacity: 0.7 }}>✓</span>}
@@ -2145,10 +2187,10 @@ function RepOwnershipSection({
                 title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ' — click to add'}`}
               >
                 <div
-                  className="w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-bold text-white"
-                  style={{ backgroundColor: r.avatarColor || '#6366f1' }}
+                  className="av"
+                  style={{ background: `${r.avatarColor || '#6366f1'}2e`, color: r.avatarColor || '#6366f1', width: 16, height: 16, fontSize: 7 }}
                 >
-                  {r.initials || r.firstName[0]}
+                  {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
                 </div>
                 {r.firstName}
                 {isAssisting ? (

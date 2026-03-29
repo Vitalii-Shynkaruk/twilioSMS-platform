@@ -8,17 +8,23 @@ import type { Rep, ProductType } from '../../types';
 
 interface CreateDealModalProps {
   onClose: () => void;
+  prefill?: {
+    businessName?: string;
+    contactName?: string;
+    phone?: string;
+    email?: string;
+  };
 }
 
-export default function CreateDealModal({ onClose }: CreateDealModalProps) {
+export default function CreateDealModal({ onClose, prefill }: CreateDealModalProps) {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
-  const [businessName, setBusinessName] = useState('');
-  const [contactName, setContactName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [businessName, setBusinessName] = useState(prefill?.businessName || '');
+  const [contactName, setContactName] = useState(prefill?.contactName || '');
+  const [phone, setPhone] = useState(prefill?.phone || '');
+  const [email, setEmail] = useState(prefill?.email || '');
   const [productType, setProductType] = useState<ProductType | ''>('');
   const [dealAmount, setDealAmount] = useState('');
   const [assignedRepId, setAssignedRepId] = useState(user?.id || '');
@@ -69,7 +75,7 @@ export default function CreateDealModal({ onClose }: CreateDealModalProps) {
         className="bg-[var(--bg-primary)] border border-[var(--border-primary)] rounded-xl w-full max-w-lg p-5 shadow-xl"
       >
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-base font-semibold text-[var(--text-primary)]">New Deal</h3>
+          <h3 className="text-base font-semibold text-[var(--text-primary)]">{prefill ? `New Deal — ${prefill.businessName || 'Client'}` : 'New Deal'}</h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-tertiary)]">
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>

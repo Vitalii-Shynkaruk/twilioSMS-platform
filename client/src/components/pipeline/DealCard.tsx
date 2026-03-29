@@ -81,6 +81,20 @@ function dueInfo(dateStr?: string | null) {
   return { text: `in ${diff}d`, cls: 'due-nm', isOverdue: false, isToday: false };
 }
 
+function isDealHot(deal: Deal): boolean {
+  if (['FUNDED', 'NURTURE', 'CLOSED'].includes(deal.stage)) return false;
+  const due = dueInfo(deal.nextActionDue);
+  if (due.isOverdue || deal.renewalTasks?.some((t) => t.status === 'PENDING')) return false;
+  if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') return true;
+  if ((deal.offers?.length || 0) > 0) return true;
+  if (deal.lenderEngaged && deal.appSubmitted) return true;
+  if (deal.lastReplyAt) {
+    const hours = (Date.now() - new Date(deal.lastReplyAt).getTime()) / 3600000;
+    if (hours <= 48) return true;
+  }
+  return !!deal.isHot;
+}
+
 function simpleDueInfo(dateStr?: string | null) {
   if (!dateStr) return { text: '', cls: 'st-nm' };
   const d = new Date(dateStr);
@@ -96,11 +110,10 @@ function simpleDueInfo(dateStr?: string | null) {
 
 function simpleCardState(deal: Deal): string {
   const due = dueInfo(deal.nextActionDue);
-  if (deal.isHot) return 'sc-hot';
-  if (due.isOverdue) return 'sc-overdue';
+  if (isDealHot(deal)) return 'sc-hot';
+  if (due.isOverdue || deal.renewalTasks?.some((t) => t.status === 'PENDING')) return 'sc-overdue';
   if (due.isToday) return 'sc-today';
   if (deal.stage === 'FUNDED') return 'sc-good';
-  if (deal.staleDays <= 0) return 'sc-good';
   return 'sc-normal';
 }
 
@@ -109,9 +122,15 @@ function cardPriority(deal: Deal): string {
   const due = dueInfo(deal.nextActionDue);
   if (due.isOverdue) return 'p-od';
   if (!deal.nextAction && !['FUNDED', 'CLOSED', 'NURTURE'].includes(deal.stage)) return 'p-mna';
-  if (deal.isHot) return 'p-hot';
+  if (isDealHot(deal)) return 'p-hot';
   if (due.isToday) return 'p-td';
   if (deal.renewalTasks?.some((t) => t.status === 'PENDING')) return 'p-renew';
+  // Nurture: renewal = green border, lost = orange border, else normal
+  if (deal.stage === 'NURTURE') {
+    if (deal.followUpType === 'renewal') return 'p-renew';
+    if (!deal.followUpType || deal.followUpType === 'reengage' || deal.followUpType === 'competitor') return 'p-ns';
+    return 'p-nm';
+  }
   if (deal.staleDays <= 0) return 'p-good';
   return 'p-nm';
 }
@@ -130,38 +149,31 @@ function staleTxt(days: number): { text: string; cls: string } {
   return { text: `${days}d STALE`, cls: 'dead' };
 }
 
-// Stages where dollar amounts should NEVER appear unless a real lender offer exists
-const NO_AMOUNT_STAGES: string[] = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED', 'SUBMITTED_IN_REVIEW'];
-
 function simpleAmount(deal: Deal): { text: string; cls: string } {
-  // FUNDED — show from funding events
   if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
     return { text: `💰 ${formatCurrency(deal.fundingEvents[0].amountFunded)}`, cls: 'sca-green' };
   }
-  // APPROVED / COMMITTED — show best offer
+
   if ((deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.offers?.length) {
     const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
     const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
     return { text: `${prefix}${formatCurrency(best.amount)}`, cls: best.amount >= 300000 ? 'sca-green' : 'sca-amber' };
   }
-  // NURTURE — show previous offer if it existed
+
   if (deal.stage === 'NURTURE' && deal.prevOffer) {
     return { text: `💰 ${formatCurrency(deal.prevOffer)} prev`, cls: 'sca-prev' };
   }
-  // Early stages — NO dollar amounts unless a real lender offer exists
-  if (NO_AMOUNT_STAGES.includes(deal.stage)) {
-    // Only show if there are actual lender offers recorded
-    if (deal.offers?.length) {
-      const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
-      return { text: `💲${formatCurrency(best.amount)}`, cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
-    }
-    return { text: '', cls: 'sca-hide' };
+
+  if (deal.stage === 'SUBMITTED_IN_REVIEW') {
+    const icon =
+      deal.productType === 'EQUIPMENT'
+        ? '🔧'
+        : deal.productType === 'SBA' || deal.productType === 'CRE'
+          ? '🏛'
+          : '⚡';
+    return { text: `${icon} In review`, cls: 'sca-gray' };
   }
-  // Other stages with offers
-  if (deal.offers?.length) {
-    const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
-    return { text: `💲${formatCurrency(best.amount)}`, cls: best.amount >= 25000 ? 'sca-green' : 'sca-amber' };
-  }
+
   return { text: '—', cls: 'sca-gray' };
 }
 
@@ -212,22 +224,15 @@ function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
   const state = simpleCardState(deal);
   const amt = simpleAmount(deal);
   const due = simpleDueInfo(deal.nextActionDue);
-  const hasAmount = amt.text && amt.cls !== 'sca-hide';
-
-  // "In review" badge for SUBMITTED_IN_REVIEW
-  const reviewBadge = deal.stage === 'SUBMITTED_IN_REVIEW' ? (
-    <div className="sc-review-badge">
-      {deal.productType === 'EQUIPMENT' ? '🔧' : deal.productType === 'SBA' || deal.productType === 'CRE' ? '🏛' : '⚡'} In review
-    </div>
-  ) : null;
+  const hot = isDealHot(deal);
 
   return (
-    <div className={`s-card ${state}`} onClick={onClick}>
+    <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} onClick={onClick}>
       <div style={{ padding: '10px 11px 8px' }}>
-        {deal.isHot && <div className="sc-hot-badge">🔥 HOT</div>}
-        {reviewBadge}
-        {hasAmount && <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>}
+        {hot && <div className="sc-hot-badge">🔥 HOT</div>}
+        <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
         <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
+
         {deal.nextAction ? (
           <div className="sc-action-row">
             <span className="sc-action">{deal.nextAction}</span>
@@ -250,6 +255,7 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
   const sbar = staleBarCls(deal.staleDays);
   const stale = staleTxt(deal.staleDays);
   const due = dueInfo(deal.nextActionDue);
+  const hot = isDealHot(deal);
   const { user } = useAuthStore();
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
@@ -283,9 +289,10 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
             {deal.client?.contactName && <div className="c-biz">{deal.client.contactName}</div>}
           </div>
           <div className="bdgs">
-            {deal.isHot && <span className="b b-hot">🔥HOT</span>}
-            {deal.stage === 'NURTURE' && <span className="b b-lost">LOST</span>}
-            {deal.client && deal.client.fundingCount > 0 && <span className="b b-renew">↻</span>}
+            {hot && <span className="b b-hot">🔥HOT</span>}
+            {deal.stage === 'NURTURE' && deal.followUpType === 'renewal' && <span className="b b-renew">RENEW</span>}
+            {deal.stage === 'NURTURE' && (!deal.followUpType || deal.followUpType === 'reengage' || deal.followUpType === 'competitor') && <span className="b b-lost">LOST</span>}
+            {deal.client && deal.client.fundingCount > 0 && deal.stage !== 'NURTURE' && <span className="b b-renew">↻</span>}
           </div>
         </div>
 
@@ -305,7 +312,7 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
           })()}
 
         {/* HOT reason row */}
-        {deal.isHot && (
+        {hot && (
           <div className="hot-row">
             <span>
               🔥 {deal.lenderEngaged ? 'Lender engaged' : deal.offers?.length ? 'Offer received' : 'Active reply'}
@@ -407,7 +414,7 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
         {deal.stage === 'FUNDED' && deal.fundingEvents?.length ? (
           <>
             <div className="funded-block">
-              <div className="fb-amount">{formatCurrency(deal.fundingEvents[0].amountFunded)}</div>
+              <div className="fb-amount">💰 {formatCurrency(deal.fundingEvents[0].amountFunded)}</div>
               <div className="fb-meta">
                 {deal.fundingEvents[0].lender ? `${deal.fundingEvents[0].lender} · ` : ''}
                 {deal.cycleTime ? `${deal.cycleTime}d cycle` : ''}

@@ -278,7 +278,11 @@ export class DealController {
     let linkedLeadId: string | undefined;
     if (phone) {
       const existingLead = await prisma.lead.findUnique({ where: { phone }, select: { id: true } });
-      if (existingLead) linkedLeadId = existingLead.id;
+      if (existingLead) {
+        // Only link if lead is not already linked to another deal (leadId has @unique constraint)
+        const alreadyLinked = await prisma.deal.findFirst({ where: { leadId: existingLead.id }, select: { id: true } });
+        if (!alreadyLinked) linkedLeadId = existingLead.id;
+      }
     }
 
     // Rule #7: Rep assignment = admin only

@@ -72,18 +72,33 @@ const STAGES: StageConfig[] = [
 
 const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.value, s.short]));
 
+function isDealHot(deal: Deal): boolean {
+  if (['FUNDED', 'NURTURE', 'CLOSED'].includes(deal.stage)) return false;
+  const now = new Date();
+  if (deal.nextActionDue && new Date(deal.nextActionDue) < now) return false;
+  if (deal.renewalTasks?.some((t) => t.status === 'PENDING')) return false;
+  if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') return true;
+  if ((deal.offers?.length || 0) > 0) return true;
+  if (deal.lenderEngaged && deal.appSubmitted) return true;
+  if (deal.lastReplyAt) {
+    const hours = (Date.now() - new Date(deal.lastReplyAt).getTime()) / 3600000;
+    if (hours <= 48) return true;
+  }
+  return !!deal.isHot;
+}
+
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week';
 type ViewTab = 'pipeline' | 'team' | 'queue';
 type ViewMode = 'simple' | 'execution';
 type PipelineScope = 'mine' | 'all';
 
-const FILTERS: { key: QuickFilter; label: string; activeCls: string }[] = [
-  { key: 'all', label: 'All', activeCls: 'act' },
-  { key: 'mine', label: 'Mine', activeCls: 'act' },
-  { key: 'overdue', label: 'Overdue', activeCls: 'urg' },
-  { key: 'hot', label: '🔥 Hot', activeCls: 'fire' },
-  { key: 'neglected', label: 'Neglected', activeCls: 'urg' },
-  { key: 'this_week', label: '📅 This Week', activeCls: 'week-act' },
+const FILTERS: { key: QuickFilter; label: string; activeCls: string; passiveCls: string }[] = [
+  { key: 'all', label: 'All', activeCls: 'act', passiveCls: '' },
+  { key: 'mine', label: 'Mine', activeCls: 'act', passiveCls: '' },
+  { key: 'overdue', label: 'Overdue', activeCls: 'act', passiveCls: 'urg' },
+  { key: 'hot', label: '🔥 Hot', activeCls: 'fire act', passiveCls: 'fire' },
+  { key: 'neglected', label: 'Neglected', activeCls: 'act', passiveCls: 'urg' },
+  { key: 'this_week', label: '📅 This Week', activeCls: 'week-act', passiveCls: '' },
 ];
 
 // ═══════════════════════════════════════
@@ -216,7 +231,7 @@ export default function PipelinePage() {
         deals: s.deals.filter((d: Deal) => {
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
           if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
-          if (quickFilter === 'hot' && !d.isHot) return false;
+          if (quickFilter === 'hot' && !isDealHot(d)) return false;
           if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
           if (quickFilter === 'this_week') {
             const weekEnd = new Date();
@@ -269,7 +284,7 @@ export default function PipelinePage() {
     weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
 
     const overdue = allDeals.filter((d) => d.nextActionDue && new Date(d.nextActionDue) < now).length;
-    const hot = allDeals.filter((d) => d.isHot).length;
+    const hot = allDeals.filter((d) => isDealHot(d)).length;
     const neglected = allDeals.filter((d) => (d.staleDays || 0) >= 7 && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
     const this_week = allDeals.filter((d) => {
       if (['CLOSED', 'NURTURE'].includes(d.stage)) return false;
@@ -279,7 +294,7 @@ export default function PipelinePage() {
         const due = new Date(d.nextActionDue);
         if (due <= weekEnd) return true;
       }
-      if (d.isHot) return true;
+      if (isDealHot(d)) return true;
       return false;
     }).length;
     return { overdue, hot, neglected, this_week };
@@ -333,15 +348,19 @@ export default function PipelinePage() {
         {/* Filter pills (hidden in team view) */}
         {viewTab !== 'team' && (
           <div className="fp-row">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                className={`fp ${quickFilter === f.key ? f.activeCls : ''}`}
-                onClick={() => setQuickFilter(f.key)}
-              >
-                {filterLabels[f.key]}
-              </button>
-            ))}
+            {FILTERS.map((f) => {
+              const count = (filterCounts as any)[f.key] || 0;
+              const cls = quickFilter === f.key ? f.activeCls : count > 0 ? f.passiveCls : '';
+              return (
+                <button
+                  key={f.key}
+                  className={`fp ${cls}`}
+                  onClick={() => setQuickFilter(f.key)}
+                >
+                  {filterLabels[f.key]}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -387,7 +406,7 @@ export default function PipelinePage() {
         {/* Queue button */}
         <div style={{ position: 'relative', display: 'inline-flex' }}>
           <button
-            className={`queue-nav-btn ${viewTab === 'queue' ? 'act' : ''}`}
+            className={`queue-nav-btn ${viewTab === 'queue' ? 'act' : reviveCount > 0 ? 'has-items' : ''}`}
             onClick={() => setViewTab(viewTab === 'queue' ? 'pipeline' : 'queue')}
           >
             🔁 Revive Queue
@@ -521,7 +540,7 @@ export default function PipelinePage() {
                 onDragCancel={() => setActiveDragId(null)}
               >
                 <div className="board">
-                  {STAGES.filter((s) => viewMode !== 'simple' || s.value !== 'CLOSED').map((stageDef) => {
+                  {STAGES.map((stageDef) => {
                     const stageData = filteredBoard?.stages?.find((s: any) => s.stage === stageDef.value);
                     const deals = stageData?.deals || [];
                     const count = stageData?.count || deals.length;
@@ -566,7 +585,7 @@ export default function PipelinePage() {
                   const now = new Date();
                   const active = repDeals.filter((d: Deal) => !['FUNDED', 'CLOSED'].includes(d.stage)).length;
                   const overdue = repDeals.filter((d: Deal) => d.nextActionDue && new Date(d.nextActionDue) < now).length;
-                  const hot = repDeals.filter((d: Deal) => d.isHot).length;
+                  const hot = repDeals.filter((d: Deal) => isDealHot(d)).length;
                   const pipeline = (board?.stages
                     ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
                     .flatMap((s: any) => s.deals)
@@ -834,7 +853,7 @@ function sortPri(d: Deal): number {
   if (!d.nextAction) return 1; // missing next action
   if (d.stage === 'COMMITTED_FUNDING' && (d.daysInSubStatus || 0) > 5) return 0;
   if (d.stage === 'COMMITTED_FUNDING' && (d.daysInSubStatus || 0) > 3) return 1;
-  if (d.isHot) return 2;
+  if (isDealHot(d)) return 2;
   const dueToday = d.nextActionDue && new Date(d.nextActionDue).toDateString() === now.toDateString();
   if (dueToday) return 3;
   if ((d.staleDays || 0) <= 1) return 4;
@@ -875,7 +894,7 @@ function StageColumn({
             <div
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}
             >
-              <div className="sc-col-title" style={{ color: config.color }}>
+              <div className={`sc-col-title ${config.stageClass || ''}`}>
                 {config.short}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -989,16 +1008,16 @@ function repFullName(deal: Deal, reps: Rep[]) {
   const primary = deal.assignedRep;
   if (!primary) return null;
   const name = `${primary.firstName} ${primary.lastName || ''}`.trim();
+  const repColor = primary.avatarColor || 'var(--text)';
   const coIds = deal.assistingRepIds?.filter((id) => id !== deal.assignedRepId) || [];
-  if (coIds.length === 0) return <span className="dt-rep-primary">{name}</span>;
+  if (coIds.length === 0) return <span className="dt-rep-primary" style={{ color: repColor }}>{name}</span>;
   const coRep = reps.find((r) => coIds.includes(r.id));
   const coName = coRep ? `${coRep.firstName} ${(coRep.lastName || '')[0] || ''}`.trim() : null;
   return (
     <>
-      <span className="dt-rep-primary">{name}</span>
+      <span className="dt-rep-primary" style={{ color: repColor }}>{name}</span>
       {coName && (
-        <span style={{ color: 'var(--text3)', fontSize: '9px' }}>
-          {' '}
+        <span className="dt-co-badge">
           + {coName}
           {coIds.length > 1 ? '…' : ''}
         </span>
@@ -1820,7 +1839,7 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
         {reps.map((rep) => {
           const active = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
           const overdue = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now).length;
-          const hot = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.isHot).length;
+          const hot = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && isDealHot(d)).length;
           const pipeline = pipelineDeals
             .filter((d: Deal) => d.assignedRepId === rep.id)
             .reduce((sum: number, d: Deal) => {

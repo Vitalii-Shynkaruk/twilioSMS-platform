@@ -570,7 +570,7 @@ export default function CommandCenterPage() {
                 admin
               </button>
             )}
-            {displayReps.map((rep) => (
+            {displayReps.filter(r => userIsAdmin || r.id === user?.id).map((rep) => (
               <button
                 key={rep.id}
                 className={`rb ${activeView === rep.id ? 'on' : ''}`}
@@ -586,9 +586,11 @@ export default function CommandCenterPage() {
             LIVE
           </div>
           <span className="clk">{clock}</span>
-          <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
-            ↑ Import
-          </button>
+          {userIsAdmin && (
+            <button className="add-btn csv-import-btn" onClick={() => setCsvModalOpen(true)}>
+              ↑ Import
+            </button>
+          )}
           <button className="add-btn" onClick={() => navigate('/pipeline?newDeal=1')}>
             + Add Lead
           </button>

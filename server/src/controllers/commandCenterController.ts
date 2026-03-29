@@ -758,7 +758,7 @@ export class CommandCenterController {
           createdAt: { gte: twentyFourHoursAgo },
         },
       }),
-      prisma.message.count({ where: { direction: 'INBOUND', createdAt: { gte: sevenDaysAgo } } }),
+      prisma.message.count({ where: { ...numberFilter, direction: 'INBOUND', createdAt: { gte: sevenDaysAgo } } }),
       prisma.message.count({ where: { ...numberFilter, direction: 'OUTBOUND', createdAt: { gte: sevenDaysAgo } } }),
       prisma.lead.count({ where: { deletedAt: null } }),
     ]);

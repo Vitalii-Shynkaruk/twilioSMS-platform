@@ -394,9 +394,9 @@ button { font-family: var(--mono); cursor: pointer; }
 .sbs-h { background: #1c0800; color: var(--orange); }
 
 /* TOAST */
-.toast { position: fixed; bottom: 18px; right: 18px; z-index: 999; background: var(--bg3); border: 1px solid var(--border2); border-left: 2px solid var(--gold); border-radius: 4px; padding: 9px 13px; font-size: 12px; color: var(--text); opacity: 0; transform: translateY(6px); transition: all .25s ease; pointer-events: none; max-width: 260px; }
+.toast { position: fixed; bottom: 18px; right: 18px; z-index: 999; background: var(--bg3); border: 1px solid var(--border2); border-left: 2px solid var(--gold); border-radius: 4px; padding: 9px 13px; font-size: 11px; color: var(--text); opacity: 0; transform: translateY(6px); transition: all .25s ease; pointer-events: none; max-width: 260px; }
 .toast.show { opacity: 1; transform: translateY(0); }
-.toast-title { font-size: 10px; color: var(--gold); font-weight: 600; margin-bottom: 2px; }
+.toast-title { font-size: 9px; color: var(--gold); font-weight: 600; margin-bottom: 2px; }
 
 /* EXECUTION SCORE BAR — compact topbar strip */
 .exec-score-bar { display: flex; align-items: center; gap: 14px; background: var(--bg4); border: 1px solid var(--border); border-radius: 3px; padding: 4px 10px; }

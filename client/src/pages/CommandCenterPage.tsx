@@ -1086,6 +1086,9 @@ export default function CommandCenterPage() {
           }}
         />
       )}
+
+      {/* LIVE FEED TOAST */}
+      <LiveFeedToast events={activityFeed} />
     </div>
   );
 }
@@ -1093,6 +1096,50 @@ export default function CommandCenterPage() {
 // ══════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
 // ══════════════════════════════════════════════════════════════
+
+function LiveFeedToast({ events }: { events?: ActivityEvent[] }) {
+  const [visible, setVisible] = useState(false);
+  const [current, setCurrent] = useState<{ title: string; text: string } | null>(null);
+  const idxRef = useRef(0);
+
+  useEffect(() => {
+    if (!events || events.length === 0) return;
+
+    function buildItem(ev: ActivityEvent): { title: string; text: string } {
+      const biz = ev.deal?.client?.businessName || 'Unknown';
+      const rep = ev.rep?.initials || ev.rep?.firstName || '';
+      if (ev.toStage === 'FUNDED')
+        return { title: 'Live Feed', text: `${rep} closed ${biz} \u2014 funded` };
+      if (ev.eventType === 'stage_changed')
+        return { title: 'Live Feed', text: `${rep}: ${biz} \u2014 ${STAGE_LABELS[ev.toStage || ''] || ev.toStage || 'moved'}` };
+      if (ev.eventType?.includes('alert') || ev.eventType?.includes('system'))
+        return { title: 'System Alert', text: `${biz} (${rep}) \u2014 ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'attention needed'}` };
+      return { title: 'Live Feed', text: `${rep}: ${biz} \u2014 ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'update'}` };
+    }
+
+    function showNext() {
+      const ev = events![idxRef.current % events!.length];
+      idxRef.current++;
+      setCurrent(buildItem(ev));
+      setVisible(true);
+      setTimeout(() => setVisible(false), 3200);
+    }
+
+    // Show first after 5s, then every 22s
+    const first = setTimeout(showNext, 5000);
+    const interval = setInterval(showNext, 22000);
+    return () => { clearTimeout(first); clearInterval(interval); };
+  }, [events]);
+
+  if (!current) return null;
+
+  return (
+    <div className={`toast${visible ? ' show' : ''}`}>
+      <div className="toast-title">{current.title}</div>
+      {current.text}
+    </div>
+  );
+}
 
 function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () => void }) {
   const cls = data.score >= 70 ? 'ok' : data.score >= 40 ? 'warn' : 'bad';

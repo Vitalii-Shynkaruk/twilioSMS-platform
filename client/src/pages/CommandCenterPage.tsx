@@ -371,10 +371,7 @@ export default function CommandCenterPage() {
 
   const isAdmin = activeView === 'admin';
   const displayReps = useMemo(() => {
-    const active = (reps || []).filter((r) => r.isActive);
-    const roleReps = active.filter((r) => r.role === 'REP');
-    if (roleReps.length > 0) return roleReps;
-    return active.filter((r) => r.role !== 'MANAGER' && r.role !== 'ADMIN');
+    return (reps || []).filter((r) => r.isActive);
   }, [reps]);
 
   useEffect(() => {
@@ -533,7 +530,7 @@ export default function CommandCenterPage() {
             <div className="rsw-slider" ref={sliderRef} />
             {userIsAdmin && (
               <button className={`rb ${isAdmin ? 'on on-admin' : ''}`} onClick={() => handleViewSwitch('admin')}>
-                Admin
+                admin
               </button>
             )}
             {displayReps.map((rep) => (
@@ -542,7 +539,7 @@ export default function CommandCenterPage() {
                 className={`rb ${activeView === rep.id ? 'on' : ''}`}
                 onClick={() => handleViewSwitch(rep.id)}
               >
-                Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
+                {rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()}
               </button>
             ))}
           </div>

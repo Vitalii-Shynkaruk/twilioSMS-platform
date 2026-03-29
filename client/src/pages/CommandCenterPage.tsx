@@ -145,10 +145,12 @@ interface ExecScore {
   initials: string;
   avatarColor?: string;
   firstName: string;
+  lastName?: string;
   score: number;
   completed: number;
   assigned: number;
   overdue: number;
+  touchedToday?: number;
 }
 
 interface RepActivity {
@@ -1544,15 +1546,14 @@ function LiveFeedToast({ events }: { events?: ActivityEvent[] }) {
 }
 
 function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () => void }) {
-  const cls = data.score >= 70 ? 'ok' : data.score >= 40 ? 'warn' : 'bad';
   return (
     <div className="esb-popup open" onClick={(e) => e.stopPropagation()}>
       <div className="esb-popup-rep">
-        {data.firstName} {'—'} {data.score}%
+        {data.firstName} {data.lastName || ''} {'—'} {data.score}%
       </div>
       <div className="esb-popup-row">
         <span className="esb-popup-key">Actions completed</span>
-        <span className={`esb-popup-val ${cls}`}>
+        <span className="esb-popup-val">
           {data.completed} / {data.assigned}
         </span>
       </div>
@@ -1561,8 +1562,8 @@ function ExecPopup({ data, onClose: _onClose }: { data: ExecScore; onClose: () =
         <span className={`esb-popup-val ${data.overdue > 0 ? 'bad' : 'ok'}`}>{data.overdue}</span>
       </div>
       <div className="esb-popup-row">
-        <span className="esb-popup-key">Assigned deals</span>
-        <span className="esb-popup-val">{data.assigned}</span>
+        <span className="esb-popup-key">Deals touched today</span>
+        <span className="esb-popup-val ok">{data.touchedToday ?? 0}</span>
       </div>
     </div>
   );

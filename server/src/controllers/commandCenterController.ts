@@ -579,7 +579,7 @@ export class CommandCenterController {
 
     const scores = await Promise.all(
       reps.map(async (rep) => {
-        const [todayActions, assignedDeals, overdueCount] = await Promise.all([
+        const [todayActions, assignedDeals, overdueCount, touchedToday] = await Promise.all([
           prisma.dealEvent.count({
             where: { repId: rep.id, eventType: 'action_completed', createdAt: { gte: today } },
           }),
@@ -596,6 +596,10 @@ export class CommandCenterController {
               stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
             },
           }),
+          prisma.dealEvent.groupBy({
+            by: ['dealId'],
+            where: { repId: rep.id, createdAt: { gte: today } },
+          }).then((r) => r.length),
         ]);
 
         const totalAssigned = assignedDeals;
@@ -605,10 +609,12 @@ export class CommandCenterController {
           initials: rep.initials || ((rep.firstName?.[0] || '') + (rep.lastName?.[0] || '')).toUpperCase(),
           avatarColor: rep.avatarColor,
           firstName: rep.firstName,
+          lastName: rep.lastName,
           score: totalAssigned > 0 ? Math.round(((totalAssigned - overdueCount) / totalAssigned) * 100) : 0,
           completed: todayActions,
           assigned: totalAssigned,
           overdue: overdueCount,
+          touchedToday,
         };
       }),
     );

@@ -186,10 +186,10 @@ export class DealController {
           // Nurture: use prevOffer (prior funded amount before they went to nurture)
           value = deals.reduce((sum: number, d: any) => sum + (d.prevOffer || d.dealAmount || 0), 0);
         } else {
-          // For Approved/Committed/Nurture: use best offer amount
+          // For Approved/Committed: use best offer amount, fallback to dealAmount
           value = deals.reduce((sum: number, d: any) => {
             const bestOffer = (d.offers || []).reduce((best: any, o: any) => (!best || o.amount > best.amount ? o : best), null);
-            return sum + (bestOffer?.amount || 0);
+            return sum + (bestOffer?.amount || d.dealAmount || 0);
           }, 0);
         }
       }
@@ -985,10 +985,10 @@ export class DealController {
       },
     });
 
-    // Committed $
+    // Committed $ — use best offer (consistent with pipeline board)
     const committedValue = deals
       .filter((d) => d.stage === DealStage.COMMITTED_FUNDING)
-      .reduce((sum, d) => sum + (d.dealAmount || 0), 0);
+      .reduce((sum, d) => sum + bestOfferValue(d), 0);
 
     // Monthly Goal — individual rep or team sum
     let monthlyGoal = 0;

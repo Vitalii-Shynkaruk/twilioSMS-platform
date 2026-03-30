@@ -157,8 +157,10 @@ export class CommandCenterController {
     const nurtureValue = nurtureDeals.reduce((s: number, d: any) => s + (d.prevOffer || d.dealAmount || 0), 0);
     const pipelineValue = approvedCommittedValue + nurtureValue;
 
-    // Committed $
-    const committedValue = committedDeals.reduce((s: number, d: any) => s + (d.dealAmount || 0), 0);
+    // Committed $ — use best offer (consistent with pipeline board)
+    const committedValue = pipelineDeals
+      .filter((d: any) => d.stage === DealStage.COMMITTED_FUNDING)
+      .reduce((s: number, d: any) => s + bestOfferVal(d), 0);
 
     // At Risk: approved/committed with overdue or stalled
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);

@@ -157,10 +157,13 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
     return { text: `💰 ${formatCurrency(deal.dealAmount)}`, cls: 'sca-green' };
   }
 
-  if ((deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.offers?.length) {
-    const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
-    const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
-    return { text: `${prefix}${formatCurrency(best.amount)}`, cls: best.amount >= 300000 ? 'sca-green' : 'sca-amber' };
+  if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') {
+    const best = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
+    const amt = best?.amount || deal.dealAmount;
+    if (amt) {
+      const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
+      return { text: `${prefix}${formatCurrency(amt)}`, cls: amt >= 300000 ? 'sca-green' : 'sca-amber' };
+    }
   }
 
   if (deal.stage === 'NURTURE' && deal.prevOffer) {

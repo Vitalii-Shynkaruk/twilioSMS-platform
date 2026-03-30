@@ -162,7 +162,7 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
     const amt = best?.amount || deal.dealAmount;
     if (amt) {
       const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
-      return { text: `${prefix}${formatCurrency(amt)}`, cls: amt >= 300000 ? 'sca-green' : 'sca-amber' };
+      return { text: `${prefix}${formatCurrency(amt)}`, cls: amt >= 100000 ? 'sca-green' : 'sca-amber' };
     }
   }
 
@@ -413,6 +413,15 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
                 </div>
               ))
             )}
+          </div>
+        )}
+
+        {/* Deal amount fallback for Approved/Committed without offers */}
+        {!bestOffer && (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.dealAmount && (
+          <div className={`offer-block ${offerStrength(deal.dealAmount)}`}>
+            <div className="ob-main">
+              <span className="ob-amount">{deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : ''}{formatCurrency(deal.dealAmount)}</span>
+            </div>
           </div>
         )}
 

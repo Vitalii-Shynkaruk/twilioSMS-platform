@@ -187,6 +187,7 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       campaignId: campaign.id,
       poolId: campaign.numberPoolId || undefined,
       sendingSpeed: campaign.sendingSpeed,
+      sentByUserId: campaign.createdById,
     });
 
     // If no messages were queued, revert campaign to DRAFT

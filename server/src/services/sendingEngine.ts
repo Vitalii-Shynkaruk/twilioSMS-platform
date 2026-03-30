@@ -212,6 +212,18 @@ export class SendingEngine {
     });
     const convoMap = new Map(existingConvos.map((c) => [c.leadId, c.id]));
 
+    // ── UPDATE existing conversations: assign rep if unassigned ──
+    if (options.sentByUserId && existingConvos.length > 0) {
+      const existingLeadIds = existingConvos.map((c) => c.leadId).filter(Boolean) as string[];
+      await prisma.conversation.updateMany({
+        where: {
+          leadId: { in: existingLeadIds },
+          assignedRepId: null,
+        },
+        data: { assignedRepId: options.sentByUserId },
+      });
+    }
+
     // ── PROCESS LEADS ──
     const jobsToQueue: Array<{ name: string; data: any; opts: any }> = [];
     const missingConvoLeads: string[] = [];

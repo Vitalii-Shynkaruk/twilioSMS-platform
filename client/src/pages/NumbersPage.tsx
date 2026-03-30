@@ -276,8 +276,8 @@ export default function NumbersPage() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          {isAdmin && (
-            activeTab === 'assignments' ? (
+          {isAdmin &&
+            (activeTab === 'assignments' ? (
               <button onClick={() => setShowBulkAssign(true)} className="btn-primary flex items-center gap-2">
                 <UserCheck className="w-4 h-4" /> Assign Numbers
               </button>
@@ -285,8 +285,7 @@ export default function NumbersPage() {
               <button onClick={() => setShowAddModal(true)} className="btn-primary flex items-center gap-2">
                 <Plus className="w-4 h-4" /> Add Number
               </button>
-            )
-          )}
+            ))}
         </div>
       </div>
 
@@ -704,41 +703,41 @@ function NumbersTable({
                     )}
                   </td>
                   {isAdmin && (
-                  <td className="table-td">
-                    <div className="flex items-center justify-end gap-1">
-                      {number.status === 'ACTIVE' ? (
+                    <td className="table-td">
+                      <div className="flex items-center justify-end gap-1">
+                        {number.status === 'ACTIVE' ? (
+                          <button
+                            onClick={() => coolMutation.mutate(number.id)}
+                            className="btn-ghost p-1.5 text-blue-400 hover:text-blue-300"
+                            title="Cool down for 24h"
+                          >
+                            <Snowflake className="w-3.5 h-3.5" />
+                          </button>
+                        ) : number.status !== 'RETIRED' ? (
+                          <button
+                            onClick={() => activateMutation.mutate(number.id)}
+                            className="btn-ghost p-1.5 text-emerald-400 hover:text-emerald-300"
+                            title="Activate"
+                          >
+                            <PlayCircle className="w-3.5 h-3.5" />
+                          </button>
+                        ) : null}
                         <button
-                          onClick={() => coolMutation.mutate(number.id)}
-                          className="btn-ghost p-1.5 text-blue-400 hover:text-blue-300"
-                          title="Cool down for 24h"
+                          onClick={() => setEditNumber(number)}
+                          className="btn-ghost p-1.5 text-dark-400 hover:text-dark-200"
+                          title="Edit"
                         >
-                          <Snowflake className="w-3.5 h-3.5" />
+                          <Edit3 className="w-3.5 h-3.5" />
                         </button>
-                      ) : number.status !== 'RETIRED' ? (
                         <button
-                          onClick={() => activateMutation.mutate(number.id)}
-                          className="btn-ghost p-1.5 text-emerald-400 hover:text-emerald-300"
-                          title="Activate"
+                          onClick={() => setDeleteConfirm(number)}
+                          className="btn-ghost p-1.5 text-dark-500 hover:text-red-400"
+                          title="Delete"
                         >
-                          <PlayCircle className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      ) : null}
-                      <button
-                        onClick={() => setEditNumber(number)}
-                        className="btn-ghost p-1.5 text-dark-400 hover:text-dark-200"
-                        title="Edit"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirm(number)}
-                        className="btn-ghost p-1.5 text-dark-500 hover:text-red-400"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
+                      </div>
+                    </td>
                   )}
                 </tr>
               );

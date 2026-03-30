@@ -188,7 +188,10 @@ export class DealController {
         } else {
           // For Approved/Committed: use best offer amount, fallback to dealAmount
           value = deals.reduce((sum: number, d: any) => {
-            const bestOffer = (d.offers || []).reduce((best: any, o: any) => (!best || o.amount > best.amount ? o : best), null);
+            const bestOffer = (d.offers || []).reduce(
+              (best: any, o: any) => (!best || o.amount > best.amount ? o : best),
+              null,
+            );
             return sum + (bestOffer?.amount || d.dealAmount || 0);
           }, 0);
         }
@@ -331,10 +334,18 @@ export class DealController {
     const updateData = { ...req.body };
 
     // Normalize date-only strings to full ISO DateTime (Prisma requires ISO-8601)
-    if (updateData.nextActionDue && typeof updateData.nextActionDue === 'string' && !updateData.nextActionDue.includes('T')) {
+    if (
+      updateData.nextActionDue &&
+      typeof updateData.nextActionDue === 'string' &&
+      !updateData.nextActionDue.includes('T')
+    ) {
       updateData.nextActionDue = new Date(updateData.nextActionDue + 'T12:00:00.000Z');
     }
-    if (updateData.followUpDate && typeof updateData.followUpDate === 'string' && !updateData.followUpDate.includes('T')) {
+    if (
+      updateData.followUpDate &&
+      typeof updateData.followUpDate === 'string' &&
+      !updateData.followUpDate.includes('T')
+    ) {
       updateData.followUpDate = new Date(updateData.followUpDate + 'T12:00:00.000Z');
     }
     if (updateData.fundedDate && typeof updateData.fundedDate === 'string' && !updateData.fundedDate.includes('T')) {
@@ -808,9 +819,10 @@ export class DealController {
     });
 
     // Update deal
-    const dueDateNormalized = typeof nextActionDue === 'string' && !nextActionDue.includes('T')
-      ? new Date(nextActionDue + 'T12:00:00.000Z')
-      : new Date(nextActionDue);
+    const dueDateNormalized =
+      typeof nextActionDue === 'string' && !nextActionDue.includes('T')
+        ? new Date(nextActionDue + 'T12:00:00.000Z')
+        : new Date(nextActionDue);
 
     const updated = await prisma.deal.update({
       where: { id },
@@ -939,7 +951,14 @@ export class DealController {
       // Active pipeline deals
       prisma.deal.findMany({
         where: { ...where, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
-        select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true, offers: { select: { amount: true } } },
+        select: {
+          dealAmount: true,
+          stage: true,
+          nextActionDue: true,
+          nextAction: true,
+          lastActivityAt: true,
+          offers: { select: { amount: true } },
+        },
       }),
       // Funded MTD
       prisma.fundingEvent.aggregate({
@@ -1171,7 +1190,7 @@ export class DealController {
     // Admin can assign all deals to a specific rep
     const assignToRepId = req.body?.assignToRepId || null;
     if (assignToRepId) {
-      const repExists = reps.some(r => r.id === assignToRepId);
+      const repExists = reps.some((r) => r.id === assignToRepId);
       if (!repExists) return res.status(400).json({ error: 'Invalid rep ID' });
     }
 
@@ -1186,7 +1205,13 @@ export class DealController {
       const contactName = row.contact_name || row.ContactName || row.Contact || businessName;
       const repName = row.rep_name || row.RepName || row.rep || row.originator || row['FDR Originator'] || '';
       const productRaw = (row.product_type || row.ProductType || row.product || '').toUpperCase();
-      const amountStr = (row.funded_amount || row.FundedAmount || row.amount || row['Funded Amount (last)'] || '0').replace(/[$,]/g, '');
+      const amountStr = (
+        row.funded_amount ||
+        row.FundedAmount ||
+        row.amount ||
+        row['Funded Amount (last)'] ||
+        '0'
+      ).replace(/[$,]/g, '');
       const dateStr = row.funded_date || row.FundedDate || row.date || '';
       const phone = row.phone || row.Phone || row['Contact Phone Number'] || null;
       const email = row.email || row.Email || row['Contact Email'] || null;
@@ -1208,18 +1233,18 @@ export class DealController {
       }
 
       // Match rep by full name or initials
-      const repMatch = reps.find(
-        (r) => {
-          const fullName = `${r.firstName} ${r.lastName}`.toLowerCase();
-          const rn = repName.toLowerCase().trim();
-          if (!rn) return false;
-          return fullName === rn ||
-            (r.initials && r.initials.toLowerCase() === rn) ||
-            fullName.includes(rn) ||
-            rn.includes(fullName) ||
-            (r.initials && r.initials.length > 0 && rn.includes(r.initials.toLowerCase()));
-        },
-      );
+      const repMatch = reps.find((r) => {
+        const fullName = `${r.firstName} ${r.lastName}`.toLowerCase();
+        const rn = repName.toLowerCase().trim();
+        if (!rn) return false;
+        return (
+          fullName === rn ||
+          (r.initials && r.initials.toLowerCase() === rn) ||
+          fullName.includes(rn) ||
+          rn.includes(fullName) ||
+          (r.initials && r.initials.length > 0 && rn.includes(r.initials.toLowerCase()))
+        );
+      });
       const repId = assignToRepId || repMatch?.id || req.user!.id;
 
       // Map product type
@@ -1421,7 +1446,7 @@ export class DealController {
     const deals = await prisma.deal.findMany({ where: { importBatch: batchId }, select: { id: true, clientId: true } });
     if (deals.length === 0) return res.status(404).json({ error: 'No deals found for this batch' });
 
-    const dealIds = deals.map(d => d.id);
+    const dealIds = deals.map((d) => d.id);
 
     // Delete related records
     await prisma.fundingEvent.deleteMany({ where: { dealId: { in: dealIds } } });
@@ -1430,7 +1455,7 @@ export class DealController {
     await prisma.deal.deleteMany({ where: { importBatch: batchId } });
 
     // Clean orphan clients
-    const clientIds = [...new Set(deals.map(d => d.clientId))];
+    const clientIds = [...new Set(deals.map((d) => d.clientId))];
     for (const cid of clientIds) {
       const remaining = await prisma.deal.count({ where: { clientId: cid } });
       if (remaining === 0) await prisma.client.delete({ where: { id: cid } }).catch(() => {});
@@ -1450,11 +1475,13 @@ export class DealController {
       _count: { id: true },
       _min: { createdAt: true },
     });
-    res.json(batches.map(b => ({
-      batchId: b.importBatch,
-      count: b._count.id,
-      importedAt: b._min.createdAt,
-    })));
+    res.json(
+      batches.map((b) => ({
+        batchId: b.importBatch,
+        count: b._count.id,
+        importedAt: b._min.createdAt,
+      })),
+    );
   }
 
   // DELETE /api/deals/:id - Delete a single deal

@@ -14,9 +14,7 @@ export class NumberController {
     // REP users only see their assigned numbers
     if (req.user?.role === 'REP') {
       const userId = req.user.id;
-      const myNumbers = health.numbers.filter((n: any) =>
-        n.assignments?.some((a: any) => a.user?.id === userId)
-      );
+      const myNumbers = health.numbers.filter((n: any) => n.assignments?.some((a: any) => a.user?.id === userId));
       const summary = {
         total: myNumbers.length,
         active: myNumbers.filter((n: any) => n.status === 'ACTIVE').length,

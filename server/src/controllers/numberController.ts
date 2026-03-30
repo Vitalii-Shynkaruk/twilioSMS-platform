@@ -10,6 +10,30 @@ import logger from '../config/logger';
 export class NumberController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const health = await NumberService.getNumberHealthOverview();
+
+    // REP users only see their assigned numbers
+    if (req.user?.role === 'REP') {
+      const userId = req.user.id;
+      const myNumbers = health.numbers.filter((n: any) =>
+        n.assignments?.some((a: any) => a.user?.id === userId)
+      );
+      const summary = {
+        total: myNumbers.length,
+        active: myNumbers.filter((n: any) => n.status === 'ACTIVE').length,
+        warming: myNumbers.filter((n: any) => n.status === 'WARMING').length,
+        cooling: myNumbers.filter((n: any) => n.status === 'COOLING').length,
+        suspended: myNumbers.filter((n: any) => n.status === 'SUSPENDED').length,
+        totalCapacity: myNumbers.reduce((sum: number, n: any) => sum + n.dailyLimit, 0),
+        totalUsed: myNumbers.reduce((sum: number, n: any) => sum + n.dailySentCount, 0),
+        avgDeliveryRate:
+          myNumbers.length > 0
+            ? myNumbers.reduce((sum: number, n: any) => sum + n.deliveryRate, 0) / myNumbers.length
+            : 0,
+      };
+      res.json({ numbers: myNumbers, summary });
+      return;
+    }
+
     res.json(health);
   }
 

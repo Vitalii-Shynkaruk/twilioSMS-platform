@@ -808,12 +808,16 @@ export class DealController {
     });
 
     // Update deal
+    const dueDateNormalized = typeof nextActionDue === 'string' && !nextActionDue.includes('T')
+      ? new Date(nextActionDue + 'T12:00:00.000Z')
+      : new Date(nextActionDue);
+
     const updated = await prisma.deal.update({
       where: { id },
       data: {
         lastActivityAt: new Date(),
         nextAction,
-        nextActionDue: new Date(nextActionDue),
+        nextActionDue: dueDateNormalized,
         staleDays: 0,
       },
       include: { client: true, assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } } },

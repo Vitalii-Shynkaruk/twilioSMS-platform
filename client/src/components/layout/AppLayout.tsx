@@ -49,7 +49,7 @@ const navGroups = [
   {
     label: 'SYSTEM',
     items: [
-      { name: 'Numbers', href: '/numbers', icon: Phone, roles: ['ADMIN', 'MANAGER'] as string[] },
+      { name: 'Numbers', href: '/numbers', icon: Phone },
       { name: 'Analytics', href: '/analytics', icon: BarChart3 },
       { name: 'Twilio', href: '/twilio', icon: Radio, roles: ['ADMIN'] as string[] },
       { name: 'Settings', href: '/settings', icon: Settings, roles: ['ADMIN'] as string[] },

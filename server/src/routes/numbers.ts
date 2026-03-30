@@ -8,15 +8,18 @@ import { createNumberSchema, updateNumberSchema, assignNumberSchema, createPoolS
 const router = Router();
 
 router.use(authenticate);
-router.use(requireRole('ADMIN', 'MANAGER'));
 
+// Read-only endpoints accessible to all authenticated users (REPs see only their assigned numbers)
 router.get('/', asyncHandler(NumberController.list));
+router.get('/assignments', asyncHandler(NumberController.getAssignments));
+router.get('/pools', asyncHandler(NumberController.getPools));
+
+// Admin/Manager-only endpoints
+router.use(requireRole('ADMIN', 'MANAGER'));
 router.post('/', validate(createNumberSchema), asyncHandler(NumberController.create));
 router.post('/sync-twilio', asyncHandler(NumberController.syncFromTwilio));
 router.post('/assign', validate(assignNumberSchema), asyncHandler(NumberController.assignToRep));
-router.get('/assignments', asyncHandler(NumberController.getAssignments));
 router.delete('/assignments/:repId', asyncHandler(NumberController.unassignFromRep));
-router.get('/pools', asyncHandler(NumberController.getPools));
 router.post('/pools', asyncHandler(NumberController.createPool));
 router.put('/:id', asyncHandler(NumberController.update));
 router.delete('/:id', asyncHandler(NumberController.remove));

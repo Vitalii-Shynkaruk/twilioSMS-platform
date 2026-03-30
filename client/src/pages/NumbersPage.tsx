@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
+import { useAuthStore } from '../stores/authStore';
 
 /* ─── Types ─── */
 interface PhoneNumberItem {
@@ -75,6 +76,8 @@ type PageTab = 'numbers' | 'assignments';
 /* ─── Main Page ─── */
 export default function NumbersPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [activeTab, setActiveTab] = useState<PageTab>('numbers');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editNumber, setEditNumber] = useState<PhoneNumberItem | null>(null);
@@ -256,14 +259,16 @@ export default function NumbersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="btn-ghost flex items-center gap-2 text-sm"
-          >
-            <CloudDownload className={clsx('w-4 h-4', syncMutation.isPending && 'animate-pulse')} />
-            {syncMutation.isPending ? 'Syncing…' : 'Sync Twilio'}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="btn-ghost flex items-center gap-2 text-sm"
+            >
+              <CloudDownload className={clsx('w-4 h-4', syncMutation.isPending && 'animate-pulse')} />
+              {syncMutation.isPending ? 'Syncing…' : 'Sync Twilio'}
+            </button>
+          )}
           <button
             onClick={() => queryClient.invalidateQueries({ queryKey: ['numbers'] })}
             className="btn-ghost flex items-center gap-2 text-sm"
@@ -271,14 +276,16 @@ export default function NumbersPage() {
             <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
-          {activeTab === 'assignments' ? (
-            <button onClick={() => setShowBulkAssign(true)} className="btn-primary flex items-center gap-2">
-              <UserCheck className="w-4 h-4" /> Assign Numbers
-            </button>
-          ) : (
-            <button onClick={() => setShowAddModal(true)} className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4" /> Add Number
-            </button>
+          {isAdmin && (
+            activeTab === 'assignments' ? (
+              <button onClick={() => setShowBulkAssign(true)} className="btn-primary flex items-center gap-2">
+                <UserCheck className="w-4 h-4" /> Assign Numbers
+              </button>
+            ) : (
+              <button onClick={() => setShowAddModal(true)} className="btn-primary flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Add Number
+              </button>
+            )
           )}
         </div>
       </div>
@@ -401,6 +408,7 @@ export default function NumbersPage() {
             coolMutation={coolMutation}
             activateMutation={activateMutation}
             syncMutation={syncMutation}
+            isAdmin={isAdmin}
           />
         </>
       )}
@@ -456,6 +464,7 @@ function NumbersTable({
   coolMutation,
   activateMutation,
   syncMutation,
+  isAdmin,
 }: {
   numbers: PhoneNumberItem[];
   isLoading: boolean;
@@ -471,6 +480,7 @@ function NumbersTable({
   coolMutation: any;
   activateMutation: any;
   syncMutation: any;
+  isAdmin: boolean;
 }) {
   return (
     <div className="card overflow-hidden">
@@ -506,7 +516,7 @@ function NumbersTable({
                 </div>
               </th>
               <th className="table-th">Assigned To</th>
-              <th className="table-th w-28 text-right">Actions</th>
+              {isAdmin && <th className="table-th w-28 text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -682,15 +692,18 @@ function NumbersTable({
                       <span className="text-xs text-dark-300">
                         {assignee.firstName} {assignee.lastName?.[0]}.
                       </span>
-                    ) : (
+                    ) : isAdmin ? (
                       <button
                         onClick={() => setShowAssign(number.id)}
                         className="text-xs text-scl-400 hover:text-scl-300 transition-colors"
                       >
                         Assign
                       </button>
+                    ) : (
+                      <span className="text-xs text-dark-500">—</span>
                     )}
                   </td>
+                  {isAdmin && (
                   <td className="table-td">
                     <div className="flex items-center justify-end gap-1">
                       {number.status === 'ACTIVE' ? (
@@ -726,6 +739,7 @@ function NumbersTable({
                       </button>
                     </div>
                   </td>
+                  )}
                 </tr>
               );
             })}

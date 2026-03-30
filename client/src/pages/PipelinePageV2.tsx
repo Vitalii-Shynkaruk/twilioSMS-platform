@@ -278,6 +278,11 @@ export default function PipelinePage() {
           { icon: 'ℹ️' });
         return;
       }
+      if (targetStage === 'FUNDED') {
+        setSelectedDealId(dealId);
+        toast('Click "🎉 Mark as Funded" in the deal panel to complete funding details', { icon: '💰' });
+        return;
+      }
       moveMutation.mutate({ dealId, stage: targetStage });
     },
     [board, moveMutation],

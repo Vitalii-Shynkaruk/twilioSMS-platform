@@ -538,38 +538,13 @@ export class DealController {
     if (req.body.followUpType) updateData.followUpType = req.body.followUpType;
     if (req.body.followUpNote) updateData.followUpNote = req.body.followUpNote;
 
-    // When moving to FUNDED: auto-create funding event + set dealAmount/fundedDate
+    // When moving to FUNDED: should use markFunded endpoint via modal.
+    // moveDeal keeps minimal support in case it's called directly.
     if (stage === 'FUNDED') {
-      const offers = await prisma.offer.findMany({ where: { dealId: id }, orderBy: { amount: 'desc' }, take: 1 });
-      const bestOffer = offers[0];
-      const fundedAmount = bestOffer?.amount || existing.dealAmount || 0;
-      const fundedLender = bestOffer?.lenderName || existing.lender || '';
-
-      // Set dealAmount from best offer if not already set or if offer is different
-      if (bestOffer && (!existing.dealAmount || existing.dealAmount !== bestOffer.amount)) {
-        updateData.dealAmount = bestOffer.amount;
-      }
       updateData.fundedDate = new Date();
-
-      // Create funding event if amount > 0 and no event exists yet for this deal
-      if (fundedAmount > 0) {
-        const existingEvent = await prisma.fundingEvent.findFirst({ where: { dealId: id } });
-        if (!existingEvent) {
-          await prisma.fundingEvent.create({
-            data: {
-              dealId: id,
-              repId: existing.assignedRepId,
-              amountFunded: fundedAmount,
-              lender: fundedLender,
-              productType: bestOffer?.productType || existing.productType || null,
-              fundedDate: new Date(),
-            },
-          });
-        }
-      }
     }
 
-    // When moving FROM FUNDED to another stage: remove the auto-created funding event
+    // When moving FROM FUNDED to another stage: clear fundedDate
     if (existing.stage === DealStage.FUNDED && stage !== 'FUNDED') {
       updateData.fundedDate = null;
     }

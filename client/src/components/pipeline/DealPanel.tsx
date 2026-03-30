@@ -547,6 +547,10 @@ function DealClientTab({
                 onOpenMoveModal();
                 return;
               }
+              if (nextStage === 'FUNDED') {
+                onOpenFundedModal();
+                return;
+              }
               onMove({ stage: nextStage });
             }}
             disabled={!canEdit}
@@ -568,7 +572,7 @@ function DealClientTab({
                 <div
                   key={opt.value}
                   className={clsx('dt-opt', selected && 'sel')}
-                  onClick={() => canEdit && onUpdate({ productType: opt.value })}
+                  onClick={() => canEdit && onUpdate({ productType: selected ? null : opt.value })}
                 >
                   <div className="dt-chk">{selected ? <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> : ''}</div>
                   <span>{opt.label}</span>
@@ -813,7 +817,7 @@ function DealClientTab({
               ✅ Client Accepted Terms → Committed
             </button>
           )}
-          {deal.stage === 'COMMITTED_FUNDING' && (
+          {(deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'APPROVED_OFFERS') && (
             <button className="act-btn act-funded" onClick={onOpenFundedModal}>
               🎉 Mark as Funded ✓
             </button>

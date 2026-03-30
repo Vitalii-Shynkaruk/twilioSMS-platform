@@ -272,7 +272,10 @@ export default function PipelinePage() {
       if (currentStage === targetStage) return;
       if (targetStage === 'NURTURE' || targetStage === 'CLOSED') {
         setSelectedDealId(dealId);
-        toast('Open panel to set required fields for this stage', { icon: 'ℹ️' });
+        toast(targetStage === 'NURTURE'
+          ? 'Click the deal panel → set Lost Reason + Follow-up to move to Nurture'
+          : 'Click the deal panel → set Disqualification Reason to close',
+          { icon: 'ℹ️' });
         return;
       }
       moveMutation.mutate({ dealId, stage: targetStage });

@@ -153,6 +153,9 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
   if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
     return { text: `💰 ${formatCurrency(deal.fundingEvents[0].amountFunded)}`, cls: 'sca-green' };
   }
+  if (deal.stage === 'FUNDED' && deal.dealAmount) {
+    return { text: `💰 ${formatCurrency(deal.dealAmount)}`, cls: 'sca-green' };
+  }
 
   if ((deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.offers?.length) {
     const best = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
@@ -425,6 +428,10 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
               {deal.cycleTime && <span className="funded-cycle">{deal.cycleTime}d</span>}
             </div>
           </>
+        ) : deal.stage === 'FUNDED' && deal.dealAmount ? (
+          <div className="funded-block">
+            <div className="fb-amount">💰 {formatCurrency(deal.dealAmount)}</div>
+          </div>
         ) : null}
 
         {/* Nurture previous offer + lost reason */}

@@ -58,12 +58,12 @@ export class CommandCenterController {
       // Pipeline deals (Approved + Committed)
       prisma.deal.findMany({
         where: { ...effectiveFilter, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
-        select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true },
+        select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true, offers: { select: { amount: true } } },
       }),
-      // Nurture with prevOffer
+      // Nurture with prevOffer or dealAmount
       prisma.deal.findMany({
-        where: { ...effectiveFilter, stage: DealStage.NURTURE, prevOffer: { gt: 0 } },
-        select: { prevOffer: true },
+        where: { ...effectiveFilter, stage: DealStage.NURTURE },
+        select: { prevOffer: true, dealAmount: true },
       }),
       // Committed deals
       prisma.deal.findMany({
@@ -148,9 +148,13 @@ export class CommandCenterController {
     const fundedMTD = fundedMTDAgg._sum.amountFunded || 0;
     const lifetimeFunded = lifetimeFundedAgg._sum.amountFunded || 0;
 
-    // Pipeline Value = Approved + Committed + Nurture (prevOffer > 0)
-    const approvedCommittedValue = pipelineDeals.reduce((s: number, d: any) => s + (d.dealAmount || 0), 0);
-    const nurtureValue = nurtureDeals.reduce((s: number, d: any) => s + (d.prevOffer || 0), 0);
+    // Pipeline Value = Approved + Committed + Nurture (using offer amounts to match board)
+    const bestOfferVal = (d: any) => {
+      const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+      return best?.amount || d.dealAmount || 0;
+    };
+    const approvedCommittedValue = pipelineDeals.reduce((s: number, d: any) => s + bestOfferVal(d), 0);
+    const nurtureValue = nurtureDeals.reduce((s: number, d: any) => s + (d.prevOffer || d.dealAmount || 0), 0);
     const pipelineValue = approvedCommittedValue + nurtureValue;
 
     // Committed $
@@ -164,7 +168,7 @@ export class CommandCenterController {
         !d.nextAction ||
         (d.lastActivityAt && new Date(d.lastActivityAt) < fortyEightHoursAgo),
     );
-    const atRisk = atRiskDeals.reduce((s: number, d: any) => s + (d.dealAmount || 0), 0);
+    const atRisk = atRiskDeals.reduce((s: number, d: any) => s + bestOfferVal(d), 0);
 
     // Hot count
     const hotDeals = allActiveDeals.filter((d) => {

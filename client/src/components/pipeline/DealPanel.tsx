@@ -805,6 +805,19 @@ function DealClientTab({
         </div>
       )}
 
+      {/* HELOC Rescission Window Notice (legal requirement) */}
+      {deal.productType === 'HELOC' && (deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'FUNDED') && (
+        <div className="dsb" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fbbf24', fontWeight: 600 }}>
+            ⚠️ HELOC — 3-Day Right of Rescission
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+            Federal law (Reg Z) gives borrowers 3 business days after closing to cancel a HELOC.
+            Do not disburse funds until the rescission window has expired.
+          </div>
+        </div>
+      )}
+
       {canEdit && !isClosed && (
         <div className="dsb">
           <div className="dsbt">Actions</div>
@@ -1674,6 +1687,16 @@ function MarkFundedModal({
             'Enter funded date and term to see auto-renewal milestones.'
           )}
         </div>
+
+        {/* HELOC Rescission Window Warning */}
+        {productType === 'HELOC' && (
+          <div style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 8, padding: '8px 12px', marginTop: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24' }}>⚠️ 3-Day Right of Rescission (Reg Z)</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
+              HELOC borrowers have 3 business days after closing to cancel. Funds cannot be disbursed during this window.
+            </div>
+          </div>
+        )}
 
         <div className="mfoot">
           <button className="btn-c" onClick={onClose}>

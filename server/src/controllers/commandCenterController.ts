@@ -422,13 +422,21 @@ export class CommandCenterController {
         dealAmount: true,
         assignedRepId: true,
         assignedRep: { select: { initials: true, firstName: true, lastName: true } },
+        offers: { select: { amount: true } },
       },
     });
 
+    const OFFER_BOTTLENECK_STAGES: string[] = [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING];
     const bottleneckMap: Record<string, { total: number; count: number; reps: Record<string, number> }> = {};
     for (const d of bottleneckDeals) {
       if (!bottleneckMap[d.stage]) bottleneckMap[d.stage] = { total: 0, count: 0, reps: {} };
-      bottleneckMap[d.stage].total += d.dealAmount || 0;
+      // Use best offer for Approved/Committed, dealAmount for others
+      let val = d.dealAmount || 0;
+      if (OFFER_BOTTLENECK_STAGES.includes(d.stage)) {
+        const best = ((d as any).offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+        val = best?.amount || d.dealAmount || 0;
+      }
+      bottleneckMap[d.stage].total += val;
       bottleneckMap[d.stage].count += 1;
       const init =
         d.assignedRep?.initials ||
@@ -541,22 +549,46 @@ export class CommandCenterController {
       DealStage.NURTURE,
       DealStage.CLOSED,
     ];
+    const OFFER_STAGES: DealStage[] = [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING];
     const stageSnapshot = await Promise.all(
       stages.map(async (stage: DealStage) => {
+        // Submitted: count only, no dollar amount
+        if (stage === DealStage.SUBMITTED_IN_REVIEW) {
+          const count = await prisma.deal.count({ where: { stage } });
+          return { stage, label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS], count, volume: 0, hideDollar: true };
+        }
+        // Approved/Committed: use best offer with dealAmount fallback (consistent with board)
+        if (OFFER_STAGES.includes(stage)) {
+          const deals = await prisma.deal.findMany({
+            where: { stage },
+            select: { dealAmount: true, offers: { select: { amount: true } } },
+          });
+          const volume = deals.reduce((sum, d: any) => {
+            const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+            return sum + (best?.amount || d.dealAmount || 0);
+          }, 0);
+          return { stage, label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS], count: deals.length, volume, hideDollar: false };
+        }
+        // Nurture: use prevOffer with dealAmount fallback
+        if (stage === DealStage.NURTURE) {
+          const deals = await prisma.deal.findMany({
+            where: { stage },
+            select: { prevOffer: true, dealAmount: true },
+          });
+          const volume = deals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
+          return { stage, label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS], count: deals.length, volume, hideDollar: false };
+        }
+        // All other stages: use dealAmount aggregate
         const [count, sumResult] = await Promise.all([
           prisma.deal.count({ where: { stage } }),
-          // Submitted shows count ONLY — no dollar amount
-          stage === DealStage.SUBMITTED_IN_REVIEW
-            ? Promise.resolve({ _sum: { dealAmount: null } })
-            : prisma.deal.aggregate({ where: { stage }, _sum: { dealAmount: true } }),
+          prisma.deal.aggregate({ where: { stage }, _sum: { dealAmount: true } }),
         ]);
         return {
           stage,
           label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS],
           count,
           volume: sumResult._sum.dealAmount || 0,
-          // Submitted: no dollar volume
-          hideDollar: stage === DealStage.SUBMITTED_IN_REVIEW,
+          hideDollar: false,
         };
       }),
     );

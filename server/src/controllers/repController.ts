@@ -121,6 +121,11 @@ export class RepController {
       return res.status(400).json({ error: 'Cannot change your own role' });
     }
 
+    // Admin cannot deactivate self
+    if (id === req.user?.id && isActive === false) {
+      return res.status(400).json({ error: 'Cannot deactivate your own account' });
+    }
+
     const updateData: any = {};
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;

@@ -114,6 +114,7 @@ export const dealApi = {
   getImportBatches: () => api.get('/deals/import-batches'),
   deleteImportBatch: (batchId: string) => api.delete(`/deals/import-batch/${encodeURIComponent(batchId)}`),
   deleteDeal: (id: string) => api.delete(`/deals/${id}`),
+  completeRenewalTask: (taskId: string, data?: { note?: string }) => api.put(`/deals/renewal-tasks/${taskId}/complete`, data || {}),
 };
 
 export const commandCenterApi = {

@@ -890,6 +890,34 @@ export class DealController {
     res.json({ phoneNumber: deal.client.phone, message: 'Call logged' });
   }
 
+  // PUT /api/deals/renewal-tasks/:taskId/complete - Complete a renewal task
+  static async completeRenewalTask(req: AuthRequest, res: Response) {
+    const { taskId } = req.params;
+    const { note } = req.body;
+
+    const task = await prisma.renewalTask.findUnique({
+      where: { id: taskId },
+      include: { deal: { select: { id: true, assignedRepId: true } } },
+    });
+    if (!task) return res.status(404).json({ error: 'Renewal task not found' });
+
+    const updated = await prisma.renewalTask.update({
+      where: { id: taskId },
+      data: { status: RenewalTaskStatus.COMPLETED, completedAt: new Date() },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: task.dealId,
+        repId: req.user!.id,
+        eventType: 'renewal_completed',
+        note: note || `Renewal task completed: ${task.taskType}`,
+      },
+    });
+
+    res.json(updated);
+  }
+
   // GET /api/deals/stats - Bottom stats bar data
   static async getStats(req: AuthRequest, res: Response) {
     const filter = repFilter(req.user);

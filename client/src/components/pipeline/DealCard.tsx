@@ -177,6 +177,9 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
         : deal.productType === 'SBA' || deal.productType === 'CRE'
           ? '🏛'
           : '⚡';
+    if (deal.dealAmount) {
+      return { text: `${icon} ${formatCurrency(deal.dealAmount)}`, cls: 'sca-amber' };
+    }
     return { text: `${icon} In review`, cls: 'sca-gray' };
   }
 

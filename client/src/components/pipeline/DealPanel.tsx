@@ -1072,6 +1072,7 @@ function DetailsTab({
             </div>
           </div>
         )}
+        {deal.dealAmount && <Field label="Deal Amount" value={formatCurrency(deal.dealAmount)} />}
         {deal.lender && <Field label="Lender" value={deal.lender} />}
       </Section>
 

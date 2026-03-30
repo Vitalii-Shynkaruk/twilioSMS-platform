@@ -2623,6 +2623,12 @@ function CSVImportModal({
           <div>
             <span className="field">Contact Email</span> <span className="type">email</span>
           </div>
+          <div>
+            <span className="field">FDR Funded By</span> <span className="type">lender name</span>
+          </div>
+          <div>
+            <span className="field">State of Incorporation</span> <span className="type">state</span>
+          </div>
         </div>
 
         {/* ASSIGN TO REP */}

@@ -188,7 +188,7 @@ export default function LeadsPage() {
   });
   const importLists = importListsData?.tags || [];
   const { user } = useAuthStore();
-  const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
 
   return (
     <div className="p-6 space-y-6">

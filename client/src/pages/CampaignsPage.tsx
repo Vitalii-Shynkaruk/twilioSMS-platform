@@ -30,7 +30,7 @@ import { useAuthStore } from '../stores/authStore';
 
 export default function CampaignsPage() {
   const { user } = useAuthStore();
-  const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);

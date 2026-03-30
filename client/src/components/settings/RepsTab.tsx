@@ -1,13 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { repApi } from '../../services/api';
 import { useState } from 'react';
-import { Plus, Edit2, Target, Save, X } from 'lucide-react';
+import { Plus, Edit2, Target, Save, X, Power } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 import type { Rep } from '../../types';
 
 export default function RepsTab() {
   const qc = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editRepData, setEditRepData] = useState<Rep | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: reps, isLoading } = useQuery({
@@ -16,6 +18,15 @@ export default function RepsTab() {
       const { data } = await repApi.getReps();
       return data as Rep[];
     },
+  });
+
+  const toggleActive = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => repApi.updateRep(id, { isActive }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reps'] });
+      toast.success('Rep status updated');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to update'),
   });
 
   if (isLoading) {
@@ -44,6 +55,18 @@ export default function RepsTab() {
         />
       )}
 
+      {/* Edit Rep Modal */}
+      {editRepData && (
+        <EditRepModal
+          rep={editRepData}
+          onClose={() => setEditRepData(null)}
+          onSaved={() => {
+            setEditRepData(null);
+            qc.invalidateQueries({ queryKey: ['reps'] });
+          }}
+        />
+      )}
+
       <div className="space-y-2">
         {reps?.map((rep) => (
           <RepRow
@@ -51,11 +74,13 @@ export default function RepsTab() {
             rep={rep}
             isEditing={editingId === rep.id}
             onEdit={() => setEditingId(rep.id)}
+            onEditFull={() => setEditRepData(rep)}
             onCancel={() => setEditingId(null)}
             onSaved={() => {
               setEditingId(null);
               qc.invalidateQueries({ queryKey: ['reps'] });
             }}
+            onToggleActive={() => toggleActive.mutate({ id: rep.id, isActive: !rep.isActive })}
           />
         ))}
       </div>
@@ -70,14 +95,18 @@ function RepRow({
   rep,
   isEditing,
   onEdit,
+  onEditFull,
   onCancel,
   onSaved,
+  onToggleActive,
 }: {
   rep: Rep;
   isEditing: boolean;
   onEdit: () => void;
+  onEditFull: () => void;
   onCancel: () => void;
   onSaved: () => void;
+  onToggleActive: () => void;
 }) {
   const [monthly, setMonthly] = useState(rep.monthlyGoal?.toString() || '');
   const [annual, setAnnual] = useState(rep.annualGoal?.toString() || '');
@@ -92,7 +121,7 @@ function RepRow({
   });
 
   return (
-    <div className="flex items-center gap-4 p-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg">
+    <div className={`flex items-center gap-4 p-3 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-lg ${!rep.isActive ? 'opacity-50' : ''}`}>
       <div
         className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
         style={{ backgroundColor: rep.avatarColor || '#6366f1' }}
@@ -102,6 +131,7 @@ function RepRow({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-[var(--text-primary)]">
           {rep.firstName} {rep.lastName}
+          {!rep.isActive && <span className="ml-2 text-xs text-red-400">(inactive)</span>}
         </p>
         <p className="text-xs text-[var(--text-muted)]">
           {rep.email} · {rep.role}
@@ -138,8 +168,18 @@ function RepRow({
               <Target className="w-3 h-3 inline mr-1" />${(rep.monthlyGoal / 1000).toFixed(0)}K/mo
             </span>
           )}
-          <button onClick={onEdit} className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <button onClick={onEdit} title="Edit goals" className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <Target className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onEditFull} title="Edit rep details" className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
             <Edit2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={onToggleActive}
+            title={rep.isActive ? 'Deactivate rep' : 'Reactivate rep'}
+            className={`p-1 ${rep.isActive ? 'text-green-400 hover:text-red-400' : 'text-red-400 hover:text-green-400'}`}
+          >
+            <Power className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
@@ -157,9 +197,13 @@ function CreateRepForm({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     avatarColor: '#6366f1',
   });
 
+  const autoInitials = (first: string, last: string) =>
+    ((first[0] || '') + (last[0] || '')).toUpperCase();
+
   const create = useMutation({
-    mutationFn: () => repApi.createRep(form),
+    mutationFn: () => repApi.createRep({ ...form, initials: form.initials || autoInitials(form.firstName, form.lastName) }),
     onSuccess,
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Create failed'),
   });
 
   return (
@@ -168,13 +212,19 @@ function CreateRepForm({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         <input
           placeholder="First Name"
           value={form.firstName}
-          onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+          onChange={(e) => {
+            const v = e.target.value;
+            setForm((f) => ({ ...f, firstName: v, initials: autoInitials(v, f.lastName) }));
+          }}
           className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
         />
         <input
           placeholder="Last Name"
           value={form.lastName}
-          onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+          onChange={(e) => {
+            const v = e.target.value;
+            setForm((f) => ({ ...f, lastName: v, initials: autoInitials(f.firstName, v) }));
+          }}
           className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
         />
         <input
@@ -220,6 +270,95 @@ function CreateRepForm({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         >
           Cancel
         </button>
+      </div>
+    </div>
+  );
+}
+
+function EditRepModal({ rep, onClose, onSaved }: { rep: Rep; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    firstName: rep.firstName || '',
+    lastName: rep.lastName || '',
+    email: rep.email || '',
+    initials: rep.initials || '',
+    role: rep.role || 'REP',
+    avatarColor: rep.avatarColor || '#6366f1',
+  });
+
+  const update = useMutation({
+    mutationFn: () => repApi.updateRep(rep.id, form),
+    onSuccess: () => {
+      toast.success('Rep updated');
+      onSaved();
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Update failed'),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl p-6 w-[400px] space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Edit Rep: {rep.firstName} {rep.lastName}</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <input
+            placeholder="First Name"
+            value={form.firstName}
+            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+            className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
+          />
+          <input
+            placeholder="Last Name"
+            value={form.lastName}
+            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+            className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
+          />
+          <input
+            placeholder="Email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
+          />
+          <input
+            placeholder="Initials"
+            value={form.initials}
+            onChange={(e) => setForm({ ...form, initials: e.target.value.toUpperCase() })}
+            className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
+          />
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-[var(--text-muted)]">Role:</label>
+            <select
+              value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value as 'ADMIN' | 'MANAGER' | 'REP' })}
+              className="px-2 py-1 text-xs rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
+            >
+              <option value="REP">REP</option>
+              <option value="MANAGER">MANAGER</option>
+              <option value="ADMIN">ADMIN</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-[var(--text-muted)]">Color:</label>
+            <input
+              type="color"
+              value={form.avatarColor}
+              onChange={(e) => setForm({ ...form, avatarColor: e.target.value })}
+              className="w-6 h-6"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={() => update.mutate()}
+            disabled={!form.firstName || !form.email}
+            className="px-4 py-2 text-xs font-medium bg-scl-600 text-white rounded-lg hover:bg-scl-500 disabled:opacity-40 transition"
+          >
+            Save Changes
+          </button>
+          <button onClick={onClose} className="px-4 py-2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );

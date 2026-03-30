@@ -818,6 +818,22 @@ function DealClientTab({
         </div>
       )}
 
+      {/* Admin unlock for closed deals */}
+      {isClosed && isAdmin && (
+        <div className="dsb" style={{ background: 'rgba(99,102,241,0.08)', borderColor: 'rgba(99,102,241,0.3)' }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
+            🔒 This deal is closed. As admin, you can reopen it.
+          </div>
+          <button
+            className="act-btn"
+            style={{ background: 'rgba(99,102,241,0.15)', borderColor: 'rgba(99,102,241,0.4)', color: '#818cf8' }}
+            onClick={() => onMove({ stage: 'ENGAGED_INTERESTED' })}
+          >
+            🔓 Reopen Deal → Engaged
+          </button>
+        </div>
+      )}
+
       {canEdit && !isClosed && (
         <div className="dsb">
           <div className="dsbt">Actions</div>

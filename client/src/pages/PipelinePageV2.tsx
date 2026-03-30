@@ -87,7 +87,7 @@ function isDealHot(deal: Deal): boolean {
   return !!deal.isHot;
 }
 
-type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week';
+type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week' | 'shared';
 type ViewTab = 'pipeline' | 'team' | 'queue';
 type ViewMode = 'simple' | 'execution';
 type PipelineScope = 'mine' | 'all';
@@ -95,6 +95,7 @@ type PipelineScope = 'mine' | 'all';
 const FILTERS: { key: QuickFilter; label: string; activeCls: string; passiveCls: string }[] = [
   { key: 'all', label: 'All', activeCls: 'act', passiveCls: '' },
   { key: 'mine', label: 'Mine', activeCls: 'act', passiveCls: '' },
+  { key: 'shared', label: '👥 Shared', activeCls: 'act', passiveCls: '' },
   { key: 'overdue', label: 'Overdue', activeCls: 'act', passiveCls: 'urg' },
   { key: 'hot', label: '🔥 Hot', activeCls: 'fire act', passiveCls: 'fire' },
   { key: 'neglected', label: 'Neglected', activeCls: 'act', passiveCls: 'urg' },
@@ -229,6 +230,7 @@ export default function PipelinePage() {
       stages: board.stages.map((s: any) => {
         const filteredDeals = s.deals.filter((d: Deal) => {
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
+          if (quickFilter === 'shared' && !(d.assistingRepIds as string[] || []).includes(user?.id || '')) return false;
           if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
           if (quickFilter === 'hot' && !isDealHot(d)) return false;
           if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
@@ -321,14 +323,16 @@ export default function PipelinePage() {
       if (isDealHot(d)) return true;
       return false;
     }).length;
-    return { overdue, hot, neglected, this_week };
-  }, [board]);
+    const shared = allDeals.filter((d) => (d.assistingRepIds as string[] || []).includes(user?.id || '')).length;
+    return { overdue, hot, neglected, this_week, shared };
+  }, [board, user?.id]);
 
   // ─── Filter labels with counts ───
   const filterLabels = useMemo(
     () => ({
       all: 'All',
       mine: 'Mine',
+      shared: filterCounts.shared ? `👥 Shared (${filterCounts.shared})` : '👥 Shared',
       overdue: filterCounts.overdue ? `Overdue (${filterCounts.overdue})` : 'Overdue',
       hot: filterCounts.hot ? `🔥 Hot (${filterCounts.hot})` : '🔥 Hot',
       neglected: filterCounts.neglected ? `Neglected (${filterCounts.neglected})` : 'Neglected',

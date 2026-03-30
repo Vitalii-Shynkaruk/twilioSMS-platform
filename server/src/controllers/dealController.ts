@@ -330,6 +330,17 @@ export class DealController {
     const { id } = req.params;
     const updateData = { ...req.body };
 
+    // Normalize date-only strings to full ISO DateTime (Prisma requires ISO-8601)
+    if (updateData.nextActionDue && typeof updateData.nextActionDue === 'string' && !updateData.nextActionDue.includes('T')) {
+      updateData.nextActionDue = new Date(updateData.nextActionDue + 'T12:00:00.000Z');
+    }
+    if (updateData.followUpDate && typeof updateData.followUpDate === 'string' && !updateData.followUpDate.includes('T')) {
+      updateData.followUpDate = new Date(updateData.followUpDate + 'T12:00:00.000Z');
+    }
+    if (updateData.fundedDate && typeof updateData.fundedDate === 'string' && !updateData.fundedDate.includes('T')) {
+      updateData.fundedDate = new Date(updateData.fundedDate + 'T12:00:00.000Z');
+    }
+
     const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 

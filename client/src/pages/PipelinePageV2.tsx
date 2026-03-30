@@ -171,11 +171,9 @@ export default function PipelinePage() {
   });
 
   const { data: stats } = useQuery({
-    queryKey: ['deals', 'stats', repFilter],
+    queryKey: ['deals', 'stats', boardParams],
     queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (repFilter) params.repId = repFilter;
-      const { data } = await dealApi.getStats(params);
+      const { data } = await dealApi.getStats(boardParams);
       return data as DealStats;
     },
     refetchInterval: 30000,
@@ -222,14 +220,14 @@ export default function PipelinePage() {
   });
 
   // ─── Filtered board ───
+  const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED', 'SUBMITTED_IN_REVIEW'];
   const filteredBoard = useMemo(() => {
     if (!board?.stages) return board;
     const now = new Date();
     return {
       ...board,
-      stages: board.stages.map((s: any) => ({
-        ...s,
-        deals: s.deals.filter((d: Deal) => {
+      stages: board.stages.map((s: any) => {
+        const filteredDeals = s.deals.filter((d: Deal) => {
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
           if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
           if (quickFilter === 'hot' && !isDealHot(d)) return false;
@@ -240,8 +238,25 @@ export default function PipelinePage() {
             if (!d.nextActionDue || new Date(d.nextActionDue) > weekEnd) return false;
           }
           return true;
-        }),
-      })),
+        });
+
+        // Recalculate value based on filtered deals
+        let value = 0;
+        if (!NO_AMOUNT_STAGES.includes(s.stage)) {
+          if (s.stage === 'FUNDED') {
+            value = filteredDeals.reduce((sum: number, d: Deal) => sum + (d.dealAmount || 0), 0);
+          } else if (s.stage === 'NURTURE') {
+            value = filteredDeals.reduce((sum: number, d: Deal) => sum + ((d as any).prevOffer || d.dealAmount || 0), 0);
+          } else {
+            value = filteredDeals.reduce((sum: number, d: Deal) => {
+              const best = d.offers?.reduce((a: any, b: any) => ((a?.amount || 0) > (b?.amount || 0) ? a : b), d.offers[0]);
+              return sum + (best?.amount || d.dealAmount || 0);
+            }, 0);
+          }
+        }
+
+        return { ...s, deals: filteredDeals, count: filteredDeals.length, value };
+      }),
     };
   }, [board, quickFilter, user?.id]);
 

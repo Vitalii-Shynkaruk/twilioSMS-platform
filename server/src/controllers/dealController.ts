@@ -356,6 +356,46 @@ export class DealController {
       }
       // Convert date string to proper Date object for Prisma DateTime field
       updateData.followUpDate = new Date(updateData.followUpDate);
+
+      // Auto-update nextAction and nextActionDue based on follow-up
+      const typeLabels: Record<string, string> = {
+        renewal: 'Renewal follow-up',
+        nurture: 'Nurture check-in',
+        statement_refresh: 'Statement refresh',
+        check_timing: 'Check timing',
+        re_engage: 'Re-engage',
+      };
+      const actionLabel = typeLabels[updateData.followUpType] || 'Follow up';
+      updateData.nextAction = `${actionLabel} — ${updateData.followUpNote}`;
+      updateData.nextActionDue = updateData.followUpDate;
+
+      // Move to NURTURE if not already there (and not in Funded/Closed)
+      if (!['NURTURE', 'FUNDED', 'CLOSED'].includes(existing.stage)) {
+        updateData.stage = DealStage.NURTURE;
+        updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
+        updateData.daysInStage = 0;
+
+        await prisma.dealEvent.create({
+          data: {
+            dealId: id,
+            repId: req.user!.id,
+            eventType: 'stage_change',
+            fromStage: existing.stage,
+            toStage: DealStage.NURTURE,
+            note: `Follow-up scheduled: ${actionLabel}`,
+          },
+        });
+      }
+
+      // Log the follow-up event
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'follow_up',
+          note: `${actionLabel}: ${updateData.followUpNote} (due ${updateData.followUpDate.toISOString().split('T')[0]})`,
+        },
+      });
     }
 
     // AUTOMATION RULE 1: App Submitted → Submitted (In Review)

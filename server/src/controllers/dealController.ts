@@ -544,9 +544,28 @@ export class DealController {
       updateData.fundedDate = new Date();
     }
 
-    // When moving FROM FUNDED to another stage: clear fundedDate
+    // When moving FROM FUNDED to another stage: full rollback
     if (existing.stage === DealStage.FUNDED && stage !== 'FUNDED') {
       updateData.fundedDate = null;
+
+      // Delete funding events and renewal tasks created by markFunded
+      const fundingEvents = await prisma.fundingEvent.findMany({ where: { dealId: id } });
+      if (fundingEvents.length > 0) {
+        await prisma.renewalTask.deleteMany({ where: { dealId: id } });
+        const totalRolledBack = fundingEvents.reduce((s, fe) => s + (fe.amountFunded || 0), 0);
+        await prisma.fundingEvent.deleteMany({ where: { dealId: id } });
+
+        // Rollback client totals
+        if (existing.clientId && totalRolledBack > 0) {
+          await prisma.client.update({
+            where: { id: existing.clientId },
+            data: {
+              totalFunded: { decrement: totalRolledBack },
+              fundingCount: { decrement: fundingEvents.length },
+            },
+          });
+        }
+      }
     }
 
     // When moving to NURTURE from Approved/Committed: save best offer as prevOffer
@@ -950,12 +969,12 @@ export class DealController {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const queueToday = allDeals.filter((d) => d.followUpDate && new Date(d.followUpDate) <= tomorrow).length;
 
-    // Pipeline Value = Approved + Committed + Nurture (prevOffer || dealAmount, matching column headers)
+    // Pipeline Value = Approved + Committed + Nurture (only prevOffer > 0 per spec)
     const nurtureDeals = await prisma.deal.findMany({
-      where: { ...where, stage: DealStage.NURTURE },
-      select: { prevOffer: true, dealAmount: true },
+      where: { ...where, stage: DealStage.NURTURE, prevOffer: { gt: 0 } },
+      select: { prevOffer: true },
     });
-    const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
+    const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || 0), 0);
 
     // Renewal tasks due
     const renewalsDue = await prisma.renewalTask.count({

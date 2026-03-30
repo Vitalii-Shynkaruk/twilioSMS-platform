@@ -60,9 +60,9 @@ export class CommandCenterController {
         where: { ...effectiveFilter, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
         select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true, offers: { select: { amount: true } } },
       }),
-      // Nurture with prevOffer or dealAmount
+      // Nurture with prevOffer > 0 only (per spec: Pipeline Value includes nurture ONLY with prevOffer > 0)
       prisma.deal.findMany({
-        where: { ...effectiveFilter, stage: DealStage.NURTURE },
+        where: { ...effectiveFilter, stage: DealStage.NURTURE, prevOffer: { gt: 0 } },
         select: { prevOffer: true, dealAmount: true },
       }),
       // Committed deals
@@ -486,13 +486,13 @@ export class CommandCenterController {
             where: { repId: rep.id, fundedDate: { gte: startOfMonth } },
             _sum: { amountFunded: true },
           }),
-          prisma.deal.aggregate({
+          prisma.deal.findMany({
             where: { assignedRepId: rep.id, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
-            _sum: { dealAmount: true },
+            select: { dealAmount: true, stage: true, offers: { select: { amount: true } } },
           }),
-          prisma.deal.aggregate({
+          prisma.deal.findMany({
             where: { assignedRepId: rep.id, stage: DealStage.COMMITTED_FUNDING },
-            _sum: { dealAmount: true },
+            select: { dealAmount: true, offers: { select: { amount: true } } },
           }),
           prisma.deal.count({ where: { assignedRepId: rep.id, stage: { notIn: [DealStage.CLOSED] } } }),
           prisma.deal.count({ where: { assignedRepId: rep.id, stage: DealStage.SUBMITTED_IN_REVIEW } }),
@@ -512,8 +512,14 @@ export class CommandCenterController {
           dealsAtRisk,
           overdueCount,
           fundedMTD: fundedMTD._sum.amountFunded || 0,
-          pipelineValue: pipelineValue._sum.dealAmount || 0,
-          committedValue: committedValue._sum.dealAmount || 0,
+          pipelineValue: pipelineValue.reduce((s: number, d: any) => {
+            const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+            return s + (best?.amount || d.dealAmount || 0);
+          }, 0),
+          committedValue: committedValue.reduce((s: number, d: any) => {
+            const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+            return s + (best?.amount || d.dealAmount || 0);
+          }, 0),
           activeDeals: totalDeals,
           submittedCount,
           fundedCount,

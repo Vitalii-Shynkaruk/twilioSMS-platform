@@ -681,7 +681,7 @@ export default function PipelinePage() {
                 <div className="sv" style={{ color: 'var(--good)' }}>
                   {formatCurrency(stats.pipelineValue)}
                 </div>
-                <div className="ss">Approved + Committed</div>
+                <div className="ss">Approved + Nurture</div>
               </div>
               <div className="sb2 goal-block">
                 <div className="sl">Funded MTD</div>
@@ -1975,7 +1975,7 @@ function QueueSummaryBar({ stats }: { stats: DealStats }) {
         <div className="sv" style={{ color: 'var(--good)' }}>
           {formatCurrency(stats.pipelineValue)}
         </div>
-        <div className="ss">Approved + Committed</div>
+        <div className="ss">Approved + Nurture</div>
       </div>
       <div className="sb2 goal-block">
         <div className="sl">Funded MTD</div>

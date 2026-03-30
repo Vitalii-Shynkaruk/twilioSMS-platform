@@ -858,7 +858,7 @@ export class DealController {
       // Active pipeline deals
       prisma.deal.findMany({
         where: { ...where, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
-        select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true },
+        select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true, offers: { select: { amount: true } } },
       }),
       // Funded MTD
       prisma.fundingEvent.aggregate({
@@ -889,8 +889,12 @@ export class DealController {
       _sum: { amountFunded: true },
     });
 
-    // Active Pipeline $ = Approved + Committed only
-    const activePipeline = deals.reduce((sum, d) => sum + (d.dealAmount || 0), 0);
+    // Active Pipeline $ = Approved + Committed (best offer per deal, matching column headers)
+    const bestOfferValue = (d: any) => {
+      const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+      return best?.amount || d.dealAmount || 0;
+    };
+    const activePipeline = deals.reduce((sum, d) => sum + bestOfferValue(d), 0);
 
     // At Risk $ = Approved + Committed with overdue/stalled
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
@@ -901,7 +905,7 @@ export class DealController {
           !d.nextAction ||
           (d.lastActivityAt && new Date(d.lastActivityAt) < fortyEightHoursAgo),
       )
-      .reduce((sum, d) => sum + (d.dealAmount || 0), 0);
+      .reduce((sum, d) => sum + bestOfferValue(d), 0);
 
     // Hot count
     const hotCount = allDeals.filter((d) => computeIsHot(d)).length;
@@ -916,13 +920,12 @@ export class DealController {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const queueToday = allDeals.filter((d) => d.followUpDate && new Date(d.followUpDate) <= tomorrow).length;
 
-    // Pipeline Value = Approved + Committed + Nurture (prevOffer > 0)
-    const pipelineValue = deals.reduce((sum, d) => sum + (d.dealAmount || 0), 0);
+    // Pipeline Value = Approved + Committed + Nurture (prevOffer || dealAmount, matching column headers)
     const nurtureDeals = await prisma.deal.findMany({
-      where: { ...where, stage: DealStage.NURTURE, prevOffer: { gt: 0 } },
-      select: { prevOffer: true },
+      where: { ...where, stage: DealStage.NURTURE },
+      select: { prevOffer: true, dealAmount: true },
     });
-    const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || 0), 0);
+    const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
 
     // Renewal tasks due
     const renewalsDue = await prisma.renewalTask.count({
@@ -964,7 +967,7 @@ export class DealController {
       hotCount,
       noNextAction,
       queueToday,
-      pipelineValue: pipelineValue + nurtureValue,
+      pipelineValue: activePipeline + nurtureValue,
       renewalsDue,
       committedValue,
     });

@@ -149,14 +149,10 @@ export class NumberService {
 
     // If rep has assigned numbers, prefer those
     if (repId) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
       const assignment = await prisma.numberAssignment.findFirst({
         where: {
           userId: repId,
           isActive: true,
-          assignedDate: { gte: today },
         },
         include: { phoneNumber: true },
         orderBy: { phoneNumber: { dailySentCount: 'asc' } },

@@ -373,6 +373,7 @@ function MessageThread({ conversationId, wsConnected }: { conversationId: string
     mutationFn: ({ id, status }: { id: string; status: string }) => api.put(`/leads/${id}`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Lead status updated');
     },
     onError: () => toast.error('Failed to update status'),

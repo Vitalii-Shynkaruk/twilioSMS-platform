@@ -59,8 +59,13 @@ function getGreeting(): string {
 }
 
 const REP_COLORS: Record<string, string> = {
-  JB: 'var(--gold)', SB: '#3fb950', MC: '#e07b54', AN: '#a371f7',
-  AR: '#4a9eff', HB: '#64b5d4', JJ: '#c9a227',
+  JB: 'var(--gold)',
+  SB: '#3fb950',
+  MC: '#e07b54',
+  AN: '#a371f7',
+  AR: '#4a9eff',
+  HB: '#64b5d4',
+  JJ: '#c9a227',
 };
 
 function repAvatarColor(initials: string): string {
@@ -198,7 +203,14 @@ interface IntelligenceData {
   repActivity: RepActivity[];
   stageSnapshot: StageSnapshot[];
   conversionFunnel: FunnelStep[];
-  pipelineHealth: { withNextAction: number; touched48h: number; properlyStaged: number; totalDeals?: number; withNextActionCount?: number; touchedRecentlyCount?: number };
+  pipelineHealth: {
+    withNextAction: number;
+    touched48h: number;
+    properlyStaged: number;
+    totalDeals?: number;
+    withNextActionCount?: number;
+    touchedRecentlyCount?: number;
+  };
 }
 
 interface ProductMixItem {
@@ -271,6 +283,23 @@ export default function CommandCenterPage() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<{ title: string; text: string } | null>(null);
   const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch last import batch when CSV modal opens
+  useEffect(() => {
+    if (!csvModalOpen) return;
+    dealApi
+      .getImportBatches()
+      .then((res) => {
+        const batches = res.data;
+        if (batches.length > 0) {
+          const latest = batches.sort(
+            (a: any, b: any) => new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime(),
+          )[0];
+          setLastImportBatch({ batchId: latest.batchId, count: latest.count });
+        }
+      })
+      .catch(() => {});
+  }, [csvModalOpen]);
 
   const showActionToast = useCallback((title: string, text: string) => {
     if (actionToastTimer.current) clearTimeout(actionToastTimer.current);
@@ -576,15 +605,17 @@ export default function CommandCenterPage() {
                 Admin
               </button>
             )}
-            {displayReps.filter(r => userIsAdmin || r.id === user?.id).map((rep) => (
-              <button
-                key={rep.id}
-                className={`rb ${activeView === rep.id ? 'on' : ''}`}
-                onClick={() => handleViewSwitch(rep.id)}
-              >
-                Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
-              </button>
-            ))}
+            {displayReps
+              .filter((r) => userIsAdmin || r.id === user?.id)
+              .map((rep) => (
+                <button
+                  key={rep.id}
+                  className={`rb ${activeView === rep.id ? 'on' : ''}`}
+                  onClick={() => handleViewSwitch(rep.id)}
+                >
+                  Rep ({rep.initials || (rep.firstName[0] + rep.lastName[0]).toUpperCase()})
+                </button>
+              ))}
           </div>
 
           <div className="live-pip">
@@ -623,8 +654,7 @@ export default function CommandCenterPage() {
                     {user?.firstName} {user?.lastName}
                   </div>
                   <div className="h-sub">
-                    Admin · All Reps ·{' '}
-                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    Admin · All Reps · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                   </div>
                 </div>
                 <div>
@@ -633,13 +663,20 @@ export default function CommandCenterPage() {
                   </div>
                   <div className="funded-n">{fmtCurrency(Math.round(animatedFunded))}</div>
                   <div className="funded-meta">
-                    {metrics?.fundedDealCount ?? 0} deals · {metrics?.fundedRepCount ?? 0} reps · {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · real-time from
+                    {metrics?.fundedDealCount ?? 0} deals · {metrics?.fundedRepCount ?? 0} reps ·{' '}
+                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · real-time from
                     pipeline
                   </div>
                   <div className="prog">
                     <div className="prog-top">
                       <span className="prog-goal">
-                        Team Goal: {(metrics?.monthlyGoal ?? 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} · {daysLeft} days remaining in {new Date().toLocaleDateString('en-US', { month: 'long' })}
+                        Team Goal:{' '}
+                        {(metrics?.monthlyGoal ?? 0).toLocaleString('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          maximumFractionDigits: 0,
+                        })}{' '}
+                        · {daysLeft} days remaining in {new Date().toLocaleDateString('en-US', { month: 'long' })}
                       </span>
                       <span className="prog-pct">{Math.round(metrics?.goalProgress ?? 0)}%</span>
                     </div>
@@ -751,7 +788,9 @@ export default function CommandCenterPage() {
                 </div>
                 <div className="fo-total">
                   <span className="fo-total-lbl">Total scheduled</span>
-                  <span className="fo-total-val">{fmtCurrency((metrics?.futureNext7Value ?? 0) + (metrics?.futureNext30Value ?? 0))}</span>
+                  <span className="fo-total-val">
+                    {fmtCurrency((metrics?.futureNext7Value ?? 0) + (metrics?.futureNext30Value ?? 0))}
+                  </span>
                 </div>
               </div>
             </div>
@@ -764,7 +803,8 @@ export default function CommandCenterPage() {
                   <div>
                     <div className="rb-title">System Revenue at Risk</div>
                     <div className="rb-sub">
-                      Approved + Committed deals only · overdue next actions · stalled activity · source: last_activity_at on offers only
+                      Approved + Committed deals only · overdue next actions · stalled activity · source:
+                      last_activity_at on offers only
                     </div>
                   </div>
                 </div>
@@ -795,7 +835,12 @@ export default function CommandCenterPage() {
               Execution Zone — Operator Tools
             </div>
 
-            <OperatorQueue deals={operatorQueue} isAdmin onDealClick={(id) => setSelectedDealId(id)} onToast={showActionToast} />
+            <OperatorQueue
+              deals={operatorQueue}
+              isAdmin
+              onDealClick={(id) => setSelectedDealId(id)}
+              onToast={showActionToast}
+            />
 
             <div className="g3">
               <PriorityCard
@@ -884,11 +929,24 @@ export default function CommandCenterPage() {
             {intelligence && (
               <div className="g-2-1">
                 <div className="card">
-                  <div className="cl">Next 5 Actions {' — '} {activeRepInitials || 'JB'} · ranked by value + urgency + proximity to funded</div>
+                  <div className="cl">
+                    Next 5 Actions {' — '} {activeRepInitials || 'Team'} · ranked by value + urgency + proximity to
+                    funded
+                  </div>
                   <Next5Actions deals={operatorQueue?.slice(0, 5)} />
                 </div>
                 <div>
-                  <div className="cl" style={{ marginBottom: 6, fontSize: 8, color: 'var(--muted)', letterSpacing: '.12em', textTransform: 'uppercase' as const, fontWeight: 600 }}>
+                  <div
+                    className="cl"
+                    style={{
+                      marginBottom: 6,
+                      fontSize: 8,
+                      color: 'var(--muted)',
+                      letterSpacing: '.12em',
+                      textTransform: 'uppercase' as const,
+                      fontWeight: 600,
+                    }}
+                  >
                     Pipeline Health
                   </div>
                   <div className="pipe-health">
@@ -905,7 +963,10 @@ export default function CommandCenterPage() {
                       >
                         {intelligence.pipelineHealth.withNextAction}%
                       </div>
-                      <div className="ph-sub">{intelligence.pipelineHealth.withNextActionCount ?? '?'} of {intelligence.pipelineHealth.totalDeals ?? '?'} deals</div>
+                      <div className="ph-sub">
+                        {intelligence.pipelineHealth.withNextActionCount ?? '?'} of{' '}
+                        {intelligence.pipelineHealth.totalDeals ?? '?'} deals
+                      </div>
                     </div>
                     <div className="ph-cell">
                       <div className="ph-lbl">Touched 48h</div>
@@ -920,14 +981,20 @@ export default function CommandCenterPage() {
                       >
                         {intelligence.pipelineHealth.touched48h}%
                       </div>
-                      <div className="ph-sub">{intelligence.pipelineHealth.touchedRecentlyCount ?? '?'} of {intelligence.pipelineHealth.totalDeals ?? '?'} deals</div>
+                      <div className="ph-sub">
+                        {intelligence.pipelineHealth.touchedRecentlyCount ?? '?'} of{' '}
+                        {intelligence.pipelineHealth.totalDeals ?? '?'} deals
+                      </div>
                     </div>
                     <div className="ph-cell">
                       <div className="ph-lbl">Properly Staged</div>
                       <div className={`ph-val ${intelligence.pipelineHealth.properlyStaged >= 90 ? 'ok' : 'warn'}`}>
                         {intelligence.pipelineHealth.properlyStaged}%
                       </div>
-                      <div className="ph-sub">{intelligence.pipelineHealth.totalDeals ?? '?'} of {intelligence.pipelineHealth.totalDeals ?? '?'} deals</div>
+                      <div className="ph-sub">
+                        {intelligence.pipelineHealth.totalDeals ?? '?'} of{' '}
+                        {intelligence.pipelineHealth.totalDeals ?? '?'} deals
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -999,7 +1066,11 @@ export default function CommandCenterPage() {
               Execution Zone — My Deals Only
             </div>
 
-            <OperatorQueue deals={operatorQueue} onDealClick={(id) => setSelectedDealId(id)} onToast={showActionToast} />
+            <OperatorQueue
+              deals={operatorQueue}
+              onDealClick={(id) => setSelectedDealId(id)}
+              onToast={showActionToast}
+            />
 
             <div className="g3">
               <PriorityCard
@@ -1196,14 +1267,40 @@ export default function CommandCenterPage() {
 
 // ── Auto followup suggestions by product type ──
 const AUTO_FOLLOWUP: Record<string, Record<string, { next: string; days: number }>> = {
-  MCA: { 'Called client': { next: 'Gather docs', days: 0 }, 'Sent documents': { next: 'Review docs', days: 3 }, 'Submitted application': { next: 'Check with lender', days: 1 }, 'Sent offer': { next: 'Follow up on offer', days: 1 }, 'Left voicemail': { next: 'Call again', days: 1 } },
-  SBA: { 'Called client': { next: 'Schedule call', days: 1 }, 'Sent documents': { next: 'Review & gather', days: 7 }, 'Submitted application': { next: 'Lender review', days: 14 }, 'Sent offer': { next: 'Follow up on offer', days: 3 }, 'Left voicemail': { next: 'Call again', days: 2 } },
+  MCA: {
+    'Called client': { next: 'Gather docs', days: 0 },
+    'Sent documents': { next: 'Review docs', days: 3 },
+    'Submitted application': { next: 'Check with lender', days: 1 },
+    'Sent offer': { next: 'Follow up on offer', days: 1 },
+    'Left voicemail': { next: 'Call again', days: 1 },
+  },
+  SBA: {
+    'Called client': { next: 'Schedule call', days: 1 },
+    'Sent documents': { next: 'Review & gather', days: 7 },
+    'Submitted application': { next: 'Lender review', days: 14 },
+    'Sent offer': { next: 'Follow up on offer', days: 3 },
+    'Left voicemail': { next: 'Call again', days: 2 },
+  },
 };
 const DEFAULT_FOLLOWUP: Record<string, { next: string; days: number }> = {
-  'Called client': { next: 'Follow up', days: 1 }, 'Sent documents': { next: 'Review docs', days: 3 }, 'Submitted application': { next: 'Check status', days: 2 }, 'Sent offer': { next: 'Follow up on offer', days: 1 }, 'Left voicemail': { next: 'Call again', days: 1 }, 'Presented offer': { next: 'Awaiting decision', days: 2 }, 'Texted': { next: 'Follow up', days: 1 },
+  'Called client': { next: 'Follow up', days: 1 },
+  'Sent documents': { next: 'Review docs', days: 3 },
+  'Submitted application': { next: 'Check status', days: 2 },
+  'Sent offer': { next: 'Follow up on offer', days: 1 },
+  'Left voicemail': { next: 'Call again', days: 1 },
+  'Presented offer': { next: 'Awaiting decision', days: 2 },
+  Texted: { next: 'Follow up', days: 1 },
 };
 
-const CA_ACTION_TYPES = ['Called client', 'Left voicemail', 'Sent documents', 'Submitted application', 'Sent offer', 'Presented offer', 'Texted'];
+const CA_ACTION_TYPES = [
+  'Called client',
+  'Left voicemail',
+  'Sent documents',
+  'Submitted application',
+  'Sent offer',
+  'Presented offer',
+  'Texted',
+];
 const CA_DUE_OPTIONS = [
   { label: 'Today', days: 0 },
   { label: 'Tomorrow', days: 1 },
@@ -1211,19 +1308,9 @@ const CA_DUE_OPTIONS = [
   { label: 'Next week', days: 7 },
 ];
 
-function DealDetailModal({
-  deal,
-  onClose,
-  onNavigate,
-}: {
-  deal: Deal;
-  onClose: () => void;
-  onNavigate: () => void;
-}) {
+function DealDetailModal({ deal, onClose, onNavigate }: { deal: Deal; onClose: () => void; onNavigate: () => void }) {
   const qc = useQueryClient();
-  const repName = deal.assignedRep
-    ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}`
-    : '';
+  const repName = deal.assignedRep ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}` : '';
   const stageLabel = STAGE_LABELS[deal.stage] || deal.stage;
 
   // Sub-modal state
@@ -1252,7 +1339,7 @@ function DealDetailModal({
   if (deal.offers && deal.offers.length > 0) {
     const offer = deal.offers[0];
     statusParts.push(
-      `Offer from ${offer.lenderName || 'lender'} — ${offer.terms || ''} — ${fmtCurrency(offer.amount)}. Offer expires in ${offer.expiryDays ?? '?'} days.`
+      `Offer from ${offer.lenderName || 'lender'} — ${offer.terms || ''} — ${fmtCurrency(offer.amount)}. Offer expires in ${offer.expiryDays ?? '?'} days.`,
     );
   }
   if (deal.notes) statusParts.push(deal.notes);
@@ -1263,8 +1350,7 @@ function DealDetailModal({
   // Urgency
   const urgencyParts: string[] = [];
   if (deal.staleDays > 2) urgencyParts.push(`${deal.staleDays}d since last activity`);
-  if (deal.offers?.some((o) => (o.expiryDays ?? 99) <= 7))
-    urgencyParts.push('Offer expiring soon — act now');
+  if (deal.offers?.some((o) => (o.expiryDays ?? 99) <= 7)) urgencyParts.push('Offer expiring soon — act now');
   if (deal.isHot) urgencyParts.push('High close probability');
 
   const dueLabel = deal.nextActionDue
@@ -1306,7 +1392,14 @@ function DealDetailModal({
       });
       qc.invalidateQueries({ queryKey: ['cc-'] });
       showInternalToast(`Action logged — next: ${caNext}`);
-      setTimeout(() => { setSubModal('none'); setCaStep(1); setCaType(''); setCaNext(''); setCaDue(''); setCaNote(''); }, 1200);
+      setTimeout(() => {
+        setSubModal('none');
+        setCaStep(1);
+        setCaType('');
+        setCaNext('');
+        setCaDue('');
+        setCaNote('');
+      }, 1200);
     } catch {
       toast.error('Failed to complete action');
     } finally {
@@ -1322,7 +1415,10 @@ function DealDetailModal({
       await dealApi.updateDeal(deal.id, { notes: (deal.notes ? deal.notes + '\n' : '') + noteText.trim() });
       qc.invalidateQueries({ queryKey: ['cc-'] });
       showInternalToast('Note added');
-      setTimeout(() => { setSubModal('none'); setNoteText(''); }, 1200);
+      setTimeout(() => {
+        setSubModal('none');
+        setNoteText('');
+      }, 1200);
     } catch {
       toast.error('Failed to add note');
     } finally {
@@ -1346,7 +1442,10 @@ function DealDetailModal({
       });
       qc.invalidateQueries({ queryKey: ['cc-'] });
       showInternalToast(nqMode === 'lost' ? 'Moved to Nurture' : 'Deal closed');
-      setTimeout(() => { setSubModal('none'); onClose(); }, 1200);
+      setTimeout(() => {
+        setSubModal('none');
+        onClose();
+      }, 1200);
     } catch {
       toast.error('Failed to update deal');
     } finally {
@@ -1361,18 +1460,41 @@ function DealDetailModal({
       try {
         await dealApi.logCall(deal.id, { note: 'Call initiated from Command Center' });
         qc.invalidateQueries({ queryKey: ['cc-'] });
-      } catch { /* silent */ }
+      } catch {
+        /* silent */
+      }
     } else {
       showInternalToast('No phone number on file');
     }
   }
 
   return (
-    <div className="deal-modal open" onClick={(e) => { if (e.target === e.currentTarget && subModal === 'none') onClose(); }}>
+    <div
+      className="deal-modal open"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && subModal === 'none') onClose();
+      }}
+    >
       <div className="deal-box">
         {/* ── Internal toast ── */}
         {internalToast && (
-          <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50)', zIndex: 10, background: 'var(--bg4)', border: '1px solid var(--gold)', borderRadius: 4, padding: '5px 12px', fontSize: 10, color: 'var(--gold)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: '50%',
+              transform: 'translateX(-50)',
+              zIndex: 10,
+              background: 'var(--bg4)',
+              border: '1px solid var(--gold)',
+              borderRadius: 4,
+              padding: '5px 12px',
+              fontSize: 10,
+              color: 'var(--gold)',
+              fontFamily: 'var(--mono)',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {internalToast}
           </div>
         )}
@@ -1381,12 +1503,22 @@ function DealDetailModal({
           <div>
             <div className="dm-title">{deal.client?.businessName || 'Unknown'}</div>
             <div className="dm-badge">
-              <span className={`stage-badge-sm ${deal.stage === 'FUNDED' ? 'sbs-f' : deal.stage === 'APPROVED_OFFERS' ? 'sbs-a' : deal.stage === 'SUBMITTED_IN_REVIEW' ? 'sbs-s' : 'sbs-h'}`}>
+              <span
+                className={`stage-badge-sm ${deal.stage === 'FUNDED' ? 'sbs-f' : deal.stage === 'APPROVED_OFFERS' ? 'sbs-a' : deal.stage === 'SUBMITTED_IN_REVIEW' ? 'sbs-s' : 'sbs-h'}`}
+              >
                 {stageLabel}
               </span>
             </div>
           </div>
-          <button className="dm-x" onClick={() => { if (subModal !== 'none') setSubModal('none'); else onClose(); }}>{'✕'}</button>
+          <button
+            className="dm-x"
+            onClick={() => {
+              if (subModal !== 'none') setSubModal('none');
+              else onClose();
+            }}
+          >
+            {'✕'}
+          </button>
         </div>
 
         {/* ── MAIN VIEW ── */}
@@ -1394,10 +1526,22 @@ function DealDetailModal({
           <>
             <div className="dm-sec">
               <div className="dm-sec-lbl">Deal Info</div>
-              <div className="dm-row"><span className="dm-k">Amount</span><span className="dm-v gold">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</span></div>
-              <div className="dm-row"><span className="dm-k">Product</span><span className="dm-v">{deal.productType || '—'}</span></div>
-              <div className="dm-row"><span className="dm-k">Stage</span><span className="dm-v">{stageLabel}</span></div>
-              <div className="dm-row"><span className="dm-k">Assigned Rep</span><span className="dm-v">{repName || '—'}</span></div>
+              <div className="dm-row">
+                <span className="dm-k">Amount</span>
+                <span className="dm-v gold">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</span>
+              </div>
+              <div className="dm-row">
+                <span className="dm-k">Product</span>
+                <span className="dm-v">{deal.productType || '—'}</span>
+              </div>
+              <div className="dm-row">
+                <span className="dm-k">Stage</span>
+                <span className="dm-v">{stageLabel}</span>
+              </div>
+              <div className="dm-row">
+                <span className="dm-k">Assigned Rep</span>
+                <span className="dm-v">{repName || '—'}</span>
+              </div>
             </div>
 
             <div className="dm-sec">
@@ -1405,29 +1549,46 @@ function DealDetailModal({
               <div className="dm-note">{statusText}</div>
               {urgencyParts.length > 0 && (
                 <div className="dm-urgency">
-                  <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' — '}{urgencyParts.join('. ')}
+                  <strong>{deal.dealAmount ? fmtCurrency(deal.dealAmount) + ' deal' : 'Deal'}</strong> {' — '}
+                  {urgencyParts.join('. ')}
                 </div>
               )}
             </div>
 
             <div className="dm-sec">
               <div className="dm-sec-lbl">Next Action</div>
-              <div className="dm-row"><span className="dm-k">Task</span><span className="dm-v green">{deal.nextAction || '—'}</span></div>
-              <div className="dm-row"><span className="dm-k">Due</span><span className="dm-v">{dueLabel}</span></div>
+              <div className="dm-row">
+                <span className="dm-k">Task</span>
+                <span className="dm-v green">{deal.nextAction || '—'}</span>
+              </div>
+              <div className="dm-row">
+                <span className="dm-k">Due</span>
+                <span className="dm-v">{dueLabel}</span>
+              </div>
             </div>
 
             <div className="dm-sec" style={{ marginBottom: 0 }}>
               <div className="dm-sec-lbl">Quick Contact — logs to Twilio</div>
               <div className="dm-comms">
-                <button className="dm-comm-btn dm-call" onClick={handleCall}>📞 Call</button>
-                <button className="dm-comm-btn dm-text" onClick={onNavigate}>💬 Text</button>
+                <button className="dm-comm-btn dm-call" onClick={handleCall}>
+                  📞 Call
+                </button>
+                <button className="dm-comm-btn dm-text" onClick={onNavigate}>
+                  💬 Text
+                </button>
               </div>
             </div>
 
             <div className="dm-acts">
-              <button className="dma dma-p" onClick={() => setSubModal('complete-action')}>Complete Action</button>
-              <button className="dma dma-s" onClick={() => setSubModal('add-note')}>Add Note</button>
-              <button className="dma dma-d" onClick={() => setSubModal('lost-nq')}>Lost / NQ</button>
+              <button className="dma dma-p" onClick={() => setSubModal('complete-action')}>
+                Complete Action
+              </button>
+              <button className="dma dma-s" onClick={() => setSubModal('add-note')}>
+                Add Note
+              </button>
+              <button className="dma dma-d" onClick={() => setSubModal('lost-nq')}>
+                Lost / NQ
+              </button>
             </div>
           </>
         )}
@@ -1439,7 +1600,14 @@ function DealDetailModal({
             <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>What did you do?</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
               {CA_ACTION_TYPES.map((t) => (
-                <button key={t} className="dma dma-s" style={{ fontSize: 9, padding: '7px 6px' }} onClick={() => handleCaTypeSelect(t)}>{t}</button>
+                <button
+                  key={t}
+                  className="dma dma-s"
+                  style={{ fontSize: 9, padding: '7px 6px' }}
+                  onClick={() => handleCaTypeSelect(t)}
+                >
+                  {t}
+                </button>
               ))}
             </div>
           </div>
@@ -1449,31 +1617,108 @@ function DealDetailModal({
         {subModal === 'complete-action' && caStep === 2 && (
           <div className="dm-sec">
             <div className="dm-sec-lbl">Complete Action — Step 2</div>
-            <div style={{ background: '#1c0c00', border: '1px solid var(--orange2)', borderRadius: 3, padding: '5px 8px', fontSize: 9, color: 'var(--orange)', marginBottom: 8 }}>
+            <div
+              style={{
+                background: '#1c0c00',
+                border: '1px solid var(--orange2)',
+                borderRadius: 3,
+                padding: '5px 8px',
+                fontSize: 9,
+                color: 'var(--orange)',
+                marginBottom: 8,
+              }}
+            >
               Follow-up auto-set based on {deal.productType || 'product'}
             </div>
             <div style={{ marginBottom: 6 }}>
-              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Next Action</label>
-              <input type="text" value={caNext} onChange={(e) => setCaNext(e.target.value)} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '5px 7px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', boxSizing: 'border-box' }} />
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>
+                Next Action
+              </label>
+              <input
+                type="text"
+                value={caNext}
+                onChange={(e) => setCaNext(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg4)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  padding: '5px 7px',
+                  fontSize: 10,
+                  color: 'var(--text)',
+                  fontFamily: 'var(--mono)',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
             <div style={{ marginBottom: 6 }}>
               <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Due Date</label>
               <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
                 {CA_DUE_OPTIONS.map((opt) => {
-                  const d = new Date(); d.setDate(d.getDate() + opt.days);
+                  const d = new Date();
+                  d.setDate(d.getDate() + opt.days);
                   const val = d.toISOString().slice(0, 10);
-                  return <button key={opt.label} className={`dma ${caDue === val ? 'dma-p' : 'dma-s'}`} style={{ fontSize: 8, padding: '4px 6px', flex: 1 }} onClick={() => setCaDue(val)}>{opt.label}</button>;
+                  return (
+                    <button
+                      key={opt.label}
+                      className={`dma ${caDue === val ? 'dma-p' : 'dma-s'}`}
+                      style={{ fontSize: 8, padding: '4px 6px', flex: 1 }}
+                      onClick={() => setCaDue(val)}
+                    >
+                      {opt.label}
+                    </button>
+                  );
                 })}
               </div>
-              <input type="date" value={caDue} onChange={(e) => setCaDue(e.target.value)} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '4px 7px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', boxSizing: 'border-box' }} />
+              <input
+                type="date"
+                value={caDue}
+                onChange={(e) => setCaDue(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg4)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  padding: '4px 7px',
+                  fontSize: 10,
+                  color: 'var(--text)',
+                  fontFamily: 'var(--mono)',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
             <div style={{ marginBottom: 8 }}>
-              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Note (optional)</label>
-              <input type="text" value={caNote} onChange={(e) => setCaNote(e.target.value)} placeholder="Additional context..." style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '5px 7px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', boxSizing: 'border-box' }} />
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>
+                Note (optional)
+              </label>
+              <input
+                type="text"
+                value={caNote}
+                onChange={(e) => setCaNote(e.target.value)}
+                placeholder="Additional context..."
+                style={{
+                  width: '100%',
+                  background: 'var(--bg4)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  padding: '5px 7px',
+                  fontSize: 10,
+                  color: 'var(--text)',
+                  fontFamily: 'var(--mono)',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
             <div style={{ display: 'flex', gap: 5 }}>
-              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => setCaStep(1)}>← Back</button>
-              <button className="dma dma-p" style={{ flex: 2, opacity: caSubmitting ? 0.5 : 1 }} disabled={caSubmitting || !caNext || !caDue} onClick={handleCaSubmit}>
+              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => setCaStep(1)}>
+                ← Back
+              </button>
+              <button
+                className="dma dma-p"
+                style={{ flex: 2, opacity: caSubmitting ? 0.5 : 1 }}
+                disabled={caSubmitting || !caNext || !caDue}
+                onClick={handleCaSubmit}
+              >
                 {caSubmitting ? 'Saving...' : 'Submit'}
               </button>
             </div>
@@ -1484,10 +1729,41 @@ function DealDetailModal({
         {subModal === 'add-note' && (
           <div className="dm-sec">
             <div className="dm-sec-lbl">Add Note</div>
-            <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Enter note..." rows={4} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '6px 8px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', resize: 'vertical', boxSizing: 'border-box' }} />
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Enter note..."
+              rows={4}
+              style={{
+                width: '100%',
+                background: 'var(--bg4)',
+                border: '1px solid var(--border)',
+                borderRadius: 3,
+                padding: '6px 8px',
+                fontSize: 10,
+                color: 'var(--text)',
+                fontFamily: 'var(--mono)',
+                resize: 'vertical',
+                boxSizing: 'border-box',
+              }}
+            />
             <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
-              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => { setSubModal('none'); setNoteText(''); }}>Cancel</button>
-              <button className="dma dma-p" style={{ flex: 2, opacity: noteSubmitting ? 0.5 : 1 }} disabled={noteSubmitting || !noteText.trim()} onClick={handleAddNote}>
+              <button
+                className="dma dma-s"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setSubModal('none');
+                  setNoteText('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="dma dma-p"
+                style={{ flex: 2, opacity: noteSubmitting ? 0.5 : 1 }}
+                disabled={noteSubmitting || !noteText.trim()}
+                onClick={handleAddNote}
+              >
                 {noteSubmitting ? 'Saving...' : 'Save Note'}
               </button>
             </div>
@@ -1499,26 +1775,84 @@ function DealDetailModal({
           <div className="dm-sec">
             <div className="dm-sec-lbl">Close Deal</div>
             <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
-              <button className={`dma ${nqMode === 'lost' ? 'dma-p' : 'dma-s'}`} style={{ flex: 1, fontSize: 9 }} onClick={() => setNqMode('lost')}>Lost → Nurture</button>
-              <button className={`dma ${nqMode === 'disqualified' ? 'dma-d' : 'dma-s'}`} style={{ flex: 1, fontSize: 9 }} onClick={() => setNqMode('disqualified')}>Disqualified → Closed</button>
+              <button
+                className={`dma ${nqMode === 'lost' ? 'dma-p' : 'dma-s'}`}
+                style={{ flex: 1, fontSize: 9 }}
+                onClick={() => setNqMode('lost')}
+              >
+                Lost → Nurture
+              </button>
+              <button
+                className={`dma ${nqMode === 'disqualified' ? 'dma-d' : 'dma-s'}`}
+                style={{ flex: 1, fontSize: 9 }}
+                onClick={() => setNqMode('disqualified')}
+              >
+                Disqualified → Closed
+              </button>
             </div>
             <div style={{ marginBottom: 6 }}>
-              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>{nqMode === 'lost' ? 'Lost Reason' : 'Disqualification Reason'} *</label>
-              <textarea value={nqReason} onChange={(e) => setNqReason(e.target.value)} placeholder={nqMode === 'lost' ? 'Why was this deal lost?' : 'Why is this deal disqualified?'} rows={3} style={{ width: '100%', background: 'var(--bg4)', border: '1px solid var(--border)', borderRadius: 3, padding: '6px 8px', fontSize: 10, color: 'var(--text)', fontFamily: 'var(--mono)', resize: 'vertical', boxSizing: 'border-box' }} />
+              <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>
+                {nqMode === 'lost' ? 'Lost Reason' : 'Disqualification Reason'} *
+              </label>
+              <textarea
+                value={nqReason}
+                onChange={(e) => setNqReason(e.target.value)}
+                placeholder={nqMode === 'lost' ? 'Why was this deal lost?' : 'Why is this deal disqualified?'}
+                rows={3}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg4)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  padding: '6px 8px',
+                  fontSize: 10,
+                  color: 'var(--text)',
+                  fontFamily: 'var(--mono)',
+                  resize: 'vertical',
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
             {nqMode === 'lost' && (
               <div style={{ marginBottom: 6 }}>
-                <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>Follow-up in</label>
+                <label style={{ fontSize: 9, color: 'var(--muted)', display: 'block', marginBottom: 3 }}>
+                  Follow-up in
+                </label>
                 <div style={{ display: 'flex', gap: 4 }}>
-                  {[{ label: '30d', v: 30 }, { label: '60d', v: 60 }, { label: '90d', v: 90 }].map((opt) => (
-                    <button key={opt.v} className={`dma ${nqFollowUp === opt.v ? 'dma-p' : 'dma-s'}`} style={{ flex: 1, fontSize: 8 }} onClick={() => setNqFollowUp(opt.v)}>{opt.label}</button>
+                  {[
+                    { label: '30d', v: 30 },
+                    { label: '60d', v: 60 },
+                    { label: '90d', v: 90 },
+                  ].map((opt) => (
+                    <button
+                      key={opt.v}
+                      className={`dma ${nqFollowUp === opt.v ? 'dma-p' : 'dma-s'}`}
+                      style={{ flex: 1, fontSize: 8 }}
+                      onClick={() => setNqFollowUp(opt.v)}
+                    >
+                      {opt.label}
+                    </button>
                   ))}
                 </div>
               </div>
             )}
             <div style={{ display: 'flex', gap: 5, marginTop: 6 }}>
-              <button className="dma dma-s" style={{ flex: 1 }} onClick={() => { setSubModal('none'); setNqReason(''); }}>Cancel</button>
-              <button className={`dma ${nqMode === 'lost' ? 'dma-p' : 'dma-d'}`} style={{ flex: 2, opacity: nqSubmitting ? 0.5 : 1 }} disabled={nqSubmitting || !nqReason.trim()} onClick={handleLostNq}>
+              <button
+                className="dma dma-s"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setSubModal('none');
+                  setNqReason('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className={`dma ${nqMode === 'lost' ? 'dma-p' : 'dma-d'}`}
+                style={{ flex: 2, opacity: nqSubmitting ? 0.5 : 1 }}
+                disabled={nqSubmitting || !nqReason.trim()}
+                onClick={handleLostNq}
+              >
                 {nqSubmitting ? 'Saving...' : nqMode === 'lost' ? 'Move to Nurture' : 'Close Deal'}
               </button>
             </div>
@@ -1540,13 +1874,21 @@ function LiveFeedToast({ events }: { events?: ActivityEvent[] }) {
     function buildItem(ev: ActivityEvent): { title: string; text: string } {
       const biz = ev.deal?.client?.businessName || 'Unknown';
       const rep = ev.rep?.initials || ev.rep?.firstName || '';
-      if (ev.toStage === 'FUNDED')
-        return { title: 'Live Feed', text: `${rep} closed ${biz} — funded` };
+      if (ev.toStage === 'FUNDED') return { title: 'Live Feed', text: `${rep} closed ${biz} — funded` };
       if (ev.eventType === 'stage_changed')
-        return { title: 'Live Feed', text: `${rep}: ${biz} — ${STAGE_LABELS[ev.toStage || ''] || ev.toStage || 'moved'}` };
+        return {
+          title: 'Live Feed',
+          text: `${rep}: ${biz} — ${STAGE_LABELS[ev.toStage || ''] || ev.toStage || 'moved'}`,
+        };
       if (ev.eventType?.includes('alert') || ev.eventType?.includes('system'))
-        return { title: 'System Alert', text: `${biz} (${rep}) — ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'attention needed'}` };
-      return { title: 'Live Feed', text: `${rep}: ${biz} — ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'update'}` };
+        return {
+          title: 'System Alert',
+          text: `${biz} (${rep}) — ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'attention needed'}`,
+        };
+      return {
+        title: 'Live Feed',
+        text: `${rep}: ${biz} — ${ev.note || ev.eventType?.replace(/_/g, ' ') || 'update'}`,
+      };
     }
 
     function showNext() {
@@ -1560,7 +1902,10 @@ function LiveFeedToast({ events }: { events?: ActivityEvent[] }) {
     // Show first after 5s, then every 22s
     const first = setTimeout(showNext, 5000);
     const interval = setInterval(showNext, 22000);
-    return () => { clearTimeout(first); clearInterval(interval); };
+    return () => {
+      clearTimeout(first);
+      clearInterval(interval);
+    };
   }, [events]);
 
   if (!current) return null;
@@ -1613,53 +1958,61 @@ function OperatorQueue({
     <div className="op-q">
       <div className="oq-head">
         <span style={{ color: 'var(--orange)', fontSize: 13 }}>{'★'}</span>
-        <span className="oq-title">
-          {isAdmin ? 'Operator Queue — Admin Hit List' : 'Close These Today — My Deals'}
-        </span>
-        <span className="oq-sub">One action per deal · system-determined by stage + urgency</span>
+        <span className="oq-title">{isAdmin ? 'Top 5 to Close Today — Team' : 'Top 5 to Close Today'}</span>
+        <span className="oq-sub">Ranked by deal score — highest priority first</span>
       </div>
       <div className="oq-list">
-        {deals.slice(0, 5).map((deal, i) => (
-          <div className="oqi" key={deal.id} onClick={() => onDealClick(deal.id)}>
-            <div className="oqi-rank">{i + 1}</div>
-            <div className="oqi-info">
-              <div className="oqi-name">
-                {deal.client?.businessName || 'Unknown'}
-                {isAdmin && deal.assignedRep && (
-                  <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
-                    {' · '}
-                    {deal.assignedRep.initials ||
-                      (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
-                  </span>
-                )}
+        {deals.slice(0, 5).map((deal, i) => {
+          const score = (deal as any).priorityScore ?? 0;
+          const scoreColor = score >= 60 ? '#3AB97A' : score >= 30 ? '#C9952A' : '#E24B4A';
+          const scoreReason = (deal as any).scoreReason || '';
+          const bestOffer = deal.offers?.length
+            ? deal.offers.reduce((a: any, b: any) => ((a.amount || 0) > (b.amount || 0) ? a : b))
+            : null;
+          return (
+            <div className="oqi" key={deal.id} onClick={() => onDealClick(deal.id)}>
+              <div className="oqi-rank">{i + 1}</div>
+              <div className="oqi-info">
+                <div className="oqi-name">
+                  {deal.client?.businessName || 'Unknown'}
+                  {isAdmin && deal.assignedRep && (
+                    <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>
+                      {' · '}
+                      {deal.assignedRep.initials ||
+                        (deal.assignedRep.firstName[0] + deal.assignedRep.lastName[0]).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="oqi-detail">
+                  {deal.productType || ''} {STAGE_LABELS[deal.stage] || deal.stage}
+                  {bestOffer ? ` · ${fmtCurrency(bestOffer.amount)} — ${bestOffer.lenderName}` : ''}
+                </div>
+                {scoreReason && <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>{scoreReason}</div>}
               </div>
-              <div className="oqi-detail">
-                {deal.productType || ''} {STAGE_LABELS[deal.stage] || deal.stage}
-                {deal.nextAction ? ` · ${deal.nextAction}` : ''}
+              <div className="oqi-right">
+                <div style={{ fontSize: 10, fontWeight: 700, color: scoreColor }}>Score: {score}</div>
+                <button
+                  className={`oqi-action ${getActionButtonStyle(deal.primaryAction)}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onToast) {
+                      const biz = deal.client?.businessName || 'Unknown';
+                      const action = (deal.primaryAction || '').toLowerCase();
+                      let msg = `${deal.primaryAction}...`;
+                      if (action.includes('call') || action.includes('close'))
+                        msg = 'Calling client to present offer...';
+                      else if (action.includes('send')) msg = 'Sending offer summary to client...';
+                      else if (action.includes('follow')) msg = 'Following up with lender...';
+                      onToast(biz, msg);
+                    }
+                  }}
+                >
+                  {deal.primaryAction}
+                </button>
               </div>
             </div>
-            <div className="oqi-right">
-              <div className="oqi-amt">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</div>
-              <button
-                className={`oqi-action ${getActionButtonStyle(deal.primaryAction)}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onToast) {
-                    const biz = deal.client?.businessName || 'Unknown';
-                    const action = (deal.primaryAction || '').toLowerCase();
-                    let msg = `${deal.primaryAction}...`;
-                    if (action.includes('call')) msg = 'Calling client to present offer...';
-                    else if (action.includes('send')) msg = 'Sending offer summary to client...';
-                    else if (action.includes('follow')) msg = 'Following up with lender...';
-                    onToast(biz, msg);
-                  }
-                }}
-              >
-                {deal.primaryAction}
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1937,7 +2290,24 @@ function RepMonitorCard({
               <div className="rm-right">
                 <div className={`rm-time ${timeCls}`}>{timeAgo(rep.lastTouch)}</div>
                 <div className="rm-tag">
-                  {fmtCurrency(rep.fundedMTD)} MTD · {rep.submittedCount > 0 ? Math.round((rep.fundedCount / rep.submittedCount) * 100) : 0}% conv · <span style={{ color: (() => { const exec = rep.activeDeals > 0 ? Math.round(((rep.activeDeals - rep.overdueCount) / rep.activeDeals) * 100) : 0; return exec >= 75 ? 'var(--green2)' : exec >= 50 ? 'var(--amber)' : 'var(--red)'; })() }}>{rep.activeDeals > 0 ? Math.round(((rep.activeDeals - rep.overdueCount) / rep.activeDeals) * 100) : 0}% exec</span>
+                  {fmtCurrency(rep.fundedMTD)} MTD ·{' '}
+                  {rep.submittedCount > 0 ? Math.round((rep.fundedCount / rep.submittedCount) * 100) : 0}% conv ·{' '}
+                  <span
+                    style={{
+                      color: (() => {
+                        const exec =
+                          rep.activeDeals > 0
+                            ? Math.round(((rep.activeDeals - rep.overdueCount) / rep.activeDeals) * 100)
+                            : 0;
+                        return exec >= 75 ? 'var(--green2)' : exec >= 50 ? 'var(--amber)' : 'var(--red)';
+                      })(),
+                    }}
+                  >
+                    {rep.activeDeals > 0
+                      ? Math.round(((rep.activeDeals - rep.overdueCount) / rep.activeDeals) * 100)
+                      : 0}
+                    % exec
+                  </span>
                 </div>
               </div>
             </div>
@@ -1946,8 +2316,10 @@ function RepMonitorCard({
       </div>
       <div className="rm-footer">
         {(() => {
-          const topMover = repActivity.filter(r => r.status === 'active').sort((a, b) => b.fundedMTD - a.fundedMTD)[0];
-          const inactive = repActivity.filter(r => r.status !== 'active');
+          const topMover = repActivity
+            .filter((r) => r.status === 'active')
+            .sort((a, b) => b.fundedMTD - a.fundedMTD)[0];
+          const inactive = repActivity.filter((r) => r.status !== 'active');
           const worstIdle = inactive.sort((a, b) => {
             const at = a.lastTouch ? new Date(a.lastTouch).getTime() : 0;
             const bt = b.lastTouch ? new Date(b.lastTouch).getTime() : 0;
@@ -1955,8 +2327,17 @@ function RepMonitorCard({
           })[0];
           return (
             <>
-              {topMover && <>Top mover: <strong style={{ color: 'var(--green2)' }}>{topMover.initials}</strong></>}
-              {worstIdle && <> · Inactive: <strong style={{ color: 'var(--red)' }}>{worstIdle.name} — needs attention</strong></>}
+              {topMover && (
+                <>
+                  Top mover: <strong style={{ color: 'var(--green2)' }}>{topMover.initials}</strong>
+                </>
+              )}
+              {worstIdle && (
+                <>
+                  {' '}
+                  · Inactive: <strong style={{ color: 'var(--red)' }}>{worstIdle.name} — needs attention</strong>
+                </>
+              )}
             </>
           );
         })()}
@@ -2176,9 +2557,7 @@ function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?:
 
   return (
     <div className="card">
-      <div className="cl">
-        {title || 'Conversion Funnel — team-wide · from deal_events stage transitions'}
-      </div>
+      <div className="cl">{title || 'Conversion Funnel — team-wide · from deal_events stage transitions'}</div>
       <div className="cv-rows">
         {transitions.map((t, i) => (
           <div className={`cv-r ${t.rate >= 50 ? 'up' : 'dn'}`} key={i}>
@@ -2200,7 +2579,8 @@ function ConversionFunnelCard({ funnel, title }: { funnel: FunnelStep[]; title?:
                 Weakest stage: {weakest.from} {'→'} {weakest.to} at {weakest.rate}%
               </div>
               <div className="cv-rec">
-                Leads are reaching reps but not converting to qualified. Recommendation: add revenue + TIB filter at first touch. Review low-conversion reps{'\''}  qualification approach specifically.
+                Leads are reaching reps but not converting to qualified. Recommendation: add revenue + TIB filter at
+                first touch. Review low-conversion reps{"'"} qualification approach specifically.
               </div>
             </>
           ) : null;
@@ -2306,9 +2686,7 @@ function ProductMixModule({
   return (
     <div className="pm-wrap">
       <div className="pm-header">
-        <span className="pm-title">
-          Product Mix{isAdmin ? ' — Team Intelligence' : ` — ${repInitials || ''}`}
-        </span>
+        <span className="pm-title">Product Mix{isAdmin ? ' — Team Intelligence' : ` — ${repInitials || ''}`}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="pm-toggle">
             <button
@@ -2322,7 +2700,9 @@ function ProductMixModule({
             </button>
           </div>
           {isAdmin && (
-            <span style={{ fontSize: 8, color: 'var(--muted)' }}>Sort by: <span style={{ color: 'var(--text)', cursor: 'pointer' }}>Funded $ {'↓'}</span></span>
+            <span style={{ fontSize: 8, color: 'var(--muted)' }}>
+              Sort by: <span style={{ color: 'var(--text)', cursor: 'pointer' }}>Funded $ {'↓'}</span>
+            </span>
           )}
         </div>
       </div>
@@ -2370,8 +2750,7 @@ function ProductMixModule({
               </>
             ) : (
               <>
-                <strong>Balanced mix.</strong> Continue diversifying — each product strengthens pipeline
-                resilience.
+                <strong>Balanced mix.</strong> Continue diversifying — each product strengthens pipeline resilience.
               </>
             )}
           </div>
@@ -2380,7 +2759,10 @@ function ProductMixModule({
         {isAdmin && data.repBreakdown && data.repBreakdown.length > 0 && (
           <>
             <div className="pm-section-divider" />
-            <div className="pm-section-lbl" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div
+              className="pm-section-lbl"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+            >
               <span>Rep Breakdown — vs team average</span>
               <span style={{ fontSize: 8, color: 'var(--muted)' }}>Click column headers to sort</span>
             </div>
@@ -2398,14 +2780,18 @@ function ProductMixModule({
               <tbody>
                 {data.repBreakdown.map((rep) => {
                   const topProduct =
-                    rep.mix.length > 0
-                      ? rep.mix.reduce((a, b) => (a.percentage > b.percentage ? a : b)).type
-                      : '—';
+                    rep.mix.length > 0 ? rep.mix.reduce((a, b) => (a.percentage > b.percentage ? a : b)).type : '—';
                   return (
                     <tr key={rep.id}>
                       <td>
                         <div className="r-nc">
-                          <div className="r-av" style={{ background: repAvatarColor(rep.initials), color: repAvatarColor(rep.initials) !== 'var(--faint)' ? 'var(--bg)' : 'var(--muted)' }}>
+                          <div
+                            className="r-av"
+                            style={{
+                              background: repAvatarColor(rep.initials),
+                              color: repAvatarColor(rep.initials) !== 'var(--faint)' ? 'var(--bg)' : 'var(--muted)',
+                            }}
+                          >
                             {rep.initials}
                           </div>
                           <span style={{ fontWeight: 600 }}>{rep.initials}</span>
@@ -2468,6 +2854,7 @@ function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
   function getActionClass(action: string): string {
     switch (action) {
       case 'Call Now':
+      case 'CLOSE NOW':
         return 'n5-call';
       case 'Send Offer':
         return 'n5-send';
@@ -2481,26 +2868,33 @@ function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
   }
 
   function getPriorityClass(deal: QueueDeal): string {
-    if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') return 'urgent';
-    if (deal.isHot) return 'high';
+    const score = (deal as any).priorityScore ?? 0;
+    if (score >= 60) return 'urgent';
+    if (score >= 30) return 'high';
     return 'normal';
   }
 
   return (
     <div className="n5-list">
-      {deals.slice(0, 5).map((deal, i) => (
-        <div className={`n5-item ${getPriorityClass(deal)}`} key={deal.id}>
-          <div className="n5-rank">{i + 1}</div>
-          <div className="n5-name">{deal.client?.businessName || 'Unknown'}</div>
-          <div className="n5-amt">{deal.dealAmount ? fmtCurrency(deal.dealAmount) : 'TBD'}</div>
-          <button
-            className={`n5-action ${getActionClass(deal.primaryAction)}`}
-            onClick={() => toast(`${deal.primaryAction}: ${deal.client?.businessName}`)}
-          >
-            {deal.primaryAction}
-          </button>
-        </div>
-      ))}
+      {deals.slice(0, 5).map((deal, i) => {
+        const score = (deal as any).priorityScore ?? 0;
+        const scoreColor = score >= 60 ? '#3AB97A' : score >= 30 ? '#C9952A' : '#E24B4A';
+        return (
+          <div className={`n5-item ${getPriorityClass(deal)}`} key={deal.id}>
+            <div className="n5-rank">{i + 1}</div>
+            <div className="n5-name">{deal.client?.businessName || 'Unknown'}</div>
+            <div style={{ fontSize: 9, fontWeight: 700, color: scoreColor, minWidth: 40, textAlign: 'right' }}>
+              {score}
+            </div>
+            <button
+              className={`n5-action ${getActionClass(deal.primaryAction)}`}
+              onClick={() => toast(`${deal.primaryAction}: ${deal.client?.businessName}`)}
+            >
+              {deal.primaryAction}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -2584,7 +2978,17 @@ function CSVImportModal({
           Upload a CSV with historical funded deals. Supports multiple formats — auto-detects columns.
         </div>
         <div className="csv-schema">
-          <div style={{ fontSize: '8px', color: 'var(--muted)', letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: '4px' }}>Format 1 — Standard</div>
+          <div
+            style={{
+              fontSize: '8px',
+              color: 'var(--muted)',
+              letterSpacing: '.08em',
+              textTransform: 'uppercase',
+              marginBottom: '4px',
+            }}
+          >
+            Format 1 — Standard
+          </div>
           <div>
             <span className="field">business_name</span> <span className="type">text</span>{' '}
             <span className="req">required</span>
@@ -2604,7 +3008,18 @@ function CSVImportModal({
           <div>
             <span className="field">funded_date</span> <span className="type">YYYY-MM-DD</span>
           </div>
-          <div style={{ fontSize: '8px', color: 'var(--muted)', letterSpacing: '.08em', textTransform: 'uppercase', marginTop: '8px', marginBottom: '4px' }}>Format 2 — FDR Export</div>
+          <div
+            style={{
+              fontSize: '8px',
+              color: 'var(--muted)',
+              letterSpacing: '.08em',
+              textTransform: 'uppercase',
+              marginTop: '8px',
+              marginBottom: '4px',
+            }}
+          >
+            Format 2 — FDR Export
+          </div>
           <div>
             <span className="field">Contact</span> <span className="type">text</span>{' '}
             <span className="req">required</span>
@@ -2629,6 +3044,9 @@ function CSVImportModal({
           <div>
             <span className="field">State of Incorporation</span> <span className="type">state</span>
           </div>
+          <div>
+            <span className="field">Funded Date</span> <span className="type">YYYY-MM-DD</span>
+          </div>
         </div>
 
         {/* ASSIGN TO REP */}
@@ -2638,16 +3056,24 @@ function CSVImportModal({
           </label>
           <select
             value={assignRepId}
-            onChange={e => onAssignRepChange(e.target.value)}
+            onChange={(e) => onAssignRepChange(e.target.value)}
             style={{
-              width: '100%', padding: '6px 8px', marginTop: '4px',
-              background: 'var(--surface2)', color: 'var(--text)', border: '1px solid var(--faint)',
-              borderRadius: '6px', fontSize: '11px', outline: 'none',
+              width: '100%',
+              padding: '6px 8px',
+              marginTop: '4px',
+              background: 'var(--surface2)',
+              color: 'var(--text)',
+              border: '1px solid var(--faint)',
+              borderRadius: '6px',
+              fontSize: '11px',
+              outline: 'none',
             }}
           >
             <option value="">Auto-detect from CSV (rep_name column)</option>
-            {reps.map(r => (
-              <option key={r.id} value={r.id}>{r.firstName} {r.lastName} ({r.initials})</option>
+            {reps.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.firstName} {r.lastName} ({r.initials})
+              </option>
             ))}
           </select>
         </div>
@@ -2675,20 +3101,30 @@ function CSVImportModal({
 
         {/* UNDO LAST IMPORT */}
         {lastImportBatch && (
-          <div style={{
-            background: 'rgba(201,162,39,0.1)', border: '1px solid var(--gold)',
-            borderRadius: '6px', padding: '8px 10px', marginBottom: '8px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}>
-            <span style={{ fontSize: '10px', color: 'var(--text)' }}>
-              Last import: {lastImportBatch.count} deals
-            </span>
+          <div
+            style={{
+              background: 'rgba(201,162,39,0.1)',
+              border: '1px solid var(--gold)',
+              borderRadius: '6px',
+              padding: '8px 10px',
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span style={{ fontSize: '10px', color: 'var(--text)' }}>Last import: {lastImportBatch.count} deals</span>
             <button
               onClick={() => onUndoImport(lastImportBatch.batchId)}
               style={{
-                background: 'var(--red)', color: '#fff', border: 'none',
-                borderRadius: '4px', padding: '4px 10px', fontSize: '10px',
-                cursor: 'pointer', fontWeight: 600,
+                background: 'var(--red)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '4px 10px',
+                fontSize: '10px',
+                cursor: 'pointer',
+                fontWeight: 600,
               }}
             >
               ↩ Undo Import
@@ -2714,13 +3150,15 @@ function CSVImportModal({
 function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: number; onNav: (i: number) => void }) {
   const clampedIndex = Math.min(index, deals.length - 1);
   const deal = deals[clampedIndex];
+  const [renderNow] = useState(() => Date.now());
   if (!deal) return null;
 
   function getReasonTag(d: Deal): { cls: string; label: string; icon: string } {
     const src = (d as any).reviveSource as string | undefined;
     if (src === 'renewal' || d.stage === 'FUNDED') return { cls: 'rr-renewal', label: 'Renewal Eligible', icon: '↻' };
     if (src === 'revive' || d.stage === 'APPROVED_OFFERS') return { cls: 'rr-revive', label: 'Revive', icon: '⚡' };
-    if (src === 'statement_refresh' || d.stage === 'SUBMITTED_IN_REVIEW') return { cls: 'rr-stmts', label: 'Statement Refresh', icon: '📄' };
+    if (src === 'statement_refresh' || d.stage === 'SUBMITTED_IN_REVIEW')
+      return { cls: 'rr-stmts', label: 'Statement Refresh', icon: '📄' };
     if (d.stage === 'NURTURE') return { cls: 'rr-nurture', label: 'Nurture', icon: '🌱' };
     if (src === 'follow_up') return { cls: 'rr-expired', label: 'Follow-Up Due', icon: '📅' };
     return { cls: 'rr-expired', label: 'Expired', icon: '⏳' };
@@ -2729,23 +3167,26 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
   function getQueueReason(d: Deal): string {
     const src = (d as any).reviveSource as string | undefined;
     if (src === 'renewal') {
-      const days = d.fundedDate ? Math.floor((Date.now() - new Date(d.fundedDate).getTime()) / 86400000) : 0;
+      const days = d.fundedDate ? Math.floor((renderNow - new Date(d.fundedDate).getTime()) / 86400000) : 0;
       return `Prior funded client — last funded ${days} days ago. ${d.productType || 'MCA'} product with ${fmtCurrency(d.dealAmount || 0)} prior amount. Eligible for renewal outreach.`;
     }
-    if (src === 'revive') return `Deal in ${STAGE_LABELS[d.stage] || d.stage} with no activity for ${d.staleDays || 30}+ days. Consider re-engaging or closing.`;
-    if (src === 'statement_refresh') return `Submitted ${d.staleDays || 21}+ days ago with no lender update. Request fresh statements or follow up with lender.`;
+    if (src === 'revive')
+      return `Deal in ${STAGE_LABELS[d.stage] || d.stage} with no activity for ${d.staleDays || 30}+ days. Consider re-engaging or closing.`;
+    if (src === 'statement_refresh')
+      return `Submitted ${d.staleDays || 21}+ days ago with no lender update. Request fresh statements or follow up with lender.`;
     if (src === 'follow_up') return `Follow-up was scheduled and is now past due. Contact client to maintain momentum.`;
     return `This deal requires attention based on pipeline analysis.`;
   }
 
   const reason = getReasonTag(deal);
   const queueReason = getQueueReason(deal);
-  const renewalPotential = deal.stage === 'FUNDED' && deal.dealAmount
-    ? `~${fmtCurrency(Math.round(deal.dealAmount * 0.8))}–${fmtCurrency(Math.round(deal.dealAmount * 1.2))} renewal`
-    : null;
+  const renewalPotential =
+    deal.stage === 'FUNDED' && deal.dealAmount
+      ? `~${fmtCurrency(Math.round(deal.dealAmount * 0.8))}–${fmtCurrency(Math.round(deal.dealAmount * 1.2))} renewal`
+      : null;
 
   const lastActivityAgo = deal.lastActivityAt
-    ? Math.floor((Date.now() - new Date(deal.lastActivityAt).getTime()) / 86400000)
+    ? Math.floor((renderNow - new Date(deal.lastActivityAt).getTime()) / 86400000)
     : null;
 
   return (
@@ -2753,11 +3194,21 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
       <div className="rrq-header">
         <div className="rrq-title-row">
           <div className="rrq-icon">
-            <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0110.9-3.5M14 8a6 6 0 01-10.9 3.5M14 4.5v-3h-3M2 11.5v3h3" stroke="#a8b4d8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M2 8a6 6 0 0110.9-3.5M14 8a6 6 0 01-10.9 3.5M14 4.5v-3h-3M2 11.5v3h3"
+                stroke="#a8b4d8"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
           <div>
             <div className="rrq-title">Renewal / Revive Queue</div>
-            <div className="rrq-sub">Prior clients · expired offers · nurtures · statement refreshes · derived from pipeline history</div>
+            <div className="rrq-sub">
+              Prior clients · expired offers · nurtures · statement refreshes · derived from pipeline history
+            </div>
           </div>
         </div>
         <div className="rrq-meta-row">
@@ -2776,7 +3227,9 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
       </div>
       <div className="rrq-body">
         <div className="rrq-card">
-          <div className={`rrq-reason-tag ${reason.cls}`}>{reason.icon} {reason.label}</div>
+          <div className={`rrq-reason-tag ${reason.cls}`}>
+            {reason.icon} {reason.label}
+          </div>
           <div className="rrq-deal-row">
             <div>
               <div className="rrq-deal-name">{deal.client?.businessName || 'Unknown'}</div>
@@ -2790,7 +3243,14 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
                   </span>
                 )}
                 {deal.fundedDate && (
-                  <span className="rrq-meta-pill">funded {new Date(deal.fundedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  <span className="rrq-meta-pill">
+                    funded{' '}
+                    {new Date(deal.fundedDate).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </span>
                 )}
               </div>
             </div>
@@ -2807,17 +3267,34 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
             </div>
             <div className="rrq-detail-cell">
               <div className="rrq-detail-lbl">Last Activity</div>
-              <div className={`rrq-detail-val ${(lastActivityAgo ?? 0) > 30 ? 'warn' : 'ok'}`}>{lastActivityAgo ?? 0}d ago</div>
+              <div className={`rrq-detail-val ${(lastActivityAgo ?? 0) > 30 ? 'warn' : 'ok'}`}>
+                {lastActivityAgo ?? 0}d ago
+              </div>
             </div>
             <div className="rrq-detail-cell">
               <div className="rrq-detail-lbl">Data Source</div>
-              <div className="rrq-detail-val neutral">{(deal as any).reviveSource === 'renewal' ? 'Funded History' : (deal as any).reviveSource === 'statement_refresh' ? 'Pipeline Age' : (deal as any).reviveSource === 'follow_up' ? 'Follow-Up Log' : 'Stage Tracker'}</div>
+              <div className="rrq-detail-val neutral">
+                {(deal as any).reviveSource === 'renewal'
+                  ? 'Funded History'
+                  : (deal as any).reviveSource === 'statement_refresh'
+                    ? 'Pipeline Age'
+                    : (deal as any).reviveSource === 'follow_up'
+                      ? 'Follow-Up Log'
+                      : 'Stage Tracker'}
+              </div>
             </div>
           </div>
           <div className="rrq-reason-box">
             <div className="rrq-reason-lbl">Why this is in your queue</div>
             <div className="rrq-reason-text">{queueReason}</div>
-            <div className="rrq-rec">Recommendation: {deal.stage === 'FUNDED' ? 'Call to check renewal interest and request updated statements.' : deal.stage === 'SUBMITTED_IN_REVIEW' ? 'Follow up with lender for status update.' : 'Re-engage client with a check-in call.'}</div>
+            <div className="rrq-rec">
+              Recommendation:{' '}
+              {deal.stage === 'FUNDED'
+                ? 'Call to check renewal interest and request updated statements.'
+                : deal.stage === 'SUBMITTED_IN_REVIEW'
+                  ? 'Follow up with lender for status update.'
+                  : 'Re-engage client with a check-in call.'}
+            </div>
           </div>
           <div className="rrq-actions">
             <button className="rrq-btn rrq-btn-primary" onClick={() => toast('Request Statements')}>
@@ -2829,10 +3306,13 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
             <button className="rrq-btn rrq-btn-reopen" onClick={() => toast('Reopen')}>
               Reopen
             </button>
-            <button className="rrq-btn rrq-btn-complete" onClick={() => {
-              toast('Marked complete');
-              onNav(Math.min(clampedIndex + 1, deals.length - 1));
-            }}>
+            <button
+              className="rrq-btn rrq-btn-complete"
+              onClick={() => {
+                toast('Marked complete');
+                onNav(Math.min(clampedIndex + 1, deals.length - 1));
+              }}
+            >
               ✓ Complete
             </button>
             <button
@@ -2861,7 +3341,9 @@ function RenewalQueueCard({ deals, index, onNav }: { deals: Deal[]; index: numbe
           </span>
         </div>
         <div className="rrq-nav-right">
-          <span className="rrq-complete-all" onClick={() => toast('All items marked complete')}>Mark All Complete ✓</span>
+          <span className="rrq-complete-all" onClick={() => toast('All items marked complete')}>
+            Mark All Complete ✓
+          </span>
         </div>
       </div>
     </div>

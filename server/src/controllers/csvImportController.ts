@@ -86,7 +86,7 @@ export class CsvImportController {
     });
 
     // Default rep for unassigned deals — use the first admin or first user
-    const defaultRep = allUsers.find((u: any) => u.initials === 'JB') || allUsers[0];
+    const defaultRep = allUsers.find((u: any) => u.role === 'ADMIN') || allUsers[0];
     if (!defaultRep) {
       return res.status(400).json({ error: 'No users exist. Run seed first.' });
     }

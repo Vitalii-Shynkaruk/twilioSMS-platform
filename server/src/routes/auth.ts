@@ -24,9 +24,22 @@ router.post('/refresh', asyncHandler(AuthController.refresh));
 
 // Protected
 router.get('/me', authenticate, asyncHandler(AuthController.getMe));
+router.put('/change-password', authenticate, asyncHandler(AuthController.changePassword));
 router.get('/users', authenticate, requireRole('ADMIN', 'MANAGER'), asyncHandler(AuthController.getUsers));
-router.post('/register', authenticate, requireRole('ADMIN'), validate(registerSchema), asyncHandler(AuthController.register));
-router.put('/users/:id', authenticate, requireRole('ADMIN'), validate(updateUserSchema), asyncHandler(AuthController.updateUser));
+router.post(
+  '/register',
+  authenticate,
+  requireRole('ADMIN'),
+  validate(registerSchema),
+  asyncHandler(AuthController.register),
+);
+router.put(
+  '/users/:id',
+  authenticate,
+  requireRole('ADMIN'),
+  validate(updateUserSchema),
+  asyncHandler(AuthController.updateUser),
+);
 router.delete('/users/:id', authenticate, requireRole('ADMIN'), asyncHandler(AuthController.deleteUser));
 
 export default router;

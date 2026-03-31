@@ -71,13 +71,9 @@ export class NumberController {
   }
 
   static async getAssignments(req: AuthRequest, res: Response): Promise<void> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const assignments = await prisma.numberAssignment.findMany({
       where: {
         isActive: true,
-        assignedDate: { gte: today },
       },
       include: {
         user: { select: { id: true, firstName: true, lastName: true } },

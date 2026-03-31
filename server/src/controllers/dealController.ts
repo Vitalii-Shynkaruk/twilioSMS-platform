@@ -57,7 +57,10 @@ const STAGE_ORDER: DealStage[] = [
 // Helper: rep filter for data isolation
 function repFilter(user: AuthRequest['user']) {
   if (user?.role === 'ADMIN') return {};
-  return { assignedRepId: user!.id };
+  // Include deals where user is primary rep OR assisting (JSON array contains user ID)
+  return {
+    OR: [{ assignedRepId: user!.id }, { assistingRepIds: { array_contains: user!.id } }],
+  };
 }
 
 // Helper: compute HOT status (never stored)
@@ -264,11 +267,16 @@ export class DealController {
       assignedRepId,
       nextAction,
       nextActionDue,
+      clientId: existingClientId,
     } = req.body;
 
     // Create or connect client
     let client;
-    if (phone) {
+    if (existingClientId) {
+      // Use existing client (e.g. creating new product deal for same client)
+      client = await prisma.client.findUnique({ where: { id: existingClientId } });
+      if (!client) return res.status(400).json({ error: 'Client not found' });
+    } else if (phone) {
       client = await prisma.client.upsert({
         where: { phone },
         update: { businessName: businessName || undefined, contactName, email, state },
@@ -294,17 +302,29 @@ export class DealController {
     // Rule #7: Rep assignment = admin only
     const effectiveRepId = req.user?.role === 'ADMIN' && assignedRepId ? assignedRepId : req.user!.id;
 
+    // Determine initial stage based on product type (Item 11)
+    const longCycleProducts: string[] = ['SBA', 'CRE', 'EQUIPMENT'];
+    const initialStage =
+      productType && longCycleProducts.includes(productType) ? DealStage.SUBMITTED_IN_REVIEW : DealStage.NEW_LEAD;
+
+    // Stage-aware default next action (Bug 3 fix)
+    const defaultNextAction =
+      initialStage === DealStage.SUBMITTED_IN_REVIEW
+        ? 'Follow up lender — app in review'
+        : 'Make first contact within 24h';
+
     const deal = await prisma.deal.create({
       data: {
         clientId: client.id,
         assignedRepId: effectiveRepId,
         leadId: linkedLeadId || null,
-        stage: DealStage.NEW_LEAD,
-        stageLabel: STAGE_LABELS[DealStage.NEW_LEAD],
+        stage: initialStage,
+        stageLabel: STAGE_LABELS[initialStage],
         productType: productType || null,
         dealAmount: dealAmount ? parseFloat(dealAmount) : null,
         needsAmount: !dealAmount,
-        nextAction: nextAction || 'Make first contact within 24h',
+        appSubmitted: initialStage === DealStage.SUBMITTED_IN_REVIEW,
+        nextAction: nextAction || defaultNextAction,
         nextActionDue: nextActionDue ? new Date(nextActionDue) : new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
       include: { client: true, assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } } },
@@ -316,7 +336,7 @@ export class DealController {
         dealId: deal.id,
         repId: req.user!.id,
         eventType: 'deal_created',
-        toStage: DealStage.NEW_LEAD,
+        toStage: initialStage,
         note: `Deal created for ${client.businessName}`,
       },
     });
@@ -421,7 +441,14 @@ export class DealController {
     }
 
     // AUTOMATION RULE 1: App Submitted → Submitted (In Review)
-    if (updateData.appSubmitted === true && !existing.appSubmitted) {
+    // Guard: Never regress deals already in APPROVED_OFFERS or later stages
+    const advancedStages: DealStage[] = [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING, DealStage.FUNDED];
+    if (
+      updateData.appSubmitted === true &&
+      !existing.appSubmitted &&
+      !advancedStages.includes(existing.stage) &&
+      !advancedStages.includes(updateData.stage)
+    ) {
       updateData.stage = DealStage.SUBMITTED_IN_REVIEW;
       updateData.stageLabel = STAGE_LABELS[DealStage.SUBMITTED_IN_REVIEW];
       updateData.daysInStage = 0;
@@ -483,10 +510,24 @@ export class DealController {
     // Update last activity
     updateData.lastActivityAt = new Date();
 
+    // Handle client field updates (businessName, contactName, email, phone)
+    const clientFields = updateData.clientUpdate;
+    if (clientFields && existing.clientId) {
+      const allowedClientFields: Record<string, string> = {};
+      if (clientFields.businessName !== undefined) allowedClientFields.businessName = clientFields.businessName;
+      if (clientFields.contactName !== undefined) allowedClientFields.contactName = clientFields.contactName;
+      if (clientFields.email !== undefined) allowedClientFields.email = clientFields.email;
+      if (clientFields.phone !== undefined) allowedClientFields.phone = clientFields.phone;
+      if (Object.keys(allowedClientFields).length > 0) {
+        await prisma.client.update({ where: { id: existing.clientId }, data: allowedClientFields });
+      }
+    }
+
     // Clean up fields that aren't in the model
     delete updateData.id;
     delete updateData.createdAt;
     delete updateData.client;
+    delete updateData.clientUpdate;
     delete updateData.assignedRep;
     delete updateData.offers;
     delete updateData.fundingEvents;
@@ -542,6 +583,21 @@ export class DealController {
       daysInStage: 0,
       lastActivityAt: new Date(),
     };
+
+    // Bug 3 fix: Update nextAction if it's still the default and doesn't match new stage
+    const stageDefaultActions: Record<string, string> = {
+      NEW_LEAD: 'Make first contact within 24h',
+      SUBMITTED_IN_REVIEW: 'Follow up lender — app in review',
+      APPROVED_OFFERS: 'Call client — present offer now',
+      COMMITTED_FUNDING: 'Send doc checklist to client',
+    };
+    const genericDefaults = Object.values(stageDefaultActions);
+    if (existing.nextAction && genericDefaults.includes(existing.nextAction)) {
+      const newDefault = stageDefaultActions[stage as string];
+      if (newDefault) {
+        updateData.nextAction = newDefault;
+      }
+    }
 
     if (req.body.lostReason) updateData.lostReason = req.body.lostReason;
     if (req.body.disqualReason) updateData.disqualReason = req.body.disqualReason;
@@ -1201,8 +1257,9 @@ export class DealController {
 
     for (const row of records) {
       // Support multiple CSV column naming conventions
-      const businessName = row.business_name || row.BusinessName || row.company || row.Contact || '';
-      const contactName = row.contact_name || row.ContactName || row.Contact || businessName;
+      const businessName =
+        row.business_name || row.BusinessName || row['Business Name'] || row.company || row.Company || '';
+      const contactName = row.contact_name || row.ContactName || row.Contact || '';
       const repName = row.rep_name || row.RepName || row.rep || row.originator || row['FDR Originator'] || '';
       const productRaw = (row.product_type || row.ProductType || row.product || '').toUpperCase();
       const amountStr = (
@@ -1212,17 +1269,21 @@ export class DealController {
         row['Funded Amount (last)'] ||
         '0'
       ).replace(/[$,]/g, '');
-      const dateStr = row.funded_date || row.FundedDate || row.date || '';
+      const dateStr =
+        row.funded_date || row.FundedDate || row['Funded Date'] || row['Funded Date (last)'] || row.date || '';
       const phone = row.phone || row.Phone || row['Contact Phone Number'] || null;
       const email = row.email || row.Email || row['Contact Email'] || null;
       const lender = row.lender || row.Lender || row['FDR Funded By'] || undefined;
       const state = row.state || row.State || row['State of Incorporation'] || undefined;
 
-      if (!businessName) {
+      if (!businessName && !contactName) {
         skipped++;
         errors.push('Row missing business_name / Contact');
         continue;
       }
+
+      // Use contactName as businessName fallback for display
+      const effectiveBusinessName = businessName || contactName;
 
       const amount = parseFloat(amountStr) || 0;
       const fundedDate = dateStr ? new Date(dateStr) : new Date();
@@ -1266,6 +1327,10 @@ export class DealController {
       let client;
       if (normalizedPhone) {
         client = await prisma.client.findFirst({ where: { phone: normalizedPhone } });
+        if (client && !client.businessName && effectiveBusinessName !== client.contactName) {
+          // Update businessName if it was missing before
+          await prisma.client.update({ where: { id: client.id }, data: { businessName: effectiveBusinessName } });
+        }
       }
 
       try {
@@ -1283,7 +1348,7 @@ export class DealController {
         } else {
           client = await prisma.client.create({
             data: {
-              businessName,
+              businessName: effectiveBusinessName,
               contactName,
               phone: normalizedPhone,
               email,
@@ -1343,6 +1408,145 @@ export class DealController {
     }
 
     res.json({ imported, skipped, total: records.length, batchId, errors: errors.slice(0, 20) });
+  }
+
+  // POST /api/deals/import-leads — Import engaged/interested leads from CSV (REP + ADMIN)
+  static async importLeads(req: AuthRequest, res: Response) {
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required' });
+    }
+
+    const csvContent = req.file.buffer.toString('utf-8');
+    const records = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true });
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: 'CSV file is empty' });
+    }
+
+    const user = req.user!;
+    const isAdmin = user.role === 'ADMIN';
+
+    // Admin can specify a rep to assign to; reps always assign to themselves
+    let assignRepId = user.id;
+    if (isAdmin && req.body?.assignToRepId) {
+      const repExists = await prisma.user.findFirst({ where: { id: req.body.assignToRepId } });
+      if (!repExists) return res.status(400).json({ error: 'Invalid rep ID' });
+      assignRepId = req.body.assignToRepId;
+    }
+
+    const batchId = `leads_${Date.now()}`;
+    let imported = 0;
+    let duplicates = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    // Map product type
+    const productMap: Record<string, ProductType> = {
+      MCA: ProductType.MCA,
+      LOC: ProductType.LOC,
+      EQUIPMENT: ProductType.EQUIPMENT,
+      HELOC: ProductType.HELOC,
+      SBA: ProductType.SBA,
+      CRE: ProductType.CRE,
+      BRIDGE: ProductType.BRIDGE,
+    };
+
+    for (const row of records) {
+      const businessName =
+        row.business_name || row['Business Name'] || row.BusinessName || row.company || row.Company || '';
+      const contactName = row.contact_name || row['Contact Name'] || row.Contact || row.name || row.Name || '';
+      const phone = (row.phone || row.Phone || row['Phone Number'] || row.mobile || '').replace(/\D/g, '');
+      const email = row.email || row.Email || '';
+      const notes = row.notes || row.Notes || '';
+      const productRaw = (row.product_type || row['Product Type'] || row.product || '').toUpperCase();
+      const productType = productMap[productRaw] || undefined;
+      const stageRaw = row.stage || row.Stage || row.Status || row.status || '';
+
+      if (!businessName && !contactName) {
+        skipped++;
+        errors.push('Row missing business name or contact name');
+        continue;
+      }
+
+      const effectiveName = businessName || contactName;
+      const normalizedPhone = phone ? (phone.startsWith('1') ? `+${phone}` : `+1${phone}`) : null;
+
+      // Duplicate detection: if phone matches an existing client who already has an active deal for this rep, skip
+      if (normalizedPhone) {
+        const existingClient = await prisma.client.findFirst({ where: { phone: normalizedPhone } });
+        if (existingClient) {
+          const activeDeal = await prisma.deal.findFirst({
+            where: {
+              clientId: existingClient.id,
+              assignedRepId: assignRepId,
+              stage: { notIn: [DealStage.CLOSED, DealStage.NURTURE] },
+            },
+          });
+          if (activeDeal) {
+            duplicates++;
+            continue;
+          }
+        }
+      }
+
+      // Determine stage from CSV or default to ENGAGED_INTERESTED
+      const STAGE_MAP: Record<string, DealStage> = {
+        new: DealStage.NEW_LEAD,
+        engaged: DealStage.ENGAGED_INTERESTED,
+        interested: DealStage.ENGAGED_INTERESTED,
+        qualified: DealStage.QUALIFIED,
+        submitted: DealStage.SUBMITTED_IN_REVIEW,
+      };
+      const stage = (stageRaw ? STAGE_MAP[stageRaw.toLowerCase()] : null) || DealStage.ENGAGED_INTERESTED;
+
+      try {
+        // Upsert client
+        let client;
+        if (normalizedPhone) {
+          client = await prisma.client.upsert({
+            where: { phone: normalizedPhone },
+            update: { businessName: effectiveName },
+            create: {
+              businessName: effectiveName,
+              contactName: contactName || undefined,
+              phone: normalizedPhone,
+              email: email || undefined,
+            },
+          });
+        } else {
+          client = await prisma.client.create({
+            data: {
+              businessName: effectiveName,
+              contactName: contactName || undefined,
+              email: email || undefined,
+            },
+          });
+        }
+
+        // Create deal
+        await prisma.deal.create({
+          data: {
+            clientId: client.id,
+            assignedRepId: assignRepId,
+            stage,
+            stageLabel: STAGE_LABELS[stage],
+            productType,
+            needsAmount: true,
+            importBatch: batchId,
+            notes: notes || undefined,
+            nextAction: 'Make first contact within 24h',
+            isHot: false,
+          },
+        });
+
+        imported++;
+      } catch (err: any) {
+        skipped++;
+        errors.push(`${effectiveName}: ${err.message}`);
+      }
+    }
+
+    res.json({ imported, duplicates, skipped, total: records.length, batchId, errors: errors.slice(0, 20) });
   }
 
   // GET /api/deals/:id/sms — SMS conversation linked to deal's lead

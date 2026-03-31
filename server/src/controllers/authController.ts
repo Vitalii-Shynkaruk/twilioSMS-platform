@@ -8,7 +8,6 @@ import { AppError } from '../middleware/errorHandler';
 import logger, { authLogger } from '../config/logger';
 
 export class AuthController {
-  
   static async login(req: AuthRequest, res: Response): Promise<void> {
     const { email, password } = req.body;
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
@@ -42,17 +41,13 @@ export class AuthController {
       throw new AppError('Invalid credentials', 401);
     }
 
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresIn } as jwt.SignOptions
-    );
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    } as jwt.SignOptions);
 
-    const refreshToken = jwt.sign(
-      { userId: user.id, type: 'refresh' },
-      config.jwt.refreshSecret,
-      { expiresIn: config.jwt.refreshExpiresIn } as jwt.SignOptions
-    );
+    const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, config.jwt.refreshSecret, {
+      expiresIn: config.jwt.refreshExpiresIn,
+    } as jwt.SignOptions);
 
     // Update last login
     await prisma.user.update({
@@ -190,17 +185,13 @@ export class AuthController {
         throw new AppError('User not found or inactive', 401);
       }
 
-      const newToken = jwt.sign(
-        { userId: user.id, email: user.email, role: user.role },
-        config.jwt.secret,
-        { expiresIn: config.jwt.expiresIn } as jwt.SignOptions
-      );
+      const newToken = jwt.sign({ userId: user.id, email: user.email, role: user.role }, config.jwt.secret, {
+        expiresIn: config.jwt.expiresIn,
+      } as jwt.SignOptions);
 
-      const newRefreshToken = jwt.sign(
-        { userId: user.id, type: 'refresh' },
-        config.jwt.refreshSecret,
-        { expiresIn: config.jwt.refreshExpiresIn } as jwt.SignOptions
-      );
+      const newRefreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, config.jwt.refreshSecret, {
+        expiresIn: config.jwt.refreshExpiresIn,
+      } as jwt.SignOptions);
 
       authLogger.info('Token refreshed', { requestId, userId: user.id });
 
@@ -283,6 +274,38 @@ export class AuthController {
     });
 
     res.json({ user });
+  }
+
+  // PUT /auth/change-password - Self-service password change
+  static async changePassword(req: AuthRequest, res: Response): Promise<void> {
+    const { currentPassword, newPassword } = req.body;
+    const requestId = req.requestId || '-';
+    const userId = req.user!.id;
+
+    if (!currentPassword || !newPassword) {
+      throw new AppError('Current password and new password are required', 400);
+    }
+
+    if (newPassword.length < 8) {
+      throw new AppError('New password must be at least 8 characters long', 400);
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, passwordHash: true } });
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    const isValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isValid) {
+      authLogger.warn('Password change failed: wrong current password', { requestId, userId });
+      throw new AppError('Current password is incorrect', 401);
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+
+    authLogger.info('Password changed successfully', { requestId, userId });
+    res.json({ message: 'Password updated successfully' });
   }
 
   static async deleteUser(req: AuthRequest, res: Response): Promise<void> {

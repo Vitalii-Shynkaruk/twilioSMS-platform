@@ -111,10 +111,17 @@ export const dealApi = {
     if (assignToRepId) form.append('assignToRepId', assignToRepId);
     return api.post('/deals/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
+  importLeads: (file: File, assignToRepId?: string) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (assignToRepId) form.append('assignToRepId', assignToRepId);
+    return api.post('/deals/import-leads', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   getImportBatches: () => api.get('/deals/import-batches'),
   deleteImportBatch: (batchId: string) => api.delete(`/deals/import-batch/${encodeURIComponent(batchId)}`),
   deleteDeal: (id: string) => api.delete(`/deals/${id}`),
-  completeRenewalTask: (taskId: string, data?: { note?: string }) => api.put(`/deals/renewal-tasks/${taskId}/complete`, data || {}),
+  completeRenewalTask: (taskId: string, data?: { note?: string }) =>
+    api.put(`/deals/renewal-tasks/${taskId}/complete`, data || {}),
 };
 
 export const commandCenterApi = {

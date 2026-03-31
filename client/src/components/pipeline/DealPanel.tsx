@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dealApi, repApi } from '../../services/api';
 import { MessageSquare, Plus } from 'lucide-react';
@@ -23,11 +23,16 @@ const STAGE_LABELS: Record<DealStage, string> = {
 
 function dealSystemStatus(deal: Deal): { label: string; cls: string } | null {
   if (deal.stage === 'QUALIFIED' && !deal.appSubmitted) return { label: 'Needs app', cls: 'sp-needs-app' };
-  if (deal.stage === 'QUALIFIED' && deal.appSubmitted && (deal.offers?.length || 0) === 0) return { label: 'Awaiting offers', cls: 'sp-awaiting' };
-  if (deal.stage === 'QUALIFIED' && (deal.offers?.length || 0) === 1) return { label: 'Offer received', cls: 'sp-offer' };
-  if (deal.stage === 'QUALIFIED' && (deal.offers?.length || 0) > 1) return { label: 'Multiple offers', cls: 'sp-multi' };
-  if (deal.stage === 'SUBMITTED_IN_REVIEW') return { label: 'In review · Awaiting lender decision', cls: 'sp-awaiting' };
-  if (deal.stage === 'APPROVED_OFFERS' && (deal.offers?.length || 0) > 0) return { label: 'Offer in — present to client', cls: 'sp-offer' };
+  if (deal.stage === 'QUALIFIED' && deal.appSubmitted && (deal.offers?.length || 0) === 0)
+    return { label: 'Awaiting offers', cls: 'sp-awaiting' };
+  if (deal.stage === 'QUALIFIED' && (deal.offers?.length || 0) === 1)
+    return { label: 'Offer received', cls: 'sp-offer' };
+  if (deal.stage === 'QUALIFIED' && (deal.offers?.length || 0) > 1)
+    return { label: 'Multiple offers', cls: 'sp-multi' };
+  if (deal.stage === 'SUBMITTED_IN_REVIEW')
+    return { label: 'In review · Awaiting lender decision', cls: 'sp-awaiting' };
+  if (deal.stage === 'APPROVED_OFFERS' && (deal.offers?.length || 0) > 0)
+    return { label: 'Offer in — present to client', cls: 'sp-offer' };
   if (deal.stage === 'APPROVED_OFFERS') return { label: 'Approved — awaiting offers', cls: 'sp-awaiting' };
   if (deal.stage === 'COMMITTED_FUNDING') return { label: 'Committed — funding in progress', cls: 'sp-offer' };
   if (deal.stage === 'FUNDED') return { label: 'Funded', cls: 'sp-offer' };
@@ -176,18 +181,29 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                   <span style={{ color: 'var(--text3)' }}>+ Add email</span>
                 )}
                 {deal.nextAction && (
-                  <span className="ph-badge" style={{ background: 'var(--bg4)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+                  <span
+                    className="ph-badge"
+                    style={{ background: 'var(--bg4)', border: '1px solid var(--border2)', color: 'var(--text2)' }}
+                  >
                     {deal.nextAction}
                   </span>
                 )}
                 {hotText && (
-                  <span className="ph-badge" style={{ background: 'var(--hot-bg)', color: 'var(--hot)', border: '1px solid var(--hot-b)' }}>
+                  <span
+                    className="ph-badge"
+                    style={{ background: 'var(--hot-bg)', color: 'var(--hot)', border: '1px solid var(--hot-b)' }}
+                  >
                     🔥 {hotText}
                   </span>
                 )}
                 <span
                   className="ph-badge"
-                  style={{ background: deal.assignedRep?.avatarColor ? `${deal.assignedRep.avatarColor}26` : 'rgba(74,158,232,0.16)', color: deal.assignedRep?.avatarColor || '#4A9EE8' }}
+                  style={{
+                    background: deal.assignedRep?.avatarColor
+                      ? `${deal.assignedRep.avatarColor}26`
+                      : 'rgba(74,158,232,0.16)',
+                    color: deal.assignedRep?.avatarColor || '#4A9EE8',
+                  }}
                 >
                   {repLabel}
                 </span>
@@ -380,11 +396,7 @@ function ConversationTab({ deal }: { deal: Deal }) {
             }
           }}
         />
-        <button
-          className="sms-send"
-          onClick={handleSend}
-          disabled={!draft.trim() || sendMutation.isPending}
-        >
+        <button className="sms-send" onClick={handleSend} disabled={!draft.trim() || sendMutation.isPending}>
           {sendMutation.isPending ? '...' : 'Send'}
         </button>
       </div>
@@ -443,7 +455,17 @@ function DealClientTab({
     { label: 'SBA', value: 'SBA' },
     { label: 'CRE', value: 'CRE' },
   ];
-  const revenueRanges = ['Under $10k', '$10k–$25k', '$25k–$50k', '$50k–$100k', '$100k–$250k', '$250k–$500k', '$500k–$1M', '$1M+', 'Custom'];
+  const revenueRanges = [
+    'Under $10k',
+    '$10k–$25k',
+    '$25k–$50k',
+    '$50k–$100k',
+    '$100k–$250k',
+    '$250k–$500k',
+    '$500k–$1M',
+    '$1M+',
+    'Custom',
+  ];
   const sourceOptions = ['Cold Calling', 'Email', 'SMS', 'Referral'];
   const clientMetaKey = `scl_client_meta_${deal.clientId}`;
   const [clientMeta, setClientMeta] = useState<Record<string, string>>({});
@@ -472,9 +494,13 @@ function DealClientTab({
       setShowFutureDate(true);
       return;
     }
-    const diff = Math.round((new Date(date + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000);
+    const diff = Math.round(
+      (new Date(date + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000,
+    );
     setShowFutureDate(diff > 7);
   }, [deal.id, deal.nextActionDue]);
+
+  const clientSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function saveClientMeta(patch: Record<string, string>) {
     const next = { ...clientMeta, ...patch };
@@ -484,6 +510,11 @@ function DealClientTab({
     } catch {
       // no-op
     }
+    // Debounced persist to backend
+    if (clientSaveTimer.current) clearTimeout(clientSaveTimer.current);
+    clientSaveTimer.current = setTimeout(() => {
+      onUpdate({ clientUpdate: patch });
+    }, 600);
   }
 
   function applyDuePreset(preset: 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date') {
@@ -503,7 +534,9 @@ function DealClientTab({
 
   function currentDuePreset(): 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date' {
     if (!exactDueDate) return 'Future date';
-    const diff = Math.round((new Date(exactDueDate + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000);
+    const diff = Math.round(
+      (new Date(exactDueDate + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000,
+    );
     if (diff < 0) return 'Overdue';
     if (diff === 0) return 'Today';
     if (diff === 1) return 'Tomorrow';
@@ -574,7 +607,15 @@ function DealClientTab({
                   className={clsx('dt-opt', selected && 'sel')}
                   onClick={() => canEdit && onUpdate({ productType: selected ? null : opt.value })}
                 >
-                  <div className="dt-chk">{selected ? <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round"/></svg> : ''}</div>
+                  <div className="dt-chk">
+                    {selected ? (
+                      <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                        <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      ''
+                    )}
+                  </div>
                   <span>{opt.label}</span>
                 </div>
               );
@@ -584,7 +625,10 @@ function DealClientTab({
 
         <div className="sf">
           <div className="sf-l">
-            Ownership {!isAdmin && <span style={{ fontSize: 9, color: 'var(--text3)' }}>(admin only)</span>}
+            Ownership{' '}
+            {!(isAdmin || useAuthStore.getState().user?.id === deal.assignedRepId) && (
+              <span style={{ fontSize: 9, color: 'var(--text3)' }}>(primary rep or admin)</span>
+            )}
           </div>
           <RepOwnershipSection deal={deal} isAdmin={isAdmin} onShare={onShare} onUpdate={onUpdate} />
         </div>
@@ -628,7 +672,9 @@ function DealClientTab({
         <div className="dsbt">
           Client Info
           {clientBusiness ? (
-            <span style={{ color: 'var(--good)', fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>
+            <span
+              style={{ color: 'var(--good)', fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}
+            >
               · {clientBusiness}
             </span>
           ) : null}
@@ -698,31 +744,48 @@ function DealClientTab({
         <div className="dsb">
           <div className="dsbt">
             Scheduled Follow-Up
-            <button className="dsbt-action" onClick={onOpenFollowUpModal}>Edit</button>
+            <button className="dsbt-action" onClick={onOpenFollowUpModal}>
+              Edit
+            </button>
           </div>
           <div style={{ background: 'var(--bg4)', borderRadius: 7, padding: '8px 10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
               <span className={`q-reason-pill qr-${deal.followUpType}`}>
-                {deal.followUpType === 'renewal' ? '♻️ Renewal' :
-                 deal.followUpType === 'reengage' ? '↩ Re-engage' :
-                 deal.followUpType === 'timing' ? '⏰ Check Timing' :
-                 deal.followUpType === 'nurture' ? '🌱 Nurture' :
-                 deal.followUpType === 'statement' ? '📄 Statement' : deal.followUpType}
+                {deal.followUpType === 'renewal'
+                  ? '♻️ Renewal'
+                  : deal.followUpType === 'reengage'
+                    ? '↩ Re-engage'
+                    : deal.followUpType === 'timing'
+                      ? '⏰ Check Timing'
+                      : deal.followUpType === 'nurture'
+                        ? '🌱 Nurture'
+                        : deal.followUpType === 'statement'
+                          ? '📄 Statement'
+                          : deal.followUpType}
               </span>
               {deal.followUpDate && (
                 <span className={`q-due ${new Date(deal.followUpDate) < new Date() ? 'qd-overdue' : 'qd-ok'}`}>
-                  Due {new Date(deal.followUpDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  Due{' '}
+                  {new Date(deal.followUpDate).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
                 </span>
               )}
             </div>
             {deal.externalFundedDate && (
               <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3 }}>
-                External funded: {new Date(deal.externalFundedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} · {Math.round((Date.now() - new Date(deal.externalFundedDate).getTime()) / 86400000)}d ago
+                External funded:{' '}
+                {new Date(deal.externalFundedDate).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                })}{' '}
+                · {Math.round((Date.now() - new Date(deal.externalFundedDate).getTime()) / 86400000)}d ago
               </div>
             )}
-            {deal.followUpNote && (
-              <div style={{ fontSize: 10, color: 'var(--text2)' }}>{deal.followUpNote}</div>
-            )}
+            {deal.followUpNote && <div style={{ fontSize: 10, color: 'var(--text2)' }}>{deal.followUpNote}</div>}
           </div>
         </div>
       )}
@@ -738,7 +801,9 @@ function DealClientTab({
           <div className="sf-row">
             <div className="sf">
               <div className="sf-l">Amount</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--good)' }}>{formatCurrency(fundingEvent.amountFunded)}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--good)' }}>
+                {formatCurrency(fundingEvent.amountFunded)}
+              </div>
             </div>
             <div className="sf">
               <div className="sf-l">Funder</div>
@@ -808,12 +873,14 @@ function DealClientTab({
       {/* HELOC Rescission Window Notice (legal requirement) */}
       {deal.productType === 'HELOC' && (deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'FUNDED') && (
         <div className="dsb" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fbbf24', fontWeight: 600 }}>
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fbbf24', fontWeight: 600 }}
+          >
             ⚠️ HELOC — 3-Day Right of Rescission
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
-            Federal law (Reg Z) gives borrowers 3 business days after closing to cancel a HELOC.
-            Do not disburse funds until the rescission window has expired.
+            Federal law (Reg Z) gives borrowers 3 business days after closing to cancel a HELOC. Do not disburse funds
+            until the rescission window has expired.
           </div>
         </div>
       )}
@@ -876,7 +943,9 @@ function DealClientTab({
           disabled={!canEdit}
           placeholder="Add notes..."
         />
-        <div className="sf-l" style={{ marginTop: 8 }}>Client notes</div>
+        <div className="sf-l" style={{ marginTop: 8 }}>
+          Client notes
+        </div>
         <textarea
           className="note-box"
           value={clientNoteDraft}
@@ -899,8 +968,10 @@ function DealClientTab({
             let dotColor = 'var(--text3)';
             if (type.includes('funded') || type.includes('offer')) dotColor = 'var(--good)';
             else if (type.includes('submit') || type.includes('app')) dotColor = 'var(--watch)';
-            else if (type.includes('stage') || type.includes('move') || type.includes('created')) dotColor = 'var(--gold)';
-            else if (type.includes('sms') || type.includes('reply') || type.includes('message')) dotColor = 'var(--info)';
+            else if (type.includes('stage') || type.includes('move') || type.includes('created'))
+              dotColor = 'var(--gold)';
+            else if (type.includes('sms') || type.includes('reply') || type.includes('message'))
+              dotColor = 'var(--info)';
             else if (type.includes('action') || type.includes('complete')) dotColor = 'var(--good)';
             return (
               <div key={event.id} className="tl-item">
@@ -929,7 +1000,16 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
   return (
     <div className="fund-history">
       <div className="client-summary">
-        <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--text3)',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            marginBottom: 8,
+          }}
+        >
           {deal.client?.businessName || 'Client'}
         </div>
         <div className="cs-row">
@@ -975,7 +1055,9 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
         />
       )}
 
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}>
+      <div
+        style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}
+      >
         Funding History ({events.length})
       </div>
 
@@ -985,7 +1067,9 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
           <div className="fe-header">
             <div className="fe-title">{event.lender || 'Funding Event'}</div>
             <div className="fe-date">
-              {event.fundedDate ? new Date(event.fundedDate).toLocaleDateString() : new Date(event.createdAt).toLocaleDateString()}
+              {event.fundedDate
+                ? new Date(event.fundedDate).toLocaleDateString()
+                : new Date(event.createdAt).toLocaleDateString()}
             </div>
           </div>
           <div className="fe-grid">
@@ -1707,10 +1791,19 @@ function MarkFundedModal({
 
         {/* HELOC Rescission Window Warning */}
         {productType === 'HELOC' && (
-          <div style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: 8, padding: '8px 12px', marginTop: 8 }}>
+          <div
+            style={{
+              background: 'rgba(251,191,36,0.1)',
+              border: '1px solid rgba(251,191,36,0.3)',
+              borderRadius: 8,
+              padding: '8px 12px',
+              marginTop: 8,
+            }}
+          >
             <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24' }}>⚠️ 3-Day Right of Rescission (Reg Z)</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.4 }}>
-              HELOC borrowers have 3 business days after closing to cancel. Funds cannot be disbursed during this window.
+              HELOC borrowers have 3 business days after closing to cancel. Funds cannot be disbursed during this
+              window.
             </div>
           </div>
         )}
@@ -2182,6 +2275,9 @@ function RepOwnershipSection({
   onShare: (data: any) => void;
   onUpdate: (data: any) => void;
 }) {
+  const { user } = useAuthStore();
+  const isPrimaryRep = user?.id === deal.assignedRepId;
+  const canManageAssists = isAdmin || isPrimaryRep;
   const { data: reps } = useQuery<Rep[]>({
     queryKey: ['reps'],
     queryFn: async () => {
@@ -2209,7 +2305,7 @@ function RepOwnershipSection({
   }
 
   function toggleAssist(repId: string) {
-    if (!isAdmin || repId === deal.assignedRepId) return;
+    if (!canManageAssists || repId === deal.assignedRepId) return;
     const newAssists = assistIds.includes(repId) ? assistIds.filter((id) => id !== repId) : [...assistIds, repId];
     onShare({ assistingRepIds: newAssists });
   }
@@ -2230,7 +2326,13 @@ function RepOwnershipSection({
             >
               <div
                 className="av"
-                style={{ background: `${r.avatarColor || '#6366f1'}2e`, color: r.avatarColor || '#6366f1', width: 16, height: 16, fontSize: 7 }}
+                style={{
+                  background: `${r.avatarColor || '#6366f1'}2e`,
+                  color: r.avatarColor || '#6366f1',
+                  width: 16,
+                  height: 16,
+                  fontSize: 7,
+                }}
               >
                 {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
               </div>
@@ -2242,7 +2344,12 @@ function RepOwnershipSection({
       </div>
 
       <div className="own-row">
-        <span className="own-label al">Assist</span>
+        <span className="own-label al">
+          Assist
+          {!canManageAssists && (
+            <span style={{ fontSize: 8, color: 'var(--text3)', marginLeft: 3 }}>(primary rep or admin)</span>
+          )}
+        </span>
         {allReps
           .filter((r) => r.id !== deal.assignedRepId)
           .map((r) => {
@@ -2252,12 +2359,18 @@ function RepOwnershipSection({
                 key={r.id}
                 className={clsx('own-rep-chip', isAssisting && 'sel-assist')}
                 onClick={() => toggleAssist(r.id)}
-                style={!isAdmin ? { cursor: 'default', opacity: 0.6 } : undefined}
+                style={!canManageAssists ? { cursor: 'default', opacity: 0.6 } : undefined}
                 title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ' — click to add'}`}
               >
                 <div
                   className="av"
-                  style={{ background: `${r.avatarColor || '#6366f1'}2e`, color: r.avatarColor || '#6366f1', width: 16, height: 16, fontSize: 7 }}
+                  style={{
+                    background: `${r.avatarColor || '#6366f1'}2e`,
+                    color: r.avatarColor || '#6366f1',
+                    width: 16,
+                    height: 16,
+                    fontSize: 7,
+                  }}
                 >
                   {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
                 </div>

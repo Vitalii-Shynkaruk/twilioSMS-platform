@@ -125,8 +125,25 @@ export default function PipelinePage() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(initialDealId);
   const [showCreateDeal, setShowCreateDeal] = useState(initialNewDeal === '1');
   const [showGoals, setShowGoals] = useState(false);
+  const [showImportLeads, setShowImportLeads] = useState(false);
+  const [addOfferCtx, setAddOfferCtx] = useState<{
+    dealId: string;
+    clientId?: string;
+    businessName?: string;
+    productType?: string;
+  } | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; dealId: string; dealName: string } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    dealId: string;
+    dealName: string;
+    assignedRepId: string;
+    stage: string;
+    productType?: string;
+    clientId?: string;
+  } | null>(null);
+  const [sharePopover, setSharePopover] = useState<{ dealId: string; x: number; y: number } | null>(null);
 
   // ─── Clear URL params after reading ───
   useEffect(() => {
@@ -151,16 +168,39 @@ export default function PipelinePage() {
 
   // ─── Data fetching ───
   const userId = user?.id;
+
+  const { data: reps } = useQuery({
+    queryKey: ['reps'],
+    queryFn: async () => {
+      const { data } = await repApi.getReps({ activeOnly: 'true' });
+      return data as Rep[];
+    },
+    enabled: isAdmin,
+  });
+
+  const activeUsers = useMemo(() => (reps || []).filter((r) => r.isActive), [reps]);
+  const displayReps = useMemo(() => {
+    const roleReps = activeUsers.filter((r) => r.role === 'REP');
+    if (roleReps.length > 0) return roleReps;
+    return activeUsers.filter((r) => r.role !== 'MANAGER');
+  }, [activeUsers]);
+
+  // Reset filter when selected rep no longer in display list
+  const effectiveRepFilter = useMemo(() => {
+    if (repFilter && !displayReps.some((r) => r.id === repFilter)) return '';
+    return repFilter;
+  }, [repFilter, displayReps]);
+
   const boardParams = useMemo(() => {
     const params: Record<string, string> = {};
-    if (repFilter) {
-      params.repId = repFilter;
+    if (effectiveRepFilter) {
+      params.repId = effectiveRepFilter;
     } else if (pipelineScope === 'mine' && !isAdmin && userId) {
       params.repId = userId;
     }
     if (isAdmin) params.teamView = 'true';
     return params;
-  }, [repFilter, pipelineScope, isAdmin, userId]);
+  }, [effectiveRepFilter, pipelineScope, isAdmin, userId]);
 
   const { data: board, isLoading: boardLoading } = useQuery({
     queryKey: ['deals', 'board', boardParams],
@@ -180,15 +220,6 @@ export default function PipelinePage() {
     refetchInterval: 30000,
   });
 
-  const { data: reps } = useQuery({
-    queryKey: ['reps'],
-    queryFn: async () => {
-      const { data } = await repApi.getReps({ activeOnly: 'true' });
-      return data as Rep[];
-    },
-    enabled: isAdmin,
-  });
-
   const { data: reviveQueue } = useQuery({
     queryKey: ['deals', 'revive'],
     queryFn: async () => {
@@ -196,19 +227,6 @@ export default function PipelinePage() {
       return data as Deal[];
     },
   });
-
-  const activeUsers = useMemo(() => (reps || []).filter((r) => r.isActive), [reps]);
-  const displayReps = useMemo(() => {
-    const roleReps = activeUsers.filter((r) => r.role === 'REP');
-    if (roleReps.length > 0) return roleReps;
-    return activeUsers.filter((r) => r.role !== 'MANAGER');
-  }, [activeUsers]);
-
-  useEffect(() => {
-    if (repFilter && !displayReps.some((r) => r.id === repFilter)) {
-      setRepFilter('');
-    }
-  }, [repFilter, displayReps]);
 
   // ─── Move mutation ───
   const moveMutation = useMutation({
@@ -230,7 +248,8 @@ export default function PipelinePage() {
       stages: board.stages.map((s: any) => {
         const filteredDeals = s.deals.filter((d: Deal) => {
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
-          if (quickFilter === 'shared' && !(d.assistingRepIds as string[] || []).includes(user?.id || '')) return false;
+          if (quickFilter === 'shared' && !((d.assistingRepIds as string[]) || []).includes(user?.id || ''))
+            return false;
           if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
           if (quickFilter === 'hot' && !isDealHot(d)) return false;
           if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
@@ -248,10 +267,16 @@ export default function PipelinePage() {
           if (s.stage === 'FUNDED') {
             value = filteredDeals.reduce((sum: number, d: Deal) => sum + (d.dealAmount || 0), 0);
           } else if (s.stage === 'NURTURE') {
-            value = filteredDeals.reduce((sum: number, d: Deal) => sum + ((d as any).prevOffer || d.dealAmount || 0), 0);
+            value = filteredDeals.reduce(
+              (sum: number, d: Deal) => sum + ((d as any).prevOffer || d.dealAmount || 0),
+              0,
+            );
           } else {
             value = filteredDeals.reduce((sum: number, d: Deal) => {
-              const best = d.offers?.reduce((a: any, b: any) => ((a?.amount || 0) > (b?.amount || 0) ? a : b), d.offers[0]);
+              const best = d.offers?.reduce(
+                (a: any, b: any) => ((a?.amount || 0) > (b?.amount || 0) ? a : b),
+                d.offers[0],
+              );
               return sum + (best?.amount || d.dealAmount || 0);
             }, 0);
           }
@@ -274,10 +299,12 @@ export default function PipelinePage() {
       if (currentStage === targetStage) return;
       if (targetStage === 'NURTURE' || targetStage === 'CLOSED') {
         setSelectedDealId(dealId);
-        toast(targetStage === 'NURTURE'
-          ? 'Click the deal panel → set Lost Reason + Follow-up to move to Nurture'
-          : 'Click the deal panel → set Disqualification Reason to close',
-          { icon: 'ℹ️' });
+        toast(
+          targetStage === 'NURTURE'
+            ? 'Click the deal panel → set Lost Reason + Follow-up to move to Nurture'
+            : 'Click the deal panel → set Disqualification Reason to close',
+          { icon: 'ℹ️' },
+        );
         return;
       }
       if (targetStage === 'FUNDED') {
@@ -323,7 +350,7 @@ export default function PipelinePage() {
       if (isDealHot(d)) return true;
       return false;
     }).length;
-    const shared = allDeals.filter((d) => (d.assistingRepIds as string[] || []).includes(user?.id || '')).length;
+    const shared = allDeals.filter((d) => ((d.assistingRepIds as string[]) || []).includes(user?.id || '')).length;
     return { overdue, hot, neglected, this_week, shared };
   }, [board, user?.id]);
 
@@ -380,11 +407,7 @@ export default function PipelinePage() {
               const count = (filterCounts as any)[f.key] || 0;
               const cls = quickFilter === f.key ? f.activeCls : count > 0 ? f.passiveCls : '';
               return (
-                <button
-                  key={f.key}
-                  className={`fp ${cls}`}
-                  onClick={() => setQuickFilter(f.key)}
-                >
+                <button key={f.key} className={`fp ${cls}`} onClick={() => setQuickFilter(f.key)}>
                   {filterLabels[f.key]}
                 </button>
               );
@@ -453,6 +476,15 @@ export default function PipelinePage() {
         {viewTab !== 'team' && (
           <button className="add-btn" onClick={() => setShowCreateDeal(true)}>
             + Add Lead
+          </button>
+        )}
+        {viewTab !== 'team' && (
+          <button
+            className="add-btn"
+            style={{ background: 'var(--surface3)', color: 'var(--text)' }}
+            onClick={() => setShowImportLeads(true)}
+          >
+            ⬆ Import CSV
           </button>
         )}
       </div>
@@ -568,7 +600,7 @@ export default function PipelinePage() {
                 onDragCancel={() => setActiveDragId(null)}
               >
                 <div className="board">
-                  {(viewMode === 'simple' ? STAGES.filter((s) => s.value !== 'CLOSED') : STAGES).map((stageDef) => {
+                  {STAGES.map((stageDef) => {
                     const stageData = filteredBoard?.stages?.find((s: any) => s.stage === stageDef.value);
                     const deals = stageData?.deals || [];
                     const count = stageData?.count || deals.length;
@@ -584,7 +616,16 @@ export default function PipelinePage() {
                         onDealClick={(id) => setSelectedDealId(id)}
                         onCardContextMenu={(e, deal) => {
                           e.preventDefault();
-                          setCtxMenu({ x: e.clientX, y: e.clientY, dealId: deal.id, dealName: deal.client?.businessName || 'this deal' });
+                          setCtxMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            dealId: deal.id,
+                            dealName: deal.client?.businessName || 'this deal',
+                            assignedRepId: deal.assignedRepId,
+                            stage: deal.stage,
+                            productType: deal.productType,
+                            clientId: deal.clientId,
+                          });
                         }}
                       />
                     );
@@ -600,7 +641,9 @@ export default function PipelinePage() {
             <div className="mgr-bar">
               {/* Header row */}
               <div className="mgr-head">
-                <div className="mh" style={{ flex: 1.5 }}>Rep</div>
+                <div className="mh" style={{ flex: 1.5 }}>
+                  Rep
+                </div>
                 <div className="mh">Active</div>
                 <div className="mh">Overdue</div>
                 <div className="mh">🔥 Hot</div>
@@ -616,24 +659,33 @@ export default function PipelinePage() {
                   const repDeals = allDeals.filter((d: Deal) => d.assignedRepId === rep.id);
                   const now = new Date();
                   const active = repDeals.filter((d: Deal) => !['FUNDED', 'CLOSED'].includes(d.stage)).length;
-                  const overdue = repDeals.filter((d: Deal) => d.nextActionDue && new Date(d.nextActionDue) < now).length;
+                  const overdue = repDeals.filter(
+                    (d: Deal) => d.nextActionDue && new Date(d.nextActionDue) < now,
+                  ).length;
                   const hot = repDeals.filter((d: Deal) => isDealHot(d)).length;
-                  const pipeline = (board?.stages
-                    ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
-                    .flatMap((s: any) => s.deals)
-                    .filter((d: Deal) => d.assignedRepId === rep.id)
-                    .reduce((sum: number, d: Deal) => {
-                      const best = d.offers?.length ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount : 0;
-                      return sum + best;
-                    }, 0)) || 0;
-                  const funded = (board?.stages
-                    ?.find((s: any) => s.stage === 'FUNDED')
-                    ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
-                    .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0)) || 0;
-                  const shared = board?.stages?.reduce(
-                    (acc: number, s: any) => acc + s.deals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id).length,
-                    0,
-                  ) || 0;
+                  const pipeline =
+                    board?.stages
+                      ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
+                      .flatMap((s: any) => s.deals)
+                      .filter((d: Deal) => d.assignedRepId === rep.id)
+                      .reduce((sum: number, d: Deal) => {
+                        const best = d.offers?.length
+                          ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount
+                          : 0;
+                        return sum + best;
+                      }, 0) || 0;
+                  const funded =
+                    board?.stages
+                      ?.find((s: any) => s.stage === 'FUNDED')
+                      ?.deals.filter((d: Deal) => d.assignedRepId === rep.id)
+                      .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0) || 0;
+                  const shared =
+                    board?.stages?.reduce(
+                      (acc: number, s: any) =>
+                        acc +
+                        s.deals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id).length,
+                      0,
+                    ) || 0;
                   const goal = rep.monthlyGoal || 0;
                   const pct = goal ? Math.round((funded / goal) * 100) : 0;
                   const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
@@ -641,38 +693,65 @@ export default function PipelinePage() {
                   return (
                     <div key={rep.id} className="mgr-row">
                       <div className="mgr-cell" style={{ flex: 1.5 }}>
-                        <div className="av" style={{ width: '15px', height: '15px', background: rep.avatarColor || 'var(--gold)', fontSize: '7px' }}>
+                        <div
+                          className="av"
+                          style={{
+                            width: '15px',
+                            height: '15px',
+                            background: rep.avatarColor || 'var(--gold)',
+                            fontSize: '7px',
+                          }}
+                        >
                           {rep.initials || rep.firstName[0]}
                         </div>
                         {rep.firstName} {rep.lastName}
                       </div>
                       <div className="mgr-cell">
-                        <span className="mgr-val" style={{ color: active ? 'var(--text)' : 'var(--text3)' }}>{active}</span>
+                        <span className="mgr-val" style={{ color: active ? 'var(--text)' : 'var(--text3)' }}>
+                          {active}
+                        </span>
                       </div>
                       <div className="mgr-cell">
-                        <span className="mgr-val" style={{ color: overdue ? 'var(--urgent)' : 'var(--text3)' }}>{overdue}</span>
+                        <span className="mgr-val" style={{ color: overdue ? 'var(--urgent)' : 'var(--text3)' }}>
+                          {overdue}
+                        </span>
                       </div>
                       <div className="mgr-cell">
-                        <span className="mgr-val" style={{ color: hot ? 'var(--hot)' : 'var(--text3)' }}>{hot}</span>
+                        <span className="mgr-val" style={{ color: hot ? 'var(--hot)' : 'var(--text3)' }}>
+                          {hot}
+                        </span>
                       </div>
                       <div className="mgr-cell">
-                        <span className="mgr-val" style={{ color: pipeline ? 'var(--good)' : 'var(--text3)' }}>{pipeline ? formatCurrency(pipeline) : '$0'}</span>
+                        <span className="mgr-val" style={{ color: pipeline ? 'var(--good)' : 'var(--text3)' }}>
+                          {pipeline ? formatCurrency(pipeline) : '$0'}
+                        </span>
                       </div>
                       <div className="mgr-cell">
-                        <span className="mgr-val" style={{ color: funded ? 'var(--good)' : 'var(--text3)' }}>{funded ? formatCurrency(funded) : '$0'}</span>
+                        <span className="mgr-val" style={{ color: funded ? 'var(--good)' : 'var(--text3)' }}>
+                          {funded ? formatCurrency(funded) : '$0'}
+                        </span>
                       </div>
                       <div className="mgr-cell">
-                        <span className="mgr-val" style={{ color: shared ? 'var(--info)' : 'var(--text3)' }}>{shared}</span>
+                        <span className="mgr-val" style={{ color: shared ? 'var(--info)' : 'var(--text3)' }}>
+                          {shared}
+                        </span>
                       </div>
                       <div className="mgr-cell">
                         {!goal ? (
-                          <span className="mgr-val" style={{ color: 'var(--text3)' }}>—</span>
+                          <span className="mgr-val" style={{ color: 'var(--text3)' }}>
+                            —
+                          </span>
                         ) : (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <span className="mgr-val" style={{ color: barColor }}>{pct}%</span>
+                            <span className="mgr-val" style={{ color: barColor }}>
+                              {pct}%
+                            </span>
                             <div style={{ width: '60px' }}>
                               <div className="goal-bar-track">
-                                <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                                <div
+                                  className="goal-bar-fill"
+                                  style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
+                                />
                               </div>
                             </div>
                           </div>
@@ -870,39 +949,100 @@ export default function PipelinePage() {
       {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
       {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
       {showGoals && <GoalsModal reps={displayReps} onClose={() => setShowGoals(false)} />}
+      {showImportLeads && <ImportLeadsModal onClose={() => setShowImportLeads(false)} />}
+      {addOfferCtx && (
+        <AddOfferModal
+          dealId={addOfferCtx.dealId}
+          businessName={addOfferCtx.businessName}
+          existingProductType={addOfferCtx.productType}
+          clientId={addOfferCtx.clientId}
+          onClose={() => setAddOfferCtx(null)}
+        />
+      )}
 
       {/* RIGHT-CLICK CONTEXT MENU */}
-      {ctxMenu && isAdmin && (
+      {ctxMenu && (
         <>
-          <div className="ctx-overlay" onClick={() => setCtxMenu(null)} onContextMenu={e => { e.preventDefault(); setCtxMenu(null); }} />
+          <div
+            className="ctx-overlay"
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setCtxMenu(null);
+            }}
+          />
           <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
             <button
               className="ctx-item ctx-open"
-              onClick={() => { setSelectedDealId(ctxMenu.dealId); setCtxMenu(null); }}
-            >
-              📋 Open Deal
-            </button>
-            <button
-              className="ctx-item ctx-delete"
-              onClick={async () => {
-                if (!confirm(`Delete "${ctxMenu.dealName}"? This cannot be undone.`)) {
-                  setCtxMenu(null);
-                  return;
-                }
-                try {
-                  await dealApi.deleteDeal(ctxMenu.dealId);
-                  toast.success('Deal deleted');
-                  qc.invalidateQueries({ queryKey: ['deals'] });
-                } catch {
-                  toast.error('Delete failed');
-                }
+              onClick={() => {
+                setSelectedDealId(ctxMenu.dealId);
                 setCtxMenu(null);
               }}
             >
-              🗑 Delete Deal
+              📋 Open Deal
             </button>
+            {(isAdmin || user?.id === ctxMenu.assignedRepId) && ctxMenu.stage !== 'CLOSED' && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  setSharePopover({ dealId: ctxMenu.dealId, x: ctxMenu.x, y: ctxMenu.y });
+                  setCtxMenu(null);
+                }}
+              >
+                👥 Share Deal
+              </button>
+            )}
+            {(isAdmin || user?.id === ctxMenu.assignedRepId) &&
+              ctxMenu.stage !== 'CLOSED' &&
+              ctxMenu.stage !== 'FUNDED' && (
+                <button
+                  className="ctx-item"
+                  onClick={() => {
+                    setAddOfferCtx({
+                      dealId: ctxMenu.dealId,
+                      businessName: ctxMenu.dealName,
+                      productType: ctxMenu.productType,
+                      clientId: ctxMenu.clientId,
+                    });
+                    setCtxMenu(null);
+                  }}
+                >
+                  💰 Add Offer / New Product
+                </button>
+              )}
+            {isAdmin && (
+              <button
+                className="ctx-item ctx-delete"
+                onClick={async () => {
+                  if (!confirm(`Delete "${ctxMenu.dealName}"? This cannot be undone.`)) {
+                    setCtxMenu(null);
+                    return;
+                  }
+                  try {
+                    await dealApi.deleteDeal(ctxMenu.dealId);
+                    toast.success('Deal deleted');
+                    qc.invalidateQueries({ queryKey: ['deals'] });
+                  } catch {
+                    toast.error('Delete failed');
+                  }
+                  setCtxMenu(null);
+                }}
+              >
+                🗑 Delete Deal
+              </button>
+            )}
           </div>
         </>
+      )}
+
+      {/* SHARE POPOVER (right-click share shortcut) */}
+      {sharePopover && (
+        <SharePopover
+          dealId={sharePopover.dealId}
+          x={sharePopover.x}
+          y={sharePopover.y}
+          onClose={() => setSharePopover(null)}
+        />
       )}
     </div>
   );
@@ -962,9 +1102,7 @@ function StageColumn({
             <div
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}
             >
-              <div className={`sc-col-title ${config.stageClass || ''}`}>
-                {config.short}
-              </div>
+              <div className={`sc-col-title ${config.stageClass || ''}`}>{config.short}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <span className="sc-col-count">{count}</span>
                 {urgentCount > 0 && (
@@ -1000,9 +1138,7 @@ function StageColumn({
               </>
             ) : config.value === 'NURTURE' ? (
               <>
-                <div className={`col-vol ${value ? '' : 'dim'}`}>
-                  {value ? `${formatCurrency(value)} prev` : '—'}
-                </div>
+                <div className={`col-vol ${value ? '' : 'dim'}`}>{value ? `${formatCurrency(value)} prev` : '—'}</div>
                 <div className="col-ct">
                   {count} {count === 1 ? 'deal' : 'deals'} · prev offer totals
                 </div>
@@ -1030,9 +1166,29 @@ function StageColumn({
       <div className="col-bar" style={{ background: config.color, opacity: config.opacity }} />
       <div className={`col-cards ${isOver ? 'drag-over' : ''}`}>
         {[...deals]
-          .sort((a, b) => sortPri(a) - sortPri(b) || (a.staleDays || 0) - (b.staleDays || 0))
+          .sort((a, b) => {
+            // Shared (assist) deals sort below primary-owned deals
+            const aAssist =
+              a.assignedRepId !== useAuthStore.getState().user?.id &&
+              ((a.assistingRepIds as string[]) || []).includes(useAuthStore.getState().user?.id || '')
+                ? 1
+                : 0;
+            const bAssist =
+              b.assignedRepId !== useAuthStore.getState().user?.id &&
+              ((b.assistingRepIds as string[]) || []).includes(useAuthStore.getState().user?.id || '')
+                ? 1
+                : 0;
+            if (aAssist !== bAssist) return aAssist - bAssist;
+            return sortPri(a) - sortPri(b) || (a.staleDays || 0) - (b.staleDays || 0);
+          })
           .map((deal) => (
-            <DraggableDealCard key={deal.id} deal={deal} viewMode={viewMode} onClick={() => onDealClick(deal.id)} onContextMenu={onCardContextMenu ? (e) => onCardContextMenu(e, deal) : undefined} />
+            <DraggableDealCard
+              key={deal.id}
+              deal={deal}
+              viewMode={viewMode}
+              onClick={() => onDealClick(deal.id)}
+              onContextMenu={onCardContextMenu ? (e) => onCardContextMenu(e, deal) : undefined}
+            />
           ))}
       </div>
     </div>
@@ -1043,7 +1199,17 @@ function StageColumn({
 // DRAGGABLE CARD WRAPPER
 // ═══════════════════════════════════════
 
-function DraggableDealCard({ deal, viewMode, onClick, onContextMenu }: { deal: Deal; viewMode: ViewMode; onClick: () => void; onContextMenu?: (e: React.MouseEvent) => void }) {
+function DraggableDealCard({
+  deal,
+  viewMode,
+  onClick,
+  onContextMenu,
+}: {
+  deal: Deal;
+  viewMode: ViewMode;
+  onClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.25 : 1 }
@@ -1087,12 +1253,19 @@ function repFullName(deal: Deal, reps: Rep[]) {
   const name = `${primary.firstName} ${primary.lastName || ''}`.trim();
   const repColor = primary.avatarColor || 'var(--text)';
   const coIds = deal.assistingRepIds?.filter((id) => id !== deal.assignedRepId) || [];
-  if (coIds.length === 0) return <span className="dt-rep-primary" style={{ color: repColor }}>{name}</span>;
+  if (coIds.length === 0)
+    return (
+      <span className="dt-rep-primary" style={{ color: repColor }}>
+        {name}
+      </span>
+    );
   const coRep = reps.find((r) => coIds.includes(r.id));
   const coName = coRep ? `${coRep.firstName} ${(coRep.lastName || '')[0] || ''}`.trim() : null;
   return (
     <>
-      <span className="dt-rep-primary" style={{ color: repColor }}>{name}</span>
+      <span className="dt-rep-primary" style={{ color: repColor }}>
+        {name}
+      </span>
       {coName && (
         <span className="dt-co-badge">
           + {coName}
@@ -1642,7 +1815,10 @@ function QueueView({
           <div className="q-rep">
             {rep && (
               <>
-                <div className="av" style={{ background: rep.avatarColor || 'var(--gold)', width: 16, height: 16, fontSize: 7 }}>
+                <div
+                  className="av"
+                  style={{ background: rep.avatarColor || 'var(--gold)', width: 16, height: 16, fontSize: 7 }}
+                >
                   {rep.initials || rep.firstName?.[0] || '?'}
                 </div>
                 {rep.firstName} {rep.lastName}
@@ -1698,7 +1874,9 @@ function QueueView({
         <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text3)' }}>
           <div style={{ fontSize: '32px', marginBottom: '8px' }}>✅</div>
           <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>Queue is clear</div>
-          <div style={{ fontSize: '11px' }}>No scheduled follow-ups due. Schedule one on any Nurture or Closed deal.</div>
+          <div style={{ fontSize: '11px' }}>
+            No scheduled follow-ups due. Schedule one on any Nurture or Closed deal.
+          </div>
         </div>
         {scheduleDeal && (
           <ScheduleFollowUpModal
@@ -1903,7 +2081,9 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
   return (
     <div className="mgr-bar">
       <div className="mgr-head">
-        <div className="mh" style={{ flex: 1.5 }}>Rep</div>
+        <div className="mh" style={{ flex: 1.5 }}>
+          Rep
+        </div>
         <div className="mh">Active</div>
         <div className="mh">Overdue</div>
         <div className="mh">🔥 Hot</div>
@@ -1914,8 +2094,12 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
       </div>
       <div className="mgr-body">
         {reps.map((rep) => {
-          const active = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
-          const overdue = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now).length;
+          const active = allDeals.filter(
+            (d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage),
+          ).length;
+          const overdue = allDeals.filter(
+            (d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now,
+          ).length;
           const hot = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && isDealHot(d)).length;
           const pipeline = pipelineDeals
             .filter((d: Deal) => d.assignedRepId === rep.id)
@@ -1926,7 +2110,9 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
           const funded = fundedDeals
             .filter((d: Deal) => d.assignedRepId === rep.id)
             .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
-          const shared = allDeals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id).length;
+          const shared = allDeals.filter(
+            (d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id,
+          ).length;
           const goal = rep.monthlyGoal || 0;
           const pct = goal ? Math.round((funded / goal) * 100) : 0;
           const barColor = pct >= 75 ? 'var(--good)' : pct >= 50 ? 'var(--watch)' : 'var(--urgent)';
@@ -1934,38 +2120,65 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
           return (
             <div key={rep.id} className="mgr-row">
               <div className="mgr-cell" style={{ flex: 1.5 }}>
-                <div className="av" style={{ width: '15px', height: '15px', background: rep.avatarColor || 'var(--gold)', fontSize: '7px' }}>
+                <div
+                  className="av"
+                  style={{
+                    width: '15px',
+                    height: '15px',
+                    background: rep.avatarColor || 'var(--gold)',
+                    fontSize: '7px',
+                  }}
+                >
                   {rep.initials || rep.firstName[0]}
                 </div>
                 {rep.firstName} {rep.lastName}
               </div>
               <div className="mgr-cell">
-                <span className="mgr-val" style={{ color: active ? 'var(--text)' : 'var(--text3)' }}>{active}</span>
+                <span className="mgr-val" style={{ color: active ? 'var(--text)' : 'var(--text3)' }}>
+                  {active}
+                </span>
               </div>
               <div className="mgr-cell">
-                <span className="mgr-val" style={{ color: overdue ? 'var(--urgent)' : 'var(--text3)' }}>{overdue}</span>
+                <span className="mgr-val" style={{ color: overdue ? 'var(--urgent)' : 'var(--text3)' }}>
+                  {overdue}
+                </span>
               </div>
               <div className="mgr-cell">
-                <span className="mgr-val" style={{ color: hot ? 'var(--hot)' : 'var(--text3)' }}>{hot}</span>
+                <span className="mgr-val" style={{ color: hot ? 'var(--hot)' : 'var(--text3)' }}>
+                  {hot}
+                </span>
               </div>
               <div className="mgr-cell">
-                <span className="mgr-val" style={{ color: pipeline ? 'var(--good)' : 'var(--text3)' }}>{pipeline ? formatCurrency(pipeline) : '$0'}</span>
+                <span className="mgr-val" style={{ color: pipeline ? 'var(--good)' : 'var(--text3)' }}>
+                  {pipeline ? formatCurrency(pipeline) : '$0'}
+                </span>
               </div>
               <div className="mgr-cell">
-                <span className="mgr-val" style={{ color: funded ? 'var(--good)' : 'var(--text3)' }}>{funded ? formatCurrency(funded) : '$0'}</span>
+                <span className="mgr-val" style={{ color: funded ? 'var(--good)' : 'var(--text3)' }}>
+                  {funded ? formatCurrency(funded) : '$0'}
+                </span>
               </div>
               <div className="mgr-cell">
-                <span className="mgr-val" style={{ color: shared ? 'var(--info)' : 'var(--text3)' }}>{shared}</span>
+                <span className="mgr-val" style={{ color: shared ? 'var(--info)' : 'var(--text3)' }}>
+                  {shared}
+                </span>
               </div>
               <div className="mgr-cell">
                 {!goal ? (
-                  <span className="mgr-val" style={{ color: 'var(--text3)' }}>—</span>
+                  <span className="mgr-val" style={{ color: 'var(--text3)' }}>
+                    —
+                  </span>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span className="mgr-val" style={{ color: barColor }}>{pct}%</span>
+                    <span className="mgr-val" style={{ color: barColor }}>
+                      {pct}%
+                    </span>
                     <div style={{ width: '60px' }}>
                       <div className="goal-bar-track">
-                        <div className="goal-bar-fill" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+                        <div
+                          className="goal-bar-fill"
+                          style={{ width: `${Math.min(100, pct)}%`, background: barColor }}
+                        />
                       </div>
                     </div>
                   </div>
@@ -2218,6 +2431,635 @@ function GoalsModal({ reps, onClose }: { reps: Rep[]; onClose: () => void }) {
             Save Goals
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// SHARE POPOVER (right-click quick share)
+// ═══════════════════════════════════════
+
+function SharePopover({ dealId, x, y, onClose }: { dealId: string; x: number; y: number; onClose: () => void }) {
+  const qc = useQueryClient();
+
+  const { data: deal } = useQuery({
+    queryKey: ['deal', dealId],
+    queryFn: async () => {
+      const { data } = await dealApi.getDeal(dealId);
+      return data as Deal;
+    },
+  });
+
+  const { data: reps } = useQuery({
+    queryKey: ['reps'],
+    queryFn: async () => {
+      const { data } = await repApi.getReps({ activeOnly: 'true' });
+      return ((data as any).reps || data) as Rep[];
+    },
+    staleTime: 60_000,
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: (data: any) => dealApi.shareDeal(dealId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+    },
+  });
+
+  if (!deal || !reps) return null;
+
+  const assistIds: string[] = (deal.assistingRepIds as string[]) || [];
+  const availableReps = reps.filter((r) => r.id !== deal.assignedRepId && r.isActive !== false);
+
+  function toggleRep(repId: string) {
+    const newAssists = assistIds.includes(repId) ? assistIds.filter((id) => id !== repId) : [...assistIds, repId];
+    shareMutation.mutate({ assistingRepIds: newAssists });
+  }
+
+  return (
+    <>
+      <div className="ctx-overlay" onClick={onClose} />
+      <div className="ctx-menu" style={{ left: x, top: y, minWidth: 220, maxWidth: 280, padding: '8px 0' }}>
+        <div
+          style={{
+            padding: '4px 12px 8px',
+            fontSize: 11,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            borderBottom: '1px solid var(--border-primary)',
+          }}
+        >
+          Share this deal with:
+        </div>
+        {availableReps.map((rep) => {
+          const isAssisting = assistIds.includes(rep.id);
+          return (
+            <button
+              key={rep.id}
+              className="ctx-item"
+              onClick={() => toggleRep(rep.id)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 12px',
+                width: '100%',
+                background: isAssisting ? 'rgba(74,158,232,0.1)' : undefined,
+              }}
+            >
+              <div
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  background: `${rep.avatarColor || '#6366f1'}2e`,
+                  color: rep.avatarColor || '#6366f1',
+                }}
+              >
+                {rep.initials || `${rep.firstName[0]}${rep.lastName?.[0] || ''}`}
+              </div>
+              <span style={{ flex: 1, textAlign: 'left' }}>
+                {rep.firstName} {rep.lastName}
+              </span>
+              {isAssisting && <span style={{ color: 'var(--good)', fontSize: 12 }}>✓</span>}
+            </button>
+          );
+        })}
+        {assistIds.length > 0 && (
+          <div
+            style={{
+              padding: '6px 12px',
+              fontSize: 10,
+              color: 'var(--info)',
+              borderTop: '1px solid var(--border-primary)',
+              marginTop: 4,
+            }}
+          >
+            👥 Shared with {assistIds.length} rep{assistIds.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ═══ IMPORT LEADS MODAL ═══
+function ImportLeadsModal({ onClose }: { onClose: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<{
+    imported: number;
+    duplicates: number;
+    skipped: number;
+    total: number;
+    errors: string[];
+  } | null>(null);
+  const qc = useQueryClient();
+
+  const handleImport = async () => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const resp = await dealApi.importLeads(file);
+      setResult(resp.data);
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      toast.success(`Imported ${resp.data.imported} leads`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(4px)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 12,
+          padding: 24,
+          width: 420,
+          maxWidth: '90vw',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>⬆ Import Leads</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16 }}>
+          Upload a CSV with leads. They will be added to your pipeline as Engaged/Interested.
+        </div>
+
+        {/* Format help */}
+        <div
+          style={{
+            background: 'var(--surface2)',
+            borderRadius: 8,
+            padding: 10,
+            marginBottom: 14,
+            fontSize: 10,
+            lineHeight: '18px',
+            color: 'var(--muted)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: '.08em',
+              textTransform: 'uppercase',
+              color: 'var(--info)',
+              marginBottom: 4,
+              fontWeight: 700,
+            }}
+          >
+            CSV Columns (auto-detected)
+          </div>
+          <div>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Business Name</span> or{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Contact Name</span> — required
+          </div>
+          <div>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Phone</span> — for duplicate detection
+          </div>
+          <div>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Email</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Notes</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Product Type</span> — optional
+          </div>
+          <div>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Stage</span> — optional (defaults to
+            Engaged/Interested)
+          </div>
+        </div>
+
+        {/* Drop zone */}
+        <div
+          style={{
+            border: '2px dashed var(--border-primary)',
+            borderRadius: 8,
+            padding: 20,
+            textAlign: 'center',
+            cursor: 'pointer',
+            marginBottom: 14,
+            transition: 'border-color 0.2s',
+            background: file ? 'rgba(74,158,232,0.05)' : undefined,
+          }}
+          onClick={() => {
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = '.csv';
+            inp.onchange = () => {
+              if (inp.files?.[0]) setFile(inp.files[0]);
+            };
+            inp.click();
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f?.name.endsWith('.csv')) setFile(f);
+          }}
+        >
+          <div style={{ fontSize: 24, marginBottom: 4 }}>{file ? '✅' : '📄'}</div>
+          <div style={{ fontSize: 11, color: 'var(--text)', fontWeight: 600 }}>
+            {file ? file.name : 'Drop CSV here or click to browse'}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+            {file ? `${(file.size / 1024).toFixed(1)} KB` : '.csv files only'}
+          </div>
+        </div>
+
+        {/* Results */}
+        {result && (
+          <div
+            style={{
+              background: 'rgba(58,185,122,0.08)',
+              border: '1px solid var(--good)',
+              borderRadius: 8,
+              padding: 10,
+              marginBottom: 14,
+              fontSize: 11,
+            }}
+          >
+            <div style={{ fontWeight: 700, color: 'var(--good)', marginBottom: 4 }}>Import Complete</div>
+            <div>
+              ✅ Imported: {result.imported} &nbsp; 🔄 Duplicates: {result.duplicates} &nbsp; ⏭ Skipped:{' '}
+              {result.skipped}
+            </div>
+            {result.errors.length > 0 && (
+              <div style={{ marginTop: 4, fontSize: 10, color: 'var(--muted)' }}>
+                {result.errors.slice(0, 5).map((e, i) => (
+                  <div key={i}>⚠ {e}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 6,
+              border: '1px solid var(--border-primary)',
+              background: 'var(--surface2)',
+              color: 'var(--text)',
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            {result ? 'Close' : 'Cancel'}
+          </button>
+          {!result && (
+            <button
+              onClick={handleImport}
+              disabled={!file || importing}
+              style={{
+                padding: '8px 20px',
+                borderRadius: 6,
+                border: 'none',
+                background: !file || importing ? 'var(--surface3)' : 'var(--cta)',
+                color: !file || importing ? 'var(--muted)' : '#fff',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: !file || importing ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {importing ? 'Importing…' : 'Import Leads'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══ ADD OFFER / NEW PRODUCT MODAL ═══
+const PRODUCT_TYPES = ['MCA', 'LOC', 'EQUIPMENT', 'HELOC', 'SBA', 'CRE', 'BRIDGE'] as const;
+
+function AddOfferModal({
+  dealId,
+  businessName,
+  existingProductType,
+  clientId,
+  onClose,
+}: {
+  dealId: string;
+  businessName?: string;
+  existingProductType?: string;
+  clientId?: string;
+  onClose: () => void;
+}) {
+  const [step, setStep] = useState<'product' | 'offer'>(existingProductType ? 'product' : 'product');
+  const [selectedProduct, setSelectedProduct] = useState('');
+  const [lenderName, setLenderName] = useState('');
+  const [amount, setAmount] = useState('');
+  const [terms, setTerms] = useState('');
+  const [expiryDays, setExpiryDays] = useState('');
+  const [saving, setSaving] = useState(false);
+  const qc = useQueryClient();
+
+  // Same product = add offer to existing deal; different product = create new deal + offer
+  const isSameProduct = selectedProduct && existingProductType && selectedProduct === existingProductType;
+
+  const handleSelectProduct = (pt: string) => {
+    setSelectedProduct(pt);
+    setStep('offer');
+  };
+
+  const handleSubmit = async () => {
+    if (!lenderName || !amount) return;
+    setSaving(true);
+    try {
+      const offerAmount = parseFloat(amount.replace(/[$,]/g, ''));
+
+      if (isSameProduct) {
+        // Add offer to existing deal
+        await dealApi.addOffer(dealId, {
+          lenderName,
+          amount: offerAmount,
+          terms,
+          expiryDays: expiryDays || undefined,
+          productType: selectedProduct,
+        });
+        toast.success('Offer added to existing deal');
+      } else {
+        // Create new deal for same client, then add offer
+        const { data: newDeal } = await dealApi.createDeal({
+          clientId,
+          productType: selectedProduct,
+          dealAmount: offerAmount,
+        });
+        await dealApi.addOffer(newDeal.id, {
+          lenderName,
+          amount: offerAmount,
+          terms,
+          expiryDays: expiryDays || undefined,
+          productType: selectedProduct,
+        });
+        toast.success(`New ${selectedProduct} deal created with offer`);
+      }
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      onClose();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '8px 10px',
+    borderRadius: 6,
+    border: '1px solid var(--border-primary)',
+    background: 'var(--surface2)',
+    color: 'var(--text)',
+    fontSize: 12,
+    outline: 'none',
+  };
+
+  const productEmoji: Record<string, string> = {
+    MCA: '⚡',
+    LOC: '💳',
+    EQUIPMENT: '🔧',
+    HELOC: '🏠',
+    SBA: '🏛',
+    CRE: '🏢',
+    BRIDGE: '🌉',
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(4px)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 12,
+          padding: 24,
+          width: 420,
+          maxWidth: '90vw',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
+          💰 {businessName || 'Add Offer'}
+        </div>
+
+        {step === 'product' ? (
+          <>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>
+              What type of offer did you receive?
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {PRODUCT_TYPES.map((pt) => (
+                <button
+                  key={pt}
+                  onClick={() => handleSelectProduct(pt)}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-primary)',
+                    background: 'var(--surface2)',
+                    color: 'var(--text)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    justifyContent: 'center',
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.target as HTMLElement).style.borderColor = 'var(--cta)';
+                    (e.target as HTMLElement).style.background = 'rgba(74,158,232,0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.target as HTMLElement).style.borderColor = 'var(--border-primary)';
+                    (e.target as HTMLElement).style.background = 'var(--surface2)';
+                  }}
+                >
+                  {productEmoji[pt] || ''} {pt}
+                </button>
+              ))}
+            </div>
+            {existingProductType && (
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 10, textAlign: 'center' }}>
+                Current deal product: <strong>{existingProductType}</strong> — same product adds to this deal, different
+                creates new deal
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+              <button
+                onClick={onClose}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-primary)',
+                  background: 'var(--surface2)',
+                  color: 'var(--text)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+              {isSameProduct
+                ? `Adding offer to existing ${selectedProduct} deal`
+                : `Creating new ${selectedProduct} deal for ${businessName || 'this client'}`}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                padding: '6px 10px',
+                borderRadius: 6,
+                marginBottom: 12,
+                background: isSameProduct ? 'rgba(58,185,122,0.08)' : 'rgba(74,158,232,0.08)',
+                color: isSameProduct ? 'var(--good)' : 'var(--info)',
+                fontWeight: 600,
+              }}
+            >
+              {isSameProduct
+                ? '📋 Same product → offer added to existing deal'
+                : '🆕 Different product → new deal will be created'}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <label
+                  style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
+                >
+                  Lender Name *
+                </label>
+                <input
+                  value={lenderName}
+                  onChange={(e) => setLenderName(e.target.value)}
+                  style={inputStyle}
+                  placeholder="e.g. OnDeck, Rapid Finance"
+                />
+              </div>
+              <div>
+                <label
+                  style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
+                >
+                  Offer Amount *
+                </label>
+                <input
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  style={inputStyle}
+                  placeholder="50000"
+                  type="number"
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label
+                    style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
+                  >
+                    Terms
+                  </label>
+                  <input
+                    value={terms}
+                    onChange={(e) => setTerms(e.target.value)}
+                    style={inputStyle}
+                    placeholder="12 months, 1.29"
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
+                  >
+                    Expiry (days)
+                  </label>
+                  <input
+                    value={expiryDays}
+                    onChange={(e) => setExpiryDays(e.target.value)}
+                    style={inputStyle}
+                    placeholder="7"
+                    type="number"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+              <button
+                onClick={() => {
+                  setStep('product');
+                  setSelectedProduct('');
+                }}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border-primary)',
+                  background: 'var(--surface2)',
+                  color: 'var(--text)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={saving || !lenderName || !amount}
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: 6,
+                  border: 'none',
+                  background: saving || !lenderName || !amount ? 'var(--surface3)' : 'var(--cta)',
+                  color: saving || !lenderName || !amount ? 'var(--muted)' : '#fff',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {saving ? 'Saving…' : isSameProduct ? 'Add Offer' : `Create ${selectedProduct} Deal`}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

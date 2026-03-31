@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
+import toast from 'react-hot-toast';
 
 // Navigation v2 — grouped by section
 const navGroups = [
@@ -80,6 +81,8 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const commandInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-collapse sidebar on Pipeline page for maximum board visibility
@@ -355,18 +358,19 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
           )}
         </NavLink>
 
-        <div className={clsx('flex items-center gap-3 px-3 py-2 rounded-lg', collapsed && 'justify-center')}>
+        <div className={clsx('relative flex items-center gap-3 px-3 py-2 rounded-lg', collapsed && 'justify-center')}>
           <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 cursor-pointer"
             style={{
               background: 'linear-gradient(135deg, #1A5FC8 0%, #2B7FE8 100%)',
             }}
+            onClick={() => setShowUserMenu(!showUserMenu)}
           >
             {user?.firstName?.[0]}
             {user?.lastName?.[0]}
           </div>
           {!collapsed && (
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setShowUserMenu(!showUserMenu)}>
               <p className="text-sm font-medium truncate" style={{ color: 'var(--text-secondary)' }}>
                 {user?.firstName} {user?.lastName}
               </p>
@@ -383,6 +387,37 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
           >
             <LogOut className="w-4 h-4" />
           </button>
+
+          {/* User dropdown menu */}
+          {showUserMenu && (
+            <>
+              <div className="fixed inset-0 z-50" onClick={() => setShowUserMenu(false)} />
+              <div
+                className="absolute bottom-full left-0 mb-1 z-50 w-48 rounded-lg border shadow-xl py-1"
+                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}
+              >
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-tertiary)] transition-colors"
+                  style={{ color: 'var(--text-secondary)' }}
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    setShowChangePassword(true);
+                  }}
+                >
+                  🔒 Change Password
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-tertiary)] transition-colors text-red-400"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    handleLogout();
+                  }}
+                >
+                  🚪 Log Out
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </>
@@ -513,6 +548,122 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
           </div>
         </div>
       )}
+
+      {/* Change Password Modal */}
+      {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
+    </div>
+  );
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error('All fields are required');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.put('/auth/change-password', { currentPassword, newPassword });
+      toast.success('Password updated successfully');
+      onClose();
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || 'Failed to change password');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-xl border p-5 shadow-xl"
+        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-primary)' }}
+      >
+        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>
+          Change Password
+        </h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+              Current Password
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="w-full text-sm rounded-lg p-2 border"
+              style={{
+                background: 'var(--bg-tertiary)',
+                borderColor: 'var(--border-primary)',
+                color: 'var(--text-primary)',
+              }}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+              New Password
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full text-sm rounded-lg p-2 border"
+              style={{
+                background: 'var(--bg-tertiary)',
+                borderColor: 'var(--border-primary)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-muted)' }}>
+              Confirm New Password
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full text-sm rounded-lg p-2 border"
+              style={{
+                background: 'var(--bg-tertiary)',
+                borderColor: 'var(--border-primary)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 text-sm rounded-lg border"
+            style={{ borderColor: 'var(--border-primary)', color: 'var(--text-muted)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-2 text-sm rounded-lg bg-scl-500 text-white font-medium hover:bg-scl-600 disabled:opacity-50"
+          >
+            {loading ? 'Updating...' : 'Update Password'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

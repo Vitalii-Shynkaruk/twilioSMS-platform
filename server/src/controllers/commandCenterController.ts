@@ -58,7 +58,14 @@ export class CommandCenterController {
       // Pipeline deals (Approved + Committed)
       prisma.deal.findMany({
         where: { ...effectiveFilter, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
-        select: { dealAmount: true, stage: true, nextActionDue: true, nextAction: true, lastActivityAt: true, offers: { select: { amount: true } } },
+        select: {
+          dealAmount: true,
+          stage: true,
+          nextActionDue: true,
+          nextAction: true,
+          lastActivityAt: true,
+          offers: { select: { amount: true } },
+        },
       }),
       // Nurture with prevOffer > 0 only (per spec: Pipeline Value includes nurture ONLY with prevOffer > 0)
       prisma.deal.findMany({
@@ -123,10 +130,12 @@ export class CommandCenterController {
         where: { ...effectiveFundingFilter, fundedDate: { gte: startOfMonth } },
       }),
       // Funded rep count MTD (distinct reps)
-      prisma.fundingEvent.groupBy({
-        by: ['repId'],
-        where: { ...effectiveFundingFilter, fundedDate: { gte: startOfMonth } },
-      }).then((r) => r.length),
+      prisma.fundingEvent
+        .groupBy({
+          by: ['repId'],
+          where: { ...effectiveFundingFilter, fundedDate: { gte: startOfMonth } },
+        })
+        .then((r) => r.length),
       // Future 7d value
       prisma.deal.aggregate({
         where: {
@@ -233,7 +242,14 @@ export class CommandCenterController {
       prisma.deal.count({
         where: {
           ...effectiveFilter,
-          stage: { in: [DealStage.SUBMITTED_IN_REVIEW, DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING, DealStage.FUNDED] },
+          stage: {
+            in: [
+              DealStage.SUBMITTED_IN_REVIEW,
+              DealStage.APPROVED_OFFERS,
+              DealStage.COMMITTED_FUNDING,
+              DealStage.FUNDED,
+            ],
+          },
         },
       }),
       prisma.deal.count({
@@ -279,7 +295,7 @@ export class CommandCenterController {
     });
   }
 
-  // GET /api/command-center/operator-queue - Operator Queue
+  // GET /api/command-center/operator-queue - Top 5 to Close Today (DPS scored)
   static async getOperatorQueue(req: AuthRequest, res: Response) {
     const filter = repFilter(req.user);
     const { repId } = req.query;
@@ -307,29 +323,77 @@ export class CommandCenterController {
       include: {
         client: true,
         assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
-        offers: { take: 1, orderBy: { createdAt: 'desc' } },
+        offers: { orderBy: { createdAt: 'desc' } },
       },
-      orderBy: [{ dealAmount: 'desc' }],
-      take: 20,
+      take: 50,
     });
 
-    // Determine primary action for each deal
+    const now = Date.now();
+    const fortyEightHours = 48 * 60 * 60 * 1000;
+    const today = new Date().toDateString();
+
+    // Compute Deal Priority Score (DPS) for each deal
     const enriched = deals.map((deal) => {
+      let dps = 0;
+      const reasons: string[] = [];
+
+      // +50: Has a lender offer
+      if (deal.offers && deal.offers.length > 0) {
+        dps += 50;
+        reasons.push('Has offer');
+      }
+
+      // +30: Offer expires soon (<=3 days)
+      if (deal.offers?.some((o) => o.expiryDays && o.expiryDays <= 3)) {
+        dps += 30;
+        const minExp = Math.min(...deal.offers.filter((o) => o.expiryDays).map((o) => o.expiryDays!));
+        reasons.push(`Expiring in ${minExp}d`);
+      }
+
+      // +20: Client recently engaged (last reply within 48h)
+      if (deal.lastReplyAt && now - new Date(deal.lastReplyAt).getTime() < fortyEightHours) {
+        dps += 20;
+        reasons.push('Client replied today');
+      }
+
+      // -10: Already touched today
+      if (deal.lastActivityAt && new Date(deal.lastActivityAt).toDateString() === today) {
+        dps -= 10;
+        reasons.push('Touched today');
+      }
+
+      // -40: Stale — no activity 5+ days
+      if ((deal.staleDays || 0) >= 5) {
+        dps -= 40;
+        reasons.push(`${deal.staleDays}d stale`);
+      }
+
+      // Determine primary action
       let primaryAction = 'Follow Up';
-      if (deal.stage === DealStage.APPROVED_OFFERS) primaryAction = 'Call Now';
-      else if (deal.stage === DealStage.COMMITTED_FUNDING) primaryAction = 'Request Docs';
-      else if (deal.stage === DealStage.NEW_LEAD || deal.stage === DealStage.ENGAGED_INTERESTED)
+      if (deal.stage === DealStage.APPROVED_OFFERS) {
+        primaryAction = dps >= 60 ? 'CLOSE NOW' : 'Call Now';
+      } else if (deal.stage === DealStage.COMMITTED_FUNDING) {
+        primaryAction = 'Request Docs';
+      } else if (deal.stage === DealStage.NEW_LEAD || deal.stage === DealStage.ENGAGED_INTERESTED) {
         primaryAction = 'Follow Up';
-      else if (deal.stage === DealStage.QUALIFIED) primaryAction = 'Send Offer';
-      else if (deal.stage === DealStage.SUBMITTED_IN_REVIEW) primaryAction = 'Follow Up';
+      } else if (deal.stage === DealStage.QUALIFIED) {
+        primaryAction = 'Send Offer';
+      } else if (deal.stage === DealStage.SUBMITTED_IN_REVIEW) {
+        primaryAction = 'Follow Up';
+      }
 
       return {
         ...deal,
+        priorityScore: dps,
+        scoreReason: reasons.join(' · ') || 'No signals',
         primaryAction,
         isHot: computeIsHot(deal),
         stageLabel: STAGE_LABELS[deal.stage],
       };
     });
+
+    // Sort by DPS descending, then by dealAmount descending
+    enriched.sort((a, b) => b.priorityScore - a.priorityScore || (b.dealAmount || 0) - (a.dealAmount || 0));
 
     res.json(enriched);
   }
@@ -358,23 +422,29 @@ export class CommandCenterController {
   // GET /api/command-center/stale-deals
   static async getStaleDeals(req: AuthRequest, res: Response) {
     const filter = repFilter(req.user);
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    // Stale = 5+ days without activity (per Item 12 spec)
     const deals = await prisma.deal.findMany({
       where: {
         ...filter,
         stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
-        lastActivityAt: { lt: twentyFourHoursAgo },
+        staleDays: { gte: 5 },
       },
       include: {
         client: true,
         assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
       },
-      orderBy: { lastActivityAt: 'asc' },
+      orderBy: { staleDays: 'desc' },
       take: 20,
     });
 
-    res.json(deals.map((d) => ({ ...d, stageLabel: STAGE_LABELS[d.stage] })));
+    res.json(
+      deals.map((d) => ({
+        ...d,
+        stageLabel: STAGE_LABELS[d.stage],
+        suggestNurture: (d.staleDays || 0) >= 5,
+      })),
+    );
   }
 
   // GET /api/command-center/overdue-tasks
@@ -567,7 +637,13 @@ export class CommandCenterController {
             const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
             return sum + (best?.amount || d.dealAmount || 0);
           }, 0);
-          return { stage, label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS], count: deals.length, volume, hideDollar: false };
+          return {
+            stage,
+            label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS],
+            count: deals.length,
+            volume,
+            hideDollar: false,
+          };
         }
         // Nurture: use prevOffer with dealAmount fallback
         if (stage === DealStage.NURTURE) {
@@ -576,7 +652,13 @@ export class CommandCenterController {
             select: { prevOffer: true, dealAmount: true },
           });
           const volume = deals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
-          return { stage, label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS], count: deals.length, volume, hideDollar: false };
+          return {
+            stage,
+            label: STAGE_LABELS[stage as keyof typeof STAGE_LABELS],
+            count: deals.length,
+            volume,
+            hideDollar: false,
+          };
         }
         // All other stages: use dealAmount aggregate
         const [count, sumResult] = await Promise.all([
@@ -679,10 +761,12 @@ export class CommandCenterController {
               stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
             },
           }),
-          prisma.dealEvent.groupBy({
-            by: ['dealId'],
-            where: { repId: rep.id, createdAt: { gte: today } },
-          }).then((r) => r.length),
+          prisma.dealEvent
+            .groupBy({
+              by: ['dealId'],
+              where: { repId: rep.id, createdAt: { gte: today } },
+            })
+            .then((r) => r.length),
         ]);
 
         const totalAssigned = assignedDeals;

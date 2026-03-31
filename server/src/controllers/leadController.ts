@@ -10,7 +10,7 @@ const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
   NEW: DealStage.NEW_LEAD,
   CONTACTED: DealStage.ENGAGED_INTERESTED,
   REPLIED: DealStage.ENGAGED_INTERESTED,
-  INTERESTED: DealStage.QUALIFIED,
+  INTERESTED: DealStage.ENGAGED_INTERESTED,
   DOCS_REQUESTED: DealStage.QUALIFIED,
   SUBMITTED: DealStage.SUBMITTED_IN_REVIEW,
   FUNDED: DealStage.FUNDED,
@@ -307,27 +307,38 @@ export class LeadController {
       },
     });
 
-    // Sync lead status → deal stage when status changes
-    if (status && status !== existing.status) {
-      const newDealStage = LEAD_TO_DEAL[status as LeadStatus];
-      if (newDealStage) {
-        // Find linked deal (via leadId FK or by phone match)
-        let linkedDeal = lead.deal;
-        if (!linkedDeal) {
-          const client = await prisma.client.findUnique({ where: { phone: existing.phone } });
-          if (client) {
-            linkedDeal = await prisma.deal.findFirst({
-              where: { clientId: client.id },
-              select: { id: true, stage: true },
-              orderBy: { createdAt: 'desc' },
-            });
-            // Link for future syncs
-            if (linkedDeal) {
-              await prisma.deal.update({ where: { id: linkedDeal.id }, data: { leadId: id } });
-            }
+    // Sync lead status → deal stage when status changes (or when no deal exists yet)
+    const effectiveStatus = status || existing.status;
+    const statusChanged = status && status !== existing.status;
+    const newDealStage = LEAD_TO_DEAL[effectiveStatus as LeadStatus];
+    console.log('[LeadUpdate]', {
+      leadId: id,
+      status,
+      existingStatus: existing.status,
+      effectiveStatus,
+      statusChanged,
+      newDealStage,
+      hasDeal: !!lead.deal,
+    });
+    if (newDealStage) {
+      // Find linked deal (via leadId FK or by phone match)
+      let linkedDeal = lead.deal;
+      if (!linkedDeal) {
+        const client = await prisma.client.findUnique({ where: { phone: existing.phone } });
+        if (client) {
+          linkedDeal = await prisma.deal.findFirst({
+            where: { clientId: client.id },
+            select: { id: true, stage: true },
+            orderBy: { createdAt: 'desc' },
+          });
+          // Link for future syncs
+          if (linkedDeal) {
+            await prisma.deal.update({ where: { id: linkedDeal.id }, data: { leadId: id } });
           }
         }
-        if (linkedDeal && linkedDeal.stage !== newDealStage) {
+      }
+      if (linkedDeal) {
+        if (statusChanged && linkedDeal.stage !== newDealStage) {
           await prisma.deal.update({
             where: { id: linkedDeal.id },
             data: {
@@ -338,9 +349,37 @@ export class LeadController {
             },
           });
         }
+      } else {
+        // No deal exists — create one from the lead
+        console.log('[LeadUpdate] Creating new deal for lead', id, 'stage:', newDealStage);
+        let client = await prisma.client.findUnique({ where: { phone: existing.phone } });
+        if (!client) {
+          client = await prisma.client.create({
+            data: {
+              businessName: existing.company || `${existing.firstName} ${existing.lastName || ''}`.trim(),
+              contactName: `${existing.firstName} ${existing.lastName || ''}`.trim(),
+              phone: existing.phone,
+              email: existing.email || undefined,
+              state: existing.state || undefined,
+            },
+          });
+        }
+        const newDeal = await prisma.deal.create({
+          data: {
+            clientId: client.id,
+            assignedRepId: existing.assignedRepId || req.user!.id,
+            leadId: id,
+            stage: newDealStage,
+            stageLabel: STAGE_LABELS[newDealStage],
+            lastActivityAt: new Date(),
+          },
+        });
+        console.log('[LeadUpdate] Created deal', newDeal.id, 'for rep', newDeal.assignedRepId);
       }
+    }
 
-      // Legacy: auto-move pipeline card
+    // Legacy: auto-move pipeline card (only when status explicitly changed)
+    if (status && status !== existing.status) {
       const targetStage = await prisma.pipelineStage.findFirst({
         where: { mappedStatus: status },
       });

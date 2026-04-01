@@ -27,6 +27,7 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
   const [email, setEmail] = useState(prefill?.email || '');
   const [productType, setProductType] = useState<ProductType | ''>('');
   const [dealAmount, setDealAmount] = useState('');
+  const [notes, setNotes] = useState('');
   const [assignedRepId, setAssignedRepId] = useState(user?.id || '');
   const [nextAction, setNextAction] = useState('');
   const [nextActionDue, setNextActionDue] = useState('');
@@ -64,16 +65,19 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
       toast.error('Submitted amount is required for this product type');
       return;
     }
+    const parsedAmount = dealAmount ? parseFloat(dealAmount) : undefined;
     mutation.mutate({
       businessName,
       contactName: contactName || undefined,
       phone: phone || undefined,
       email: email || undefined,
       productType: productType || undefined,
-      dealAmount: dealAmount ? parseFloat(dealAmount) : undefined,
+      dealAmount: !longCycle ? parsedAmount : undefined,
+      submittedAmount: longCycle ? parsedAmount : undefined,
       assignedRepId: assignedRepId || undefined,
       nextAction: nextAction || undefined,
       nextActionDue: nextActionDue || undefined,
+      notes: notes.trim() || undefined,
     });
   };
 
@@ -195,6 +199,15 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
               value={nextActionDue}
               onChange={(e) => setNextActionDue(e.target.value)}
               className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)]"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="text-xs font-medium text-[var(--text-muted)] block mb-1">Quick note (optional)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full text-sm bg-[var(--bg-tertiary)] border border-[var(--border-primary)] rounded-lg p-2 text-[var(--text-primary)] min-h-[72px] resize-none"
+              placeholder="e.g. 6 trucks, needs $400k, call after 4pm"
             />
           </div>
         </div>

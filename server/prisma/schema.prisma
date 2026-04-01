@@ -763,6 +763,7 @@ model Deal {
   stageLabel        String          @default("New Lead") // Exact display name
   productType       ProductType?
   dealAmount        Float?
+  submittedAmount   Float?
   needsAmount       Boolean         @default(true)
 
   // Deal tracking

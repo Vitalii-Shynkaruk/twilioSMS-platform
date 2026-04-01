@@ -122,6 +122,8 @@ export default function DashboardPage() {
   const diag = diagData || {};
   const d24 = diag.stats24h || {};
   const d7 = diag.stats7d || {};
+  const d24ErrorRate = Math.min(100, Math.max(0, Number(d24.errorRate || 0)));
+  const d7ErrorRate = Math.min(100, Math.max(0, Number(d7.errorRate || 0)));
   const sending = diag.sending || {};
   const numbers = diag.numbers || {};
   const health = diag.health || {};
@@ -289,14 +291,14 @@ export default function DashboardPage() {
           <p
             className={clsx(
               'text-3xl font-bold',
-              (d24.errorRate || 0) > 5
+              d24ErrorRate > 5
                 ? 'text-red-400'
-                : (d24.errorRate || 0) > 0
+                : d24ErrorRate > 0
                   ? 'text-yellow-400'
                   : 'text-green-400',
             )}
           >
-            {d24.errorRate || 0}%
+            {d24ErrorRate}%
           </p>
           <p className="text-xs text-dark-500 mt-1">last 24 hours</p>
           {diag.errorBreakdown?.length > 0 && (
@@ -447,8 +449,8 @@ export default function DashboardPage() {
                 </span>
                 <span>
                   Errors:{' '}
-                  <strong className={clsx(d7.errorRate > 5 ? 'text-red-400' : 'text-yellow-400')}>
-                    {d7.errorRate}%
+                  <strong className={clsx(d7ErrorRate > 5 ? 'text-red-400' : 'text-yellow-400')}>
+                    {d7ErrorRate}%
                   </strong>
                 </span>
               </>

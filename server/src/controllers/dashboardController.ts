@@ -30,7 +30,6 @@ export class DashboardController {
         where: {
           direction: 'OUTBOUND',
           createdAt: { gte: last24h },
-          status: { in: ['SENT', 'DELIVERED'] },
         },
       }),
 
@@ -59,7 +58,6 @@ export class DashboardController {
         where: {
           direction: 'OUTBOUND',
           createdAt: { gte: last7d },
-          status: { in: ['SENT', 'DELIVERED'] },
         },
       }),
 
@@ -102,9 +100,9 @@ export class DashboardController {
     const dailyVolume = await prisma.$queryRaw`
       SELECT 
         DATE(createdAt) as date,
-        SUM(CASE WHEN status IN ('SENT', 'DELIVERED') THEN 1 ELSE 0 END) as sent,
+        COUNT(*) as sent,
         SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) as delivered,
-        SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN status IN ('FAILED', 'UNDELIVERED') THEN 1 ELSE 0 END) as failed,
         SUM(CASE WHEN status = 'BLOCKED' THEN 1 ELSE 0 END) as blocked
       FROM messages 
       WHERE direction = 'OUTBOUND' 
@@ -327,11 +325,15 @@ export class DashboardController {
     const aggregate = (groups: Array<{ status: string; _count: number }>) => {
       const m: Record<string, number> = {};
       for (const g of groups) m[g.status] = g._count;
+      const delivered = m.DELIVERED || 0;
+      const failed = (m.FAILED || 0) + (m.UNDELIVERED || 0);
+      const blocked = m.BLOCKED || 0;
       return {
-        sent: (m.SENT || 0) + (m.DELIVERED || 0),
-        delivered: m.DELIVERED || 0,
-        failed: m.FAILED || 0,
-        blocked: m.BLOCKED || 0,
+        // "Sent" should represent total outbound attempts in the period.
+        sent: (m.QUEUED || 0) + (m.SENDING || 0) + (m.SENT || 0) + delivered + failed + blocked,
+        delivered,
+        failed,
+        blocked,
         queued: m.QUEUED || 0,
         sending: m.SENDING || 0,
       };
@@ -373,13 +375,14 @@ export class DashboardController {
       stats24h: {
         ...agg24h,
         optOuts: optOuts24h,
-        deliveryRate: agg24h.sent > 0 ? +((agg24h.delivered / agg24h.sent) * 100).toFixed(1) : 0,
-        errorRate: agg24h.sent > 0 ? +(((agg24h.failed + agg24h.blocked) / agg24h.sent) * 100).toFixed(1) : 0,
+        deliveryRate: agg24h.sent > 0 ? +Math.min(100, (agg24h.delivered / agg24h.sent) * 100).toFixed(1) : 0,
+        errorRate:
+          agg24h.sent > 0 ? +Math.min(100, ((agg24h.failed + agg24h.blocked) / agg24h.sent) * 100).toFixed(1) : 0,
       },
       stats7d: {
         ...agg7d,
-        deliveryRate: agg7d.sent > 0 ? +((agg7d.delivered / agg7d.sent) * 100).toFixed(1) : 0,
-        errorRate: agg7d.sent > 0 ? +(((agg7d.failed + agg7d.blocked) / agg7d.sent) * 100).toFixed(1) : 0,
+        deliveryRate: agg7d.sent > 0 ? +Math.min(100, (agg7d.delivered / agg7d.sent) * 100).toFixed(1) : 0,
+        errorRate: agg7d.sent > 0 ? +Math.min(100, ((agg7d.failed + agg7d.blocked) / agg7d.sent) * 100).toFixed(1) : 0,
       },
       numbers: {
         total: Object.values(numberSummary).reduce((a, b) => a + b, 0),

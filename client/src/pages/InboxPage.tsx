@@ -28,11 +28,97 @@ import { format, formatDistanceToNow } from 'date-fns';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 
+type InboxFilter = 'all' | 'unread' | 'replied' | 'interested' | 'not_interested' | 'dnc' | 'opted_out';
+
+const INBOX_FILTERS: Array<{
+  id: InboxFilter;
+  label: string;
+  activeClass: string;
+  inactiveClass: string;
+  badgeClass: string;
+}> = [
+  {
+    id: 'all',
+    label: 'All',
+    activeClass: 'bg-slate-500/25 text-slate-200 border-slate-400/40',
+    inactiveClass: 'bg-dark-800 text-dark-400 border-dark-700 hover:text-dark-200',
+    badgeClass: 'bg-slate-500/30 text-slate-200 border border-slate-400/40',
+  },
+  {
+    id: 'unread',
+    label: 'Unread',
+    activeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    inactiveClass: 'bg-blue-500/6 text-blue-300/80 border-blue-500/20 hover:text-blue-200',
+    badgeClass: 'bg-blue-500/30 text-blue-200 border border-blue-500/40',
+  },
+  {
+    id: 'replied',
+    label: 'Replied',
+    activeClass: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+    inactiveClass: 'bg-sky-500/6 text-sky-300/80 border-sky-500/20 hover:text-sky-200',
+    badgeClass: 'bg-sky-500/30 text-sky-200 border border-sky-500/40',
+  },
+  {
+    id: 'interested',
+    label: 'Interested',
+    activeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    inactiveClass: 'bg-emerald-500/6 text-emerald-300/80 border-emerald-500/20 hover:text-emerald-200',
+    badgeClass: 'bg-emerald-500/30 text-emerald-200 border border-emerald-500/40',
+  },
+  {
+    id: 'not_interested',
+    label: 'Not Interested',
+    activeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    inactiveClass: 'bg-amber-500/6 text-amber-300/80 border-amber-500/20 hover:text-amber-200',
+    badgeClass: 'bg-amber-500/30 text-amber-100 border border-amber-500/40',
+  },
+  {
+    id: 'dnc',
+    label: 'DNC',
+    activeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+    inactiveClass: 'bg-rose-500/6 text-rose-300/80 border-rose-500/20 hover:text-rose-200',
+    badgeClass: 'bg-rose-500/30 text-rose-100 border border-rose-500/40',
+  },
+  {
+    id: 'opted_out',
+    label: 'Opted Out',
+    activeClass: 'bg-red-500/20 text-red-300 border-red-500/40',
+    inactiveClass: 'bg-red-500/6 text-red-300/80 border-red-500/20 hover:text-red-200',
+    badgeClass: 'bg-red-500/30 text-red-100 border border-red-500/40',
+  },
+];
+
+function leadStatusPill(lead?: Conversation['lead']) {
+  if (!lead) return null;
+  if (lead.optedOut) {
+    return { label: 'Opted Out', className: 'bg-red-500/15 text-red-300 border border-red-500/30' };
+  }
+
+  switch (lead.status) {
+    case 'INTERESTED':
+    case 'DOCS_REQUESTED':
+    case 'SUBMITTED':
+    case 'FUNDED':
+      return { label: 'Interested', className: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' };
+    case 'REPLIED':
+      return { label: 'Replied', className: 'bg-sky-500/15 text-sky-300 border border-sky-500/30' };
+    case 'NOT_INTERESTED':
+      return {
+        label: 'Not Interested',
+        className: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+      };
+    case 'DNC':
+      return { label: 'DNC', className: 'bg-rose-500/15 text-rose-300 border border-rose-500/30' };
+    default:
+      return { label: lead.status.replace('_', ' '), className: 'bg-dark-700 text-dark-300 border border-dark-600' };
+  }
+}
+
 export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
-  const [showUnreadOnly, setShowUnreadOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<InboxFilter>('all');
   const [inboxPage, setInboxPage] = useState(1);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: Conversation } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
@@ -76,14 +162,20 @@ export default function InboxPage() {
     }
   }, [socket, selectedId]);
 
+  useEffect(() => {
+    setInboxPage(1);
+  }, [debouncedSearch, statusFilter]);
+
   const { data: conversationsData, isLoading } = useQuery({
-    queryKey: ['conversations', debouncedSearch, showUnreadOnly, inboxPage],
+    queryKey: ['conversations', debouncedSearch, statusFilter, inboxPage],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('page', inboxPage.toString());
       params.set('limit', '50');
+      params.set('withFilterCounts', 'true');
       if (debouncedSearch) params.set('search', debouncedSearch);
-      if (showUnreadOnly) params.set('unreadOnly', 'true');
+      if (statusFilter !== 'all') params.set('filter', statusFilter);
+      if (statusFilter === 'unread') params.set('unreadOnly', 'true');
       const { data } = await api.get(`/inbox?${params}`);
       return data;
     },
@@ -92,6 +184,7 @@ export default function InboxPage() {
 
   const conversations: Conversation[] = conversationsData?.conversations || [];
   const inboxTotalPages = conversationsData?.pagination?.pages || 1;
+  const filterCounts = (conversationsData?.filterCounts || {}) as Partial<Record<InboxFilter, number>>;
 
   return (
     <div className="flex h-full min-h-0">
@@ -104,17 +197,28 @@ export default function InboxPage() {
         <div className="p-4 border-b border-dark-700/50 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-dark-50">Inbox</h2>
-            <div className="flex items-center gap-2">
+          </div>
+          <div className="flex flex-wrap gap-2 pb-1">
+            {INBOX_FILTERS.map((f) => (
               <button
-                onClick={() => setShowUnreadOnly(!showUnreadOnly)}
+                key={f.id}
+                onClick={() => setStatusFilter(f.id)}
                 className={clsx(
-                  'badge cursor-pointer',
-                  showUnreadOnly ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400',
+                  'inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border whitespace-nowrap transition-colors',
+                  statusFilter === f.id ? f.activeClass : f.inactiveClass,
                 )}
               >
-                Unread
+                {f.label}
+                <span
+                  className={clsx(
+                    'inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded-full text-[9px] leading-none text-center font-semibold',
+                    f.badgeClass,
+                  )}
+                >
+                  {(filterCounts[f.id] ?? 0).toLocaleString()}
+                </span>
               </button>
-            </div>
+            ))}
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
@@ -261,6 +365,7 @@ function ConversationItem({
 }) {
   const lead = conversation.lead;
   const lastMessage = conversation.messages?.[0];
+  const statusPill = leadStatusPill(lead);
 
   return (
     <button
@@ -301,6 +406,13 @@ function ConversationItem({
               : ''}
           </span>
         </div>
+        {statusPill && (
+          <div className="mt-1">
+            <span className={clsx('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium', statusPill.className)}>
+              {statusPill.label}
+            </span>
+          </div>
+        )}
         <p className="text-xs text-dark-500 truncate mt-0.5">
           {lastMessage ? `${lastMessage.direction === 'OUTBOUND' ? 'You: ' : ''}${lastMessage.body}` : lead?.phone}
         </p>

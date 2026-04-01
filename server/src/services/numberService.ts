@@ -18,6 +18,47 @@ import { PhoneNumber } from '@prisma/client';
 export class NumberService {
   private static readonly NUMBERS_CACHE_TTL = 30; // 30 seconds
   private static roundRobinIndex = 0; // In-memory round-robin counter
+  private static readonly SEND_ATTEMPT_STATUSES = ['SENT', 'DELIVERED', 'FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
+
+  private static getDatePartsInTimezone(
+    date: Date,
+    timeZone: string,
+  ): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+
+    const map = new Map(parts.map((part) => [part.type, part.value]));
+    return {
+      year: Number(map.get('year')),
+      month: Number(map.get('month')),
+      day: Number(map.get('day')),
+      hour: Number(map.get('hour')),
+      minute: Number(map.get('minute')),
+      second: Number(map.get('second')),
+    };
+  }
+
+  private static getTimezoneOffsetMinutes(date: Date, timeZone: string): number {
+    const p = this.getDatePartsInTimezone(date, timeZone);
+    const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+    return Math.round((asUtc - date.getTime()) / 60000);
+  }
+
+  private static getBusinessDayStart(date: Date = new Date()): Date {
+    const tz = config.compliance.timezone || 'America/New_York';
+    const p = this.getDatePartsInTimezone(date, tz);
+    const utcMidnight = Date.UTC(p.year, p.month - 1, p.day, 0, 0, 0);
+    const offsetMinutes = this.getTimezoneOffsetMinutes(new Date(utcMidnight), tz);
+    return new Date(utcMidnight - offsetMinutes * 60000);
+  }
 
   /**
    * Get active numbers with Redis caching (30s TTL)
@@ -274,14 +315,14 @@ export class NumberService {
    * Called on startup to fix counter drift after restarts.
    */
   static async recalculateDailyCounts(): Promise<void> {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = this.getBusinessDayStart();
 
     const counts = await prisma.message.groupBy({
       by: ['phoneNumberId'],
       where: {
         direction: 'OUTBOUND',
-        createdAt: { gte: todayStart },
+        status: { in: [...this.SEND_ATTEMPT_STATUSES] },
+        OR: [{ sentAt: { gte: todayStart } }, { failedAt: { gte: todayStart } }],
         phoneNumberId: { not: null },
       },
       _count: { id: true },
@@ -379,15 +420,15 @@ export class NumberService {
    * Get number health overview for monitoring dashboard
    */
   static async getNumberHealthOverview() {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const todayStart = this.getBusinessDayStart();
 
-    // Get actual sent-today counts from messages table (reliable, survives restarts)
+    // Get actual send-attempt counts (exclude queued/sending to avoid inflated "Sent Today")
     const sentTodayCounts = await prisma.message.groupBy({
       by: ['phoneNumberId'],
       where: {
         direction: 'OUTBOUND',
-        createdAt: { gte: todayStart },
+        status: { in: [...this.SEND_ATTEMPT_STATUSES] },
+        OR: [{ sentAt: { gte: todayStart } }, { failedAt: { gte: todayStart } }],
         phoneNumberId: { not: null },
       },
       _count: { id: true },

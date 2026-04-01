@@ -32,6 +32,8 @@ const PM_COLORS: Record<string, string> = {
   OTHER: '#666',
 };
 
+const COMMAND_CENTER_VISUAL_MODE_KEY = 'scl_pipeline_visual_mode';
+
 function fmtCurrency(n: number | null | undefined): string {
   if (n == null) return '$0';
   if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
@@ -58,18 +60,14 @@ function getGreeting(): string {
   return 'Good Evening';
 }
 
-const REP_COLORS: Record<string, string> = {
-  JB: 'var(--gold)',
-  SB: '#3fb950',
-  MC: '#e07b54',
-  AN: '#a371f7',
-  AR: '#4a9eff',
-  HB: '#64b5d4',
-  JJ: '#c9a227',
-};
-
-function repAvatarColor(initials: string): string {
-  return REP_COLORS[initials] || 'var(--faint)';
+function repAvatarColor(initials: string, avatarColor?: string): string {
+  if (avatarColor) return avatarColor;
+  const safeInitials = (initials || '??').toUpperCase();
+  let hash = 0;
+  for (let i = 0; i < safeInitials.length; i++) {
+    hash = (hash * 31 + safeInitials.charCodeAt(i)) % 360;
+  }
+  return `hsl(${hash} 62% 42%)`;
 }
 
 function getActionButtonStyle(action: string): string {
@@ -227,6 +225,7 @@ interface ProductMixData {
     id: string;
     name: string;
     initials: string;
+    avatarColor?: string;
     funded: number;
     mix: Array<{ type: string; amount: number; percentage: number; vsTeam: number }>;
   }>;
@@ -278,28 +277,34 @@ export default function CommandCenterPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvAssignRep, setCsvAssignRep] = useState<string>('');
-  const [lastImportBatch, setLastImportBatch] = useState<{ batchId: string; count: number } | null>(null);
+  const [importBatches, setImportBatches] = useState<Array<{ batchId: string; count: number; importedAt?: string }>>([]);
+  const [visualMode, setVisualMode] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem(COMMAND_CENTER_VISUAL_MODE_KEY);
+    return saved === 'light' ? 'light' : 'dark';
+  });
   const [rrqIndex, setRrqIndex] = useState(0);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<{ title: string; text: string } | null>(null);
   const actionToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Fetch last import batch when CSV modal opens
+  const loadImportBatches = useCallback(async () => {
+    try {
+      const res = await dealApi.getImportBatches();
+      const sorted = ((res.data || []) as any[])
+        .filter((b) => String(b.batchId || '').startsWith('import_'))
+        .sort((a, b) => new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime())
+        .slice(0, 8)
+        .map((b) => ({ batchId: b.batchId, count: b.count, importedAt: b.importedAt }));
+      setImportBatches(sorted);
+    } catch {
+      setImportBatches([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (!csvModalOpen) return;
-    dealApi
-      .getImportBatches()
-      .then((res) => {
-        const batches = res.data;
-        if (batches.length > 0) {
-          const latest = batches.sort(
-            (a: any, b: any) => new Date(b.importedAt).getTime() - new Date(a.importedAt).getTime(),
-          )[0];
-          setLastImportBatch({ batchId: latest.batchId, count: latest.count });
-        }
-      })
-      .catch(() => {});
-  }, [csvModalOpen]);
+    loadImportBatches();
+  }, [csvModalOpen, loadImportBatches]);
 
   const showActionToast = useCallback((title: string, text: string) => {
     if (actionToastTimer.current) clearTimeout(actionToastTimer.current);
@@ -315,6 +320,10 @@ export default function CommandCenterPage() {
     const id = setInterval(tick, 60000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(COMMAND_CENTER_VISUAL_MODE_KEY, visualMode);
+  }, [visualMode]);
 
   // Close exec dropdown/popup on outside click
   const execBarRef = useRef<HTMLDivElement>(null);
@@ -374,8 +383,9 @@ export default function CommandCenterPage() {
   });
 
   const { data: overdueTasks } = useQuery<Deal[]>({
-    queryKey: ['cc-overdue-tasks'],
-    queryFn: async () => (await commandCenterApi.getOverdueTasks()).data,
+    queryKey: ['cc-overdue-tasks', repIdParam],
+    queryFn: async () =>
+      (await commandCenterApi.getOverdueTasks(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 30000,
   });
 
@@ -411,8 +421,14 @@ export default function CommandCenterPage() {
   });
 
   const { data: reviveQueue } = useQuery<Deal[]>({
-    queryKey: ['cc-revive-queue'],
-    queryFn: async () => (await dealApi.getReviveQueue()).data,
+    queryKey: ['cc-revive-queue', repIdParam],
+    queryFn: async () =>
+      (
+        await dealApi.getReviveQueue({
+          ...(repIdParam ? { repId: repIdParam } : {}),
+          primaryOnly: 'true',
+        })
+      ).data,
     staleTime: 30000,
   });
 
@@ -424,13 +440,9 @@ export default function CommandCenterPage() {
 
   const isAdmin = activeView === 'admin';
   const displayReps = useMemo(() => {
-    const active = (reps || []).filter((r) => r.isActive);
-    // Sort: ADMIN users first (JB), then REPs alphabetically
-    return active.sort((a, b) => {
-      if (a.role === 'ADMIN' && b.role !== 'ADMIN') return -1;
-      if (a.role !== 'ADMIN' && b.role === 'ADMIN') return 1;
-      return a.firstName.localeCompare(b.firstName);
-    });
+    // Role switch should only show actual reps
+    const activeReps = (reps || []).filter((r) => r.isActive && r.role === 'REP');
+    return activeReps.sort((a, b) => a.firstName.localeCompare(b.firstName));
   }, [reps]);
 
   useEffect(() => {
@@ -475,6 +487,10 @@ export default function CommandCenterPage() {
     setPmPeriod('lifetime');
   }, []);
 
+  const toggleVisualMode = useCallback(() => {
+    setVisualMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
+
   // ── Stale revenue ──
 
   const staleRevenue = useMemo(() => {
@@ -504,7 +520,7 @@ export default function CommandCenterPage() {
   // ══════════════════════════════════════
 
   return (
-    <div className="cc-root" style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+    <div className={`cc-root ${visualMode === 'light' ? 'cc-light' : 'cc-dark'}`} style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       {/* TOPBAR */}
       <div className="topbar">
         <span className="cc-title-label">Command Center</span>
@@ -1197,17 +1213,17 @@ export default function CommandCenterPage() {
           reps={displayReps}
           assignRepId={csvAssignRep}
           onAssignRepChange={setCsvAssignRep}
-          lastImportBatch={lastImportBatch}
+          importBatches={importBatches}
           onFileSelect={setCsvFile}
           onImport={async () => {
             if (!csvFile) return;
             setCsvImporting(true);
             try {
               const res = await dealApi.importCSV(csvFile, csvAssignRep || undefined);
-              const { imported, skipped, batchId } = res.data;
+              const { imported, skipped } = res.data;
               toast.success(`Imported ${imported} deals${skipped ? ` (${skipped} skipped)` : ''}`);
-              setLastImportBatch({ batchId, count: imported });
               setCsvFile(null);
+              await loadImportBatches();
               queryClient.invalidateQueries({ queryKey: ['deals'] });
               queryClient.invalidateQueries({ queryKey: ['board'] });
             } catch {
@@ -1220,7 +1236,7 @@ export default function CommandCenterPage() {
             try {
               const res = await dealApi.deleteImportBatch(batchId);
               toast.success(`Deleted ${res.data.deleted} imported deals`);
-              setLastImportBatch(null);
+              await loadImportBatches();
               queryClient.invalidateQueries({ queryKey: ['deals'] });
               queryClient.invalidateQueries({ queryKey: ['board'] });
             } catch {
@@ -1257,6 +1273,14 @@ export default function CommandCenterPage() {
           }}
         />
       )}
+
+      <button
+        className="cc-theme-toggle"
+        onClick={toggleVisualMode}
+        title={visualMode === 'dark' ? 'Enable light mode' : 'Enable dark mode'}
+      >
+        {visualMode === 'dark' ? '◐' : '◑'}
+      </button>
     </div>
   );
 }
@@ -2781,6 +2805,7 @@ function ProductMixModule({
                 {data.repBreakdown.map((rep) => {
                   const topProduct =
                     rep.mix.length > 0 ? rep.mix.reduce((a, b) => (a.percentage > b.percentage ? a : b)).type : '—';
+                  const avatarBg = repAvatarColor(rep.initials, rep.avatarColor);
                   return (
                     <tr key={rep.id}>
                       <td>
@@ -2788,8 +2813,8 @@ function ProductMixModule({
                           <div
                             className="r-av"
                             style={{
-                              background: repAvatarColor(rep.initials),
-                              color: repAvatarColor(rep.initials) !== 'var(--faint)' ? 'var(--bg)' : 'var(--muted)',
+                              background: avatarBg,
+                              color: '#fff',
                             }}
                           >
                             {rep.initials}
@@ -2901,6 +2926,9 @@ function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
 
 function SmsBar({ metrics, label }: { metrics: SmsMetricsData; label?: string }) {
   const deliveredPct = metrics.sent24h > 0 ? Math.round((metrics.delivered24h / metrics.sent24h) * 100) : 0;
+  const safeDeliveredPct = Math.min(100, Math.max(0, deliveredPct));
+  const safeReplyRate = Math.min(100, Math.max(0, Number(metrics.replyRate7d || 0)));
+  const safeErrorRate = Math.min(100, Math.max(0, Number(metrics.errorRate || 0)));
   return (
     <div className="sms-bar">
       <div className="sms-lbl">{label || 'SMS / Outreach — secondary metrics'}</div>
@@ -2910,15 +2938,15 @@ function SmsBar({ metrics, label }: { metrics: SmsMetricsData; label?: string })
           <div className="si-k">Sent 24h</div>
         </div>
         <div>
-          <div className={`si-v ${deliveredPct >= 90 ? 'ok' : ''}`}>{deliveredPct}%</div>
+          <div className={`si-v ${safeDeliveredPct >= 90 ? 'ok' : ''}`}>{safeDeliveredPct}%</div>
           <div className="si-k">Delivered</div>
         </div>
         <div>
-          <div className={`si-v ${metrics.replyRate7d >= 20 ? 'ok' : ''}`}>{metrics.replyRate7d}%</div>
+          <div className={`si-v ${safeReplyRate >= 20 ? 'ok' : ''}`}>{safeReplyRate}%</div>
           <div className="si-k">Reply rate 7d</div>
         </div>
         <div>
-          <div className={`si-v ${metrics.errorRate === 0 ? 'ok' : ''}`}>{metrics.errorRate}%</div>
+          <div className={`si-v ${safeErrorRate === 0 ? 'ok' : ''}`}>{safeErrorRate}%</div>
           <div className="si-k">Errors</div>
         </div>
         <div>
@@ -2942,7 +2970,7 @@ function CSVImportModal({
   reps,
   assignRepId,
   onAssignRepChange,
-  lastImportBatch,
+  importBatches,
   onFileSelect,
   onImport,
   onUndoImport,
@@ -2953,7 +2981,7 @@ function CSVImportModal({
   reps: Rep[];
   assignRepId: string;
   onAssignRepChange: (id: string) => void;
-  lastImportBatch: { batchId: string; count: number } | null;
+  importBatches: Array<{ batchId: string; count: number; importedAt?: string }>;
   onFileSelect: (f: File | null) => void;
   onImport: () => void;
   onUndoImport: (batchId: string) => void;
@@ -3099,36 +3127,49 @@ function CSVImportModal({
           }}
         />
 
-        {/* UNDO LAST IMPORT */}
-        {lastImportBatch && (
+        {/* UNDO IMPORTS */}
+        {importBatches.length > 0 && (
           <div
             style={{
               background: 'rgba(201,162,39,0.1)',
               border: '1px solid var(--gold)',
               borderRadius: '6px',
-              padding: '8px 10px',
+              padding: '8px 10px 6px',
               marginBottom: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
             }}
           >
-            <span style={{ fontSize: '10px', color: 'var(--text)' }}>Last import: {lastImportBatch.count} deals</span>
-            <button
-              onClick={() => onUndoImport(lastImportBatch.batchId)}
-              style={{
-                background: 'var(--red)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '4px',
-                padding: '4px 10px',
-                fontSize: '10px',
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
-            >
-              ↩ Undo Import
-            </button>
+            <div style={{ fontSize: '10px', color: 'var(--text)', marginBottom: '6px' }}>Undo Import Batch</div>
+            {importBatches.map((batch) => (
+              <div
+                key={batch.batchId}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  fontSize: '10px',
+                  marginBottom: '6px',
+                }}
+              >
+                <span style={{ color: 'var(--text2)' }}>
+                  {batch.count} deals · {batch.batchId.replace('import_', '')}
+                </span>
+                <button
+                  onClick={() => onUndoImport(batch.batchId)}
+                  style={{
+                    background: 'var(--red)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    padding: '3px 9px',
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  ↩ Undo
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

@@ -30,6 +30,16 @@ const STAGE_LABELS: Record<DealStage, string> = {
   CLOSED: 'Closed',
 };
 
+const BUSINESS_NAME_PLACEHOLDERS = new Set(['n/a', 'na', 'none', 'unknown', 'unknown business', 'null', '-']);
+
+function normalizeBusinessName(rawCompany: string | null | undefined, fallbackName: string): string {
+  const fallback = fallbackName.trim() || 'Unknown Business';
+  const company = String(rawCompany || '').trim();
+  if (!company) return fallback;
+  if (BUSINESS_NAME_PLACEHOLDERS.has(company.toLowerCase())) return fallback;
+  return company;
+}
+
 export class LeadController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const {
@@ -352,22 +362,45 @@ export class LeadController {
       } else {
         // No deal exists — create one from the lead
         console.log('[LeadUpdate] Creating new deal for lead', id, 'stage:', newDealStage);
+
+        const contactName = `${existing.firstName} ${existing.lastName || ''}`.trim();
+        const businessName = normalizeBusinessName(existing.company, contactName);
+
+        const leadConversation = await prisma.conversation.findUnique({
+          where: { leadId: id },
+          select: { assignedRepId: true },
+        });
+        const dealRepId = lead.assignedRepId || existing.assignedRepId || leadConversation?.assignedRepId || req.user!.id;
+
+        if (!lead.assignedRepId && dealRepId) {
+          await prisma.lead.update({
+            where: { id },
+            data: { assignedRepId: dealRepId },
+          });
+        }
+
         let client = await prisma.client.findUnique({ where: { phone: existing.phone } });
         if (!client) {
           client = await prisma.client.create({
             data: {
-              businessName: existing.company || `${existing.firstName} ${existing.lastName || ''}`.trim(),
-              contactName: `${existing.firstName} ${existing.lastName || ''}`.trim(),
+              businessName,
+              contactName,
               phone: existing.phone,
               email: existing.email || undefined,
               state: existing.state || undefined,
             },
           });
+        } else if (BUSINESS_NAME_PLACEHOLDERS.has(String(client.businessName || '').trim().toLowerCase())) {
+          client = await prisma.client.update({
+            where: { id: client.id },
+            data: { businessName },
+          });
         }
+
         const newDeal = await prisma.deal.create({
           data: {
             clientId: client.id,
-            assignedRepId: existing.assignedRepId || req.user!.id,
+            assignedRepId: dealRepId,
             leadId: id,
             stage: newDealStage,
             stageLabel: STAGE_LABELS[newDealStage],

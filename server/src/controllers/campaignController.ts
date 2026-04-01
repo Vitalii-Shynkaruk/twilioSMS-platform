@@ -9,6 +9,8 @@ import { getActiveTwilioClient } from '../config/twilio';
 import logger from '../config/logger';
 
 export class CampaignController {
+  private static readonly SEND_ATTEMPT_STATUSES = ['SENT', 'DELIVERED', 'FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
+
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const { status, search, page = '1', limit = '20' } = req.query;
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -32,8 +34,61 @@ export class CampaignController {
       prisma.campaign.count({ where }),
     ]);
 
+    // Use message-based counters so "Sent" reflects actual attempts, not queued items.
+    const campaignIds = campaigns.map((c) => c.id);
+    const liveRows =
+      campaignIds.length > 0
+        ? await prisma.message.groupBy({
+            by: ['campaignId', 'status'],
+            where: {
+              campaignId: { in: campaignIds },
+              direction: 'OUTBOUND',
+              status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+            },
+            _count: { id: true },
+          })
+        : [];
+
+    const liveByCampaign = new Map<
+      string,
+      { totalSent: number; totalDelivered: number; totalFailed: number; totalBlocked: number }
+    >();
+    for (const row of liveRows) {
+      if (!row.campaignId) continue;
+      const current = liveByCampaign.get(row.campaignId) || {
+        totalSent: 0,
+        totalDelivered: 0,
+        totalFailed: 0,
+        totalBlocked: 0,
+      };
+      const count = row._count.id;
+
+      current.totalSent += count;
+      if (row.status === 'DELIVERED') current.totalDelivered += count;
+      if (row.status === 'FAILED' || row.status === 'UNDELIVERED') current.totalFailed += count;
+      if (row.status === 'BLOCKED') current.totalBlocked += count;
+
+      liveByCampaign.set(row.campaignId, current);
+    }
+
+    const campaignsWithLiveCounters = campaigns.map((campaign) => {
+      const live = liveByCampaign.get(campaign.id) || {
+        totalSent: 0,
+        totalDelivered: 0,
+        totalFailed: 0,
+        totalBlocked: 0,
+      };
+      return {
+        ...campaign,
+        totalSent: live.totalSent,
+        totalDelivered: live.totalDelivered,
+        totalFailed: live.totalFailed,
+        totalBlocked: live.totalBlocked,
+      };
+    });
+
     res.json({
-      campaigns,
+      campaigns: campaignsWithLiveCounters,
       pagination: {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
@@ -415,6 +470,12 @@ export class CampaignController {
     await prisma.campaign.update({
       where: { id },
       data: {
+        totalSent:
+          (counts['SENT'] || 0) +
+          (counts['DELIVERED'] || 0) +
+          (counts['FAILED'] || 0) +
+          (counts['UNDELIVERED'] || 0) +
+          (counts['BLOCKED'] || 0),
         totalDelivered: counts['DELIVERED'] || 0,
         totalFailed: (counts['FAILED'] || 0) + (counts['UNDELIVERED'] || 0),
         totalBlocked: counts['BLOCKED'] || 0,

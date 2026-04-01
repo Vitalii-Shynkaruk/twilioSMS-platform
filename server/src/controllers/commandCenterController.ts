@@ -4,13 +4,17 @@ import prisma from '../config/database';
 import { DealStage, RenewalTaskStatus } from '@prisma/client';
 
 // Helper: rep filter
+function isAdminLike(user: AuthRequest['user']) {
+  return user?.role === 'ADMIN' || user?.role === 'MANAGER';
+}
+
 function repFilter(user: AuthRequest['user']) {
-  if (user?.role === 'ADMIN') return {};
+  if (isAdminLike(user)) return {};
   return { assignedRepId: user!.id };
 }
 
 function repFundingFilter(user: AuthRequest['user']) {
-  if (user?.role === 'ADMIN') return {};
+  if (isAdminLike(user)) return {};
   return { repId: user!.id };
 }
 
@@ -24,7 +28,7 @@ export class CommandCenterController {
     // Admin viewing specific rep
     const effectiveFilter: any = { ...filter };
     const effectiveFundingFilter: any = { ...fundingFilter };
-    if (req.user?.role === 'ADMIN' && repId) {
+    if (isAdminLike(req.user) && repId) {
       effectiveFilter.assignedRepId = repId as string;
       effectiveFundingFilter.repId = repId as string;
     }
@@ -222,7 +226,7 @@ export class CommandCenterController {
 
     // Get goal for progress
     let monthlyGoal = 0;
-    if (req.user?.role === 'ADMIN' && !repId) {
+    if (isAdminLike(req.user) && !repId) {
       // Team goal
       const goal = await prisma.goal.findUnique({
         where: { entityType_entityId: { entityType: 'team', entityId: 'team' } },
@@ -303,18 +307,11 @@ export class CommandCenterController {
     const where: any = {
       ...filter,
       stage: {
-        in: [
-          DealStage.APPROVED_OFFERS,
-          DealStage.COMMITTED_FUNDING,
-          DealStage.QUALIFIED,
-          DealStage.SUBMITTED_IN_REVIEW,
-          DealStage.ENGAGED_INTERESTED,
-          DealStage.NEW_LEAD,
-        ],
+        in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING],
       },
     };
 
-    if (req.user?.role === 'ADMIN' && repId) {
+    if (isAdminLike(req.user) && repId) {
       where.assignedRepId = repId as string;
     }
 
@@ -325,7 +322,7 @@ export class CommandCenterController {
         assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
         offers: { orderBy: { createdAt: 'desc' } },
       },
-      take: 50,
+      take: 100,
     });
 
     const now = Date.now();
@@ -368,34 +365,40 @@ export class CommandCenterController {
         reasons.push(`${deal.staleDays}d stale`);
       }
 
-      // Determine primary action
-      let primaryAction = 'Follow Up';
-      if (deal.stage === DealStage.APPROVED_OFFERS) {
-        primaryAction = dps >= 60 ? 'CLOSE NOW' : 'Call Now';
-      } else if (deal.stage === DealStage.COMMITTED_FUNDING) {
-        primaryAction = 'Request Docs';
-      } else if (deal.stage === DealStage.NEW_LEAD || deal.stage === DealStage.ENGAGED_INTERESTED) {
-        primaryAction = 'Follow Up';
-      } else if (deal.stage === DealStage.QUALIFIED) {
-        primaryAction = 'Send Offer';
-      } else if (deal.stage === DealStage.SUBMITTED_IN_REVIEW) {
-        primaryAction = 'Follow Up';
+      const suggestNurture = (deal.staleDays || 0) >= 5;
+      let primaryAction = suggestNurture
+        ? 'Suggest Nurture'
+        : deal.stage === DealStage.APPROVED_OFFERS
+          ? dps >= 60
+            ? 'CLOSE NOW'
+            : 'Call Now'
+          : 'Request Docs';
+
+      if (suggestNurture) {
+        reasons.push('Stale 5+ days — suggest nurture');
       }
 
       return {
         ...deal,
         priorityScore: dps,
+        scoreColor: dps >= 60 ? 'green' : dps >= 35 ? 'amber' : 'red',
         scoreReason: reasons.join(' · ') || 'No signals',
         primaryAction,
+        suggestNurture,
         isHot: computeIsHot(deal),
         stageLabel: STAGE_LABELS[deal.stage],
       };
     });
 
-    // Sort by DPS descending, then by dealAmount descending
-    enriched.sort((a, b) => b.priorityScore - a.priorityScore || (b.dealAmount || 0) - (a.dealAmount || 0));
+    const bestAmount = (d: any) => {
+      const best = (d.offers || []).reduce((acc: any, o: any) => (!acc || o.amount > acc.amount ? o : acc), null);
+      return best?.amount || d.dealAmount || 0;
+    };
 
-    res.json(enriched);
+    // Sort by DPS descending, then by expected close value descending
+    enriched.sort((a, b) => b.priorityScore - a.priorityScore || bestAmount(b) - bestAmount(a));
+
+    res.json(enriched.slice(0, 5));
   }
 
   // GET /api/command-center/hot-leads
@@ -404,7 +407,7 @@ export class CommandCenterController {
     const { repId } = req.query;
 
     const where: any = { ...filter, stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED, DealStage.NURTURE] } };
-    if (req.user?.role === 'ADMIN' && repId) where.assignedRepId = repId as string;
+    if (isAdminLike(req.user) && repId) where.assignedRepId = repId as string;
 
     const deals = await prisma.deal.findMany({
       where,
@@ -450,10 +453,14 @@ export class CommandCenterController {
   // GET /api/command-center/overdue-tasks
   static async getOverdueTasks(req: AuthRequest, res: Response) {
     const filter = repFilter(req.user);
+    const { repId } = req.query;
     const now = new Date();
 
+    const where: any = { ...filter, stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] }, nextActionDue: { lt: now } };
+    if (isAdminLike(req.user) && repId) where.assignedRepId = repId as string;
+
     const deals = await prisma.deal.findMany({
-      where: { ...filter, stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] }, nextActionDue: { lt: now } },
+      where,
       include: {
         client: true,
         assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
@@ -467,7 +474,7 @@ export class CommandCenterController {
 
   // GET /api/command-center/intelligence - Admin Intelligence Zone
   static async getIntelligence(req: AuthRequest, res: Response) {
-    if (req.user?.role !== 'ADMIN') {
+    if (!isAdminLike(req.user)) {
       return res.status(403).json({ error: 'Admin only' });
     }
 
@@ -795,7 +802,7 @@ export class CommandCenterController {
     const filter: any = {};
 
     if (repId) filter.repId = repId as string;
-    else if (req.user?.role !== 'ADMIN') filter.repId = req.user!.id;
+    else if (!isAdminLike(req.user)) filter.repId = req.user!.id;
 
     if (period === '30d') {
       filter.fundedDate = { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
@@ -828,10 +835,10 @@ export class CommandCenterController {
 
     // If admin, also get rep breakdown
     let repBreakdown: any[] = [];
-    if (req.user?.role === 'ADMIN' && !repId) {
+    if (isAdminLike(req.user) && !repId) {
       const reps = await prisma.user.findMany({
         where: { isActive: true },
-        select: { id: true, firstName: true, lastName: true, initials: true },
+        select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true },
       });
 
       repBreakdown = await Promise.all(
@@ -856,6 +863,7 @@ export class CommandCenterController {
             id: rep.id,
             name: `${rep.firstName} ${rep.lastName}`,
             initials: rep.initials,
+            avatarColor: rep.avatarColor,
             funded: repTotal,
             mix: Object.entries(repMix).map(([type, amount]) => ({
               type,
@@ -878,9 +886,9 @@ export class CommandCenterController {
   static async getActivityFeed(req: AuthRequest, res: Response) {
     const filter: any = {};
     const { repId } = req.query;
-    if (req.user?.role === 'ADMIN' && repId) {
+    if (isAdminLike(req.user) && repId) {
       filter.repId = repId as string;
-    } else if (req.user?.role !== 'ADMIN') {
+    } else if (!isAdminLike(req.user)) {
       filter.repId = req.user!.id;
     }
 
@@ -905,7 +913,7 @@ export class CommandCenterController {
 
     // Get user's assigned numbers
     let numberFilter: any = {};
-    if (req.user?.role !== 'ADMIN') {
+    if (!isAdminLike(req.user)) {
       const assignments = await prisma.numberAssignment.findMany({
         where: { userId: req.user!.id, isActive: true },
         select: { phoneNumber: { select: { phoneNumber: true } } },

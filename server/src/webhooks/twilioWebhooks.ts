@@ -307,6 +307,7 @@ const statusWorker = new Worker(
     });
 
     if (!message) return;
+    if (finalStatus === message.status) return;
 
     const currentPriority = statusPriority[message.status] ?? 0;
     const newPriority = statusPriority[finalStatus] ?? 0;

@@ -1,10 +1,10 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { dealApi, repApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import DealCard, { formatCurrency } from '../components/pipeline/DealCard';
-import DealPanel, { ScheduleFollowUpModal } from '../components/pipeline/DealPanel';
+import DealPanel, { NQCloseModal, ScheduleFollowUpModal } from '../components/pipeline/DealPanel';
 import CreateDealModal from '../components/pipeline/CreateDealModal';
 import type { Deal, DealStage, DealBoard, DealStats, Rep } from '../types';
 import { DndContext, DragOverlay, closestCorners, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
@@ -71,14 +71,11 @@ const STAGES: StageConfig[] = [
 ];
 
 const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.value, s.short]));
+const SUBMITTED_TOTAL_PRODUCTS = new Set(['SBA', 'CRE', 'EQUIPMENT']);
 
 function isDealHot(deal: Deal): boolean {
   if (['FUNDED', 'NURTURE', 'CLOSED'].includes(deal.stage)) return false;
-  const now = new Date();
-  if (deal.nextActionDue && new Date(deal.nextActionDue) < now) return false;
-  if (deal.renewalTasks?.some((t) => t.status === 'PENDING')) return false;
   if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') return true;
-  if ((deal.offers?.length || 0) > 0) return true;
   if (deal.lenderEngaged && deal.appSubmitted) return true;
   if (deal.lastReplyAt) {
     const hours = (Date.now() - new Date(deal.lastReplyAt).getTime()) / 3600000;
@@ -102,6 +99,8 @@ const FILTERS: { key: QuickFilter; label: string; activeCls: string; passiveCls:
   { key: 'this_week', label: '📅 This Week', activeCls: 'week-act', passiveCls: '' },
 ];
 
+const PIPELINE_VISUAL_MODE_KEY = 'scl_pipeline_visual_mode';
+
 // ═══════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════
@@ -121,6 +120,10 @@ export default function PipelinePage() {
   const [viewTab, setViewTab] = useState<ViewTab>('pipeline');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [pipelineScope, setPipelineScope] = useState<PipelineScope>(isAdmin ? 'all' : 'mine');
+  const [visualMode, setVisualMode] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem(PIPELINE_VISUAL_MODE_KEY);
+    return saved === 'light' ? 'light' : 'dark';
+  });
   const [repFilter, setRepFilter] = useState('');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(initialDealId);
   const [showCreateDeal, setShowCreateDeal] = useState(initialNewDeal === '1');
@@ -131,6 +134,7 @@ export default function PipelinePage() {
     clientId?: string;
     businessName?: string;
     productType?: string;
+    assignedRepId?: string;
   } | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{
@@ -144,6 +148,50 @@ export default function PipelinePage() {
     clientId?: string;
   } | null>(null);
   const [sharePopover, setSharePopover] = useState<{ dealId: string; x: number; y: number } | null>(null);
+  const [transferPopover, setTransferPopover] = useState<{
+    dealId: string;
+    assignedRepId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [nqFromContext, setNqFromContext] = useState<{ deal: Deal; mode: 'lost' | 'disq' } | null>(null);
+  const [hoverTooltip, setHoverTooltip] = useState<{ deal: Deal; x: number; y: number } | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!ctxMenu && !sharePopover && !transferPopover) return;
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setCtxMenu(null);
+        setSharePopover(null);
+        setTransferPopover(null);
+      }
+    };
+    window.addEventListener('keydown', onEscape);
+    return () => window.removeEventListener('keydown', onEscape);
+  }, [ctxMenu, sharePopover, transferPopover]);
+
+  useEffect(() => {
+    localStorage.setItem(PIPELINE_VISUAL_MODE_KEY, visualMode);
+  }, [visualMode]);
+
+  useEffect(
+    () => () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!hoverTooltip) return;
+    const clear = () => setHoverTooltip(null);
+    window.addEventListener('scroll', clear, true);
+    window.addEventListener('resize', clear);
+    return () => {
+      window.removeEventListener('scroll', clear, true);
+      window.removeEventListener('resize', clear);
+    };
+  }, [hoverTooltip]);
 
   // ─── Clear URL params after reading ───
   useEffect(() => {
@@ -220,10 +268,25 @@ export default function PipelinePage() {
     refetchInterval: 30000,
   });
 
+  const reviveQueueParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    if (effectiveRepFilter) {
+      params.repId = effectiveRepFilter;
+      params.primaryOnly = 'true';
+    } else if (!isAdmin && userId) {
+      params.repId = userId;
+      params.primaryOnly = 'true';
+    } else if (pipelineScope === 'mine' && userId) {
+      params.repId = userId;
+      params.primaryOnly = 'true';
+    }
+    return params;
+  }, [effectiveRepFilter, isAdmin, pipelineScope, userId]);
+
   const { data: reviveQueue } = useQuery({
-    queryKey: ['deals', 'revive'],
+    queryKey: ['deals', 'revive', reviveQueueParams],
     queryFn: async () => {
-      const { data } = await dealApi.getReviveQueue();
+      const { data } = await dealApi.getReviveQueue(Object.keys(reviveQueueParams).length ? reviveQueueParams : undefined);
       return data as Deal[];
     },
   });
@@ -239,7 +302,7 @@ export default function PipelinePage() {
   });
 
   // ─── Filtered board ───
-  const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED', 'SUBMITTED_IN_REVIEW'];
+  const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED'];
   const filteredBoard = useMemo(() => {
     if (!board?.stages) return board;
     const now = new Date();
@@ -271,6 +334,11 @@ export default function PipelinePage() {
               (sum: number, d: Deal) => sum + ((d as any).prevOffer || d.dealAmount || 0),
               0,
             );
+          } else if (s.stage === 'SUBMITTED_IN_REVIEW') {
+            value = filteredDeals.reduce((sum: number, d: Deal) => {
+              if (!d.productType || !SUBMITTED_TOTAL_PRODUCTS.has(d.productType)) return sum;
+              return sum + (d.submittedAmount || d.dealAmount || 0);
+            }, 0);
           } else {
             value = filteredDeals.reduce((sum: number, d: Deal) => {
               const best = d.offers?.reduce(
@@ -368,6 +436,57 @@ export default function PipelinePage() {
     [filterCounts],
   );
 
+  const dealById = useMemo(() => {
+    const map = new Map<string, Deal>();
+    for (const stage of board?.stages || []) {
+      for (const d of stage.deals || []) {
+        map.set(d.id, d);
+      }
+    }
+    return map;
+  }, [board]);
+
+  const openNQFromContextMenu = useCallback(
+    (mode: 'lost' | 'disq') => {
+      if (!ctxMenu) return;
+      const deal = dealById.get(ctxMenu.dealId);
+      if (!deal) {
+        toast.error('Unable to open modal for this deal');
+        return;
+      }
+      setNqFromContext({ deal, mode });
+      setCtxMenu(null);
+    },
+    [ctxMenu, dealById],
+  );
+
+  const toggleVisualMode = useCallback(() => {
+    setVisualMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  const clearHoverTooltip = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setHoverTooltip(null);
+  }, []);
+
+  const scheduleHoverTooltip = useCallback(
+    (deal: Deal, anchorRect: DOMRect) => {
+      if (viewMode !== 'execution' || deal.stage === 'CLOSED') return;
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = setTimeout(() => {
+        setHoverTooltip({
+          deal,
+          x: anchorRect.left + anchorRect.width / 2,
+          y: anchorRect.top,
+        });
+      }, 600);
+    },
+    [viewMode],
+  );
+
   const handleViewTab = (tab: ViewTab, scope?: PipelineScope) => {
     setViewTab(tab);
     if (scope) setPipelineScope(scope);
@@ -375,7 +494,10 @@ export default function PipelinePage() {
 
   // ═══ RENDER ═══
   return (
-    <div className="pipeline-root" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div
+      className={`pipeline-root ${visualMode === 'light' ? 'light-mode' : 'dark-mode'}`}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+    >
       {/* ═══ TOPBAR ═══ */}
       <div className="topbar">
         <div className="logo">
@@ -595,9 +717,15 @@ export default function PipelinePage() {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCorners}
-                onDragStart={(e) => setActiveDragId(e.active.id as string)}
+                onDragStart={(e) => {
+                  clearHoverTooltip();
+                  setActiveDragId(e.active.id as string);
+                }}
                 onDragEnd={handleDragEnd}
-                onDragCancel={() => setActiveDragId(null)}
+                onDragCancel={() => {
+                  clearHoverTooltip();
+                  setActiveDragId(null);
+                }}
               >
                 <div className="board">
                   {STAGES.map((stageDef) => {
@@ -616,6 +744,11 @@ export default function PipelinePage() {
                         onDealClick={(id) => setSelectedDealId(id)}
                         onCardContextMenu={(e, deal) => {
                           e.preventDefault();
+                          const assistIds = (deal.assistingRepIds as string[]) || [];
+                          const canOpenContext =
+                            isAdmin || deal.assignedRepId === user?.id || (!!user?.id && assistIds.includes(user.id));
+                          if (!canOpenContext) return;
+                          clearHoverTooltip();
                           setCtxMenu({
                             x: e.clientX,
                             y: e.clientY,
@@ -627,6 +760,8 @@ export default function PipelinePage() {
                             clientId: deal.clientId,
                           });
                         }}
+                        onCardMouseEnter={(deal, rect) => scheduleHoverTooltip(deal, rect)}
+                        onCardMouseLeave={clearHoverTooltip}
                       />
                     );
                   })}
@@ -683,7 +818,8 @@ export default function PipelinePage() {
                     board?.stages?.reduce(
                       (acc: number, s: any) =>
                         acc +
-                        s.deals.filter((d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id).length,
+                        s.deals.filter((d: Deal) => d.assistingRepIds?.includes(rep.id) && d.assignedRepId !== rep.id)
+                          .length,
                       0,
                     ) || 0;
                   const goal = rep.monthlyGoal || 0;
@@ -949,13 +1085,16 @@ export default function PipelinePage() {
       {selectedDealId && <DealPanel dealId={selectedDealId} onClose={() => setSelectedDealId(null)} />}
       {showCreateDeal && <CreateDealModal onClose={() => setShowCreateDeal(false)} />}
       {showGoals && <GoalsModal reps={displayReps} onClose={() => setShowGoals(false)} />}
-      {showImportLeads && <ImportLeadsModal onClose={() => setShowImportLeads(false)} />}
+      {showImportLeads && (
+        <ImportLeadsModal onClose={() => setShowImportLeads(false)} isAdmin={isAdmin} reps={displayReps} />
+      )}
       {addOfferCtx && (
         <AddOfferModal
           dealId={addOfferCtx.dealId}
           businessName={addOfferCtx.businessName}
           existingProductType={addOfferCtx.productType}
           clientId={addOfferCtx.clientId}
+          assignedRepId={addOfferCtx.assignedRepId}
           onClose={() => setAddOfferCtx(null)}
         />
       )}
@@ -993,6 +1132,17 @@ export default function PipelinePage() {
               </button>
             )}
             {(isAdmin || user?.id === ctxMenu.assignedRepId) &&
+              !['CLOSED', 'FUNDED', 'NURTURE'].includes(ctxMenu.stage) && (
+                <button className="ctx-item" onClick={() => openNQFromContextMenu('lost')}>
+                  🌱 Move to Nurture
+                </button>
+              )}
+            {(isAdmin || user?.id === ctxMenu.assignedRepId) && ctxMenu.stage !== 'CLOSED' && (
+              <button className="ctx-item" onClick={() => openNQFromContextMenu('disq')}>
+                ⛔ Close / NQ Deal
+              </button>
+            )}
+            {(isAdmin || user?.id === ctxMenu.assignedRepId) &&
               ctxMenu.stage !== 'CLOSED' &&
               ctxMenu.stage !== 'FUNDED' && (
                 <button
@@ -1003,6 +1153,7 @@ export default function PipelinePage() {
                       businessName: ctxMenu.dealName,
                       productType: ctxMenu.productType,
                       clientId: ctxMenu.clientId,
+                      assignedRepId: ctxMenu.assignedRepId,
                     });
                     setCtxMenu(null);
                   }}
@@ -1011,6 +1162,22 @@ export default function PipelinePage() {
                 </button>
               )}
             {isAdmin && (
+              <button
+                className="ctx-item"
+                onClick={() => {
+                  setTransferPopover({
+                    dealId: ctxMenu.dealId,
+                    assignedRepId: ctxMenu.assignedRepId,
+                    x: ctxMenu.x,
+                    y: ctxMenu.y,
+                  });
+                  setCtxMenu(null);
+                }}
+              >
+                🔁 Transfer Ownership
+              </button>
+            )}
+            {(isAdmin || user?.id === ctxMenu.assignedRepId) && ctxMenu.stage !== 'FUNDED' && (
               <button
                 className="ctx-item ctx-delete"
                 onClick={async () => {
@@ -1044,6 +1211,45 @@ export default function PipelinePage() {
           onClose={() => setSharePopover(null)}
         />
       )}
+
+      {transferPopover && (
+        <TransferOwnershipPopover
+          dealId={transferPopover.dealId}
+          assignedRepId={transferPopover.assignedRepId}
+          x={transferPopover.x}
+          y={transferPopover.y}
+          onClose={() => setTransferPopover(null)}
+        />
+      )}
+
+      {nqFromContext && (
+        <NQCloseModal
+          deal={nqFromContext.deal}
+          initialCloseType={nqFromContext.mode}
+          onClose={() => setNqFromContext(null)}
+          onSubmit={async (data: any) => {
+            try {
+              await dealApi.moveDeal(nqFromContext.deal.id, data);
+              toast.success(data.stage === 'NURTURE' ? 'Moved to Nurture' : 'Deal closed');
+              qc.invalidateQueries({ queryKey: ['deals'] });
+            } catch (err: any) {
+              toast.error(err.response?.data?.error || 'Failed to update stage');
+            } finally {
+              setNqFromContext(null);
+            }
+          }}
+        />
+      )}
+
+      {hoverTooltip && viewMode === 'execution' && <DealHoverTooltip deal={hoverTooltip.deal} x={hoverTooltip.x} y={hoverTooltip.y} />}
+
+      <button
+        className="pipe-theme-toggle"
+        onClick={toggleVisualMode}
+        title={visualMode === 'dark' ? 'Enable light mode' : 'Enable dark mode'}
+      >
+        {visualMode === 'dark' ? '◐' : '◑'}
+      </button>
     </div>
   );
 }
@@ -1078,6 +1284,8 @@ function StageColumn({
   viewMode,
   onDealClick,
   onCardContextMenu,
+  onCardMouseEnter,
+  onCardMouseLeave,
 }: {
   config: StageConfig;
   deals: Deal[];
@@ -1086,6 +1294,8 @@ function StageColumn({
   viewMode: ViewMode;
   onDealClick: (id: string) => void;
   onCardContextMenu?: (e: React.MouseEvent, deal: Deal) => void;
+  onCardMouseEnter?: (deal: Deal, rect: DOMRect) => void;
+  onCardMouseLeave?: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: config.value });
   const urgentCount = deals.filter(
@@ -1126,11 +1336,13 @@ function StageColumn({
         ) : (
           <>
             <div className={`col-stage ${config.stageClass || ''}`}>{config.short}</div>
-            {/* Only show dollar values for stages where lender offers/funding exist */}
-            {['APPROVED_OFFERS', 'COMMITTED_FUNDING', 'FUNDED'].includes(config.value) ? (
+            {/* Only show dollar values for stages where lender offers/funding (or submitted totals) exist */}
+            {['SUBMITTED_IN_REVIEW', 'APPROVED_OFFERS', 'COMMITTED_FUNDING', 'FUNDED'].includes(config.value) ? (
               <>
                 <div className={`col-vol ${value ? '' : 'dim'}`}>
-                  {value ? `${formatCurrency(value)}${config.value === 'FUNDED' ? ' total' : ''}` : '—'}
+                  {value
+                    ? `${formatCurrency(value)}${config.value === 'FUNDED' ? ' total' : config.value === 'SUBMITTED_IN_REVIEW' ? ' submitted' : ''}`
+                    : '—'}
                 </div>
                 <div className="col-ct">
                   {count} {count === 1 ? 'deal' : 'deals'}
@@ -1188,6 +1400,8 @@ function StageColumn({
               viewMode={viewMode}
               onClick={() => onDealClick(deal.id)}
               onContextMenu={onCardContextMenu ? (e) => onCardContextMenu(e, deal) : undefined}
+              onMouseEnter={onCardMouseEnter ? (rect) => onCardMouseEnter(deal, rect) : undefined}
+              onMouseLeave={onCardMouseLeave}
             />
           ))}
       </div>
@@ -1204,11 +1418,15 @@ function DraggableDealCard({
   viewMode,
   onClick,
   onContextMenu,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   deal: Deal;
   viewMode: ViewMode;
   onClick: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
+  onMouseEnter?: (rect: DOMRect) => void;
+  onMouseLeave?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
   const style = transform
@@ -1216,7 +1434,15 @@ function DraggableDealCard({
     : undefined;
 
   return (
-    <div ref={setNodeRef} style={style} {...listeners} {...attributes} onContextMenu={onContextMenu}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      onContextMenu={onContextMenu}
+      onMouseEnter={(e) => onMouseEnter?.((e.currentTarget as HTMLDivElement).getBoundingClientRect())}
+      onMouseLeave={onMouseLeave}
+    >
       <DealCard deal={deal} onClick={onClick} viewMode={viewMode} />
     </div>
   );
@@ -2111,7 +2337,7 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
             .filter((d: Deal) => d.assignedRepId === rep.id)
             .reduce((sum: number, d: Deal) => sum + (d.fundingEvents?.[0]?.amountFunded || 0), 0);
           const shared = allDeals.filter(
-            (d: Deal) => d.coRepIds?.includes(rep.id) && d.assignedRepId !== rep.id,
+            (d: Deal) => d.assistingRepIds?.includes(rep.id) && d.assignedRepId !== rep.id,
           ).length;
           const goal = rep.monthlyGoal || 0;
           const pct = goal ? Math.round((funded / goal) * 100) : 0;
@@ -2550,10 +2776,178 @@ function SharePopover({ dealId, x, y, onClose }: { dealId: string; x: number; y:
   );
 }
 
+function TransferOwnershipPopover({
+  dealId,
+  assignedRepId,
+  x,
+  y,
+  onClose,
+}: {
+  dealId: string;
+  assignedRepId: string;
+  x: number;
+  y: number;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+
+  const { data: reps } = useQuery({
+    queryKey: ['reps'],
+    queryFn: async () => {
+      const { data } = await repApi.getReps({ activeOnly: 'true' });
+      return ((data as any).reps || data) as Rep[];
+    },
+    staleTime: 60_000,
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: (newRepId: string) => dealApi.shareDeal(dealId, { assignedRepId: newRepId }),
+    onSuccess: () => {
+      toast.success('Ownership transferred');
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal', dealId] });
+      onClose();
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Transfer failed'),
+  });
+
+  if (!reps) return null;
+
+  const availableReps = reps.filter((r) => r.id !== assignedRepId && r.isActive !== false);
+
+  return (
+    <>
+      <div className="ctx-overlay" onClick={onClose} />
+      <div className="ctx-menu" style={{ left: x, top: y, minWidth: 230, maxWidth: 300, padding: '8px 0' }}>
+        <div
+          style={{
+            padding: '4px 12px 8px',
+            fontSize: 11,
+            fontWeight: 600,
+            borderBottom: '1px solid var(--border-primary)',
+          }}
+        >
+          Transfer ownership to:
+        </div>
+        {availableReps.map((rep) => (
+          <button
+            key={rep.id}
+            className="ctx-item"
+            onClick={() => transferMutation.mutate(rep.id)}
+            disabled={transferMutation.isPending}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}
+          >
+            <div
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 9,
+                fontWeight: 700,
+                background: `${rep.avatarColor || '#64748b'}2e`,
+                color: rep.avatarColor || '#64748b',
+              }}
+            >
+              {rep.initials || `${rep.firstName[0]}${rep.lastName?.[0] || ''}`}
+            </div>
+            <span style={{ flex: 1, textAlign: 'left' }}>
+              {rep.firstName} {rep.lastName}
+            </span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function DealHoverTooltip({ deal, x, y }: { deal: Deal; x: number; y: number }) {
+  const { user } = useAuthStore();
+  const assistIds = (deal.assistingRepIds as string[]) || [];
+  const canViewContact =
+    user?.role === 'ADMIN' ||
+    user?.role === 'MANAGER' ||
+    deal.assignedRepId === user?.id ||
+    (!!user?.id && assistIds.includes(user.id));
+  const notePreview = deal.notes?.trim() ? deal.notes.slice(0, 120) : 'No notes yet';
+  const primaryName = deal.assignedRep
+    ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName || ''}`.trim()
+    : 'Unassigned';
+  const primaryInit = deal.assignedRep?.initials || primaryName.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  const showBelow = typeof window !== 'undefined' ? y < window.innerHeight * 0.45 : false;
+  const touchedDays = deal.lastActivityAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(deal.lastActivityAt).getTime()) / 86400000))
+    : null;
+  const touchedLabel = touchedDays === null ? 'Touched recently' : touchedDays === 0 ? 'Touched today' : `Touched ${touchedDays}d ago`;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: Math.min(Math.max(12, x - 140), (typeof window !== 'undefined' ? window.innerWidth : x) - 292),
+        top: showBelow ? y + 14 : y - 14,
+        transform: showBelow ? 'none' : 'translateY(-100%)',
+        width: 280,
+        maxWidth: 'calc(100vw - 24px)',
+        background: 'var(--bg3)',
+        border: '1px solid var(--border2)',
+        borderRadius: 8,
+        boxShadow: '0 12px 28px rgba(0,0,0,.38)',
+        padding: '10px 11px',
+        zIndex: 2500,
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{deal.client?.businessName || 'Unknown'}</div>
+      {canViewContact && (
+        <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 4 }}>
+          {[deal.client?.contactName, deal.client?.phone].filter(Boolean).join(' · ') || 'No contact'}
+          {deal.client?.email ? ` · ${deal.client.email}` : ''}
+        </div>
+      )}
+      {!canViewContact && (
+        <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>Contact hidden</div>
+      )}
+      <div style={{ fontSize: 10, marginBottom: 3 }}>
+        <span style={{ color: 'var(--text3)' }}>Product: </span>
+        <span>{deal.productType || '—'}</span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text2)', marginBottom: 4, lineHeight: 1.35 }}>
+        <span style={{ color: 'var(--text3)' }}>Last note: </span>
+        {notePreview}
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--info)', marginBottom: 5 }}>{touchedLabel}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--text2)' }}>
+        <div
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            background: deal.assignedRep?.avatarColor || 'var(--gold)',
+            color: '#fff',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 8,
+          }}
+        >
+          {primaryInit || '?'}
+        </div>
+        Primary rep: {primaryName}
+      </div>
+    </div>
+  );
+}
+
 // ═══ IMPORT LEADS MODAL ═══
-function ImportLeadsModal({ onClose }: { onClose: () => void }) {
+function ImportLeadsModal({ onClose, isAdmin, reps }: { onClose: () => void; isAdmin: boolean; reps: Rep[] }) {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const [duplicateMode, setDuplicateMode] = useState<'skip' | 'add_to_existing'>('skip');
+  const [assignToRepId, setAssignToRepId] = useState('');
   const [result, setResult] = useState<{
     imported: number;
     duplicates: number;
@@ -2567,7 +2961,10 @@ function ImportLeadsModal({ onClose }: { onClose: () => void }) {
     if (!file) return;
     setImporting(true);
     try {
-      const resp = await dealApi.importLeads(file);
+      const resp = await dealApi.importLeads(file, {
+        duplicateMode,
+        ...(isAdmin && assignToRepId ? { assignToRepId } : {}),
+      });
       setResult(resp.data);
       qc.invalidateQueries({ queryKey: ['deals'] });
       toast.success(`Imported ${resp.data.imported} leads`);
@@ -2604,10 +3001,56 @@ function ImportLeadsModal({ onClose }: { onClose: () => void }) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>⬆ Import Leads</div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16 }}>
-          Upload a CSV with leads. They will be added to your pipeline as Engaged/Interested.
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
+          ⬆ Import Engaged / Interested Leads
         </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 16 }}>
+          Item 9 scope. Upload CSV contacts and create deals in Engaged / Interested.
+        </div>
+
+        {isAdmin && (
+          <div
+            style={{
+              background: 'var(--surface2)',
+              borderRadius: 8,
+              padding: 10,
+              marginBottom: 14,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 9,
+                letterSpacing: '.08em',
+                textTransform: 'uppercase',
+                color: 'var(--info)',
+                marginBottom: 6,
+                fontWeight: 700,
+              }}
+            >
+              Assign imported deals
+            </div>
+            <select
+              value={assignToRepId}
+              onChange={(e) => setAssignToRepId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '7px 8px',
+                borderRadius: 6,
+                border: '1px solid var(--border-primary)',
+                background: 'var(--surface3)',
+                color: 'var(--text)',
+                fontSize: 11,
+              }}
+            >
+              <option value="">Auto: assign to me</option>
+              {reps.map((rep) => (
+                <option key={rep.id} value={rep.id}>
+                  {rep.firstName} {rep.lastName} ({rep.initials || '—'})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Format help */}
         <div
@@ -2631,24 +3074,67 @@ function ImportLeadsModal({ onClose }: { onClose: () => void }) {
               fontWeight: 700,
             }}
           >
-            CSV Columns (auto-detected)
+            CSV Format (auto-detected)
           </div>
           <div>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Business Name</span> or{' '}
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Contact Name</span> — required
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>business_name</span> — required
           </div>
           <div>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Phone</span> — for duplicate detection
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>contact_name</span> — required
           </div>
           <div>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Email</span>,{' '}
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Notes</span>,{' '}
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Product Type</span> — optional
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>phone</span> — required (duplicate detection + SMS)
           </div>
           <div>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Stage</span> — optional (defaults to
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>email</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>product_type</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>monthly_revenue</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>source</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>notes</span>,{' '}
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>next_action</span> — optional
+          </div>
+          <div>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>stage</span> — optional (defaults to
             Engaged/Interested)
           </div>
+        </div>
+
+        <div
+          style={{
+            background: 'var(--surface2)',
+            borderRadius: 8,
+            padding: 10,
+            marginBottom: 14,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 9,
+              letterSpacing: '.08em',
+              textTransform: 'uppercase',
+              color: 'var(--info)',
+              marginBottom: 6,
+              fontWeight: 700,
+            }}
+          >
+            Duplicate handling
+          </div>
+          <select
+            value={duplicateMode}
+            onChange={(e) => setDuplicateMode(e.target.value as 'skip' | 'add_to_existing')}
+            style={{
+              width: '100%',
+              padding: '7px 8px',
+              borderRadius: 6,
+              border: '1px solid var(--border-primary)',
+              background: 'var(--surface3)',
+              color: 'var(--text)',
+              fontSize: 11,
+            }}
+          >
+            <option value="skip">Skip duplicates (same phone + active deal)</option>
+            <option value="add_to_existing">Create a new deal on existing client</option>
+          </select>
         </div>
 
         {/* Drop zone */}
@@ -2763,20 +3249,24 @@ function AddOfferModal({
   businessName,
   existingProductType,
   clientId,
+  assignedRepId,
   onClose,
 }: {
   dealId: string;
   businessName?: string;
   existingProductType?: string;
   clientId?: string;
+  assignedRepId?: string;
   onClose: () => void;
 }) {
   const [step, setStep] = useState<'product' | 'offer'>(existingProductType ? 'product' : 'product');
   const [selectedProduct, setSelectedProduct] = useState('');
   const [lenderName, setLenderName] = useState('');
   const [amount, setAmount] = useState('');
-  const [terms, setTerms] = useState('');
+  const [termMonths, setTermMonths] = useState('');
+  const [rateOrFactor, setRateOrFactor] = useState('');
   const [expiryDays, setExpiryDays] = useState('');
+  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
 
@@ -2789,20 +3279,26 @@ function AddOfferModal({
   };
 
   const handleSubmit = async () => {
-    if (!lenderName || !amount) return;
+    if (!lenderName || !amount || !termMonths || !rateOrFactor) return;
     setSaving(true);
     try {
       const offerAmount = parseFloat(amount.replace(/[$,]/g, ''));
+      const parsedTermMonths = parseInt(String(termMonths), 10);
+      const parsedRate = parseFloat(String(rateOrFactor).replace(/[^0-9.]/g, ''));
+      const offerPayload = {
+        lenderName: lenderName.trim(),
+        amount: offerAmount,
+        termMonths: Number.isFinite(parsedTermMonths) ? parsedTermMonths : undefined,
+        rateFactor: Number.isFinite(parsedRate) ? parsedRate : undefined,
+        terms: `${termMonths} mo · ${rateOrFactor}` + (notes.trim() ? ` · ${notes.trim()}` : ''),
+        expiryDays: expiryDays || undefined,
+        notes: notes.trim() || undefined,
+        productType: selectedProduct,
+      };
 
       if (isSameProduct) {
         // Add offer to existing deal
-        await dealApi.addOffer(dealId, {
-          lenderName,
-          amount: offerAmount,
-          terms,
-          expiryDays: expiryDays || undefined,
-          productType: selectedProduct,
-        });
+        await dealApi.addOffer(dealId, offerPayload);
         toast.success('Offer added to existing deal');
       } else {
         // Create new deal for same client, then add offer
@@ -2810,14 +3306,9 @@ function AddOfferModal({
           clientId,
           productType: selectedProduct,
           dealAmount: offerAmount,
+          assignedRepId,
         });
-        await dealApi.addOffer(newDeal.id, {
-          lenderName,
-          amount: offerAmount,
-          terms,
-          expiryDays: expiryDays || undefined,
-          productType: selectedProduct,
-        });
+        await dealApi.addOffer(newDeal.id, offerPayload);
         toast.success(`New ${selectedProduct} deal created with offer`);
       }
       qc.invalidateQueries({ queryKey: ['deals'] });
@@ -2997,15 +3488,32 @@ function AddOfferModal({
                   <label
                     style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
                   >
-                    Terms
+                    Term (months) *
                   </label>
                   <input
-                    value={terms}
-                    onChange={(e) => setTerms(e.target.value)}
+                    value={termMonths}
+                    onChange={(e) => setTermMonths(e.target.value)}
                     style={inputStyle}
-                    placeholder="12 months, 1.29"
+                    placeholder="12"
+                    type="number"
                   />
                 </div>
+                <div>
+                  <label
+                    style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
+                  >
+                    Rate / Factor *
+                  </label>
+                  <input
+                    value={rateOrFactor}
+                    onChange={(e) => setRateOrFactor(e.target.value)}
+                    style={inputStyle}
+                    placeholder="1.29 factor or 7.2%"
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <label
                     style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
@@ -3018,6 +3526,19 @@ function AddOfferModal({
                     style={inputStyle}
                     placeholder="7"
                     type="number"
+                  />
+                </div>
+                <div>
+                  <label
+                    style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, marginBottom: 3, display: 'block' }}
+                  >
+                    Notes
+                  </label>
+                  <input
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    style={inputStyle}
+                    placeholder="Optional offer context"
                   />
                 </div>
               </div>
@@ -3043,13 +3564,15 @@ function AddOfferModal({
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={saving || !lenderName || !amount}
+                disabled={saving || !lenderName || !amount || !termMonths || !rateOrFactor}
                 style={{
                   padding: '8px 20px',
                   borderRadius: 6,
                   border: 'none',
-                  background: saving || !lenderName || !amount ? 'var(--surface3)' : 'var(--cta)',
-                  color: saving || !lenderName || !amount ? 'var(--muted)' : '#fff',
+                  background:
+                    saving || !lenderName || !amount || !termMonths || !rateOrFactor ? 'var(--surface3)' : 'var(--cta)',
+                  color:
+                    saving || !lenderName || !amount || !termMonths || !rateOrFactor ? 'var(--muted)' : '#fff',
                   fontSize: 12,
                   fontWeight: 700,
                   cursor: saving ? 'not-allowed' : 'pointer',

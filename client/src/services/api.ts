@@ -94,11 +94,12 @@ export const dealApi = {
   getDeals: (params?: Record<string, string>) => api.get('/deals', { params }),
   getDeal: (id: string) => api.get(`/deals/${id}`),
   getStats: (params?: Record<string, string>) => api.get('/deals/stats', { params }),
-  getReviveQueue: () => api.get('/deals/revive-queue'),
+  getReviveQueue: (params?: Record<string, string>) => api.get('/deals/revive-queue', { params }),
   createDeal: (data: any) => api.post('/deals', data),
   updateDeal: (id: string, data: any) => api.put(`/deals/${id}`, data),
   moveDeal: (id: string, data: any) => api.put(`/deals/${id}/move`, data),
   addOffer: (id: string, data: any) => api.post(`/deals/${id}/offers`, data),
+  deleteOffer: (dealId: string, offerId: string) => api.delete(`/deals/${dealId}/offers/${offerId}`),
   markFunded: (id: string, data: any) => api.post(`/deals/${id}/fund`, data),
   completeAction: (id: string, data: any) => api.post(`/deals/${id}/complete-action`, data),
   shareDeal: (id: string, data: any) => api.put(`/deals/${id}/share`, data),
@@ -111,10 +112,11 @@ export const dealApi = {
     if (assignToRepId) form.append('assignToRepId', assignToRepId);
     return api.post('/deals/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
-  importLeads: (file: File, assignToRepId?: string) => {
+  importLeads: (file: File, options?: { assignToRepId?: string; duplicateMode?: 'skip' | 'add_to_existing' }) => {
     const form = new FormData();
     form.append('file', file);
-    if (assignToRepId) form.append('assignToRepId', assignToRepId);
+    if (options?.assignToRepId) form.append('assignToRepId', options.assignToRepId);
+    if (options?.duplicateMode) form.append('duplicateMode', options.duplicateMode);
     return api.post('/deals/import-leads', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
   getImportBatches: () => api.get('/deals/import-batches'),
@@ -129,7 +131,7 @@ export const commandCenterApi = {
   getOperatorQueue: (params?: Record<string, string>) => api.get('/command-center/operator-queue', { params }),
   getHotLeads: (params?: Record<string, string>) => api.get('/command-center/hot-leads', { params }),
   getStaleDeals: (params?: Record<string, string>) => api.get('/command-center/stale-deals', { params }),
-  getOverdueTasks: () => api.get('/command-center/overdue-tasks'),
+  getOverdueTasks: (params?: Record<string, string>) => api.get('/command-center/overdue-tasks', { params }),
   getIntelligence: () => api.get('/command-center/intelligence'),
   getExecutionScores: () => api.get('/command-center/execution-scores'),
   getProductMix: (params?: Record<string, string>) => api.get('/command-center/product-mix', { params }),

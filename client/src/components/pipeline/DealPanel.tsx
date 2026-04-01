@@ -88,6 +88,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal updated');
     },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to update deal'),
   });
 
   const moveMutation = useMutation({
@@ -150,6 +151,16 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Delete failed'),
   });
 
+  const deleteOfferMutation = useMutation({
+    mutationFn: (offerId: string) => dealApi.deleteOffer(dealId, offerId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      toast.success('Offer deleted');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to delete offer'),
+  });
+
   if (isLoading || !deal) {
     return (
       <div className="panel open" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -162,6 +173,11 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   const repLabel = deal.assignedRep ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName}` : 'Unassigned';
   const sysStatus = dealSystemStatus(deal);
   const hotText = hotReason(deal);
+  const assistingIds = (deal.assistingRepIds as string[]) || [];
+  const isPrimaryRep = deal.assignedRepId === user?.id;
+  const isAssistRep = !!user?.id && assistingIds.includes(user.id);
+  const canDeleteDeal = (isAdmin || isPrimaryRep) && deal.stage !== 'FUNDED';
+  const canDeleteOffer = (isAdmin || isPrimaryRep || isAssistRep) && !['FUNDED', 'CLOSED'].includes(deal.stage);
 
   return (
     <>
@@ -210,7 +226,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               </div>
             </div>
             <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-              {isAdmin && (
+              {canDeleteDeal && (
                 <button
                   className="ph-close"
                   title="Delete deal"
@@ -258,6 +274,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               onOpenFollowUpModal={() => setShowFollowUpModal(true)}
               onOpenNQModal={() => setShowNQModal(true)}
               onOpenFundedModal={() => setShowFundedModal(true)}
+              onDeleteOffer={(offerId: string) => deleteOfferMutation.mutate(offerId)}
+              canDeleteOffer={canDeleteOffer}
+              deletingOfferId={deleteOfferMutation.isPending ? (deleteOfferMutation.variables ?? null) : null}
             />
           )}
           {tab === 'history' && <FundingHistoryTab deal={deal} />}
@@ -418,6 +437,9 @@ function DealClientTab({
   onOpenFollowUpModal,
   onOpenNQModal,
   onOpenFundedModal,
+  onDeleteOffer,
+  canDeleteOffer,
+  deletingOfferId,
 }: {
   deal: Deal;
   onUpdate: (data: any) => void;
@@ -432,10 +454,17 @@ function DealClientTab({
   onOpenFollowUpModal: () => void;
   onOpenNQModal: () => void;
   onOpenFundedModal: () => void;
+  onDeleteOffer: (offerId: string) => void;
+  canDeleteOffer: boolean;
+  deletingOfferId: string | null;
 }) {
+  const { user } = useAuthStore();
   const isClosed = deal.stage === 'CLOSED';
   const isFunded = deal.stage === 'FUNDED';
-  const canEdit = isAdmin || !!deal.assignedRepId;
+  const assistingIds = (deal.assistingRepIds as string[]) || [];
+  const isPrimaryRep = deal.assignedRepId === user?.id;
+  const isAssistRep = !!user?.id && assistingIds.includes(user.id);
+  const canEdit = isAdmin || isPrimaryRep || isAssistRep;
   const stages: DealStage[] = [
     'NEW_LEAD',
     'ENGAGED_INTERESTED',
@@ -474,6 +503,9 @@ function DealClientTab({
   const [showFutureDate, setShowFutureDate] = useState(false);
   const [noteDraft, setNoteDraft] = useState(deal.notes || '');
   const [clientNoteDraft, setClientNoteDraft] = useState(deal.clientNotes || '');
+  const [amountDraft, setAmountDraft] = useState(
+    String(deal.submittedAmount ?? deal.dealAmount ?? '').replace(/\.0+$/, ''),
+  );
 
   useEffect(() => {
     try {
@@ -487,6 +519,10 @@ function DealClientTab({
   useEffect(() => setNextActionDraft(deal.nextAction || ''), [deal.id, deal.nextAction]);
   useEffect(() => setNoteDraft(deal.notes || ''), [deal.id, deal.notes]);
   useEffect(() => setClientNoteDraft(deal.clientNotes || ''), [deal.id, deal.clientNotes]);
+  useEffect(
+    () => setAmountDraft(String(deal.submittedAmount ?? deal.dealAmount ?? '').replace(/\.0+$/, '')),
+    [deal.id, deal.submittedAmount, deal.dealAmount],
+  );
   useEffect(() => {
     const date = deal.nextActionDue?.split('T')[0] || '';
     setExactDueDate(date);
@@ -550,6 +586,9 @@ function DealClientTab({
   const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
   const clientRevenue = clientMeta.monthlyRevenue ?? '';
   const clientSource = clientMeta.source ?? '';
+  const isSubmittedProduct = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
+  const amountLabel = isSubmittedProduct ? 'Submitted Amount' : 'Requested Amount';
+  const amountPayloadKey = isSubmittedProduct ? 'submittedAmount' : 'dealAmount';
 
   const offers = deal.offers || [];
   const fundingEvent = (deal.fundingEvents || [])[0];
@@ -625,8 +664,34 @@ function DealClientTab({
 
         <div className="sf">
           <div className="sf-l">
+            {amountLabel}
+            {deal.stage === 'SUBMITTED_IN_REVIEW' && isSubmittedProduct ? (
+              <span style={{ color: 'var(--text3)', fontSize: 9 }}> · shown in Submitted total</span>
+            ) : null}
+          </div>
+          <input
+            type="number"
+            className="si"
+            value={amountDraft}
+            onChange={(e) => setAmountDraft(e.target.value)}
+            onBlur={() => {
+              const nextValue = amountDraft.trim();
+              if (!nextValue) {
+                onUpdate({ [amountPayloadKey]: null });
+                return;
+              }
+              const parsed = Number(nextValue.replace(/[$,]/g, ''));
+              onUpdate({ [amountPayloadKey]: Number.isFinite(parsed) ? parsed : null });
+            }}
+            placeholder={isSubmittedProduct ? 'Optional submitted amount' : 'Optional requested amount'}
+            disabled={!canEdit}
+          />
+        </div>
+
+        <div className="sf">
+          <div className="sf-l">
             Ownership{' '}
-            {!(isAdmin || useAuthStore.getState().user?.id === deal.assignedRepId) && (
+            {!isAdmin && !isPrimaryRep && (
               <span style={{ fontSize: 9, color: 'var(--text3)' }}>(primary rep or admin)</span>
             )}
           </div>
@@ -653,6 +718,27 @@ function DealClientTab({
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                     <div className="oi-amount">{formatCurrency(offer.amount)}</div>
                     {offer.isAccepted ? <span style={{ fontSize: 9, color: 'var(--good)' }}>✓ Accepted</span> : null}
+                    {canDeleteOffer && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Delete offer from "${offer.lenderName}"?`)) onDeleteOffer(offer.id);
+                        }}
+                        disabled={deletingOfferId === offer.id}
+                        style={{
+                          border: '1px solid var(--urgent-b)',
+                          background: 'var(--urgent-bg)',
+                          color: 'var(--urgent)',
+                          borderRadius: 6,
+                          fontSize: 10,
+                          padding: '2px 6px',
+                          cursor: deletingOfferId === offer.id ? 'not-allowed' : 'pointer',
+                          opacity: deletingOfferId === offer.id ? 0.7 : 1,
+                        }}
+                      >
+                        {deletingOfferId === offer.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -715,6 +801,7 @@ function DealClientTab({
             value={clientPhone}
             onChange={(e) => saveClientMeta({ phone: e.target.value })}
             placeholder="(555) 000-0000"
+            disabled={!canEdit}
           />
         </div>
         <div className="sf">
@@ -726,6 +813,7 @@ function DealClientTab({
             value={clientEmail}
             onChange={(e) => saveClientMeta({ email: e.target.value })}
             placeholder="email@company.com"
+            disabled={!canEdit}
           />
         </div>
         <div className="sf">
@@ -734,7 +822,15 @@ function DealClientTab({
             className="si"
             value={clientBusiness}
             onChange={(e) => saveClientMeta({ businessName: e.target.value })}
+            onBlur={(e) => {
+              const nextBusiness = e.target.value.trim();
+              const currentBusiness = (deal.client?.businessName || '').trim();
+              if (nextBusiness !== currentBusiness) {
+                onUpdate({ clientUpdate: { businessName: nextBusiness } });
+              }
+            }}
             placeholder="Business name"
+            disabled={!canEdit}
           />
         </div>
       </div>
@@ -1156,7 +1252,12 @@ function DetailsTab({
             </div>
           </div>
         )}
-        {deal.dealAmount && <Field label="Deal Amount" value={formatCurrency(deal.dealAmount)} />}
+        {(deal.submittedAmount || deal.dealAmount) && (
+          <Field
+            label={['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '') ? 'Submitted Amount' : 'Requested Amount'}
+            value={formatCurrency(deal.submittedAmount ?? deal.dealAmount)}
+          />
+        )}
         {deal.lender && <Field label="Lender" value={deal.lender} />}
       </Section>
 
@@ -2052,16 +2153,18 @@ export function ScheduleFollowUpModal({
 const LOST_REASONS = ['Went with competitor', 'Timing issue', 'Declined all offers', 'No response', 'Other'];
 const NQ_REASONS = ['Not eligible', 'Declined — credit', 'Declined — revenue', 'Bad lead', 'Do not contact'];
 
-function NQCloseModal({
+export function NQCloseModal({
   deal: _deal,
+  initialCloseType = 'lost',
   onClose,
   onSubmit,
 }: {
   deal: Deal;
+  initialCloseType?: 'lost' | 'disq';
   onClose: () => void;
   onSubmit: (data: any) => void;
 }) {
-  const [closeType, setCloseType] = useState<'lost' | 'disq'>('lost');
+  const [closeType, setCloseType] = useState<'lost' | 'disq'>(initialCloseType);
   const [lostReason, setLostReason] = useState(LOST_REASONS[0]);
   const [reengageDate, setReengageDate] = useState(() => addDaysISO(30));
   const [disqualReason, setDisqualReason] = useState(NQ_REASONS[0]);

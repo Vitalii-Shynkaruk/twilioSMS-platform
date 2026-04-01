@@ -83,10 +83,7 @@ function dueInfo(dateStr?: string | null) {
 
 function isDealHot(deal: Deal): boolean {
   if (['FUNDED', 'NURTURE', 'CLOSED'].includes(deal.stage)) return false;
-  const due = dueInfo(deal.nextActionDue);
-  if (due.isOverdue || deal.renewalTasks?.some((t) => t.status === 'PENDING')) return false;
   if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') return true;
-  if ((deal.offers?.length || 0) > 0) return true;
   if (deal.lenderEngaged && deal.appSubmitted) return true;
   if (deal.lastReplyAt) {
     const hours = (Date.now() - new Date(deal.lastReplyAt).getTime()) / 3600000;
@@ -171,16 +168,16 @@ function simpleAmount(deal: Deal): { text: string; cls: string } {
   }
 
   if (deal.stage === 'SUBMITTED_IN_REVIEW') {
-    const icon =
-      deal.productType === 'EQUIPMENT'
-        ? '🔧'
-        : deal.productType === 'SBA' || deal.productType === 'CRE'
-          ? '🏛'
-          : '⚡';
-    if (deal.dealAmount) {
-      return { text: `${icon} ${formatCurrency(deal.dealAmount)}`, cls: 'sca-amber' };
+    const isSubmittedTracked = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
+    const submittedAmount = deal.submittedAmount ?? deal.dealAmount;
+    const icon = deal.productType === 'EQUIPMENT' ? '🔧' : deal.productType === 'CRE' ? '🏢' : '🏛';
+    if (isSubmittedTracked && submittedAmount) {
+      return { text: `${icon} ${formatCurrency(submittedAmount)} submitted`, cls: 'sca-amber' };
     }
-    return { text: `${icon} In review`, cls: 'sca-gray' };
+    if (isSubmittedTracked) {
+      return { text: `${icon} In review`, cls: 'sca-gray' };
+    }
+    return { text: '⚡ In underwriting · Fast cycle', cls: 'sca-gray' };
   }
 
   return { text: '—', cls: 'sca-gray' };
@@ -268,6 +265,15 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
   const { user } = useAuthStore();
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
+  const showSubmittedBadge =
+    deal.stage === 'SUBMITTED_IN_REVIEW' &&
+    ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '') &&
+    !!(deal.submittedAmount ?? deal.dealAmount);
+  const notePreview = deal.notes
+    ? deal.notes.length > 60
+      ? `${deal.notes.slice(0, 60)}…`
+      : deal.notes
+    : '';
 
   const naRowCls = due.isOverdue ? 'na-od' : due.isToday ? 'na-td' : '';
   const naDotBg = due.isOverdue ? 'var(--urgent)' : due.isToday ? 'var(--watch)' : 'var(--text3)';
@@ -304,6 +310,22 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
             {deal.client && deal.client.fundingCount > 0 && deal.stage !== 'NURTURE' && <span className="b b-renew">↻</span>}
           </div>
         </div>
+
+        {deal.notes && (
+          <div
+            style={{
+              fontSize: 10,
+              color: 'var(--text2)',
+              marginBottom: 4,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            title={deal.notes}
+          >
+            📝 {notePreview}
+          </div>
+        )}
 
         {/* Product badge + days in stage row */}
         {deal.productType &&
@@ -385,6 +407,14 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
             }
             return <div className="review-pill review-early">In underwriting · {pNote}</div>;
           })()}
+
+        {showSubmittedBadge && (
+          <div className="offer-block ob-mid">
+            <div className="ob-main">
+              <span className="ob-amount">📋 {formatCurrency(deal.submittedAmount ?? deal.dealAmount)} submitted</span>
+            </div>
+          </div>
+        )}
 
         {/* Returning client */}
         {deal.client && deal.client.fundingCount > 0 && (

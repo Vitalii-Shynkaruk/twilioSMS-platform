@@ -14,18 +14,19 @@ router.get('/', asyncHandler(DealController.getDeals));
 router.get('/board', asyncHandler(DealController.getBoard));
 router.get('/stats', asyncHandler(DealController.getStats));
 router.get('/revive-queue', asyncHandler(DealController.getReviveQueue));
-router.get('/:id', asyncHandler(DealController.getDeal));
-router.post('/', asyncHandler(DealController.createDeal));
 router.post('/import-csv', requireRole('ADMIN'), upload.single('file'), asyncHandler(DealController.importCSV));
 router.post('/import-leads', upload.single('file'), asyncHandler(DealController.importLeads));
 router.get('/import-batches', requireRole('ADMIN'), asyncHandler(DealController.getImportBatches));
 router.delete('/import-batch/:batchId', requireRole('ADMIN'), asyncHandler(DealController.deleteImportBatch));
+router.get('/:id', asyncHandler(DealController.getDeal));
+router.post('/', asyncHandler(DealController.createDeal));
 router.put('/:id', asyncHandler(DealController.updateDeal));
 router.put('/:id/move', asyncHandler(DealController.moveDeal));
-router.delete('/:id', requireRole('ADMIN'), asyncHandler(DealController.deleteDeal));
+router.delete('/:id', asyncHandler(DealController.deleteDeal));
 
 // Deal actions
 router.post('/:id/offers', asyncHandler(DealController.addOffer));
+router.delete('/:id/offers/:offerId', asyncHandler(DealController.deleteOffer));
 router.post('/:id/fund', asyncHandler(DealController.markFunded));
 router.post('/:id/complete-action', asyncHandler(DealController.completeAction));
 router.put('/:id/share', asyncHandler(DealController.shareDeal));

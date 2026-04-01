@@ -24,6 +24,35 @@
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'IBM Plex Sans', sans-serif;
 }
+.cc-root.cc-light {
+  --bg:#f1f5f9;
+  --bg2:#ffffff;
+  --bg3:#ffffff;
+  --bg4:#f8fafc;
+  --border:#d5dee9;
+  --border2:#bcc9d9;
+  --text:#1c2535;
+  --muted:#64748b;
+  --faint:#e2e8f0;
+}
+.cc-root.cc-light .logo-name,
+.cc-root.cc-light .tnv.on,
+.cc-root.cc-light .rb.on,
+.cc-root.cc-light .h-name,
+.cc-root.cc-light .proj-hi,
+.cc-root.cc-light .hbv,
+.cc-root.cc-light .pc-title,
+.cc-root.cc-light .oqi-name,
+.cc-root.cc-light .rm-name,
+.cc-root.cc-light .csv-title,
+.cc-root.cc-light .dm-title,
+.cc-root.cc-light .dm-urgency strong,
+.cc-root.cc-light .n5-name,
+.cc-root.cc-light .ca-deal-name,
+.cc-root.cc-light .pm-insight-box strong,
+.cc-root.cc-light .rrq-deal-name {
+  color: var(--text);
+}
 .cc-root,
 .cc-root *,
 .cc-root *::before,
@@ -71,6 +100,24 @@ button { font-family: var(--mono); cursor: pointer; }
 .add-btn:hover { opacity: .85; }
 .csv-import-btn { background: var(--bg4); color: var(--muted); border: 1px solid var(--border); }
 .csv-import-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+.cc-theme-toggle {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 400;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: var(--bg3);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  box-shadow: 0 8px 20px rgba(0,0,0,.22);
+}
+.cc-theme-toggle:hover { border-color: var(--gold); color: var(--gold); }
+.cc-root.cc-light .ca-action-btn:hover { color: var(--text); }
 
 /* ─────────────────────────────────────────── LAYOUT */
 .page { padding: 12px 18px; display: flex; flex-direction: column; gap: 9px; max-width: 1640px; margin: 0 auto; }

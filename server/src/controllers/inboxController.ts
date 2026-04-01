@@ -4,33 +4,101 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { SendingEngine } from '../services/sendingEngine';
 
+type InboxFilter = 'all' | 'unread' | 'replied' | 'interested' | 'not_interested' | 'dnc' | 'opted_out';
+
 export class InboxController {
+  private static readonly FILTER_KEYS: InboxFilter[] = [
+    'all',
+    'unread',
+    'replied',
+    'interested',
+    'not_interested',
+    'dnc',
+    'opted_out',
+  ];
+
+  private static buildFilterCondition(filter: InboxFilter): any | null {
+    switch (filter) {
+      case 'unread':
+        return { unreadCount: { gt: 0 } };
+      case 'replied':
+        return {
+          lead: {
+            optedOut: false,
+            lastRepliedAt: { not: null },
+            status: { notIn: ['DNC', 'NOT_INTERESTED'] },
+          },
+        };
+      case 'interested':
+        return {
+          lead: {
+            optedOut: false,
+            status: { in: ['INTERESTED', 'DOCS_REQUESTED', 'SUBMITTED', 'FUNDED'] },
+          },
+        };
+      case 'not_interested':
+        return { lead: { status: 'NOT_INTERESTED' } };
+      case 'dnc':
+        return { lead: { status: 'DNC' } };
+      case 'opted_out':
+        return { lead: { optedOut: true } };
+      case 'all':
+      default:
+        return null;
+    }
+  }
+
+  private static withConditions(baseWhere: any, extraConditions: any[]): any {
+    const baseAnd = Array.isArray(baseWhere.AND) ? [...baseWhere.AND] : [];
+    return {
+      ...baseWhere,
+      ...(baseAnd.length > 0 || extraConditions.length > 0 ? { AND: [...baseAnd, ...extraConditions] } : {}),
+    };
+  }
+
   static async listConversations(req: AuthRequest, res: Response): Promise<void> {
-    const { page = '1', limit = '50', search, unreadOnly } = req.query;
+    const { page = '1', limit = '50', search, unreadOnly, filter = 'all', withFilterCounts = 'false' } = req.query;
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
-    const where: any = { isActive: true };
+    const baseWhere: any = { isActive: true };
+    const baseAndFilters: any[] = [];
 
     // Rep can only see their conversations
     if (req.user?.role === 'REP') {
-      where.assignedRepId = req.user.id;
+      baseWhere.assignedRepId = req.user.id;
     }
 
-    if (unreadOnly === 'true') {
-      where.unreadCount = { gt: 0 };
-    }
+    const normalizedFilter: InboxFilter = InboxController.FILTER_KEYS.includes((filter as string).toLowerCase() as InboxFilter)
+      ? ((filter as string).toLowerCase() as InboxFilter)
+      : 'all';
+    const includeFilterCounts = withFilterCounts === 'true';
+
+    const listConditions: any[] = [];
+    if (unreadOnly === 'true') listConditions.push({ unreadCount: { gt: 0 } });
+    const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter);
+    if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
 
     if (search) {
-      where.lead = {
-        OR: [
-          { firstName: { contains: search as string } },
-          { lastName: { contains: search as string } },
-          { phone: { contains: search as string } },
-        ],
-      };
+      baseAndFilters.push({
+        lead: {
+          OR: [
+            { firstName: { contains: search as string } },
+            { lastName: { contains: search as string } },
+            { phone: { contains: search as string } },
+          ],
+        },
+      });
     }
 
-    const [conversations, total] = await Promise.all([
+    const where = InboxController.withConditions(
+      {
+        ...baseWhere,
+        ...(baseAndFilters.length > 0 ? { AND: baseAndFilters } : {}),
+      },
+      listConditions,
+    );
+
+    const [conversations, total, filterCounts] = await Promise.all([
       prisma.conversation.findMany({
         where,
         skip,
@@ -44,6 +112,7 @@ export class InboxController {
               lastName: true,
               phone: true,
               status: true,
+              optedOut: true,
               tags: {
                 include: { tag: true },
               },
@@ -69,6 +138,24 @@ export class InboxController {
         },
       }),
       prisma.conversation.count({ where }),
+      includeFilterCounts
+        ? (async () => {
+            const baseWithSearch = {
+              ...baseWhere,
+              ...(baseAndFilters.length > 0 ? { AND: baseAndFilters } : {}),
+            };
+            const counts = await Promise.all(
+              InboxController.FILTER_KEYS.map(async (key) => {
+                const condition = InboxController.buildFilterCondition(key);
+                const scopedWhere = InboxController.withConditions(baseWithSearch, condition ? [condition] : []);
+                const count = await prisma.conversation.count({ where: scopedWhere });
+                return [key, count] as const;
+              }),
+            );
+
+            return Object.fromEntries(counts);
+          })()
+        : Promise.resolve(null),
     ]);
 
     res.json({
@@ -77,7 +164,9 @@ export class InboxController {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
         total,
+        pages: Math.ceil(total / parseInt(limit as string)),
       },
+      ...(filterCounts ? { filterCounts } : {}),
     });
   }
 
@@ -165,6 +254,7 @@ export class InboxController {
             lastName: true,
             phone: true,
             status: true,
+            optedOut: true,
             tags: { include: { tag: true } },
           },
         },
@@ -182,6 +272,7 @@ export class InboxController {
               lastName: true,
               phone: true,
               status: true,
+              optedOut: true,
               tags: { include: { tag: true } },
             },
           },

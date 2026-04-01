@@ -255,6 +255,7 @@ export interface Deal {
   stageLabel: string;
   productType?: ProductType;
   dealAmount?: number;
+  submittedAmount?: number;
   needsAmount: boolean;
   nextAction?: string;
   nextActionDue?: string;
@@ -292,6 +293,11 @@ export interface Deal {
   renewalTasks?: RenewalTask[];
   coRepIds?: string[];
   nurtureType?: string;
+  priorityScore?: number;
+  scoreReason?: string;
+  scoreColor?: 'green' | 'amber' | 'red';
+  primaryAction?: string;
+  suggestNurture?: boolean;
 }
 
 export interface Offer {

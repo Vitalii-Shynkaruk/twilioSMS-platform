@@ -1,5 +1,6 @@
 import { AutomationService } from '../services/automationService';
 import { NumberService } from '../services/numberService';
+import { config } from '../config';
 import logger from '../config/logger';
 import redis from '../config/redis';
 
@@ -23,7 +24,18 @@ const DAILY_RESET_CHECK_INTERVAL = 300_000;
 const LOCK_KEY = 'lock:automation-worker';
 const LOCK_TTL = 55; // seconds — just under interval
 
-let lastResetDate = new Date().toISOString().split('T')[0]; // Init to today to prevent false reset on restart
+function getBusinessDateKey(date: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.compliance.timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  return `${map.get('year')}-${map.get('month')}-${map.get('day')}`;
+}
+
+let lastResetDate = getBusinessDateKey(); // Init to today (business timezone)
 
 /** Acquire a distributed lock. Returns true if lock obtained. */
 async function acquireLock(key: string, ttl: number): Promise<boolean> {
@@ -60,7 +72,7 @@ async function checkAndProcessAutomations(): Promise<void> {
 }
 
 async function checkDailyReset(): Promise<void> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getBusinessDateKey();
 
   if (today !== lastResetDate) {
     try {

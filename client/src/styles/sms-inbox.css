@@ -1,0 +1,767 @@
+/* © BuyReadySite.com — Phase 1: SMS Inbox Rebuild */
+
+/* ─── 3-Panel Layout ─── */
+.inbox-root {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-primary);
+}
+
+/* ─── Левая панель: список разговоров ─── */
+.inbox-left {
+  width: 300px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.inbox-left-header {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.inbox-search {
+  position: relative;
+}
+
+.inbox-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.inbox-search-input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.inbox-search-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.inbox-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+/* Фильтры-табы */
+.inbox-filters {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  scrollbar-width: none;
+}
+
+.inbox-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.inbox-filter-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.inbox-filter-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.inbox-filter-btn.active {
+  color: var(--accent-primary);
+  background: rgba(43, 127, 232, 0.1);
+}
+
+.inbox-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  margin-left: 4px;
+  background: rgba(43, 127, 232, 0.15);
+  color: var(--accent-primary);
+}
+
+/* Список разговоров */
+.inbox-conv-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.inbox-conv-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.1s;
+  position: relative;
+}
+
+.inbox-conv-item:hover {
+  background: var(--bg-hover);
+}
+
+.inbox-conv-item.selected {
+  background: rgba(43, 127, 232, 0.08);
+  border-left: 2px solid var(--accent-primary);
+}
+
+.inbox-conv-item.unread {
+  background: rgba(43, 127, 232, 0.04);
+}
+
+/* Аватар */
+.inbox-avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(43, 127, 232, 0.15);
+  color: var(--accent-primary);
+  position: relative;
+}
+
+.inbox-avatar-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-primary);
+  color: white;
+}
+
+.inbox-conv-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-conv-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-conv-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+.inbox-conv-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.inbox-conv-time {
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+}
+
+/* Бейджи */
+.inbox-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.inbox-badge-hot {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.inbox-badge-interested {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.inbox-badge-dnc {
+  background: rgba(244, 63, 94, 0.15);
+  color: #fb7185;
+}
+
+.inbox-badge-email {
+  background: rgba(20, 184, 166, 0.15);
+  color: #14b8a6;
+}
+
+.inbox-badge-followup {
+  background: rgba(201, 168, 76, 0.15);
+  color: #c9a84c;
+}
+
+/* ─── Центральная панель: тред сообщений ─── */
+.inbox-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-primary);
+}
+
+.inbox-thread-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.inbox-thread-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inbox-thread-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.inbox-thread-phone {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inbox-thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Сообщения */
+.inbox-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inbox-msg {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inbox-msg.outbound {
+  align-self: flex-end;
+  background: var(--accent-primary);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.inbox-msg.inbound {
+  align-self: flex-start;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: 4px;
+}
+
+.inbox-msg-time {
+  font-size: 10px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inbox-msg.outbound .inbox-msg-time {
+  color: rgba(255, 255, 255, 0.6);
+  justify-content: flex-end;
+}
+
+.inbox-msg.inbound .inbox-msg-time {
+  color: var(--text-faint);
+}
+
+/* Compose bar */
+.inbox-compose {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.inbox-compose-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.inbox-compose-textarea {
+  flex: 1;
+  min-height: 40px;
+  max-height: 120px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 14px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+
+.inbox-compose-textarea:focus {
+  border-color: var(--accent-primary);
+}
+
+.inbox-compose-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.inbox-compose-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.inbox-compose-btn:hover {
+  background: var(--accent-hover);
+}
+
+.inbox-compose-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.inbox-compose-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.inbox-tool-btn {
+  padding: 6px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+
+.inbox-tool-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+/* ─── Правая панель: сайдбар ─── */
+.inbox-right {
+  width: 280px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  overflow-y: auto;
+}
+
+.inbox-sidebar-section {
+  padding: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.inbox-sidebar-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+/* Lead info */
+.inbox-lead-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.inbox-lead-phone {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.inbox-lead-company {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Кнопки действий */
+.inbox-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.inbox-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.inbox-action-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-subtle);
+}
+
+.inbox-action-btn.active-hot {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.inbox-action-btn.active-interested {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.inbox-action-btn.active-dnc {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.3);
+  color: #fb7185;
+}
+
+.inbox-action-btn.active-email {
+  background: rgba(20, 184, 166, 0.12);
+  border-color: rgba(20, 184, 166, 0.3);
+  color: #14b8a6;
+}
+
+/* Заметки */
+.inbox-note-item {
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  margin-bottom: 6px;
+}
+
+.inbox-note-body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.inbox-note-meta {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inbox-note-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+}
+
+.inbox-note-input:focus {
+  border-color: var(--accent-primary);
+}
+
+/* Assign rep */
+.inbox-assigned {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+}
+
+.inbox-assigned-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(43, 127, 232, 0.15);
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Template modal */
+.inbox-template-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.inbox-template-modal {
+  width: 480px;
+  max-width: 90vw;
+  max-height: 70vh;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.inbox-template-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inbox-template-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.inbox-template-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.inbox-template-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border: 1px solid transparent;
+}
+
+.inbox-template-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-color);
+}
+
+.inbox-template-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.inbox-template-body {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Пустые состояния */
+.inbox-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inbox-empty-content {
+  text-align: center;
+}
+
+.inbox-empty-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  color: var(--text-faint);
+}
+
+.inbox-empty-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.inbox-empty-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+/* Loading / skeleton */
+.inbox-skeleton {
+  height: 16px;
+  background: var(--bg-card);
+  border-radius: 4px;
+  animation: inbox-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes inbox-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ─── Follow-up picker ─── */
+.inbox-followup-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-followup-input {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+
+.inbox-followup-input:focus {
+  border-color: var(--accent-primary);
+}
+
+/* ─── Responsive: 960px ─── */
+@media (max-width: 960px) {
+  .inbox-right {
+    display: none;
+  }
+
+  .inbox-left {
+    width: 240px;
+    min-width: 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  .inbox-left {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .inbox-center {
+    display: none;
+  }
+
+  .inbox-root.has-selected .inbox-left {
+    display: none;
+  }
+
+  .inbox-root.has-selected .inbox-center {
+    display: flex;
+  }
+}

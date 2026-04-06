@@ -68,7 +68,9 @@ export class InboxController {
       baseWhere.assignedRepId = req.user.id;
     }
 
-    const normalizedFilter: InboxFilter = InboxController.FILTER_KEYS.includes((filter as string).toLowerCase() as InboxFilter)
+    const normalizedFilter: InboxFilter = InboxController.FILTER_KEYS.includes(
+      (filter as string).toLowerCase() as InboxFilter,
+    )
       ? ((filter as string).toLowerCase() as InboxFilter)
       : 'all';
     const includeFilterCounts = withFilterCounts === 'true';
@@ -399,5 +401,406 @@ export class InboxController {
     }
 
     res.json({ message: 'Rep assigned' });
+  }
+
+  // ============================================
+  // PHASE 1: Расширенные методы SMS Inbox
+  // ============================================
+
+  /**
+   * PATCH /:id/status — Обновить статус разговора (hotLead, leadStatus, emailReceived, nextFollowupAt)
+   */
+  static async updateConversationStatus(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { hotLead, leadStatus, emailReceived, nextFollowupAt } = req.body;
+
+    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+
+    const data: any = {};
+    if (hotLead !== undefined) data.hotLead = hotLead;
+    if (leadStatus !== undefined) data.leadStatus = leadStatus || null;
+    if (emailReceived !== undefined) data.emailReceived = emailReceived;
+    if (nextFollowupAt !== undefined) data.nextFollowupAt = nextFollowupAt ? new Date(nextFollowupAt) : null;
+
+    const updated = await prisma.conversation.update({
+      where: { id },
+      data,
+      include: {
+        lead: {
+          select: { id: true, firstName: true, lastName: true, phone: true, status: true },
+        },
+      },
+    });
+
+    // Если DNC — обновляем lead.status
+    if (leadStatus === 'DNC') {
+      await prisma.lead.update({
+        where: { id: conversation.leadId },
+        data: { status: 'DNC' },
+      });
+    } else if (leadStatus === 'Interested') {
+      await prisma.lead.update({
+        where: { id: conversation.leadId },
+        data: { status: 'INTERESTED' },
+      });
+    } else if (leadStatus === 'Not Interested') {
+      await prisma.lead.update({
+        where: { id: conversation.leadId },
+        data: { status: 'NOT_INTERESTED' },
+      });
+    }
+
+    res.json({ conversation: updated });
+  }
+
+  // ─── Заметки (Notes) ───
+
+  /**
+   * GET /:id/notes — Список заметок для разговора
+   */
+  static async listNotes(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const notes = await prisma.conversationNote.findMany({
+      where: { conversationId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({ notes });
+  }
+
+  /**
+   * POST /:id/notes — Создать заметку
+   */
+  static async createNote(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { body, dealId } = req.body;
+
+    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+
+    const note = await prisma.conversationNote.create({
+      data: {
+        conversationId: id,
+        body,
+        dealId: dealId || null,
+        createdById: req.user!.id,
+      },
+    });
+
+    res.status(201).json({ note });
+  }
+
+  /**
+   * DELETE /:id/notes/:noteId — Удалить заметку
+   */
+  static async deleteNote(req: AuthRequest, res: Response): Promise<void> {
+    const { noteId } = req.params;
+
+    const note = await prisma.conversationNote.findUnique({ where: { id: noteId } });
+    if (!note) throw new AppError('Note not found', 404);
+
+    // Удалить может только автор или админ
+    if (note.createdById !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Not authorized', 403);
+    }
+
+    await prisma.conversationNote.delete({ where: { id: noteId } });
+    res.json({ message: 'Note deleted' });
+  }
+
+  // ─── Шаблоны (Templates) ───
+
+  /**
+   * GET /templates — Список шаблонов (доступных пользователю)
+   */
+  static async listTemplates(req: AuthRequest, res: Response): Promise<void> {
+    const { search, category } = req.query;
+    const userId = req.user!.id;
+
+    const where: any = {
+      isActive: true,
+      OR: [{ visibility: 'GLOBAL' }, { visibility: 'TEAM' }, { createdById: userId, visibility: 'PRIVATE' }],
+    };
+
+    if (search) {
+      where.AND = [
+        {
+          OR: [{ name: { contains: search as string } }, { body: { contains: search as string } }],
+        },
+      ];
+    }
+    if (category) {
+      where.category = category as string;
+    }
+
+    const templates = await prisma.smsTemplate.findMany({
+      where,
+      orderBy: { usageCount: 'desc' },
+      include: {
+        favorites: {
+          where: { userId },
+          select: { id: true },
+        },
+      },
+    });
+
+    // Добавляем флаг isFavorite
+    const result = templates.map((t) => ({
+      ...t,
+      isFavorite: t.favorites.length > 0,
+      favorites: undefined,
+    }));
+
+    res.json({ templates: result });
+  }
+
+  /**
+   * POST /templates — Создать шаблон
+   */
+  static async createTemplate(req: AuthRequest, res: Response): Promise<void> {
+    const { name, body, category, visibility } = req.body;
+
+    // Только ADMIN может создать GLOBAL шаблон
+    if (visibility === 'GLOBAL' && req.user!.role !== 'ADMIN') {
+      throw new AppError('Only admins can create global templates', 403);
+    }
+
+    const template = await prisma.smsTemplate.create({
+      data: {
+        name,
+        body,
+        category: category || null,
+        visibility: visibility || 'PRIVATE',
+        createdById: req.user!.id,
+      },
+    });
+
+    res.status(201).json({ template });
+  }
+
+  /**
+   * PUT /templates/:templateId — Обновить шаблон
+   */
+  static async updateTemplate(req: AuthRequest, res: Response): Promise<void> {
+    const { templateId } = req.params;
+
+    const existing = await prisma.smsTemplate.findUnique({ where: { id: templateId } });
+    if (!existing) throw new AppError('Template not found', 404);
+
+    // Только автор или админ может редактировать
+    if (existing.createdById !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Not authorized', 403);
+    }
+
+    if (req.body.visibility === 'GLOBAL' && req.user!.role !== 'ADMIN') {
+      throw new AppError('Only admins can set global visibility', 403);
+    }
+
+    const template = await prisma.smsTemplate.update({
+      where: { id: templateId },
+      data: req.body,
+    });
+
+    res.json({ template });
+  }
+
+  /**
+   * DELETE /templates/:templateId — Удалить шаблон (soft delete)
+   */
+  static async deleteTemplate(req: AuthRequest, res: Response): Promise<void> {
+    const { templateId } = req.params;
+
+    const existing = await prisma.smsTemplate.findUnique({ where: { id: templateId } });
+    if (!existing) throw new AppError('Template not found', 404);
+
+    if (existing.createdById !== req.user!.id && req.user!.role !== 'ADMIN') {
+      throw new AppError('Not authorized', 403);
+    }
+
+    await prisma.smsTemplate.update({
+      where: { id: templateId },
+      data: { isActive: false },
+    });
+
+    res.json({ message: 'Template deleted' });
+  }
+
+  /**
+   * POST /templates/:templateId/favorite — Добавить/убрать из избранного
+   */
+  static async toggleFavorite(req: AuthRequest, res: Response): Promise<void> {
+    const { templateId } = req.params;
+    const userId = req.user!.id;
+
+    const existing = await prisma.smsTemplateFavorite.findUnique({
+      where: { userId_templateId: { userId, templateId } },
+    });
+
+    if (existing) {
+      await prisma.smsTemplateFavorite.delete({ where: { id: existing.id } });
+      res.json({ isFavorite: false });
+    } else {
+      await prisma.smsTemplateFavorite.create({
+        data: { userId, templateId },
+      });
+      res.json({ isFavorite: true });
+    }
+  }
+
+  /**
+   * POST /templates/:templateId/use — Логировать использование шаблона
+   */
+  static async logTemplateUsage(req: AuthRequest, res: Response): Promise<void> {
+    const { templateId } = req.params;
+    const { conversationId } = req.body;
+
+    await Promise.all([
+      prisma.smsTemplateUsageLog.create({
+        data: {
+          userId: req.user!.id,
+          templateId,
+          conversationId: conversationId || null,
+        },
+      }),
+      prisma.smsTemplate.update({
+        where: { id: templateId },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date(),
+        },
+      }),
+    ]);
+
+    res.json({ message: 'Usage logged' });
+  }
+
+  // ─── Отложенные сообщения (Scheduled Messages) ───
+
+  /**
+   * GET /:id/scheduled — Список отложенных сообщений для разговора
+   */
+  static async listScheduledMessages(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const scheduled = await prisma.scheduledMessage.findMany({
+      where: {
+        conversationId: id,
+        status: 'PENDING',
+      },
+      orderBy: { scheduledAt: 'asc' },
+    });
+
+    res.json({ scheduled });
+  }
+
+  /**
+   * POST /scheduled — Создать отложенное сообщение
+   */
+  static async createScheduledMessage(req: AuthRequest, res: Response): Promise<void> {
+    const { conversationId, body, scheduledAt, fromNumber } = req.body;
+
+    const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+
+    const scheduledDate = new Date(scheduledAt);
+    if (scheduledDate <= new Date()) {
+      throw new AppError('Scheduled time must be in the future', 400);
+    }
+
+    const scheduled = await prisma.scheduledMessage.create({
+      data: {
+        conversationId,
+        body,
+        scheduledAt: scheduledDate,
+        fromNumber,
+        createdById: req.user!.id,
+      },
+    });
+
+    res.status(201).json({ scheduled });
+  }
+
+  /**
+   * DELETE /scheduled/:scheduledId — Отменить отложенное сообщение
+   */
+  static async cancelScheduledMessage(req: AuthRequest, res: Response): Promise<void> {
+    const { scheduledId } = req.params;
+
+    const existing = await prisma.scheduledMessage.findUnique({ where: { id: scheduledId } });
+    if (!existing) throw new AppError('Scheduled message not found', 404);
+    if (existing.status !== 'PENDING') throw new AppError('Cannot cancel non-pending message', 400);
+
+    await prisma.scheduledMessage.update({
+      where: { id: scheduledId },
+      data: { status: 'CANCELLED' },
+    });
+
+    res.json({ message: 'Scheduled message cancelled' });
+  }
+
+  // ─── Pipeline интеграция ───
+
+  /**
+   * POST /:id/add-to-pipeline — Создать deal из разговора и добавить в pipeline
+   */
+  static async addToPipeline(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { stageId } = req.body;
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      include: { lead: true },
+    });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+
+    // Проверяем, нет ли уже deal для этого разговора
+    const existingDeal = await prisma.deal.findFirst({
+      where: { smsConversationId: id },
+    });
+    if (existingDeal) throw new AppError('Deal already exists for this conversation', 409);
+
+    // Проверяем что есть client для этого лида
+    let client = await prisma.client.findFirst({
+      where: { linkedLeadId: conversation.leadId },
+    });
+
+    // Если нет клиента — создаём
+    if (!client) {
+      client = await prisma.client.create({
+        data: {
+          contactName: `${conversation.lead.firstName} ${conversation.lead.lastName || ''}`.trim(),
+          businessName: conversation.lead.company || conversation.lead.firstName,
+          phone: conversation.lead.phone,
+          email: conversation.lead.email || '',
+          linkedLeadId: conversation.leadId,
+          createdById: req.user!.id,
+        },
+      });
+    }
+
+    // Создаём deal
+    const deal = await prisma.deal.create({
+      data: {
+        clientId: client.id,
+        stageId,
+        createdById: req.user!.id,
+        assignedRepId: conversation.assignedRepId || req.user!.id,
+        createdFromSms: true,
+        smsConversationId: id,
+        clientNotes: `Source: SMS — Inbox`,
+      },
+    });
+
+    // Создаём pipeline card
+    await prisma.pipelineCard.create({
+      data: {
+        leadId: conversation.leadId,
+        stageId,
+      },
+    });
+
+    res.status(201).json({ deal });
   }
 }

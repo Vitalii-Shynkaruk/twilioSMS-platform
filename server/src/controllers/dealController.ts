@@ -95,7 +95,11 @@ function normalizeProductType(value: unknown): ProductType | null {
 }
 
 function normalizeRepToken(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function normalizeInitials(value: string): string {
@@ -423,7 +427,8 @@ export class DealController {
       : DealStage.NEW_LEAD;
 
     const parsedDealAmount = parseOptionalFloat(dealAmount);
-    const parsedSubmittedAmount = parseOptionalFloat(submittedAmount) ?? (isSubmittedAmountProduct(parsedProductType) ? parsedDealAmount : null);
+    const parsedSubmittedAmount =
+      parseOptionalFloat(submittedAmount) ?? (isSubmittedAmountProduct(parsedProductType) ? parsedDealAmount : null);
 
     const initialNotes = typeof notes === 'string' ? notes.trim() : '';
 
@@ -462,6 +467,22 @@ export class DealController {
         note: `Deal created for ${client.businessName}`,
       },
     });
+
+    // FIX 2: Автоматически заполняем source из SMS-кампании, если deal связан с lead
+    if (linkedLeadId) {
+      const campaignLead = await prisma.campaignLead.findFirst({
+        where: { leadId: linkedLeadId },
+        orderBy: { createdAt: 'desc' },
+        include: { campaign: { select: { name: true } } },
+      });
+      if (campaignLead?.campaign?.name) {
+        const sourceNote = `Source: SMS — ${campaignLead.campaign.name}`;
+        await prisma.deal.update({
+          where: { id: deal.id },
+          data: { clientNotes: sourceNote },
+        });
+      }
+    }
 
     if (initialNotes) {
       await prisma.dealEvent.create({
@@ -568,7 +589,7 @@ export class DealController {
           ? updateData.submittedAmount
           : dealAmountProvided
             ? updateData.dealAmount
-            : (existing as any).submittedAmount ?? existing.dealAmount ?? null;
+            : ((existing as any).submittedAmount ?? existing.dealAmount ?? null);
         updateData.submittedAmount = effectiveSubmittedAmount;
         updateData.dealAmount = null;
         updateData.needsAmount = !effectiveSubmittedAmount;
@@ -577,7 +598,7 @@ export class DealController {
           ? updateData.dealAmount
           : submittedAmountProvided
             ? updateData.submittedAmount
-            : existing.dealAmount ?? (existing as any).submittedAmount ?? null;
+            : (existing.dealAmount ?? (existing as any).submittedAmount ?? null);
         updateData.dealAmount = effectiveDealAmount;
         updateData.submittedAmount = null;
         updateData.needsAmount = !effectiveDealAmount;
@@ -714,7 +735,9 @@ export class DealController {
       }
 
       const nextProductType =
-        normalizeProductType(fundingEventUpdate.productType) || existingFundingEvent.productType || existing.productType;
+        normalizeProductType(fundingEventUpdate.productType) ||
+        existingFundingEvent.productType ||
+        existing.productType;
 
       let nextFundedDate: Date | null = existingFundingEvent.fundedDate || null;
       if (fundingEventUpdate.fundedDate !== undefined) {
@@ -1889,9 +1912,12 @@ export class DealController {
       const chunk = records.slice(batchStart, batchStart + BATCH_SIZE);
 
       for (const row of chunk) {
-        const businessName =
-          String(row.business_name || row['Business Name'] || row.BusinessName || row.company || row.Company || '').trim();
-        const contactName = String(row.contact_name || row['Contact Name'] || row.Contact || row.name || row.Name || '').trim();
+        const businessName = String(
+          row.business_name || row['Business Name'] || row.BusinessName || row.company || row.Company || '',
+        ).trim();
+        const contactName = String(
+          row.contact_name || row['Contact Name'] || row.Contact || row.name || row.Name || '',
+        ).trim();
         const phone = String(row.phone || row.Phone || row['Phone Number'] || row.mobile || '').replace(/\D/g, '');
         const email = String(row.email || row.Email || '').trim();
         const notes = String(row.notes || row.Notes || '').trim();

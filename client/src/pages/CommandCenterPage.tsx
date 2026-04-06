@@ -277,7 +277,9 @@ export default function CommandCenterPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvImporting, setCsvImporting] = useState(false);
   const [csvAssignRep, setCsvAssignRep] = useState<string>('');
-  const [importBatches, setImportBatches] = useState<Array<{ batchId: string; count: number; importedAt?: string }>>([]);
+  const [importBatches, setImportBatches] = useState<Array<{ batchId: string; count: number; importedAt?: string }>>(
+    [],
+  );
   const [visualMode, setVisualMode] = useState<'dark' | 'light'>(() => {
     const saved = localStorage.getItem(COMMAND_CENTER_VISUAL_MODE_KEY);
     return saved === 'light' ? 'light' : 'dark';
@@ -384,8 +386,7 @@ export default function CommandCenterPage() {
 
   const { data: overdueTasks } = useQuery<Deal[]>({
     queryKey: ['cc-overdue-tasks', repIdParam],
-    queryFn: async () =>
-      (await commandCenterApi.getOverdueTasks(repIdParam ? { repId: repIdParam } : undefined)).data,
+    queryFn: async () => (await commandCenterApi.getOverdueTasks(repIdParam ? { repId: repIdParam } : undefined)).data,
     refetchInterval: 30000,
   });
 
@@ -520,7 +521,10 @@ export default function CommandCenterPage() {
   // ══════════════════════════════════════
 
   return (
-    <div className={`cc-root ${visualMode === 'light' ? 'cc-light' : 'cc-dark'}`} style={{ background: 'var(--bg)', minHeight: '100vh' }}>
+    <div
+      className={`cc-root ${visualMode === 'light' ? 'cc-light' : 'cc-dark'}`}
+      style={{ background: 'var(--bg)', minHeight: '100vh' }}
+    >
       {/* TOPBAR */}
       <div className="topbar">
         <span className="cc-title-label">Command Center</span>
@@ -724,9 +728,9 @@ export default function CommandCenterPage() {
                 </div>
                 <div className="hboxes">
                   <div className="hbox">
-                    <div className="hbl">Pipeline Value</div>
+                    <div className="hbl">Pipeline Value (Approved)</div>
                     <div className="hbv">{fmtCurrency(metrics?.pipelineValue)}</div>
-                    <div className="hbs">Approved + Committed + Nurture</div>
+                    <div className="hbs">Approved / Offers — all reps</div>
                   </div>
                   <div className="hbox">
                     <div className="hbl">Lifetime Funded</div>
@@ -756,9 +760,11 @@ export default function CommandCenterPage() {
                 </div>
               </div>
               <div className="sc tp">
-                <div className="scl">Pipeline Value</div>
+                <div className="scl">{isAdmin ? 'Pipeline Value (Approved)' : 'Pipeline Value'}</div>
                 <div className="scv purple">{fmtCurrency(metrics?.pipelineValue)}</div>
-                <div className="scd up">Approved {fmtCurrency(metrics?.atRisk)} + Nurture prior offers</div>
+                <div className="scd up">
+                  {isAdmin ? 'Approved / Offers — all reps' : 'Approved + Committed + Nurture'}
+                </div>
               </div>
               <div className="sc" style={{ borderTop: '1px solid var(--green2)' }}>
                 <div className="scl">Committed (Funding)</div>
@@ -2873,31 +2879,31 @@ function ProductMixModule({
   );
 }
 
+function getActionClass(action: string): string {
+  switch (action) {
+    case 'Call Now':
+    case 'CLOSE NOW':
+      return 'n5-call';
+    case 'Send Offer':
+      return 'n5-send';
+    case 'Follow Up':
+      return 'n5-follow';
+    case 'Request Docs':
+      return 'n5-docs';
+    default:
+      return 'n5-follow';
+  }
+}
+
+function getPriorityClassStatic(deal: QueueDeal): string {
+  const score = (deal as any).priorityScore ?? 0;
+  if (score >= 60) return 'urgent';
+  if (score >= 30) return 'high';
+  return 'normal';
+}
+
 function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
   if (!deals || deals.length === 0) return <div style={{ fontSize: 10, color: 'var(--muted)' }}>No actions queued</div>;
-
-  function getActionClass(action: string): string {
-    switch (action) {
-      case 'Call Now':
-      case 'CLOSE NOW':
-        return 'n5-call';
-      case 'Send Offer':
-        return 'n5-send';
-      case 'Follow Up':
-        return 'n5-follow';
-      case 'Request Docs':
-        return 'n5-docs';
-      default:
-        return 'n5-follow';
-    }
-  }
-
-  function getPriorityClass(deal: QueueDeal): string {
-    const score = (deal as any).priorityScore ?? 0;
-    if (score >= 60) return 'urgent';
-    if (score >= 30) return 'high';
-    return 'normal';
-  }
 
   return (
     <div className="n5-list">
@@ -2905,7 +2911,7 @@ function Next5Actions({ deals }: { deals?: QueueDeal[] }) {
         const score = (deal as any).priorityScore ?? 0;
         const scoreColor = score >= 60 ? '#3AB97A' : score >= 30 ? '#C9952A' : '#E24B4A';
         return (
-          <div className={`n5-item ${getPriorityClass(deal)}`} key={deal.id}>
+          <div className={`n5-item ${getPriorityClassStatic(deal)}`} key={deal.id}>
             <div className="n5-rank">{i + 1}</div>
             <div className="n5-name">{deal.client?.businessName || 'Unknown'}</div>
             <div style={{ fontSize: 9, fontWeight: 700, color: scoreColor, minWidth: 40, textAlign: 'right' }}>

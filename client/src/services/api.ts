@@ -153,3 +153,49 @@ export const importApi = {
   getBatches: () => api.get('/import/batches'),
   rollbackBatch: (batchId: string) => api.delete(`/import/batches/${batchId}`),
 };
+
+// ─── Phase 1: SMS Inbox API helpers ───
+
+export const inboxApi = {
+  // Базовые
+  listConversations: (params?: Record<string, string>) => api.get('/inbox', { params }),
+  getConversation: (id: string, params?: Record<string, string>) => api.get(`/inbox/${id}`, { params }),
+  getOrCreateByLead: (leadId: string) => api.get(`/inbox/by-lead/${leadId}`),
+  markRead: (id: string) => api.post(`/inbox/${id}/read`),
+  sendReply: (id: string, body: string) => api.post(`/inbox/${id}/reply`, { body }),
+  assignRep: (id: string, repId: string) => api.put(`/inbox/${id}/assign`, { repId }),
+
+  // Phase 1: Статус разговора
+  updateStatus: (
+    id: string,
+    data: {
+      hotLead?: boolean;
+      leadStatus?: string;
+      emailReceived?: boolean;
+      nextFollowupAt?: string | null;
+    },
+  ) => api.patch(`/inbox/${id}/status`, data),
+
+  // Phase 1: Заметки
+  listNotes: (id: string) => api.get(`/inbox/${id}/notes`),
+  createNote: (id: string, body: string, dealId?: string) => api.post(`/inbox/${id}/notes`, { body, dealId }),
+  deleteNote: (id: string, noteId: string) => api.delete(`/inbox/${id}/notes/${noteId}`),
+
+  // Phase 1: Шаблоны
+  listTemplates: (params?: Record<string, string>) => api.get('/inbox/templates/list', { params }),
+  createTemplate: (data: { name: string; body: string; category?: string; visibility?: string }) =>
+    api.post('/inbox/templates', data),
+  updateTemplate: (id: string, data: any) => api.put(`/inbox/templates/${id}`, data),
+  deleteTemplate: (id: string) => api.delete(`/inbox/templates/${id}`),
+  toggleFavorite: (id: string) => api.post(`/inbox/templates/${id}/favorite`),
+  logTemplateUsage: (id: string, conversationId?: string) => api.post(`/inbox/templates/${id}/use`, { conversationId }),
+
+  // Phase 1: Отложенные сообщения
+  listScheduled: (id: string) => api.get(`/inbox/${id}/scheduled`),
+  createScheduled: (data: { conversationId: string; body: string; scheduledAt: string; fromNumber: string }) =>
+    api.post('/inbox/scheduled', data),
+  cancelScheduled: (scheduledId: string) => api.delete(`/inbox/scheduled/${scheduledId}`),
+
+  // Phase 1: Pipeline интеграция
+  addToPipeline: (id: string, stageId: string) => api.post(`/inbox/${id}/add-to-pipeline`, { stageId }),
+};

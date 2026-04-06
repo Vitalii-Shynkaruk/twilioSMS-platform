@@ -168,7 +168,15 @@ export class CommandCenterController {
     };
     const approvedCommittedValue = pipelineDeals.reduce((s: number, d: any) => s + bestOfferVal(d), 0);
     const nurtureValue = nurtureDeals.reduce((s: number, d: any) => s + (d.prevOffer || d.dealAmount || 0), 0);
-    const pipelineValue = approvedCommittedValue + nurtureValue;
+
+    // Admin Pipeline Value = только Approved / Offers (все репы)
+    // Rep Pipeline Value = Approved + Committed + Nurture (как и раньше)
+    const approvedOnlyValue = pipelineDeals
+      .filter((d: any) => d.stage === DealStage.APPROVED_OFFERS)
+      .reduce((s: number, d: any) => s + bestOfferVal(d), 0);
+
+    const isAdminView = isAdminLike(req.user) && !repId;
+    const pipelineValue = isAdminView ? approvedOnlyValue : approvedCommittedValue + nurtureValue;
 
     // Committed $ — use best offer (consistent with pipeline board)
     const committedValue = pipelineDeals
@@ -456,7 +464,11 @@ export class CommandCenterController {
     const { repId } = req.query;
     const now = new Date();
 
-    const where: any = { ...filter, stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] }, nextActionDue: { lt: now } };
+    const where: any = {
+      ...filter,
+      stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
+      nextActionDue: { lt: now },
+    };
     if (isAdminLike(req.user) && repId) where.assignedRepId = repId as string;
 
     const deals = await prisma.deal.findMany({

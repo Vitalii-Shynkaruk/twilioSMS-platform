@@ -12,7 +12,7 @@ import LoginPage from './pages/LoginPage';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage'));
 const CampaignDetailPage = lazy(() => import('./pages/CampaignDetailPage'));
-const InboxPage = lazy(() => import('./pages/InboxPage'));
+const InboxPage = lazy(() => import('./pages/InboxPageV2'));
 const PipelinePage = lazy(() => import('./pages/PipelinePageV2'));
 const CommandCenterPage = lazy(() => import('./pages/CommandCenterPage'));
 const LeadsPage = lazy(() => import('./pages/LeadsPage'));

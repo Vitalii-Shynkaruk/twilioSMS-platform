@@ -779,6 +779,23 @@ button { font-family: var(--mono); cursor: pointer; }
 }
 
 /* ═══════════════════════════════════════════
+   RESPONSIVE — HALF-SCREEN (≤960px) — FIX 4
+   ═══════════════════════════════════════════ */
+@media (max-width: 960px) {
+  .cc-root { overflow-x: auto; }
+  .topbar { flex-wrap: wrap; height: auto; min-height: 40px; }
+  .hero-g { grid-template-columns: 1fr; gap: 12px; }
+  .hboxes { flex-wrap: wrap; }
+  .hbox { flex: 1; min-width: 80px; }
+  .funded-n { font-size: 30px; }
+  .scv { font-size: 18px; }
+  .g5 { grid-template-columns: repeat(2, 1fr); }
+  .rsw { flex-wrap: wrap; }
+  .rb { padding: 3px 8px; font-size: 10px; }
+  .csv-box, .deal-box, .ca-box { width: min(90vw, 420px); }
+}
+
+/* ═══════════════════════════════════════════
    RESPONSIVE — MOBILE (≤768px)
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {

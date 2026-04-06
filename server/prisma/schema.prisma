@@ -285,6 +285,12 @@ model Conversation {
   lastDirection   String?   // "inbound" | "outbound"
   unreadCount     Int       @default(0)
   isActive        Boolean   @default(true)
+
+  // Phase 1: SMS Inbox Rebuild — новые поля
+  hotLead         Boolean   @default(false)   // Вручную помечается как горячий лид (Phase 1)
+  leadStatus      String?   // "Interested" / "Not Interested" / "DNC"
+  nextFollowupAt  DateTime? // Дата follow-up
+  emailReceived   Boolean   @default(false)   // Помечен как "Email Rcv"
   
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -293,12 +299,17 @@ model Conversation {
   lead            Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
   assignedRep     User?        @relation(fields: [assignedRepId], references: [id], onDelete: SetNull)
   messages        Message[]
+  notes           ConversationNote[]
+  deals           Deal[]       @relation("ConversationDeals")
 
   @@unique([leadId])
   @@index([assignedRepId, lastMessageAt])
   @@index([assignedRepId])
   @@index([lastMessageAt])
   @@index([unreadCount])
+  @@index([hotLead])
+  @@index([leadStatus])
+  @@index([nextFollowupAt])
   @@map("conversations")
 }
 
@@ -805,6 +816,11 @@ model Deal {
   clientNotes       String?         @db.Text
   isHot             Boolean         @default(false)
 
+  // Phase 1: SMS Inbox — deal создан из SMS
+  createdFromSms      Boolean       @default(false)
+  smsConversationId   String?       // FK к conversation
+  createdByUserId     String?       // кто создал deal
+
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -812,6 +828,7 @@ model Deal {
   client            Client          @relation(fields: [clientId], references: [id])
   assignedRep       User            @relation("PrimaryRep", fields: [assignedRepId], references: [id])
   lead              Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  smsConversation   Conversation?   @relation("ConversationDeals", fields: [smsConversationId], references: [id], onDelete: SetNull)
   offers            Offer[]
   fundingEvents     FundingEvent[]
   dealEvents        DealEvent[]
@@ -827,6 +844,8 @@ model Deal {
   @@index([stage, assignedRepId])
   @@index([importBatch])
   @@index([leadId])
+  @@index([smsConversationId])
+  @@index([createdFromSms])
   @@map("deals")
 }
 
@@ -933,4 +952,100 @@ model Goal {
 
   @@unique([entityType, entityId])
   @@map("goals")
+}
+
+// ============================================
+// PHASE 1: SMS INBOX REBUILD — НОВЫЕ ТАБЛИЦЫ
+// ============================================
+
+enum TemplateVisibility {
+  PRIVATE
+  TEAM
+  GLOBAL
+}
+
+model SmsTemplate {
+  id          String             @id @default(cuid())
+  name        String
+  body        String             @db.Text
+  category    String?            // "follow_up", "first_touch", etc.
+  visibility  TemplateVisibility @default(PRIVATE)
+  createdById String
+  usageCount  Int                @default(0)
+  lastUsedAt  DateTime?
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  favorites   SmsTemplateFavorite[]
+  usageLogs   SmsTemplateUsageLog[]
+
+  @@index([createdById])
+  @@index([visibility])
+  @@index([category])
+  @@map("sms_templates")
+}
+
+model SmsTemplateFavorite {
+  id         String @id @default(cuid())
+  userId     String
+  templateId String
+
+  template   SmsTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, templateId])
+  @@map("sms_template_favorites")
+}
+
+model SmsTemplateUsageLog {
+  id             String   @id @default(cuid())
+  userId         String
+  templateId     String
+  conversationId String?
+  usedAt         DateTime @default(now())
+
+  template       SmsTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([templateId])
+  @@index([usedAt])
+  @@map("sms_template_usage_log")
+}
+
+enum ScheduledMessageStatus {
+  PENDING
+  SENT
+  CANCELLED
+}
+
+model ScheduledMessage {
+  id             String                 @id @default(cuid())
+  conversationId String
+  body           String                 @db.Text
+  scheduledAt    DateTime
+  status         ScheduledMessageStatus @default(PENDING)
+  createdById    String
+  fromNumber     String                 // E.164
+
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([conversationId])
+  @@map("scheduled_messages")
+}
+
+model ConversationNote {
+  id             String   @id @default(cuid())
+  conversationId String
+  dealId         String?  // Опциональная связь с deal
+  body           String   @db.Text
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([dealId])
+  @@map("conversation_notes")
 }

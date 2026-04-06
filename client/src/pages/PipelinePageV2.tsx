@@ -129,6 +129,7 @@ export default function PipelinePage() {
   const [showCreateDeal, setShowCreateDeal] = useState(initialNewDeal === '1');
   const [showGoals, setShowGoals] = useState(false);
   const [showImportLeads, setShowImportLeads] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [addOfferCtx, setAddOfferCtx] = useState<{
     dealId: string;
     clientId?: string;
@@ -286,7 +287,9 @@ export default function PipelinePage() {
   const { data: reviveQueue } = useQuery({
     queryKey: ['deals', 'revive', reviveQueueParams],
     queryFn: async () => {
-      const { data } = await dealApi.getReviveQueue(Object.keys(reviveQueueParams).length ? reviveQueueParams : undefined);
+      const { data } = await dealApi.getReviveQueue(
+        Object.keys(reviveQueueParams).length ? reviveQueueParams : undefined,
+      );
       return data as Deal[];
     },
   });
@@ -306,10 +309,17 @@ export default function PipelinePage() {
   const filteredBoard = useMemo(() => {
     if (!board?.stages) return board;
     const now = new Date();
+    const term = searchTerm.toLowerCase().trim();
     return {
       ...board,
       stages: board.stages.map((s: any) => {
         const filteredDeals = s.deals.filter((d: Deal) => {
+          // Поиск по Business Name и Contact Name
+          if (term) {
+            const biz = (d.client?.businessName || '').toLowerCase();
+            const contact = (d.client?.contactName || '').toLowerCase();
+            if (!biz.includes(term) && !contact.includes(term)) return false;
+          }
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
           if (quickFilter === 'shared' && !((d.assistingRepIds as string[]) || []).includes(user?.id || ''))
             return false;
@@ -353,7 +363,7 @@ export default function PipelinePage() {
         return { ...s, deals: filteredDeals, count: filteredDeals.length, value };
       }),
     };
-  }, [board, quickFilter, user?.id]);
+  }, [board, quickFilter, user?.id, searchTerm]);
 
   // ─── DnD handlers ───
   const handleDragEnd = useCallback(
@@ -506,6 +516,22 @@ export default function PipelinePage() {
             <path d="M5.5 8.5h6M8.5 5.5v6" stroke="#C9952A" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
           SCL <em>Pipeline</em>
+        </div>
+
+        {/* Поиск по deal-карточкам */}
+        <div className="pipeline-search">
+          <input
+            type="text"
+            placeholder="Search deals..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pipeline-search-input"
+          />
+          {searchTerm && (
+            <button className="pipeline-search-clear" onClick={() => setSearchTerm('')}>
+              ✕
+            </button>
+          )}
         </div>
 
         {/* Role switch (admin) */}
@@ -1241,7 +1267,9 @@ export default function PipelinePage() {
         />
       )}
 
-      {hoverTooltip && viewMode === 'execution' && <DealHoverTooltip deal={hoverTooltip.deal} x={hoverTooltip.x} y={hoverTooltip.y} />}
+      {hoverTooltip && viewMode === 'execution' && (
+        <DealHoverTooltip deal={hoverTooltip.deal} x={hoverTooltip.x} y={hoverTooltip.y} />
+      )}
 
       <button
         className="pipe-theme-toggle"
@@ -2875,12 +2903,22 @@ function DealHoverTooltip({ deal, x, y }: { deal: Deal; x: number; y: number }) 
   const primaryName = deal.assignedRep
     ? `${deal.assignedRep.firstName} ${deal.assignedRep.lastName || ''}`.trim()
     : 'Unassigned';
-  const primaryInit = deal.assignedRep?.initials || primaryName.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+  const primaryInit =
+    deal.assignedRep?.initials ||
+    primaryName
+      .split(' ')
+      .map((p) => p[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  /* eslint-disable react-hooks/purity -- window/Date access safe in tooltip */
   const showBelow = typeof window !== 'undefined' ? y < window.innerHeight * 0.45 : false;
   const touchedDays = deal.lastActivityAt
     ? Math.max(0, Math.floor((Date.now() - new Date(deal.lastActivityAt).getTime()) / 86400000))
     : null;
-  const touchedLabel = touchedDays === null ? 'Touched recently' : touchedDays === 0 ? 'Touched today' : `Touched ${touchedDays}d ago`;
+  /* eslint-enable react-hooks/purity */
+  const touchedLabel =
+    touchedDays === null ? 'Touched recently' : touchedDays === 0 ? 'Touched today' : `Touched ${touchedDays}d ago`;
 
   return (
     <div
@@ -2907,9 +2945,7 @@ function DealHoverTooltip({ deal, x, y }: { deal: Deal; x: number; y: number }) 
           {deal.client?.email ? ` · ${deal.client.email}` : ''}
         </div>
       )}
-      {!canViewContact && (
-        <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>Contact hidden</div>
-      )}
+      {!canViewContact && <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 4 }}>Contact hidden</div>}
       <div style={{ fontSize: 10, marginBottom: 3 }}>
         <span style={{ color: 'var(--text3)' }}>Product: </span>
         <span>{deal.productType || '—'}</span>
@@ -3571,8 +3607,7 @@ function AddOfferModal({
                   border: 'none',
                   background:
                     saving || !lenderName || !amount || !termMonths || !rateOrFactor ? 'var(--surface3)' : 'var(--cta)',
-                  color:
-                    saving || !lenderName || !amount || !termMonths || !rateOrFactor ? 'var(--muted)' : '#fff',
+                  color: saving || !lenderName || !amount || !termMonths || !rateOrFactor ? 'var(--muted)' : '#fff',
                   fontSize: 12,
                   fontWeight: 700,
                   cursor: saving ? 'not-allowed' : 'pointer',

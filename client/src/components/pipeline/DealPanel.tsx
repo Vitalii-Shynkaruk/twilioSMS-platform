@@ -585,7 +585,9 @@ function DealClientTab({
   const clientEmail = clientMeta.email ?? deal.client?.email ?? '';
   const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
   const clientRevenue = clientMeta.monthlyRevenue ?? '';
-  const clientSource = clientMeta.source ?? '';
+  // FIX 2: Source из clientNotes (если deal создан из SMS) или из localStorage
+  const smsSource = deal.clientNotes?.startsWith('Source: SMS') ? deal.clientNotes.replace('Source: ', '') : '';
+  const clientSource = (smsSource || clientMeta.source) ?? '';
   const isSubmittedProduct = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
   const amountLabel = isSubmittedProduct ? 'Submitted Amount' : 'Requested Amount';
   const amountPayloadKey = isSubmittedProduct ? 'submittedAmount' : 'dealAmount';
@@ -782,16 +784,22 @@ function DealClientTab({
         <div className="sf">
           <div className="sf-l">Source</div>
           <div className="src-row">
-            {sourceOptions.map((src) => (
-              <button
-                key={src}
-                type="button"
-                className={clsx('src-chip', clientSource === src && 'sel')}
-                onClick={() => saveClientMeta({ source: src })}
-              >
-                {src}
-              </button>
-            ))}
+            {smsSource ? (
+              <span className="src-chip sel" style={{ cursor: 'default' }}>
+                {smsSource}
+              </span>
+            ) : (
+              sourceOptions.map((src) => (
+                <button
+                  key={src}
+                  type="button"
+                  className={clsx('src-chip', clientSource === src && 'sel')}
+                  onClick={() => saveClientMeta({ source: src })}
+                >
+                  {src}
+                </button>
+              ))
+            )}
           </div>
         </div>
         <div className="sf">
@@ -1254,7 +1262,9 @@ function DetailsTab({
         )}
         {(deal.submittedAmount || deal.dealAmount) && (
           <Field
-            label={['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '') ? 'Submitted Amount' : 'Requested Amount'}
+            label={
+              ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '') ? 'Submitted Amount' : 'Requested Amount'
+            }
             value={formatCurrency(deal.submittedAmount ?? deal.dealAmount)}
           />
         )}

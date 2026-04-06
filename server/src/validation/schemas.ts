@@ -137,6 +137,43 @@ export const assignRepSchema = z.object({
   repId: z.string().min(1),
 });
 
+// Phase 1: Обновление статуса разговора
+export const updateConversationStatusSchema = z.object({
+  hotLead: z.boolean().optional(),
+  leadStatus: z.enum(['Interested', 'Not Interested', 'DNC', '']).optional(),
+  emailReceived: z.boolean().optional(),
+  nextFollowupAt: z.string().datetime().nullable().optional(),
+});
+
+// Phase 1: Заметки к разговору
+export const createNoteSchema = z.object({
+  body: z.string().min(1).max(5000).trim(),
+  dealId: z.string().optional(),
+});
+
+// Phase 1: SMS-шаблоны
+export const createTemplateSchema = z.object({
+  name: z.string().min(1).max(200).trim(),
+  body: z.string().min(1).max(1600).trim(),
+  category: z.string().max(100).optional(),
+  visibility: z.enum(['PRIVATE', 'TEAM', 'GLOBAL']).default('PRIVATE'),
+});
+
+export const updateTemplateSchema = createTemplateSchema.partial();
+
+// Phase 1: Отложенные сообщения
+export const createScheduledMessageSchema = z.object({
+  conversationId: z.string().min(1),
+  body: z.string().min(1).max(1600).trim(),
+  scheduledAt: z.string().datetime(),
+  fromNumber: z.string().min(1),
+});
+
+// Phase 1: Добавить в pipeline из inbox
+export const addToPipelineSchema = z.object({
+  stageId: z.string().min(1),
+});
+
 // ─── Numbers ───
 export const createNumberSchema = z.object({
   phoneNumber: e164Phone,

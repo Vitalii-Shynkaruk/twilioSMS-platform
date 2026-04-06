@@ -69,6 +69,13 @@ export interface Conversation {
   unreadCount: number;
   isActive: boolean;
   messages?: Message[];
+  // Phase 1: Расширенные поля
+  hotLead?: boolean;
+  leadStatus?: string | null;
+  nextFollowupAt?: string | null;
+  emailReceived?: boolean;
+  notes?: ConversationNote[];
+  deals?: any[];
 }
 
 export interface Message {
@@ -94,6 +101,44 @@ export type MessageStatus =
   | 'UNDELIVERED'
   | 'BLOCKED'
   | 'RECEIVED';
+
+// Phase 1: SMS Шаблоны
+export interface SmsTemplate {
+  id: string;
+  name: string;
+  body: string;
+  category?: string;
+  visibility: 'PRIVATE' | 'TEAM' | 'GLOBAL';
+  createdById: string;
+  usageCount: number;
+  lastUsedAt?: string;
+  isActive: boolean;
+  isFavorite?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Phase 1: Заметки к разговору
+export interface ConversationNote {
+  id: string;
+  conversationId: string;
+  dealId?: string;
+  body: string;
+  createdById: string;
+  createdAt: string;
+}
+
+// Phase 1: Отложенные сообщения
+export interface ScheduledMessage {
+  id: string;
+  conversationId: string;
+  body: string;
+  scheduledAt: string;
+  status: 'PENDING' | 'SENT' | 'CANCELLED';
+  createdById: string;
+  fromNumber: string;
+  createdAt: string;
+}
 
 export interface Campaign {
   id: string;

@@ -331,10 +331,10 @@ export class SendingEngine {
         const message = messages[i];
         const msgData = messageDataToCreate[i];
 
-        // Calculate delay: base interval + jitter + optional time distribution
+        // Кумулятивная задержка: каждый следующий msg получает +baseDelay с jitter
         const jitteredDelay = this.calculateJitteredDelay(baseDelayBetweenMs);
         const timeDistDelay = this.calculateTimeDistributedDelay(jobIndex, messageDataToCreate.length);
-        const totalDelay = timeDistDelay > 0 ? timeDistDelay : jobIndex * jitteredDelay;
+        const totalDelay = timeDistDelay > 0 ? timeDistDelay : (jobIndex + 1) * jitteredDelay;
 
         jobsToQueue.push({
           name: 'send-sms',
@@ -349,7 +349,7 @@ export class SendingEngine {
           },
           opts: {
             delay: totalDelay,
-            priority: 5,
+            // НЕ используем priority — конфликтует с delay в BullMQ
           },
         });
 
@@ -360,6 +360,13 @@ export class SendingEngine {
 
     // ── BULK ADD to BullMQ (one Redis call instead of N) ──
     if (jobsToQueue.length > 0) {
+      const firstDelay = jobsToQueue[0]?.opts?.delay ?? 0;
+      const lastDelay = jobsToQueue[jobsToQueue.length - 1]?.opts?.delay ?? 0;
+      logger.info(
+        `[BulkSend] Queuing ${jobsToQueue.length} jobs, speed=${sendingSpeed}/min, ` +
+          `baseDelay=${baseDelayBetweenMs}ms, firstDelay=${firstDelay}ms, lastDelay=${lastDelay}ms ` +
+          `(~${Math.round(lastDelay / 60000)}min total)`,
+      );
       await smsQueue.addBulk(jobsToQueue);
     }
 

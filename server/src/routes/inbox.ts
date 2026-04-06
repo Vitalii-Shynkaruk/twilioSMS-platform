@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { InboxController } from '../controllers/inboxController';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../validation/middleware';
 import {
@@ -24,7 +24,12 @@ router.get('/by-lead/:leadId', asyncHandler(InboxController.getOrCreateByLead));
 router.get('/:id', asyncHandler(InboxController.getConversation));
 router.post('/:id/read', asyncHandler(InboxController.markRead));
 router.post('/:id/reply', validate(sendReplySchema), asyncHandler(InboxController.sendReply));
-router.put('/:id/assign', validate(assignRepSchema), asyncHandler(InboxController.assignRep));
+router.put(
+  '/:id/assign',
+  requireRole('ADMIN', 'MANAGER'),
+  validate(assignRepSchema),
+  asyncHandler(InboxController.assignRep),
+);
 
 // Phase 1: Статус разговора
 router.patch(

@@ -38,9 +38,8 @@ import redis from './config/redis';
 const app = express();
 
 // Trust proxy (required behind nginx/load balancer for correct req.ip & rate limiting)
-if (config.env === 'production') {
-  app.set('trust proxy', 1);
-}
+// Безусловно включаем — за Nginx/reverse proxy нужно всегда
+app.set('trust proxy', 1);
 
 // Security
 app.use(

@@ -297,6 +297,11 @@ export class LeadController {
     const existing = await prisma.lead.findUnique({ where: { id } });
     if (!existing) throw new AppError('Lead not found', 404);
 
+    // Проверка авторизации: REP может обновлять только свои лиды
+    if (req.user?.role === 'REP' && existing.assignedRepId !== req.user.id) {
+      throw new AppError('Access denied: you can only update your own leads', 403);
+    }
+
     const data: any = {};
     if (firstName) data.firstName = firstName;
     if (lastName !== undefined) data.lastName = lastName;
@@ -370,7 +375,8 @@ export class LeadController {
           where: { leadId: id },
           select: { assignedRepId: true },
         });
-        const dealRepId = lead.assignedRepId || existing.assignedRepId || leadConversation?.assignedRepId || req.user!.id;
+        const dealRepId =
+          lead.assignedRepId || existing.assignedRepId || leadConversation?.assignedRepId || req.user!.id;
 
         if (!lead.assignedRepId && dealRepId) {
           await prisma.lead.update({
@@ -390,7 +396,13 @@ export class LeadController {
               state: existing.state || undefined,
             },
           });
-        } else if (BUSINESS_NAME_PLACEHOLDERS.has(String(client.businessName || '').trim().toLowerCase())) {
+        } else if (
+          BUSINESS_NAME_PLACEHOLDERS.has(
+            String(client.businessName || '')
+              .trim()
+              .toLowerCase(),
+          )
+        ) {
           client = await prisma.client.update({
             where: { id: client.id },
             data: { businessName },
@@ -924,6 +936,12 @@ export class LeadController {
 
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) throw new AppError('Lead not found', 404);
+
+    // Проверка скоупа: REP не может удалять (уже на уровне роута), MANAGER может удалять только свои назначения
+    if (req.user?.role === 'MANAGER' && lead.assignedRepId && lead.assignedRepId !== req.user.id) {
+      // MANAGER может удалять неназначенные лиды и свои лиды
+      throw new AppError('Access denied: you can only delete leads assigned to you', 403);
+    }
 
     // Soft-delete: mark as deleted instead of destroying data
     await prisma.$transaction([

@@ -530,6 +530,11 @@ export class DealController {
     const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 
+    // REP может редактировать только свои сделки
+    if (!isAdminLike(req.user) && existing.assignedRepId !== req.user?.id) {
+      return res.status(403).json({ error: 'You can only edit deals assigned to you' });
+    }
+
     const fundingEventUpdate = hasOwn('fundingEventUpdate') ? updateData.fundingEventUpdate : null;
     delete updateData.fundingEventUpdate;
 

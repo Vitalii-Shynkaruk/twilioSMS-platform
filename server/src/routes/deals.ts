@@ -15,7 +15,12 @@ router.get('/board', asyncHandler(DealController.getBoard));
 router.get('/stats', asyncHandler(DealController.getStats));
 router.get('/revive-queue', asyncHandler(DealController.getReviveQueue));
 router.post('/import-csv', requireRole('ADMIN'), upload.single('file'), asyncHandler(DealController.importCSV));
-router.post('/import-leads', upload.single('file'), asyncHandler(DealController.importLeads));
+router.post(
+  '/import-leads',
+  requireRole('ADMIN', 'MANAGER'),
+  upload.single('file'),
+  asyncHandler(DealController.importLeads),
+);
 router.get('/import-batches', requireRole('ADMIN'), asyncHandler(DealController.getImportBatches));
 router.delete('/import-batch/:batchId', requireRole('ADMIN'), asyncHandler(DealController.deleteImportBatch));
 router.get('/:id', asyncHandler(DealController.getDeal));

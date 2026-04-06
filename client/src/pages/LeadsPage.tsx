@@ -243,7 +243,7 @@ export default function LeadsPage() {
           ))}
         </select>
         <select
-          className="input w-auto"
+          className="input w-auto max-w-[200px] truncate"
           value={listFilter}
           onChange={(e) => {
             setListFilter(e.target.value);
@@ -695,15 +695,15 @@ function LeadRow({
           {lead.tags?.slice(0, 3).map((lt: any) => (
             <span
               key={lt.tag.id}
-              className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer group/tag inline-flex items-center gap-0.5"
+              className="text-[10px] px-1.5 py-0.5 rounded cursor-pointer group/tag inline-flex items-center gap-0.5 max-w-[120px]"
               style={{ backgroundColor: lt.tag.color + '33', color: lt.tag.color }}
-              title={`Click to remove "${lt.tag.name}"`}
+              title={lt.tag.name}
               onClick={(e) => {
                 e.stopPropagation();
                 removeTagMutation.mutate({ leadId: lead.id, tagId: lt.tag.id });
               }}
             >
-              {lt.tag.name}
+              <span className="truncate">{lt.tag.name}</span>
               <X className="w-2.5 h-2.5 opacity-0 group-hover/tag:opacity-100 transition-opacity" />
             </span>
           ))}

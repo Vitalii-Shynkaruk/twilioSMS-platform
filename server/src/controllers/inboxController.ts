@@ -761,9 +761,9 @@ export class InboxController {
     });
     if (existingDeal) throw new AppError('Deal already exists for this conversation', 409);
 
-    // Проверяем что есть client для этого лида
+    // Ищем клиента по телефону лида
     let client = await prisma.client.findFirst({
-      where: { linkedLeadId: conversation.leadId },
+      where: { phone: conversation.lead.phone },
     });
 
     // Если нет клиента — создаём
@@ -774,8 +774,6 @@ export class InboxController {
           businessName: conversation.lead.company || conversation.lead.firstName,
           phone: conversation.lead.phone,
           email: conversation.lead.email || '',
-          linkedLeadId: conversation.leadId,
-          createdById: req.user!.id,
         },
       });
     }
@@ -784,11 +782,13 @@ export class InboxController {
     const deal = await prisma.deal.create({
       data: {
         clientId: client.id,
-        stageId,
-        createdById: req.user!.id,
+        stage: 'NEW_LEAD',
+        stageLabel: 'New Lead',
         assignedRepId: conversation.assignedRepId || req.user!.id,
         createdFromSms: true,
         smsConversationId: id,
+        createdByUserId: req.user!.id,
+        leadId: conversation.leadId,
         clientNotes: `Source: SMS — Inbox`,
       },
     });

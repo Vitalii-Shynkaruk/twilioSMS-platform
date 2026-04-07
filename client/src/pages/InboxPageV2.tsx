@@ -1,12 +1,9 @@
-// © BuyReadySite.com — Phase 1: SMS Inbox Rebuild (3-panel layout)
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api, { inboxApi } from '../services/api';
-import { Conversation, Message, SmsTemplate, ConversationNote } from '../types';
-import { useDebounce } from '../hooks/useDebounce';
-import { SmsCounter } from '../components/SmsCounter';
-import { useWebSocketStore } from '../stores/webSocketStore';
+import { format, formatDistanceToNow, isToday, addDays, setHours, setMinutes, nextMonday } from 'date-fns';
+import toast from 'react-hot-toast';
+import { clsx } from 'clsx';
 import {
   Search,
   Send,
@@ -15,65 +12,127 @@ import {
   AlertTriangle,
   MessageSquare,
   Phone,
+  Mail,
   X,
   Flame,
-  Mail,
   ThumbsUp,
   Ban,
   CalendarClock,
   FileText,
   UserPlus,
-  Sparkles,
   ChevronLeft,
   Plus,
-  Trash2,
-  Star,
-  Briefcase,
+  StickyNote,
+  Tag,
+  CalendarDays,
+  Check,
+  ChevronDown,
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
-import toast from 'react-hot-toast';
-import { clsx } from 'clsx';
+
+import api, { inboxApi } from '../services/api';
+import { Conversation, Message, SmsTemplate, ConversationNote, ConversationActivity } from '../types';
+import { useDebounce } from '../hooks/useDebounce';
+import { SmsCounter } from '../components/SmsCounter';
+import { useWebSocketStore } from '../stores/webSocketStore';
+import { useAuthStore } from '../stores/authStore';
 import '../styles/sms-inbox.css';
 
-// ─── Типы фильтров ───
-type InboxFilter = 'all' | 'unread' | 'hot' | 'interested' | 'dnc' | 'email_rcv' | 'followup';
+type InboxFilter = 'all' | 'unread' | 'hot' | 'email_rcv' | 'interested' | 'followup' | 'in_pipeline' | 'dnc';
+type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
-const FILTERS: Array<{ id: InboxFilter; label: string }> = [
+const FILTER_ROW_1: Array<{ id: InboxFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'unread', label: 'Unread' },
-  { id: 'hot', label: 'Hot' },
-  { id: 'interested', label: 'Interested' },
-  { id: 'dnc', label: 'DNC' },
-  { id: 'email_rcv', label: 'Email Rcv' },
-  { id: 'followup', label: 'Follow-up' },
+  { id: 'hot', label: '🔥 Hot' },
+  { id: 'email_rcv', label: '✉ Email Rcv' },
 ];
 
-// ─── Утилита: бейджи разговора ───
-function getConvBadges(conv: Conversation) {
+const FILTER_ROW_2: Array<{ id: InboxFilter; label: string }> = [
+  { id: 'interested', label: '✓ Interested' },
+  { id: 'followup', label: '⏱ Follow-Up' },
+  { id: 'in_pipeline', label: '→ In Pipeline' },
+  { id: 'dnc', label: '⛔ DNC' },
+];
+
+const SORT_OPTIONS: Array<{ id: InboxSort; label: string }> = [
+  { id: 'newest_activity', label: 'Newest Activity' },
+  { id: 'oldest_untouched', label: 'Oldest Untouched' },
+  { id: 'unread_first', label: 'Unread First' },
+  { id: 'hot_first', label: 'Hot First' },
+];
+
+const PIPELINE_STAGE_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: 'New Lead', value: 'NEW_LEAD' },
+  { label: 'Engaged / Interested', value: 'ENGAGED_INTERESTED' },
+  { label: 'Qualified', value: 'QUALIFIED' },
+  { label: 'Submitted (In Review)', value: 'SUBMITTED_IN_REVIEW' },
+  { label: 'Approved / Offers', value: 'APPROVED_OFFERS' },
+  { label: 'Nurture', value: 'NURTURE' },
+];
+
+function getFollowBadge(nextFollowupAt?: string | null) {
+  if (!nextFollowupAt) return null;
+  const d = new Date(nextFollowupAt);
+  const now = new Date();
+  const dn = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const nn = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (dn < nn) return '⏱ Overdue';
+  if (dn === nn) return '⏱ Follow Today';
+  return '⏱ Follow-Up';
+}
+
+function getConversationBadges(conv: Conversation): Array<{ label: string; cls: string }> {
   const badges: Array<{ label: string; cls: string }> = [];
-  if (conv.hotLead) badges.push({ label: 'HOT', cls: 'inbox-badge-hot' });
-  if (conv.leadStatus === 'Interested') badges.push({ label: 'INTERESTED', cls: 'inbox-badge-interested' });
-  if (conv.leadStatus === 'DNC') badges.push({ label: 'DNC', cls: 'inbox-badge-dnc' });
-  if (conv.emailReceived) badges.push({ label: 'EMAIL', cls: 'inbox-badge-email' });
-  if (conv.nextFollowupAt) badges.push({ label: 'F/U', cls: 'inbox-badge-followup' });
+  if (conv.hotLead) badges.push({ label: '🔥 Hot', cls: 'inbox-badge-hot' });
+  if (conv.emailReceived) badges.push({ label: '✉ Email Rcv', cls: 'inbox-badge-email' });
+  if (conv.leadStatus === 'Interested') badges.push({ label: '✓ Interested', cls: 'inbox-badge-interested' });
+  if (conv.isInPipeline) badges.push({ label: '→ In Pipeline', cls: 'inbox-badge-pipeline' });
+  if (conv.leadStatus === 'DNC') badges.push({ label: '⛔ DNC', cls: 'inbox-badge-dnc' });
+  const follow = getFollowBadge(conv.nextFollowupAt);
+  if (follow) {
+    const cls = follow.includes('Overdue') ? 'inbox-badge-overdue' : 'inbox-badge-followup';
+    badges.push({ label: follow, cls });
+  }
   return badges;
 }
 
-// ============================================
-// ГЛАВНЫЙ КОМПОНЕНТ
-// ============================================
+function formatThreadDateLabel(dateValue: string | Date) {
+  const dt = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
+  const base = format(dt, 'MMM d, yyyy').toUpperCase();
+  return isToday(dt) ? `${base} — TODAY` : base;
+}
+
+function messageDate(message: Message) {
+  return message.sentAt ? new Date(message.sentAt) : new Date(message.createdAt);
+}
+
+function MsgStatusText({ status }: { status: string }) {
+  if (status === 'DELIVERED') {
+    return <span className="inbox-msg-status delivered">✓✓ Delivered</span>;
+  }
+  if (status === 'FAILED' || status === 'UNDELIVERED' || status === 'BLOCKED') {
+    return <span className="inbox-msg-status failed">✗ Failed</span>;
+  }
+  if (status === 'OUTBOUND') {
+    return <span className="inbox-msg-status sent">✓ Sent</span>;
+  }
+  return <span className="inbox-msg-status sent">✓ Sent</span>;
+}
+
 export default function InboxPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
+  const debouncedSearch = useDebounce(search, 250);
   const [filter, setFilter] = useState<InboxFilter>('all');
+  const [sort, setSort] = useState<InboxSort>('newest_activity');
+  const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const sortRef = useRef<HTMLDivElement | null>(null);
   const queryClient = useQueryClient();
   const wsConnected = useWebSocketStore((s) => s.connected);
   const socket = useWebSocketStore((s) => s.socket);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Lead query param
   useEffect(() => {
     const leadId = searchParams.get('lead');
     if (leadId) {
@@ -82,89 +141,58 @@ export default function InboxPage() {
         .then(({ data }) => {
           if (data.conversation) {
             setSelectedId(data.conversation.id);
-            queryClient.invalidateQueries({ queryKey: ['conversations'] });
+            queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
           }
         })
         .catch(() => {});
       setSearchParams({}, { replace: true });
     }
-  }, []);
+  }, [queryClient, searchParams, setSearchParams]);
 
-  // Join conversation channel
   useEffect(() => {
-    if (socket && selectedId) {
-      socket.emit('join:conversation', selectedId);
-    }
+    if (!socket || !selectedId) return;
+    socket.emit('join:conversation', selectedId);
+    return () => {
+      socket.emit('leave:conversation', selectedId);
+    };
   }, [socket, selectedId]);
 
-  // Reset page on filter/search change
-  const handleFilterChange = useCallback((f: InboxFilter) => {
-    setFilter(f);
-    setPage(1);
-  }, []);
-
-  const handleSearchChange = useCallback((val: string) => {
-    setSearch(val);
-    setPage(1);
-  }, []);
-
-  // Маппинг фильтра Phase 1 → серверный
-  const serverFilter = useMemo(() => {
-    switch (filter) {
-      case 'all':
-        return 'all';
-      case 'unread':
-        return 'unread';
-      case 'interested':
-        return 'interested';
-      case 'dnc':
-        return 'dnc';
-      default:
-        return 'all'; // hot, email_rcv, followup — клиентская фильтрация
+  useEffect(() => {
+    function onDocClick(event: MouseEvent) {
+      if (!sortRef.current) return;
+      if (!sortRef.current.contains(event.target as Node)) {
+        setSortOpen(false);
+      }
     }
-  }, [filter]);
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
 
-  // Загружаем разговоры
+  const selectedSort = SORT_OPTIONS.find((option) => option.id === sort) || SORT_OPTIONS[0];
+
   const { data: convData, isLoading } = useQuery({
-    queryKey: ['conversations', debouncedSearch, serverFilter, page],
+    queryKey: ['inbox-conversations', debouncedSearch, filter, sort, page],
     queryFn: async () => {
       const params: Record<string, string> = {
-        page: page.toString(),
+        page: String(page),
         limit: '50',
         withFilterCounts: 'true',
+        filter,
+        sort,
       };
       if (debouncedSearch) params.search = debouncedSearch;
-      if (serverFilter !== 'all') params.filter = serverFilter;
-      if (serverFilter === 'unread') params.unreadOnly = 'true';
       const { data } = await inboxApi.listConversations(params);
       return data;
     },
-    refetchInterval: wsConnected ? false : 15000,
+    refetchInterval: wsConnected ? false : 4000,
   });
 
-  const totalPages = convData?.pagination?.pages || 1;
+  const conversations: Conversation[] = convData?.conversations || [];
   const filterCounts = (convData?.filterCounts || {}) as Record<string, number>;
-
-  // Клиентская фильтрация для Phase 1 полей
-  const conversations = useMemo(() => {
-    const list: Conversation[] = convData?.conversations || [];
-    switch (filter) {
-      case 'hot':
-        return list.filter((c) => c.hotLead);
-      case 'email_rcv':
-        return list.filter((c) => c.emailReceived);
-      case 'followup':
-        return list.filter((c) => c.nextFollowupAt);
-      default:
-        return list;
-    }
-  }, [convData?.conversations, filter]);
-
-  const handleBack = useCallback(() => setSelectedId(null), []);
+  const totalPages = convData?.pagination?.pages || 1;
 
   return (
     <div className={clsx('inbox-root', selectedId && 'has-selected')}>
-      {/* ─── Левая панель: Список разговоров ─── */}
       <div className="inbox-left">
         <div className="inbox-left-header">
           <div className="inbox-search">
@@ -172,28 +200,77 @@ export default function InboxPage() {
             <input
               type="text"
               className="inbox-search-input"
-              placeholder="Search..."
+              placeholder="Search conversations..."
               value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
             />
+          </div>
+          <div className="inbox-sort-row">
+            <span className="inbox-sort-label">Sort</span>
+            <div className="inbox-sort" ref={sortRef}>
+              <button type="button" className="inbox-sort-select" onClick={() => setSortOpen((v) => !v)}>
+                <span>{selectedSort.label}</span>
+                <ChevronDown size={13} />
+              </button>
+              {sortOpen && (
+                <div className="inbox-sort-menu">
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={clsx('inbox-sort-option', sort === option.id && 'active')}
+                      onClick={() => {
+                        setSort(option.id);
+                        setPage(1);
+                        setSortOpen(false);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      {sort === option.id ? <Check size={13} /> : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Фильтры */}
-        <div className="inbox-filters">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              className={clsx('inbox-filter-btn', filter === f.id && 'active')}
-              onClick={() => handleFilterChange(f.id)}
-            >
-              {f.label}
-              {filterCounts[f.id] !== undefined && <span className="inbox-filter-count">{filterCounts[f.id]}</span>}
-            </button>
-          ))}
+        <div className="inbox-filters two-rows">
+          <div className="inbox-filter-row">
+            {FILTER_ROW_1.map((f) => (
+              <button
+                key={f.id}
+                className={clsx('inbox-filter-btn', filter === f.id && 'active')}
+                onClick={() => {
+                  setFilter(f.id);
+                  setPage(1);
+                }}
+              >
+                {f.label}
+                <span className="inbox-filter-count">{filterCounts[f.id] || 0}</span>
+              </button>
+            ))}
+          </div>
+          <div className="inbox-filter-row">
+            {FILTER_ROW_2.map((f) => (
+              <button
+                key={f.id}
+                className={clsx('inbox-filter-btn', filter === f.id && 'active')}
+                onClick={() => {
+                  setFilter(f.id);
+                  setPage(1);
+                }}
+              >
+                {f.label}
+                <span className="inbox-filter-count">{filterCounts[f.id] || 0}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Список */}
         <div className="inbox-conv-list">
           {isLoading && (
             <div style={{ padding: 12 }}>
@@ -229,53 +306,24 @@ export default function InboxPage() {
           ))}
         </div>
 
-        {/* Пагинация */}
         {totalPages > 1 && (
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              padding: '6px 12px',
-              borderTop: '1px solid var(--border-subtle)',
-            }}
-          >
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                background: 'none',
-                border: 'none',
-              }}
-            >
+          <div className="inbox-pagination">
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
               Prev
             </button>
-            <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>
+            <span>
               {page}/{totalPages}
             </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                background: 'none',
-                border: 'none',
-              }}
-            >
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
               Next
             </button>
           </div>
         )}
       </div>
 
-      {/* ─── Центральная панель: Тред ─── */}
       <div className="inbox-center">
         {selectedId ? (
-          <MessageThread conversationId={selectedId} wsConnected={wsConnected} onBack={handleBack} />
+          <MessageThread conversationId={selectedId} onBack={() => setSelectedId(null)} wsConnected={wsConnected} />
         ) : (
           <div className="inbox-empty">
             <div className="inbox-empty-content">
@@ -286,16 +334,10 @@ export default function InboxPage() {
           </div>
         )}
       </div>
-
-      {/* ─── Правая панель: Сайдбар ─── */}
-      {selectedId && <RightSidebar conversationId={selectedId} />}
     </div>
   );
 }
 
-// ============================================
-// ЛЕВАЯ ПАНЕЛЬ: Элемент списка
-// ============================================
 function ConversationItem({
   conversation,
   isSelected,
@@ -307,7 +349,7 @@ function ConversationItem({
 }) {
   const lead = conversation.lead;
   const lastMsg = conversation.messages?.[0];
-  const badges = getConvBadges(conversation);
+  const badges = getConversationBadges(conversation);
 
   return (
     <div
@@ -317,20 +359,31 @@ function ConversationItem({
       <div className="inbox-avatar">
         {lead?.firstName?.[0]}
         {lead?.lastName?.[0] || ''}
-        {conversation.unreadCount > 0 && <span className="inbox-avatar-badge">{conversation.unreadCount}</span>}
       </div>
 
       <div className="inbox-conv-info">
-        <div className="inbox-conv-name">
-          {lead?.firstName} {lead?.lastName || ''}
+        <div className="inbox-conv-head-row">
+          <div className="inbox-conv-name">
+            {lead?.firstName} {lead?.lastName || ''}
+          </div>
+          <span className="inbox-conv-time">
+            {conversation.lastMessageAt ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true }) : ''}
+          </span>
         </div>
+
+        <div className="inbox-conv-number-pill">
+          {conversation.fromNumber || lead?.phone}
+          {conversation.fromNumberFriendlyName ? ` · ${conversation.fromNumberFriendlyName}` : ''}
+        </div>
+
         <div className="inbox-conv-preview">
-          {lastMsg ? `${lastMsg.direction === 'OUTBOUND' ? 'You: ' : ''}${lastMsg.body}` : lead?.phone}
+          {lastMsg ? `${lastMsg.direction === 'OUTBOUND' ? '↑ ' : ''}${lastMsg.body}` : lead?.company || lead?.phone}
         </div>
+
         {badges.length > 0 && (
           <div className="inbox-conv-meta">
             {badges.map((b) => (
-              <span key={b.label} className={clsx('inbox-badge', b.cls)}>
+              <span key={`${conversation.id}-${b.label}`} className={clsx('inbox-badge', b.cls)}>
                 {b.label}
               </span>
             ))}
@@ -338,32 +391,51 @@ function ConversationItem({
         )}
       </div>
 
-      <span className="inbox-conv-time">
-        {conversation.lastMessageAt
-          ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true })
-          : ''}
-      </span>
+      {conversation.unreadCount > 0 && <span className="inbox-unread-dot" />}
     </div>
   );
 }
 
-// ============================================
-// ЦЕНТРАЛЬНАЯ ПАНЕЛЬ: Тред сообщений
-// ============================================
 function MessageThread({
   conversationId,
-  wsConnected,
   onBack,
+  wsConnected,
 }: {
   conversationId: string;
-  wsConnected: boolean;
   onBack: () => void;
+  wsConnected: boolean;
 }) {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
   const [replyText, setReplyText] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [templateScope, setTemplateScope] = useState<'mine' | 'team' | 'global'>('mine');
+  const [showPipelinePicker, setShowPipelinePicker] = useState(false);
+
+  const [showNotePopover, setShowNotePopover] = useState(false);
+  const [internalNoteText, setInternalNoteText] = useState('');
+
+  const [showSchedulePopover, setShowSchedulePopover] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
+
+  const [showTagPopover, setShowTagPopover] = useState(false);
+  const [tagState, setTagState] = useState({
+    hot: false,
+    email: false,
+    interested: false,
+    dnc: false,
+  });
+
+  const [showFollowupPopover, setShowFollowupPopover] = useState(false);
+  const [followupDateTime, setFollowupDateTime] = useState('');
+
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedRepId, setSelectedRepId] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['conversation', conversationId],
@@ -371,7 +443,21 @@ function MessageThread({
       const { data } = await inboxApi.getConversation(conversationId);
       return data;
     },
-    refetchInterval: wsConnected ? false : 8000,
+    refetchInterval: wsConnected ? false : 4000,
+  });
+
+  const { data: usersData } = useQuery({
+    queryKey: ['users', 'inbox-assign'],
+    queryFn: async () => {
+      const { data } = await api.get('/auth/users');
+      return data;
+    },
+    enabled: showAssignModal && isAdmin,
+  });
+
+  const markReadMutation = useMutation({
+    mutationFn: () => inboxApi.markRead(conversationId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] }),
   });
 
   const sendMutation = useMutation({
@@ -379,299 +465,223 @@ function MessageThread({
     onSuccess: () => {
       setReplyText('');
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
     },
     onError: (err: Error & { response?: { data?: { error?: string } } }) =>
       toast.error(err.response?.data?.error || 'Failed to send'),
   });
 
-  const markReadMutation = useMutation({
-    mutationFn: () => inboxApi.markRead(conversationId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
-  });
-
-  // Авто-скролл к последнему сообщению
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [data?.messages]);
-
-  // Авто-прочтение
-  const unreadCount = data?.conversation?.unreadCount ?? 0;
-  useEffect(() => {
-    if (unreadCount > 0) {
-      markReadMutation.mutate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, unreadCount]);
-
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!replyText.trim()) return;
-    sendMutation.mutate(replyText.trim());
-  };
-
-  const handleAiDraft = async () => {
-    setAiLoading(true);
-    try {
-      const { data } = await api.post('/ai/draft-reply', { conversationId });
-      setReplyText(data.draft);
-      toast.success('AI draft generated');
-    } catch {
-      toast.error('AI not available');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  const handleTemplateSelect = (template: SmsTemplate) => {
-    // Вставляем текст шаблона в compose (не отправляем)
-    setReplyText((prev) => prev + (prev ? '\n' : '') + template.body);
-    setShowTemplates(false);
-    // Логируем использование
-    inboxApi.logTemplateUsage(template.id, conversationId).catch(() => {});
-  };
-
-  const conversation = data?.conversation;
-  const messages: Message[] = data?.messages || [];
-
-  return (
-    <>
-      {/* Header */}
-      <div className="inbox-thread-header">
-        <div className="inbox-thread-info">
-          <button
-            onClick={onBack}
-            className="inbox-tool-btn"
-            style={{ display: 'none' }}
-            // Показываем только на мобильных — CSS управляет видимостью
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <div className="inbox-avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
-            {conversation?.lead?.firstName?.[0]}
-            {conversation?.lead?.lastName?.[0] || ''}
-          </div>
-          <div>
-            <div className="inbox-thread-name">
-              {conversation?.lead?.firstName} {conversation?.lead?.lastName || ''}
-            </div>
-            <div className="inbox-thread-phone">
-              <Phone size={10} />
-              {conversation?.lead?.phone}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Сообщения */}
-      <div className="inbox-messages">
-        {isLoading && (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
-            <div
-              style={{
-                width: 24,
-                height: 24,
-                border: '2px solid var(--accent-primary)',
-                borderTopColor: 'transparent',
-                borderRadius: '50%',
-                animation: 'spin 0.8s linear infinite',
-              }}
-            />
-          </div>
-        )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Compose */}
-      <div className="inbox-compose">
-        {conversation?.lead?.optedOut ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              color: '#f87171',
-              fontSize: 13,
-              padding: 8,
-            }}
-          >
-            <AlertTriangle size={16} />
-            This lead has opted out. Cannot send messages.
-          </div>
-        ) : (
-          <>
-            <div className="inbox-compose-tools">
-              <button className="inbox-tool-btn" title="Templates" onClick={() => setShowTemplates(true)}>
-                <FileText size={16} />
-              </button>
-              <button className="inbox-tool-btn" title="AI Draft" onClick={handleAiDraft} disabled={aiLoading}>
-                <Sparkles size={16} className={aiLoading ? 'animate-pulse' : ''} />
-              </button>
-              {replyText && <SmsCounter text={replyText} />}
-            </div>
-            <form onSubmit={handleSend} className="inbox-compose-form">
-              <textarea
-                className="inbox-compose-textarea"
-                placeholder="Type your message..."
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend(e);
-                  }
-                }}
-                rows={1}
-                aria-label="Reply message"
-              />
-              <button
-                type="submit"
-                className="inbox-compose-btn"
-                disabled={!replyText.trim() || sendMutation.isPending}
-              >
-                <Send size={16} />
-              </button>
-            </form>
-          </>
-        )}
-      </div>
-
-      {/* Template Modal */}
-      {showTemplates && <TemplateModal onSelect={handleTemplateSelect} onClose={() => setShowTemplates(false)} />}
-    </>
-  );
-}
-
-// ============================================
-// ПУЗЫРЬ СООБЩЕНИЯ
-// ============================================
-function MessageBubble({ message }: { message: Message }) {
-  const isOutbound = message.direction === 'OUTBOUND';
-
-  return (
-    <div className={clsx('inbox-msg', isOutbound ? 'outbound' : 'inbound')}>
-      <p>{message.body}</p>
-      <div className="inbox-msg-time">
-        <span>
-          {message.sentAt ? format(new Date(message.sentAt), 'h:mm a') : format(new Date(message.createdAt), 'h:mm a')}
-        </span>
-        {isOutbound && <MsgStatusIcon status={message.status} />}
-      </div>
-    </div>
-  );
-}
-
-function MsgStatusIcon({ status }: { status: string }) {
-  switch (status) {
-    case 'DELIVERED':
-      return <CheckCheck size={12} style={{ color: 'rgba(255,255,255,0.8)' }} />;
-    case 'SENT':
-      return <CheckCheck size={12} style={{ color: 'rgba(255,255,255,0.5)' }} />;
-    case 'FAILED':
-    case 'UNDELIVERED':
-    case 'BLOCKED':
-      return <AlertTriangle size={12} style={{ color: '#fca5a5' }} />;
-    case 'QUEUED':
-    case 'SENDING':
-      return <Clock size={12} style={{ color: 'rgba(255,255,255,0.4)' }} />;
-    default:
-      return null;
-  }
-}
-
-// ============================================
-// ПРАВАЯ ПАНЕЛЬ: Сайдбар
-// ============================================
-function RightSidebar({ conversationId }: { conversationId: string }) {
-  const queryClient = useQueryClient();
-
-  const { data } = useQuery({
-    queryKey: ['conversation', conversationId],
-    queryFn: async () => {
-      const { data } = await inboxApi.getConversation(conversationId);
-      return data;
-    },
-  });
-
-  const conversation: Conversation | undefined = data?.conversation;
-  const lead = conversation?.lead;
-
-  // Статус мутации
   const statusMutation = useMutation({
-    mutationFn: (updates: Parameters<typeof inboxApi.updateStatus>[1]) =>
-      inboxApi.updateStatus(conversationId, updates),
+    mutationFn: (updates: Parameters<typeof inboxApi.updateStatus>[1]) => inboxApi.updateStatus(conversationId, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
     },
     onError: () => toast.error('Failed to update status'),
   });
 
-  if (!conversation) return null;
+  const addToPipelineMutation = useMutation({
+    mutationFn: (dealStage?: string) => inboxApi.addToPipeline(conversationId, undefined, dealStage),
+    onSuccess: ({ data }) => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      setShowPipelinePicker(false);
+      toast.success('Added to Pipeline');
+      if (data?.deal?.id) {
+        navigate(`/pipeline?deal=${data.deal.id}`);
+      }
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.error || 'Failed to add to pipeline';
+      toast.error(message);
+    },
+  });
+
+  const noteMutation = useMutation({
+    mutationFn: (body: string) => inboxApi.createNote(conversationId, body),
+    onSuccess: () => {
+      setInternalNoteText('');
+      setShowNotePopover(false);
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['notes', conversationId] });
+      toast.success('Internal note saved');
+    },
+    onError: () => toast.error('Failed to save note'),
+  });
+
+  const scheduleMutation = useMutation({
+    mutationFn: (payload: { body: string; scheduledAt: string }) =>
+      inboxApi.createScheduled({ conversationId, body: payload.body, scheduledAt: payload.scheduledAt }),
+    onSuccess: () => {
+      setShowSchedulePopover(false);
+      setScheduleAt('');
+      setReplyText('');
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      toast.success('Message scheduled');
+    },
+    onError: () => toast.error('Failed to schedule message'),
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: (repId: string) => inboxApi.assignRep(conversationId, repId),
+    onSuccess: () => {
+      setShowAssignModal(false);
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      toast.success('Rep assigned and notified');
+    },
+    onError: () => toast.error('Failed to assign rep'),
+  });
+
+  const conversation: Conversation | undefined = data?.conversation;
+  const messages: Message[] = data?.messages || [];
+  const statusStrip = conversation?.statusStrip;
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  useEffect(() => {
+    if (conversation?.unreadCount && conversation.unreadCount > 0) {
+      markReadMutation.mutate();
+    }
+  }, [conversation?.unreadCount, markReadMutation]);
+
+  useEffect(() => {
+    if (!conversation) return;
+    setTagState({
+      hot: !!conversation.hotLead,
+      email: !!conversation.emailReceived,
+      interested: conversation.leadStatus === 'Interested',
+      dnc: conversation.leadStatus === 'DNC',
+    });
+  }, [conversation]);
+
+  useEffect(() => {
+    if (!showAssignModal) return;
+    const currentAssigned = conversation?.assignedRepId || '';
+    setSelectedRepId(currentAssigned);
+  }, [showAssignModal, conversation?.assignedRepId]);
+
+  useEffect(() => {
+    if (!showAssignModal || selectedRepId) return;
+    const activeReps = (usersData?.users || []).filter((u: any) => u.role === 'REP' && u.isActive !== false);
+    if (activeReps.length > 0) {
+      setSelectedRepId(activeReps[0].id);
+    }
+  }, [showAssignModal, selectedRepId, usersData]);
+
+  const handleSend = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!replyText.trim()) return;
+    sendMutation.mutate(replyText.trim());
+  };
+
+  const applyQuickFollowup = (preset: 'tomorrow_9' | 'tomorrow_14' | 'next_monday') => {
+    const now = new Date();
+    let when = now;
+    if (preset === 'tomorrow_9') {
+      when = setMinutes(setHours(addDays(now, 1), 9), 0);
+    } else if (preset === 'tomorrow_14') {
+      when = setMinutes(setHours(addDays(now, 1), 14), 0);
+    } else {
+      when = setMinutes(setHours(nextMonday(now), 9), 0);
+    }
+    statusMutation.mutate({ nextFollowupAt: when.toISOString() });
+    setShowFollowupPopover(false);
+    toast.success('Follow-up saved');
+  };
+
+  const openScheduleFromPreset = (preset: 'tomorrow_9' | 'tomorrow_14' | 'next_monday') => {
+    const now = new Date();
+    let when = now;
+    if (preset === 'tomorrow_9') when = setMinutes(setHours(addDays(now, 1), 9), 0);
+    if (preset === 'tomorrow_14') when = setMinutes(setHours(addDays(now, 1), 14), 0);
+    if (preset === 'next_monday') when = setMinutes(setHours(nextMonday(now), 9), 0);
+    setScheduleAt(when.toISOString().slice(0, 16));
+  };
+
+  const deliveryLegend = (
+    <div className="inbox-kbd-row">/ templates · ⌘↵ send · n note · s schedule · f follow-up · t tags</div>
+  );
+
+  if (!conversation) {
+    return (
+      <div className="inbox-empty">
+        <div className="inbox-empty-content">
+          <MessageSquare className="inbox-empty-icon" />
+          <p className="inbox-empty-text">Loading conversation...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const fromNumber = statusStrip?.fromNumber || conversation.fromNumber || conversation.lead?.phone || '';
+  const fromFriendly = statusStrip?.fromNumberFriendlyName || conversation.fromNumberFriendlyName || '';
+  const inPipeline = conversation.isInPipeline || statusStrip?.pipelineState === 'in_pipeline';
 
   return (
-    <div className="inbox-right">
-      {/* Lead Info */}
-      <div className="inbox-sidebar-section">
-        <div className="inbox-lead-name">
-          {lead?.firstName} {lead?.lastName || ''}
-        </div>
-        <div className="inbox-lead-phone">
-          <Phone size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
-          {lead?.phone}
-        </div>
-        {lead?.company && (
-          <div className="inbox-lead-company">
-            <Briefcase size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
-            {lead.company}
-          </div>
-        )}
-        {conversation.assignedRep && (
-          <div style={{ marginTop: 8 }}>
-            <div className="inbox-assigned">
-              <div className="inbox-assigned-avatar">{conversation.assignedRep.firstName?.[0]}</div>
-              <div>
-                <div style={{ fontSize: 12, color: 'var(--text-primary)' }}>
-                  {conversation.assignedRep.firstName} {conversation.assignedRep.lastName}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>Assigned Rep</div>
+    <>
+      <div className="inbox-thread-header phase1">
+        <div className="inbox-thread-row row1">
+          <div className="inbox-thread-info">
+            <button onClick={onBack} className="inbox-tool-btn inbox-back-btn" aria-label="Back">
+              <ChevronLeft size={18} />
+            </button>
+            <div className="inbox-avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+              {conversation.lead?.firstName?.[0]}
+              {conversation.lead?.lastName?.[0] || ''}
+            </div>
+            <div>
+              <div className="inbox-thread-name">
+                {conversation.lead?.firstName} {conversation.lead?.lastName || ''}
+              </div>
+              <div className="inbox-thread-phone">
+                <Phone size={10} />
+                {conversation.lead?.phone}
+                {conversation.lead?.company ? ` · ${conversation.lead.company}` : ''}
               </div>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Quick Actions */}
-      <div className="inbox-sidebar-section">
-        <div className="inbox-sidebar-title">Quick Actions</div>
-        <div className="inbox-action-grid">
-          <button
-            className={clsx('inbox-action-btn', conversation.hotLead && 'active-hot')}
-            onClick={() => statusMutation.mutate({ hotLead: !conversation.hotLead })}
-          >
-            <Flame size={13} /> Hot
-          </button>
+          <div className="inbox-thread-actions">
+            <button className="inbox-action-chip gold" onClick={() => setShowTemplates(true)}>
+              <FileText size={13} /> Templates
+            </button>
+            <button className="inbox-action-chip" onClick={() => setShowFollowupPopover((p) => !p)}>
+              <CalendarClock size={13} /> Follow-Up
+            </button>
+          </div>
+        </div>
+
+        <div className="inbox-thread-row row2 status-strip">
+          {conversation.hotLead ? <span className="inbox-strip-badge hot">🔥 Hot Lead</span> : null}
+          <span className={clsx('inbox-strip-badge', inPipeline ? 'pipe' : 'dim')}>
+            {inPipeline ? '→ In Pipeline' : 'Not in pipeline'}
+          </span>
+          <span className="inbox-strip-badge from">
+            From: {fromNumber}
+            {fromFriendly ? ` ${fromFriendly}` : ''}
+          </span>
+          {statusStrip?.assignedRep ? <span className="inbox-strip-badge">👤 {statusStrip.assignedRep}</span> : null}
+          {conversation.nextFollowupAt ? (
+            <span className="inbox-strip-badge follow">⏱ {format(new Date(conversation.nextFollowupAt), 'MMM d, h:mm a')}</span>
+          ) : null}
+        </div>
+
+        <div className="inbox-thread-row row3 quick-actions">
           <button
             className={clsx('inbox-action-btn', conversation.leadStatus === 'Interested' && 'active-interested')}
-            onClick={() =>
-              statusMutation.mutate({
-                leadStatus: conversation.leadStatus === 'Interested' ? '' : 'Interested',
-              })
-            }
+            onClick={() => statusMutation.mutate({ leadStatus: conversation.leadStatus === 'Interested' ? '' : 'Interested' })}
           >
-            <ThumbsUp size={13} /> Interested
+            <Check size={13} /> Mark Interested
+          </button>
+          <button className="inbox-action-btn" onClick={() => statusMutation.mutate({ leadStatus: 'Not Interested' })}>
+            <X size={13} /> Not Interested
           </button>
           <button
             className={clsx('inbox-action-btn', conversation.leadStatus === 'DNC' && 'active-dnc')}
-            onClick={() =>
-              statusMutation.mutate({
-                leadStatus: conversation.leadStatus === 'DNC' ? '' : 'DNC',
-              })
-            }
+            onClick={() => statusMutation.mutate({ leadStatus: conversation.leadStatus === 'DNC' ? '' : 'DNC' })}
           >
             <Ban size={13} /> DNC
           </button>
@@ -681,88 +691,418 @@ function RightSidebar({ conversationId }: { conversationId: string }) {
           >
             <Mail size={13} /> Email Rcv
           </button>
+          <button className="inbox-action-btn pipeline" onClick={() => (inPipeline ? navigate('/pipeline') : setShowPipelinePicker(true))}>
+            <Plus size={13} /> {inPipeline ? '→ In Pipeline' : '→ Add to Pipeline'}
+          </button>
+          <button className="inbox-action-btn" onClick={() => setShowFollowupPopover((p) => !p)}>
+            <CalendarClock size={13} /> Follow-Up
+          </button>
+          <button className="inbox-action-btn" onClick={() => setShowNotePopover((p) => !p)}>
+            <StickyNote size={13} /> Note
+          </button>
+          {isAdmin && (
+            <button className="inbox-action-btn assign" onClick={() => setShowAssignModal(true)}>
+              <UserPlus size={13} /> Assign Rep
+            </button>
+          )}
         </div>
+
+        {showFollowupPopover && (
+          <div className="inbox-popover followup-popover">
+            <button onClick={() => applyQuickFollowup('tomorrow_9')}>Tomorrow 9:00 AM</button>
+            <button onClick={() => applyQuickFollowup('tomorrow_14')}>Tomorrow 2:00 PM</button>
+            <button onClick={() => applyQuickFollowup('next_monday')}>Next Monday</button>
+            <input
+              type="datetime-local"
+              value={followupDateTime}
+              onChange={(e) => setFollowupDateTime(e.target.value)}
+              className="inbox-followup-input"
+            />
+            <div className="inbox-popover-actions">
+              <button
+                onClick={() => {
+                  if (!followupDateTime) return;
+                  statusMutation.mutate({ nextFollowupAt: new Date(followupDateTime).toISOString() });
+                  setShowFollowupPopover(false);
+                }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  statusMutation.mutate({ nextFollowupAt: null });
+                  setShowFollowupPopover(false);
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
       </div>
 
-      {/* Follow-up */}
-      <div className="inbox-sidebar-section">
-        <div className="inbox-sidebar-title">Follow-up</div>
-        <FollowUpPicker
-          key={`${conversationId}-${conversation.nextFollowupAt}`}
-          conversationId={conversationId}
-          currentDate={conversation.nextFollowupAt || null}
+      <div className="inbox-messages phase1">
+        {isLoading && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
+            <div className="inbox-spinner" />
+          </div>
+        )}
+
+        {messages.map((msg, index) => {
+          const currentDate = messageDate(msg);
+          const prev = index > 0 ? messages[index - 1] : null;
+          const showSeparator = !prev || format(messageDate(prev), 'yyyy-MM-dd') !== format(currentDate, 'yyyy-MM-dd');
+
+          return (
+            <div key={msg.id}>
+              {showSeparator && (
+                <div className="inbox-date-separator">
+                  <span className="line" />
+                  <span className="label">{formatThreadDateLabel(currentDate)}</span>
+                  <span className="line" />
+                </div>
+              )}
+              <MessageBubble message={msg} />
+            </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <div className="inbox-compose phase1">
+        <div className="inbox-sending-from">
+          SENDING FROM <span className="number">{fromNumber}</span>
+          {fromFriendly ? ` — ${fromFriendly}` : ''}
+        </div>
+
+        <div className="inbox-compose-tools phase1">
+          <button className="inbox-tool-btn" title="Templates" onClick={() => setShowTemplates(true)}>
+            <FileText size={15} />
+          </button>
+          <button className="inbox-tool-btn" title="Note (internal)" onClick={() => setShowNotePopover((p) => !p)}>
+            <StickyNote size={15} />
+          </button>
+          <button className="inbox-tool-btn" title="Schedule" onClick={() => setShowSchedulePopover((p) => !p)}>
+            <CalendarDays size={15} />
+          </button>
+          <button className="inbox-tool-btn" title="Tag" onClick={() => setShowTagPopover((p) => !p)}>
+            <Tag size={15} />
+          </button>
+          {replyText && <SmsCounter text={replyText} />}
+        </div>
+
+        {showNotePopover && (
+          <div className="inbox-popover compose-note-popover">
+            <textarea
+              className="inbox-note-input"
+              placeholder="Internal note (never sent to merchant)..."
+              value={internalNoteText}
+              onChange={(e) => setInternalNoteText(e.target.value)}
+            />
+            <div className="inbox-popover-actions">
+              <button disabled={!internalNoteText.trim()} onClick={() => noteMutation.mutate(internalNoteText.trim())}>
+                Save Note
+              </button>
+              <button onClick={() => setShowNotePopover(false)}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {showSchedulePopover && (
+          <div className="inbox-popover compose-schedule-popover">
+            <button onClick={() => openScheduleFromPreset('tomorrow_9')}>Tomorrow 9:00 AM</button>
+            <button onClick={() => openScheduleFromPreset('tomorrow_14')}>Tomorrow 2:00 PM</button>
+            <button onClick={() => openScheduleFromPreset('next_monday')}>Next Monday</button>
+            <input
+              type="datetime-local"
+              value={scheduleAt}
+              onChange={(e) => setScheduleAt(e.target.value)}
+              className="inbox-followup-input"
+            />
+            <div className="inbox-popover-actions">
+              <button
+                disabled={!scheduleAt || !replyText.trim()}
+                onClick={() => {
+                  if (!replyText.trim()) {
+                    toast.error('Type message first');
+                    return;
+                  }
+                  scheduleMutation.mutate({ body: replyText.trim(), scheduledAt: new Date(scheduleAt).toISOString() });
+                }}
+              >
+                Schedule Message
+              </button>
+              <button onClick={() => setShowSchedulePopover(false)}>Close</button>
+            </div>
+          </div>
+        )}
+
+        {showTagPopover && (
+          <div className="inbox-popover compose-tag-popover">
+            <label>
+              <input
+                type="checkbox"
+                checked={tagState.hot}
+                onChange={(e) => setTagState((s) => ({ ...s, hot: e.target.checked }))}
+              />
+              🔥 Hot Lead
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={tagState.email}
+                onChange={(e) => setTagState((s) => ({ ...s, email: e.target.checked }))}
+              />
+              ✉ Email Rcv
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={tagState.interested}
+                onChange={(e) => setTagState((s) => ({ ...s, interested: e.target.checked }))}
+              />
+              ✓ Interested
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={tagState.dnc}
+                onChange={(e) => setTagState((s) => ({ ...s, dnc: e.target.checked }))}
+              />
+              ⛔ DNC
+            </label>
+            <div className="inbox-popover-actions">
+              <button
+                onClick={() => {
+                  statusMutation.mutate({
+                    hotLead: tagState.hot,
+                    emailReceived: tagState.email,
+                    leadStatus: tagState.dnc ? 'DNC' : tagState.interested ? 'Interested' : '',
+                  });
+                  setShowTagPopover(false);
+                }}
+              >
+                Apply
+              </button>
+              <button onClick={() => setShowTagPopover(false)}>Close</button>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSend} className="inbox-compose-form">
+          <textarea
+            className="inbox-compose-textarea"
+            placeholder="Type your message..."
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+                setShowTemplates(true);
+              }
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            rows={1}
+          />
+          <button type="submit" className="inbox-compose-btn" disabled={!replyText.trim() || sendMutation.isPending}>
+            <Send size={16} />
+          </button>
+        </form>
+        {deliveryLegend}
+      </div>
+
+      {showTemplates && (
+        <TemplateModal
+          scope={templateScope}
+          onScopeChange={setTemplateScope}
+          onSelect={(template) => {
+            setReplyText((prev) => prev + (prev ? '\n' : '') + template.body);
+            inboxApi.logTemplateUsage(template.id, conversationId).catch(() => {});
+            setShowTemplates(false);
+          }}
+          onClose={() => setShowTemplates(false)}
         />
-      </div>
+      )}
 
-      {/* Notes */}
-      <div className="inbox-sidebar-section">
-        <div className="inbox-sidebar-title">Notes</div>
-        <NotesSection conversationId={conversationId} />
-      </div>
+      {showAssignModal && isAdmin && (
+        <div className="inbox-template-overlay" onClick={() => setShowAssignModal(false)}>
+          <div className="inbox-assign-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="inbox-template-header">
+              <h3>Assign Rep</h3>
+              <button className="inbox-tool-btn" onClick={() => setShowAssignModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="inbox-assign-body">
+              <div className="inbox-assign-sub">Admin-only. Select rep and notify immediately.</div>
+              <div className="inbox-assign-list">
+                {(usersData?.users || [])
+                  .filter((u: any) => u.role === 'REP' && u.isActive !== false)
+                  .map((u: any) => {
+                    const isSelected = selectedRepId === u.id;
+                    const isCurrent = conversation?.assignedRepId === u.id;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className={clsx('inbox-assign-row', isSelected && 'selected')}
+                        onClick={() => setSelectedRepId(u.id)}
+                      >
+                        <span className="inbox-assign-name">
+                          {u.firstName} {u.lastName}
+                        </span>
+                        <span className="inbox-assign-badges">
+                          {isCurrent ? <span className="badge-current">Current</span> : null}
+                          {isSelected ? <span className="badge-selected">Selected</span> : null}
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+              <div className="inbox-popover-actions">
+                <button
+                  disabled={!selectedRepId || assignMutation.isPending}
+                  onClick={() => assignMutation.mutate(selectedRepId)}
+                >
+                  Assign & Notify
+                </button>
+                <button onClick={() => setShowAssignModal(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Assign Rep */}
-      <div className="inbox-sidebar-section">
-        <div className="inbox-sidebar-title">Assign Rep</div>
-        <AssignRepSection conversationId={conversationId} currentRepId={conversation.assignedRepId} />
-      </div>
-    </div>
+      {showPipelinePicker && (
+        <div className="inbox-template-overlay" onClick={() => setShowPipelinePicker(false)}>
+          <div className="inbox-stage-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="inbox-template-header">
+              <h3>Add to Pipeline</h3>
+              <button className="inbox-tool-btn" onClick={() => setShowPipelinePicker(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="inbox-stage-list">
+              {PIPELINE_STAGE_OPTIONS.map((s) => (
+                <button key={s.value} className="inbox-stage-item" onClick={() => addToPipelineMutation.mutate(s.value)}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div className="inbox-stage-footer">Tap a stage to move instantly. No confirmation needed. SMS stays active.</div>
+          </div>
+        </div>
+      )}
+
+      <RightSidebar conversationId={conversationId} conversation={conversation} activity={data?.activity || []} />
+    </>
   );
 }
 
-// ============================================
-// FOLLOW-UP PICKER
-// ============================================
-function FollowUpPicker({ conversationId, currentDate }: { conversationId: string; currentDate: string | null }) {
-  const queryClient = useQueryClient();
-  const computedDate = currentDate ? new Date(currentDate).toISOString().slice(0, 16) : '';
-  const [dateValue, setDateValue] = useState(computedDate);
-
-  const mutation = useMutation({
-    mutationFn: (val: string | null) =>
-      inboxApi.updateStatus(conversationId, {
-        nextFollowupAt: val ? new Date(val).toISOString() : null,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      toast.success(dateValue ? 'Follow-up set' : 'Follow-up cleared');
-    },
-  });
+function MessageBubble({ message }: { message: Message }) {
+  const outbound = message.direction === 'OUTBOUND';
+  const dt = messageDate(message);
 
   return (
-    <div className="inbox-followup-picker">
-      <CalendarClock size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-      <input
-        type="datetime-local"
-        className="inbox-followup-input"
-        value={dateValue}
-        onChange={(e) => {
-          setDateValue(e.target.value);
-          if (e.target.value) {
-            mutation.mutate(e.target.value);
-          }
-        }}
-        style={{ flex: 1 }}
-      />
-      {currentDate && (
-        <button
-          className="inbox-tool-btn"
-          onClick={() => {
-            setDateValue('');
-            mutation.mutate(null);
-          }}
-          title="Clear follow-up"
-        >
-          <X size={14} />
-        </button>
-      )}
+    <div className={clsx('inbox-msg', outbound ? 'outbound' : 'inbound')}>
+      <p>{message.body}</p>
+      <div className="inbox-msg-time">
+        <span>{format(dt, 'h:mm a')}</span>
+        {outbound && <MsgStatusText status={message.status} />}
+      </div>
     </div>
   );
 }
 
-// ============================================
-// NOTES SECTION
-// ============================================
+function RightSidebar({
+  conversationId,
+  conversation,
+  activity,
+}: {
+  conversationId: string;
+  conversation: Conversation;
+  activity: ConversationActivity[];
+}) {
+  const [tab, setTab] = useState<'contact' | 'activity' | 'notes'>('contact');
+
+  return (
+    <div className="inbox-right phase1">
+      <div className="inbox-sidebar-tabs">
+        <button className={clsx(tab === 'contact' && 'active')} onClick={() => setTab('contact')}>
+          Contact
+        </button>
+        <button className={clsx(tab === 'activity' && 'active')} onClick={() => setTab('activity')}>
+          Activity
+        </button>
+        <button className={clsx(tab === 'notes' && 'active')} onClick={() => setTab('notes')}>
+          Notes
+        </button>
+      </div>
+
+      {tab === 'contact' && <ContactInfoSection conversation={conversation} />}
+      {tab === 'activity' && <ActivitySection activity={activity} />}
+      {tab === 'notes' && <NotesSection conversationId={conversationId} />}
+    </div>
+  );
+}
+
+function ContactInfoSection({ conversation }: { conversation: Conversation }) {
+  const info = conversation.contactInfo || {};
+  const createdAtValue = info.createdAt || conversation.createdAt;
+  const rows: Array<{ key: string; value?: string | null }> = [
+    { key: 'Email', value: info.email || conversation.lead?.email || '' },
+    { key: 'Phone', value: info.phone || conversation.lead?.phone || '' },
+    { key: 'Company', value: info.company || conversation.lead?.company || '' },
+    { key: 'Source', value: info.source || conversation.lead?.source || '' },
+    { key: 'Product', value: info.product || '' },
+    { key: 'Assigned Rep', value: info.assignedRep || conversation.statusStrip?.assignedRep || '' },
+    { key: 'Convo #', value: info.conversationNumber || conversation.id },
+    {
+      key: 'Created',
+      value: createdAtValue ? format(new Date(createdAtValue), 'MMM d, yyyy h:mm a') : '',
+    },
+    { key: 'Last Template Used', value: info.lastTemplateUsed || '' },
+  ];
+
+  return (
+    <div className="inbox-sidebar-section contact-grid">
+      {rows.map((row) => (
+        <div key={row.key} className="inbox-contact-row">
+          <div className="inbox-contact-key">{row.key}</div>
+          <div className="inbox-contact-value">{row.value || '—'}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ActivitySection({ activity }: { activity: ConversationActivity[] }) {
+  if (!activity || activity.length === 0) {
+    return (
+      <div className="inbox-sidebar-section">
+        <div className="inbox-empty-sub">No activity yet</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="inbox-sidebar-section">
+      <div className="inbox-activity-list">
+        {activity.map((evt) => (
+          <div key={evt.id} className={clsx('inbox-activity-item', evt.tone && `tone-${evt.tone}`)}>
+            <div className="inbox-activity-text">{evt.text}</div>
+            <div className="inbox-activity-time">{format(new Date(evt.at), 'MMM d, h:mm a')}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function NotesSection({ conversationId }: { conversationId: string }) {
   const [noteText, setNoteText] = useState('');
   const queryClient = useQueryClient();
@@ -780,6 +1120,7 @@ function NotesSection({ conversationId }: { conversationId: string }) {
     onSuccess: () => {
       setNoteText('');
       queryClient.invalidateQueries({ queryKey: ['notes', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
     },
     onError: () => toast.error('Failed to add note'),
   });
@@ -788,25 +1129,21 @@ function NotesSection({ conversationId }: { conversationId: string }) {
     mutationFn: (noteId: string) => inboxApi.deleteNote(conversationId, noteId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notes', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
     },
   });
 
   const notes: ConversationNote[] = data?.notes || [];
 
   return (
-    <div>
+    <div className="inbox-sidebar-section">
       {notes.map((note) => (
         <div key={note.id} className="inbox-note-item">
           <div className="inbox-note-body">{note.body}</div>
           <div className="inbox-note-meta">
             <span>{format(new Date(note.createdAt), 'MMM d, h:mm a')}</span>
-            <button
-              className="inbox-tool-btn"
-              onClick={() => deleteMutation.mutate(note.id)}
-              title="Delete note"
-              style={{ padding: 2 }}
-            >
-              <Trash2 size={11} />
+            <button className="inbox-tool-btn" onClick={() => deleteMutation.mutate(note.id)}>
+              <X size={11} />
             </button>
           </div>
         </div>
@@ -829,101 +1166,53 @@ function NotesSection({ conversationId }: { conversationId: string }) {
   );
 }
 
-// ============================================
-// ASSIGN REP
-// ============================================
-function AssignRepSection({ conversationId, currentRepId }: { conversationId: string; currentRepId?: string }) {
-  const [showPicker, setShowPicker] = useState(false);
-  const queryClient = useQueryClient();
-
-  const { data: usersData } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const { data } = await api.get('/auth/users');
-      return data;
-    },
-    enabled: showPicker,
-  });
-
-  const mutation = useMutation({
-    mutationFn: (repId: string) => inboxApi.assignRep(conversationId, repId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      toast.success('Rep assigned');
-      setShowPicker(false);
-    },
-  });
-
-  return (
-    <div>
-      <button className="inbox-action-btn" style={{ width: '100%' }} onClick={() => setShowPicker(!showPicker)}>
-        <UserPlus size={13} /> {showPicker ? 'Cancel' : 'Change Rep'}
-      </button>
-      {showPicker && (
-        <div style={{ marginTop: 6, maxHeight: 200, overflowY: 'auto' }}>
-          {(usersData?.users || []).map((user: { id: string; name?: string; email?: string }) => (
-            <button
-              key={user.id}
-              onClick={() => mutation.mutate(user.id)}
-              className="inbox-action-btn"
-              style={{
-                width: '100%',
-                marginBottom: 4,
-                justifyContent: 'flex-start',
-                ...(user.id === currentRepId
-                  ? { borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }
-                  : {}),
-              }}
-            >
-              <div className="inbox-assigned-avatar" style={{ width: 22, height: 22, fontSize: 9 }}>
-                {user.name?.[0] || user.email?.[0] || '?'}
-              </div>
-              <span style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user.name || user.email}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================
-// TEMPLATE MODAL
-// ============================================
-function TemplateModal({ onSelect, onClose }: { onSelect: (t: SmsTemplate) => void; onClose: () => void }) {
+function TemplateModal({
+  scope,
+  onScopeChange,
+  onSelect,
+  onClose,
+}: {
+  scope: 'mine' | 'team' | 'global';
+  onScopeChange: (scope: 'mine' | 'team' | 'global') => void;
+  onSelect: (template: SmsTemplate) => void;
+  onClose: () => void;
+}) {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 200);
+  const [category, setCategory] = useState<'all' | 'favs' | 'recent' | 'follow_up' | 'first_touch'>('all');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data } = useQuery({
-    queryKey: ['templates', debouncedSearch],
+    queryKey: ['templates', scope, debouncedSearch],
     queryFn: async () => {
-      const params: Record<string, string> = {};
+      const params: Record<string, string> = { scope };
       if (debouncedSearch) params.search = debouncedSearch;
       const { data } = await inboxApi.listTemplates(params);
       return data;
     },
   });
 
-  const toggleFavMutation = useMutation({
-    mutationFn: (id: string) => inboxApi.toggleFavorite(id),
-  });
+  const templates: SmsTemplate[] = data?.templates || [];
 
-  // Сортируем: favorites first
-  const sorted = useMemo(() => {
-    const list: SmsTemplate[] = data?.templates || [];
-    return [...list].sort((a, b) => {
-      if (a.isFavorite && !b.isFavorite) return -1;
-      if (!a.isFavorite && b.isFavorite) return 1;
-      return (b.usageCount || 0) - (a.usageCount || 0);
-    });
-  }, [data?.templates]);
+  const filteredTemplates = useMemo(() => {
+    let list = [...templates];
+    if (category === 'favs') list = list.filter((t) => t.isFavorite);
+    if (category === 'recent') list = list.sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)).slice(0, 25);
+    if (category === 'follow_up') list = list.filter((t) => (t.category || '').toLowerCase().includes('follow'));
+    if (category === 'first_touch') list = list.filter((t) => (t.category || '').toLowerCase().includes('first'));
+    return list;
+  }, [category, templates]);
+
+  const selectedTemplate =
+    filteredTemplates.find((t) => t.id === selectedId) || filteredTemplates[0] || null;
+
+  useEffect(() => {
+    if (!selectedId && filteredTemplates[0]) setSelectedId(filteredTemplates[0].id);
+  }, [filteredTemplates, selectedId]);
 
   return (
     <div className="inbox-template-overlay" onClick={onClose}>
-      <div className="inbox-template-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="inbox-template-modal wide" onClick={(e) => e.stopPropagation()}>
         <div className="inbox-template-header">
           <h3>SMS Templates</h3>
           <button className="inbox-tool-btn" onClick={onClose}>
@@ -931,52 +1220,99 @@ function TemplateModal({ onSelect, onClose }: { onSelect: (t: SmsTemplate) => vo
           </button>
         </div>
 
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-subtle)' }}>
-          <div className="inbox-search">
-            <Search className="inbox-search-icon" />
-            <input
-              type="text"
-              className="inbox-search-input"
-              placeholder="Search templates..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-            />
-          </div>
-        </div>
+        <div className="inbox-template-body-grid">
+          <div className="inbox-template-left-pane">
+            <div className="inbox-template-scope-tabs">
+              <button className={clsx(scope === 'mine' && 'active')} onClick={() => onScopeChange('mine')}>
+                Mine
+              </button>
+              <button className={clsx(scope === 'team' && 'active')} onClick={() => onScopeChange('team')}>
+                Team
+              </button>
+              <button className={clsx(scope === 'global' && 'active')} onClick={() => onScopeChange('global')}>
+                Global
+              </button>
+            </div>
 
-        <div className="inbox-template-list">
-          {sorted.length === 0 && (
-            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-faint)', fontSize: 13 }}>
-              No templates found
+            <div className="inbox-search" style={{ marginBottom: 8 }}>
+              <Search className="inbox-search-icon" />
+              <input
+                type="text"
+                className="inbox-search-input"
+                placeholder="Search templates..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoFocus
+              />
             </div>
-          )}
-          {sorted.map((t) => (
-            <div key={t.id} className="inbox-template-item" onClick={() => onSelect(t)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div className="inbox-template-name">{t.name}</div>
+
+            <div className="inbox-template-categories">
+              <button className={clsx(category === 'all' && 'active')} onClick={() => setCategory('all')}>
+                All
+              </button>
+              <button className={clsx(category === 'favs' && 'active')} onClick={() => setCategory('favs')}>
+                Favs
+              </button>
+              <button className={clsx(category === 'recent' && 'active')} onClick={() => setCategory('recent')}>
+                Recent
+              </button>
+              <button className={clsx(category === 'follow_up' && 'active')} onClick={() => setCategory('follow_up')}>
+                Follow-Up
+              </button>
+              <button className={clsx(category === 'first_touch' && 'active')} onClick={() => setCategory('first_touch')}>
+                First Touch
+              </button>
+            </div>
+
+            <div className="inbox-template-list compact">
+              {filteredTemplates.length === 0 && <div className="inbox-template-empty">No templates found</div>}
+              {filteredTemplates.map((t) => (
                 <button
-                  className="inbox-tool-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFavMutation.mutate(t.id);
-                  }}
-                  style={{ padding: 2 }}
+                  key={t.id}
+                  className={clsx('inbox-template-item compact', selectedTemplate?.id === t.id && 'selected')}
+                  onClick={() => setSelectedId(t.id)}
                 >
-                  <Star size={12} fill={t.isFavorite ? 'var(--accent-primary)' : 'none'} />
+                  <div className="inbox-template-name">{t.name}</div>
+                  <div className="inbox-template-meta-row">
+                    <span>{t.visibility}</span>
+                    <span>{t.category || 'General'}</span>
+                    <span>Used {t.usageCount || 0}</span>
+                  </div>
                 </button>
-              </div>
-              <div className="inbox-template-body">{t.body}</div>
-              {t.category && (
-                <span
-                  className="inbox-badge"
-                  style={{ marginTop: 4, background: 'var(--bg-hover)', color: 'var(--text-muted)' }}
-                >
-                  {t.category}
-                </span>
-              )}
+              ))}
             </div>
-          ))}
+          </div>
+
+          <div className="inbox-template-preview-pane">
+            {selectedTemplate ? (
+              <>
+                <div className="inbox-template-preview-title">{selectedTemplate.name}</div>
+                <div className="inbox-template-preview-badges">
+                  <span>{selectedTemplate.visibility}</span>
+                  <span>{selectedTemplate.category || 'General'}</span>
+                  <span>{selectedTemplate.ownerName || 'Owner'}</span>
+                </div>
+                <pre className="inbox-template-preview-body">{selectedTemplate.body}</pre>
+                <div className="inbox-template-preview-meta">
+                  <div>Used count: {selectedTemplate.usageCount || 0}</div>
+                  <div>
+                    Last used:{' '}
+                    {selectedTemplate.lastUsedAt
+                      ? format(new Date(selectedTemplate.lastUsedAt), 'MMM d, yyyy h:mm a')
+                      : 'Never'}
+                  </div>
+                </div>
+                <div className="inbox-template-preview-actions">
+                  <button className="inbox-action-btn">Duplicate</button>
+                  <button className="inbox-action-btn" onClick={() => onSelect(selectedTemplate)}>
+                    Insert Template
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="inbox-template-empty">Select a template</div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -248,8 +248,10 @@ export class DealController {
     // teamView=true → показываем все данные команды (даже для REP)
     const filter = teamView === 'true' ? {} : repFilter(req.user);
     const where: any = { ...filter };
-    if (isAdminLike(req.user) && repId) {
-      Object.assign(where, repScopeFilter(repId as string, true));
+    const requestedRepId = repId ? String(repId) : '';
+    const canScopeToRep = !!requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id);
+    if (canScopeToRep) {
+      Object.assign(where, repScopeFilter(requestedRepId, true));
     }
 
     const deals = await prisma.deal.findMany({
@@ -260,7 +262,10 @@ export class DealController {
           select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
         },
         offers: { orderBy: { createdAt: 'desc' }, take: 3 },
-        fundingEvents: { orderBy: { createdAt: 'desc' }, take: 1 },
+        fundingEvents: {
+          orderBy: [{ fundedDate: 'desc' }, { createdAt: 'desc' }],
+          take: 1,
+        },
       },
       orderBy: { lastActivityAt: 'desc' },
     });
@@ -1444,7 +1449,9 @@ export class DealController {
   // GET /api/deals/stats - Bottom stats bar data
   static async getStats(req: AuthRequest, res: Response) {
     const { repId, teamView } = req.query;
-    const selectedRepId = isAdminLike(req.user) && repId ? String(repId) : null;
+    const requestedRepId = repId ? String(repId) : null;
+    const selectedRepId =
+      requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id) ? requestedRepId : null;
     // teamView=true → показываем командные данные (без фильтра по пользователю)
     const isTeamView = teamView === 'true';
     const where: any = selectedRepId ? repScopeFilter(selectedRepId, true) : isTeamView ? {} : repFilter(req.user);
@@ -1452,6 +1459,8 @@ export class DealController {
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const fundingEventScope = fundingScopedRepId ? { deal: repScopeFilter(fundingScopedRepId, true) } : {};
 
     const [deals, fundedMTD, fundedMTDCount, allDeals] = await Promise.all([
       // Active pipeline deals
@@ -1468,13 +1477,19 @@ export class DealController {
       }),
       // Funded MTD — сумма
       prisma.fundingEvent.aggregate({
-        where: { ...(fundingScopedRepId ? { repId: fundingScopedRepId } : {}), fundedDate: { gte: startOfMonth } },
+        where: {
+          ...fundingEventScope,
+          fundedDate: { gte: startOfMonth, lt: endOfMonth },
+        },
         _sum: { amountFunded: true },
       }),
       // Funded MTD — количество уникальных deals
       prisma.fundingEvent.groupBy({
         by: ['dealId'],
-        where: { ...(fundingScopedRepId ? { repId: fundingScopedRepId } : {}), fundedDate: { gte: startOfMonth } },
+        where: {
+          ...fundingEventScope,
+          fundedDate: { gte: startOfMonth, lt: endOfMonth },
+        },
       }),
       // All active deals for counts
       prisma.deal.findMany({
@@ -1496,7 +1511,7 @@ export class DealController {
 
     // Lifetime Funded
     const lifetimeFunded = await prisma.fundingEvent.aggregate({
-      where: fundingScopedRepId ? { repId: fundingScopedRepId } : {},
+      where: fundingEventScope,
       _sum: { amountFunded: true },
     });
 

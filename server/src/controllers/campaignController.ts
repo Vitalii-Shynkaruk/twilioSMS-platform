@@ -49,6 +49,75 @@ export class CampaignController {
           })
         : [];
 
+    // Breakdown по номерам
+    const numberRows =
+      campaignIds.length > 0
+        ? await prisma.message.groupBy({
+            by: ['campaignId', 'phoneNumberId'],
+            where: {
+              campaignId: { in: campaignIds },
+              direction: 'OUTBOUND',
+              status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+              phoneNumberId: { not: null },
+            },
+            _count: { id: true },
+          })
+        : [];
+
+    // Breakdown по репам
+    const repRows =
+      campaignIds.length > 0
+        ? await prisma.message.groupBy({
+            by: ['campaignId', 'sentByUserId'],
+            where: {
+              campaignId: { in: campaignIds },
+              direction: 'OUTBOUND',
+              status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+              sentByUserId: { not: null },
+            },
+            _count: { id: true },
+          })
+        : [];
+
+    // Получаем имена номеров и репов
+    const phoneNumberIds = [...new Set(numberRows.map((r) => r.phoneNumberId).filter(Boolean))] as string[];
+    const repIds = [...new Set(repRows.map((r) => r.sentByUserId).filter(Boolean))] as string[];
+
+    const [phoneNumbers, repUsers] = await Promise.all([
+      phoneNumberIds.length > 0
+        ? prisma.phoneNumber.findMany({
+            where: { id: { in: phoneNumberIds } },
+            select: { id: true, phoneNumber: true },
+          })
+        : [],
+      repIds.length > 0
+        ? prisma.user.findMany({
+            where: { id: { in: repIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [],
+    ]);
+
+    const phoneMap = new Map(phoneNumbers.map((p) => [p.id, p.phoneNumber]));
+    const repNameMap = new Map(repUsers.map((r) => [r.id, `${r.firstName} ${r.lastName?.[0] || ''}.`]));
+
+    // Собираем per-campaign breakdown maps
+    const numberByCampaign = new Map<string, Array<{ number: string; count: number }>>();
+    for (const row of numberRows) {
+      if (!row.campaignId || !row.phoneNumberId) continue;
+      const arr = numberByCampaign.get(row.campaignId) || [];
+      arr.push({ number: phoneMap.get(row.phoneNumberId) || row.phoneNumberId, count: row._count.id });
+      numberByCampaign.set(row.campaignId, arr);
+    }
+
+    const repByCampaign = new Map<string, Array<{ name: string; count: number }>>();
+    for (const row of repRows) {
+      if (!row.campaignId || !row.sentByUserId) continue;
+      const arr = repByCampaign.get(row.campaignId) || [];
+      arr.push({ name: repNameMap.get(row.sentByUserId) || 'Unknown', count: row._count.id });
+      repByCampaign.set(row.campaignId, arr);
+    }
+
     const liveByCampaign = new Map<
       string,
       { totalSent: number; totalDelivered: number; totalFailed: number; totalBlocked: number }
@@ -78,12 +147,15 @@ export class CampaignController {
         totalFailed: 0,
         totalBlocked: 0,
       };
+      const numbers = (numberByCampaign.get(campaign.id) || []).sort((a, b) => b.count - a.count);
+      const reps = (repByCampaign.get(campaign.id) || []).sort((a, b) => b.count - a.count);
       return {
         ...campaign,
         totalSent: live.totalSent,
         totalDelivered: live.totalDelivered,
         totalFailed: live.totalFailed,
         totalBlocked: live.totalBlocked,
+        sentBreakdown: { numbers, reps },
       };
     });
 

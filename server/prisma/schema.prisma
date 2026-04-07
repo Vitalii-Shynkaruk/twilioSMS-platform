@@ -115,7 +115,8 @@ model PhoneNumber {
   assignments         NumberAssignment[]
   messages            Message[]
   poolMemberships     NumberPoolMembership[]
-  stickyConversations Conversation[]
+  stickyConversations Conversation[] @relation("ConversationStickyNumber")
+  twilioConversations Conversation[] @relation("ConversationTwilioNumber")
 
   @@index([status])
   @@index([dailySentCount])
@@ -278,9 +279,10 @@ model Conversation {
   id              String    @id @default(cuid())
   leadId          String
   assignedRepId   String?
-  
+
   // Sticky sender - maintain continuity
   stickyNumberId  String?   // Preferred phone number for this conversation
+  twilioNumberId  String?   // Phase 1 canonical sender number (from-number badge / send source)
   lastMessageAt   DateTime?
   lastDirection   String?   // "inbound" | "outbound"
   unreadCount     Int       @default(0)
@@ -295,16 +297,19 @@ model Conversation {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  stickyNumber    PhoneNumber? @relation(fields: [stickyNumberId], references: [id], onDelete: SetNull)
+  stickyNumber    PhoneNumber? @relation("ConversationStickyNumber", fields: [stickyNumberId], references: [id], onDelete: SetNull)
+  twilioNumber    PhoneNumber? @relation("ConversationTwilioNumber", fields: [twilioNumberId], references: [id], onDelete: SetNull)
   lead            Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
   assignedRep     User?        @relation(fields: [assignedRepId], references: [id], onDelete: SetNull)
   messages        Message[]
   notes           ConversationNote[]
   deals           Deal[]       @relation("ConversationDeals")
+  scheduledMessages ScheduledMessage[]
 
   @@unique([leadId])
   @@index([assignedRepId, lastMessageAt])
   @@index([assignedRepId])
+  @@index([twilioNumberId])
   @@index([lastMessageAt])
   @@index([unreadCount])
   @@index([hotLead])
@@ -1029,6 +1034,8 @@ model ScheduledMessage {
 
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
+
+  conversation   Conversation           @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([status, scheduledAt])
   @@index([conversationId])

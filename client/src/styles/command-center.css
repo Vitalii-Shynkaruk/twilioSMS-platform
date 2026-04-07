@@ -752,7 +752,18 @@ button { font-family: var(--mono); cursor: pointer; }
    ═══════════════════════════════════════════ */
 @media (max-width: 1024px) {
   .page { padding: 10px 14px; }
-  .topbar { padding: 0 12px; }
+  .topbar { padding: 0 12px; flex-wrap: wrap; height: auto; min-height: 40px; gap: 4px; }
+
+  /* tb-right: wrap + full width */
+  .tb-right { width: 100%; flex-wrap: wrap; gap: 6px; }
+
+  /* rsw: horizontal scroll, не wrap */
+  .rsw { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; max-width: 50vw; }
+  .rsw::-webkit-scrollbar { display: none; }
+  .rb { white-space: nowrap; }
+
+  /* Скрываем exec-score-bar на планшете */
+  .exec-score-bar { display: none; }
 
   /* Score grid: drop future-opps column */
   .cc-score-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
@@ -775,7 +786,7 @@ button { font-family: var(--mono); cursor: pointer; }
 
   .rep-tbl td { font-size: 9px; }
 
-  .exec-score-bar { flex-wrap: wrap; gap: 8px; padding: 4px 8px; }
+  .exec-score-bar { display: none; }
 
   .csv-box { width: 440px; }
   .deal-box { width: 360px; }
@@ -787,7 +798,7 @@ button { font-family: var(--mono); cursor: pointer; }
 /* ═══════════════════════════════════════════
    RESPONSIVE — HALF-SCREEN (≤960px) — FIX 4
    ═══════════════════════════════════════════ */
-@media (max-width: 960px) {
+@media (max-width: 960px) and (min-width: 769px) {
   .cc-root { overflow-x: auto; }
   .topbar { flex-wrap: wrap; height: auto; min-height: 40px; }
   .hero-g { grid-template-columns: 1fr; gap: 12px; }
@@ -796,8 +807,9 @@ button { font-family: var(--mono); cursor: pointer; }
   .funded-n { font-size: 30px; }
   .scv { font-size: 18px; }
   .g5 { grid-template-columns: repeat(2, 1fr); }
-  .rsw { flex-wrap: wrap; }
-  .rb { padding: 3px 8px; font-size: 10px; }
+  .rsw { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; max-width: 45vw; }
+  .rsw::-webkit-scrollbar { display: none; }
+  .rb { padding: 3px 8px; font-size: 10px; white-space: nowrap; }
   .csv-box, .deal-box, .ca-box { width: min(90vw, 420px); }
 }
 
@@ -805,6 +817,9 @@ button { font-family: var(--mono); cursor: pointer; }
    RESPONSIVE — MOBILE (≤768px)
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
+  .cc-root { overflow-x: hidden; }
+  .page { max-width: 100%; overflow-x: clip; }
+
   /* Score grid: stack fully */
   .cc-score-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
   .cc-score-grid .future-opps { grid-column: 1 / -1; }
@@ -820,11 +835,14 @@ button { font-family: var(--mono); cursor: pointer; }
   .logo-wrap { gap: 6px; }
   .topnav { flex-wrap: wrap; gap: 2px; margin-left: 0; width: 100%; }
   .tnv { padding: 4px 7px; font-size: 9px; }
-  .tb-right { width: 100%; justify-content: space-between; gap: 6px; }
-  .rsw { font-size: 9px; }
-  .rb { padding: 3px 7px; font-size: 9px; }
+  .tb-right { width: 100%; justify-content: flex-start; gap: 6px; flex-wrap: wrap; }
+  .rsw { font-size: 9px; max-width: 60vw; flex-shrink: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; flex-wrap: nowrap; }
+  .rsw::-webkit-scrollbar { display: none; }
+  .rb { padding: 3px 7px; font-size: 9px; white-space: nowrap; }
   .clk { font-size: 8px; }
   .add-btn { font-size: 9px; padding: 4px 9px; }
+  /* Скрываем exec-score-bar на мобильном — слишком сложный для малого экрана */
+  .exec-score-bar { display: none; }
 
   /* All grids → single column */
   .g2, .g3, .g4, .g5, .g-2-1, .g-3-2, .g-pipe { grid-template-columns: 1fr; }
@@ -851,7 +869,7 @@ button { font-family: var(--mono); cursor: pointer; }
   .rep-tbl { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
   /* Execution score bar: wrap */
-  .exec-score-bar { flex-wrap: wrap; gap: 6px; padding: 5px 8px; }
+  .exec-score-bar { display: none; }
   .esb-track { width: 36px; }
 
   /* Product mix */
@@ -904,8 +922,10 @@ button { font-family: var(--mono); cursor: pointer; }
   .logo-sub { font-size: 7px; }
   .tnv { font-size: 9px; padding: 3px 6px; }
   .rb { padding: 3px 6px; font-size: 8px; }
+  .rsw { max-width: 70vw; }
   .role-label { font-size: 8px; padding: 2px 5px; }
   .add-btn { font-size: 8px; padding: 4px 8px; }
+  .clk { display: none; }
 
   .hero { padding: 10px 12px; }
   .h-name { font-size: 13px; }

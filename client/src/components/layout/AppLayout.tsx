@@ -85,9 +85,9 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   const [showChangePassword, setShowChangePassword] = useState(false);
   const commandInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-collapse sidebar on Pipeline page for maximum board visibility
+  // Auto-collapse sidebar on Pipeline / Command Center for maximum content visibility
   useEffect(() => {
-    if (location.pathname === '/pipeline') {
+    if (location.pathname === '/pipeline' || location.pathname === '/command-center') {
       setCollapsed(true);
     }
   }, [location.pathname]);
@@ -183,11 +183,14 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
     navigate(href);
   };
 
+  // On mobile, always render expanded sidebar content (icons + labels)
+  const sidebarCollapsed = collapsed && !mobileOpen;
+
   const sidebarContent = (
     <>
       {/* Brand Header */}
       <div
-        className={clsx('flex items-center h-16', collapsed ? 'justify-center px-2' : 'gap-2 px-3.5')}
+        className={clsx('flex items-center h-16', sidebarCollapsed ? 'justify-center px-2' : 'gap-2 px-3.5')}
         style={{ borderBottom: '1px solid var(--scl-border)' }}
       >
         <div
@@ -204,7 +207,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
         >
           S
         </div>
-        {!collapsed && (
+        {!sidebarCollapsed && (
           <div className="flex flex-col min-w-0">
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--scl-white)', letterSpacing: '0.04em' }}>
               SCL Capital
@@ -222,7 +225,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             </span>
           </div>
         )}
-        {!collapsed && (
+        {!sidebarCollapsed && (
           <button
             onClick={() => {
               setCollapsed(!collapsed);
@@ -244,7 +247,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       </div>
 
       {/* Quick search trigger */}
-      {!collapsed && (
+      {!sidebarCollapsed && (
         <div className="px-3 pt-3">
           <button
             onClick={() => setCommandOpen(true)}
@@ -268,7 +271,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       )}
 
       {/* Expand button when collapsed */}
-      {collapsed && (
+      {sidebarCollapsed && (
         <div className="flex justify-center pt-2 px-2 hidden lg:flex">
           <button
             onClick={() => setCollapsed(false)}
@@ -284,7 +287,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       <nav className="flex-1 px-3 py-4 overflow-y-auto" data-nav-version="2">
         {filteredNavGroups.map((group) => (
           <div key={group.label}>
-            {!collapsed && (
+            {!sidebarCollapsed && (
               <div
                 style={{
                   fontSize: 10,
@@ -307,17 +310,17 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
                   to={item.href}
                   end={item.href === '/'}
                   className={({ isActive }) =>
-                    clsx('sidebar-link relative', isActive && 'active', collapsed && 'justify-center')
+                    clsx('sidebar-link relative', isActive && 'active', sidebarCollapsed && 'justify-center')
                   }
-                  title={collapsed ? item.name : undefined}
+                  title={sidebarCollapsed ? item.name : undefined}
                 >
                   <item.icon className="w-5 h-5 shrink-0 min-w-5 min-h-5" />
-                  {!collapsed && <span className="text-sm font-medium">{item.name}</span>}
+                  {!sidebarCollapsed && <span className="text-sm font-medium">{item.name}</span>}
                   {item.name === 'Inbox' && unreadCount > 0 && (
                     <span
                       className={clsx(
                         'absolute text-white text-[10px] font-bold rounded-full flex items-center justify-center',
-                        collapsed ? 'top-0 right-0 w-4 h-4' : 'right-2 top-1/2 -translate-y-1/2 w-5 h-5',
+                        sidebarCollapsed ? 'top-0 right-0 w-4 h-4' : 'right-2 top-1/2 -translate-y-1/2 w-5 h-5',
                       )}
                       style={{ backgroundColor: 'var(--scl-blue)' }}
                     >
@@ -340,9 +343,9 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             'flex items-center gap-2 rounded-lg px-3 py-2 transition-colors cursor-pointer',
             modeConfig.bg,
             'hover:opacity-80',
-            collapsed && 'justify-center',
+            sidebarCollapsed && 'justify-center',
           )}
-          title={collapsed ? `SMS: ${modeConfig.label}` : undefined}
+          title={sidebarCollapsed ? `SMS: ${modeConfig.label}` : undefined}
         >
           <div className="relative shrink-0">
             <ModeIcon className={clsx('w-4 h-4', modeConfig.color)} />
@@ -350,7 +353,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
               className={clsx('absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-dark-900', modeConfig.dot)}
             />
           </div>
-          {!collapsed && (
+          {!sidebarCollapsed && (
             <div className="flex-1 min-w-0">
               <p className={clsx('text-xs font-semibold', modeConfig.color)}>{modeConfig.label}</p>
               <p className="text-[10px] text-dark-500 truncate">SMS Mode</p>
@@ -358,7 +361,9 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
           )}
         </NavLink>
 
-        <div className={clsx('relative flex items-center gap-3 px-3 py-2 rounded-lg', collapsed && 'justify-center')}>
+        <div
+          className={clsx('relative flex items-center gap-3 px-3 py-2 rounded-lg', sidebarCollapsed && 'justify-center')}
+        >
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 cursor-pointer"
             style={{
@@ -369,7 +374,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             {user?.firstName?.[0]}
             {user?.lastName?.[0]}
           </div>
-          {!collapsed && (
+          {!sidebarCollapsed && (
             <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setShowUserMenu(!showUserMenu)}>
               <p className="text-sm font-medium truncate" style={{ color: 'var(--text-secondary)' }}>
                 {user?.firstName} {user?.lastName}
@@ -428,7 +433,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-[140] bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
@@ -437,7 +442,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       <aside
         className={clsx(
           'hidden lg:flex flex-col border-r transition-all duration-300',
-          collapsed ? 'w-[72px]' : 'w-[260px]',
+          collapsed ? 'w-14' : 'w-[260px]',
         )}
         style={{
           backgroundColor: 'var(--scl-sidebar)',
@@ -450,7 +455,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       {/* Sidebar — Mobile */}
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-50 flex flex-col w-[280px] border-r transition-transform duration-300 lg:hidden',
+          'fixed inset-y-0 left-0 z-[150] flex flex-col w-[280px] border-r transition-transform duration-300 lg:hidden',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
         style={{
@@ -462,7 +467,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Mobile top bar */}
         <div
           className="sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b lg:hidden"
@@ -484,7 +489,9 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             <Search className="w-5 h-5" />
           </button>
         </div>
-        {children || <Outlet />}
+        <div className="flex-1 min-h-0 overflow-auto">
+          {children || <Outlet />}
+        </div>
       </main>
 
       {/* Command Palette (Cmd+K) */}

@@ -1,5 +1,6 @@
 import { AutomationService } from '../services/automationService';
 import { NumberService } from '../services/numberService';
+import { ScheduledMessageService } from '../services/scheduledMessageService';
 import { config } from '../config';
 import logger from '../config/logger';
 import redis from '../config/redis';
@@ -64,6 +65,7 @@ async function checkAndProcessAutomations(): Promise<void> {
   }
   try {
     await AutomationService.processScheduledAutomations();
+    await ScheduledMessageService.processDueMessages(100);
   } catch (error: any) {
     logger.error('Automation processing error:', { error: error.message });
   } finally {

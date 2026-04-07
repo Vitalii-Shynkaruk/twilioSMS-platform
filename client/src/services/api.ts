@@ -192,10 +192,11 @@ export const inboxApi = {
 
   // Phase 1: Отложенные сообщения
   listScheduled: (id: string) => api.get(`/inbox/${id}/scheduled`),
-  createScheduled: (data: { conversationId: string; body: string; scheduledAt: string; fromNumber: string }) =>
+  createScheduled: (data: { conversationId: string; body: string; scheduledAt: string }) =>
     api.post('/inbox/scheduled', data),
   cancelScheduled: (scheduledId: string) => api.delete(`/inbox/scheduled/${scheduledId}`),
 
   // Phase 1: Pipeline интеграция
-  addToPipeline: (id: string, stageId: string) => api.post(`/inbox/${id}/add-to-pipeline`, { stageId }),
+  addToPipeline: (id: string, stageId?: string, dealStage?: string) =>
+    api.post(`/inbox/${id}/add-to-pipeline`, { stageId, dealStage }),
 };

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import {
@@ -51,6 +51,12 @@ interface PhoneNumberItem {
   createdAt: string;
   lastSentAt: string | null;
   assignments: { user: { id: string; firstName: string; lastName: string } }[];
+  sentBreakdown?: {
+    campaign: number;
+    manual: number;
+    statuses: Array<{ status: string; count: number }>;
+    reps: Array<{ name: string; count: number }>;
+  };
 }
 
 interface Assignment {
@@ -308,7 +314,7 @@ export default function NumbersPage() {
           )}
         >
           <Users className="w-4 h-4" />
-          Daily Assignments
+          Assignments
           {assignments.length > 0 && (
             <span className="text-[10px] bg-scl-600/30 text-scl-300 px-1.5 py-0.5 rounded-full">
               {assignments.length}
@@ -659,10 +665,7 @@ function NumbersTable({
                     <HealthBar score={Math.round(number.deliveryRate || 0)} />
                   </td>
                   <td className="table-td">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-dark-300">{number.dailySentCount}</span>
-                      <UsageBar used={number.dailySentCount} limit={number.dailyLimit} />
-                    </div>
+                    <SentTodayTooltip number={number} />
                   </td>
                   <td className="table-td">
                     <span className="text-sm text-dark-400">{number.dailyLimit}</span>
@@ -807,7 +810,7 @@ function DailyAssignmentsView({
           </div>
           <div>
             <p className="text-lg font-bold text-dark-100">{totalAssignments}</p>
-            <p className="text-[11px] text-dark-500 uppercase tracking-wider">Assigned Today</p>
+            <p className="text-[11px] text-dark-500 uppercase tracking-wider">Assigned Active</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
@@ -825,10 +828,9 @@ function DailyAssignmentsView({
       {repAssignments.length === 0 ? (
         <div className="card p-12 text-center">
           <Users className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-dark-200 mb-2">No Daily Assignments</h3>
+          <h3 className="text-lg font-semibold text-dark-200 mb-2">No Active Assignments</h3>
           <p className="text-sm text-dark-400 mb-5 max-w-sm mx-auto">
-            Assign phone numbers to reps for today&apos;s campaigns. Each rep needs at least one number to send
-            messages.
+            Assign phone numbers to reps. Assignments stay active until you change them.
           </p>
           <button onClick={onBulkAssign} className="btn-primary inline-flex items-center gap-2">
             <UserCheck className="w-4 h-4" /> Assign Numbers to Reps
@@ -955,7 +957,7 @@ function DailyAssignmentsView({
             <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-medium text-yellow-300">
-                {unassignedNumbers.length} active number{unassignedNumbers.length !== 1 ? 's' : ''} not assigned today
+                {unassignedNumbers.length} active number{unassignedNumbers.length !== 1 ? 's' : ''} not assigned
               </p>
               <p className="text-xs text-dark-400 mt-0.5">
                 These numbers won&apos;t be used for campaigns until assigned to a rep.
@@ -1055,7 +1057,7 @@ function BulkAssignModal({ numbers, onClose }: { numbers: PhoneNumberItem[]; onC
         <div className="flex items-center justify-between mb-5">
           <div>
             <h3 className="text-lg font-bold text-dark-50">Assign Numbers to Rep</h3>
-            <p className="text-xs text-dark-500 mt-0.5">Select a rep and pick numbers for today&apos;s campaigns</p>
+            <p className="text-xs text-dark-500 mt-0.5">Select a rep and pick numbers for active campaigns</p>
           </div>
           <button onClick={onClose} className="btn-ghost p-1">
             <X className="w-5 h-5" />
@@ -1279,6 +1281,131 @@ function UsageBar({ used, limit }: { used: number; limit: number }) {
   return (
     <div className="w-12 h-1 bg-dark-700 rounded-full overflow-hidden" title={`${used}/${limit}`}>
       <div className={clsx('h-full rounded-full', color)} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/* ── Цвета статусов для тултипа Sent Today ── */
+const STATUS_COLORS: Record<string, string> = {
+  DELIVERED: '#10b981',
+  SENT: '#3b82f6',
+  FAILED: '#ef4444',
+  UNDELIVERED: '#f97316',
+  BLOCKED: '#a855f7',
+};
+
+/* ── Тултип разбивки Sent Today ── */
+function SentTodayTooltip({ number }: { number: PhoneNumberItem }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const bd = number.sentBreakdown;
+  const total = number.dailySentCount;
+
+  const handleEnter = useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPos({ x: rect.left + rect.width / 2, y: rect.top });
+    }
+    setShow(true);
+  }, []);
+
+  return (
+    <div
+      ref={triggerRef}
+      className="cursor-default"
+      onMouseEnter={handleEnter}
+      onMouseLeave={() => setShow(false)}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-dark-300">{total}</span>
+        <UsageBar used={total} limit={number.dailyLimit} />
+      </div>
+
+      {show && bd && total > 0 && (
+        <div
+          className="fixed z-[9999] bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none w-64"
+          style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -100%) translateY(-8px)' }}
+        >
+          <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">
+            Sent Today Breakdown
+          </p>
+
+          {/* Campaign vs Manual */}
+          <div className="space-y-1.5 mb-3">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-dark-400">📢 Campaign</span>
+              <span className="text-dark-300 font-medium">{bd.campaign}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-dark-700 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-blue-500"
+                style={{ width: `${total > 0 ? (bd.campaign / total) * 100 : 0}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-dark-400">💬 Manual / Inbox</span>
+              <span className="text-dark-300 font-medium">{bd.manual}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-dark-700 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500"
+                style={{ width: `${total > 0 ? (bd.manual / total) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Статусы */}
+          {bd.statuses.length > 0 && (
+            <div className="border-t border-dark-700 pt-2 mb-3">
+              <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Status</p>
+              <div className="space-y-1">
+                {[...bd.statuses]
+                  .sort((a, b) => b.count - a.count)
+                  .map((s) => (
+                    <div key={s.status} className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-1.5">
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: STATUS_COLORS[s.status] || '#6b7280' }}
+                        />
+                        <span className="text-dark-400">{s.status}</span>
+                      </div>
+                      <span className="text-dark-300 font-medium">
+                        {s.count} ({total > 0 ? ((s.count / total) * 100).toFixed(0) : 0}%)
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Репы */}
+          {bd.reps.length > 0 && (
+            <div className="border-t border-dark-700 pt-2">
+              <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Rep</p>
+              <div className="space-y-1">
+                {bd.reps.map((r) => (
+                  <div key={r.name} className="flex items-center justify-between text-[11px]">
+                    <span className="text-dark-400">👤 {r.name}</span>
+                    <span className="text-dark-300 font-medium">{r.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Пояснение */}
+          <p className="text-[10px] text-dark-500 mt-3 leading-tight border-t border-dark-700 pt-2">
+            Campaigns are distributed across all numbers in the pool, not just the assigned rep&apos;s number.
+          </p>
+
+          {/* Стрелочка */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-dark-600"
+          />
+        </div>
+      )}
     </div>
   );
 }

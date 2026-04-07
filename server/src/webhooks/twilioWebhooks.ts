@@ -74,6 +74,11 @@ router.post('/inbound', async (req: Request, res: Response) => {
     // Always save the inbound message to the database (even keyword messages)
     // so reps can see all replies in the inbox
 
+    const inboundTwilioNumber = await prisma.phoneNumber.findUnique({
+      where: { phoneNumber: To },
+      select: { id: true },
+    });
+
     // Find the lead by phone number
     const lead = await prisma.lead.findUnique({
       where: { phone: From },
@@ -89,6 +94,8 @@ router.post('/inbound', async (req: Request, res: Response) => {
           data: {
             leadId: lead.id,
             assignedRepId: lead.assignedRepId,
+            twilioNumberId: inboundTwilioNumber?.id || null,
+            stickyNumberId: inboundTwilioNumber?.id || null,
             isActive: true,
           },
         });
@@ -115,6 +122,12 @@ router.post('/inbound', async (req: Request, res: Response) => {
           lastMessageAt: new Date(),
           lastDirection: 'inbound',
           unreadCount: { increment: 1 },
+          ...(inboundTwilioNumber?.id
+            ? {
+                twilioNumberId: inboundTwilioNumber.id,
+                stickyNumberId: conversation.stickyNumberId || inboundTwilioNumber.id,
+              }
+            : {}),
         },
       });
 
@@ -206,6 +219,8 @@ router.post('/inbound', async (req: Request, res: Response) => {
       const conversation = await prisma.conversation.create({
         data: {
           leadId: newLead.id,
+          twilioNumberId: inboundTwilioNumber?.id || null,
+          stickyNumberId: inboundTwilioNumber?.id || null,
           isActive: true,
         },
       });

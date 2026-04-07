@@ -3,49 +3,100 @@ import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { SendingEngine } from '../services/sendingEngine';
+import { NumberService } from '../services/numberService';
 
-type InboxFilter = 'all' | 'unread' | 'replied' | 'interested' | 'not_interested' | 'dnc' | 'opted_out';
+type InboxFilter = 'all' | 'unread' | 'hot' | 'email_rcv' | 'interested' | 'followup' | 'in_pipeline' | 'dnc';
+type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
+
+const DEAL_STAGE_LABELS: Record<string, string> = {
+  NEW_LEAD: 'New Lead',
+  ENGAGED_INTERESTED: 'Engaged / Interested',
+  QUALIFIED: 'Qualified',
+  SUBMITTED_IN_REVIEW: 'Submitted (In Review)',
+  APPROVED_OFFERS: 'Approved / Offers',
+  COMMITTED_FUNDING: 'Committed (Funding)',
+  FUNDED: 'Funded',
+  NURTURE: 'Nurture',
+  CLOSED: 'Closed',
+};
 
 export class InboxController {
   private static readonly FILTER_KEYS: InboxFilter[] = [
     'all',
     'unread',
-    'replied',
+    'hot',
+    'email_rcv',
     'interested',
-    'not_interested',
+    'followup',
+    'in_pipeline',
     'dnc',
-    'opted_out',
+  ];
+  private static readonly SORT_KEYS: InboxSort[] = [
+    'newest_activity',
+    'oldest_untouched',
+    'unread_first',
+    'hot_first',
   ];
 
-  private static buildFilterCondition(filter: InboxFilter): any | null {
+  private static resolveFilter(raw: unknown): InboxFilter {
+    const normalized = String(raw || 'all').toLowerCase() as InboxFilter;
+    return InboxController.FILTER_KEYS.includes(normalized) ? normalized : 'all';
+  }
+
+  private static resolveSort(raw: unknown): InboxSort {
+    const normalized = String(raw || 'newest_activity').toLowerCase() as InboxSort;
+    return InboxController.SORT_KEYS.includes(normalized) ? normalized : 'newest_activity';
+  }
+
+  private static buildFilterCondition(filter: InboxFilter, req: AuthRequest): any | null {
     switch (filter) {
       case 'unread':
         return { unreadCount: { gt: 0 } };
-      case 'replied':
-        return {
-          lead: {
-            optedOut: false,
-            lastRepliedAt: { not: null },
-            status: { notIn: ['DNC', 'NOT_INTERESTED'] },
-          },
-        };
+      case 'hot':
+        return { hotLead: true };
+      case 'email_rcv':
+        return { emailReceived: true };
       case 'interested':
         return {
-          lead: {
-            optedOut: false,
-            status: { in: ['INTERESTED', 'DOCS_REQUESTED', 'SUBMITTED', 'FUNDED'] },
+          OR: [{ leadStatus: 'Interested' }, { lead: { status: { in: ['INTERESTED', 'DOCS_REQUESTED', 'SUBMITTED'] } } }],
+        };
+      case 'followup':
+        return { nextFollowupAt: { not: null } };
+      case 'in_pipeline':
+        return {
+          deals: {
+            some: {
+              createdFromSms: true,
+              ...(req.user?.role === 'REP' ? { assignedRepId: req.user.id } : {}),
+            },
           },
         };
-      case 'not_interested':
-        return { lead: { status: 'NOT_INTERESTED' } };
       case 'dnc':
-        return { lead: { status: 'DNC' } };
-      case 'opted_out':
-        return { lead: { optedOut: true } };
+        return { OR: [{ leadStatus: 'DNC' }, { lead: { status: 'DNC' } }] };
       case 'all':
       default:
         return null;
     }
+  }
+
+  private static buildOrderBy(sort: InboxSort): any {
+    switch (sort) {
+      case 'oldest_untouched':
+        return [{ lastMessageAt: 'asc' }, { updatedAt: 'asc' }];
+      case 'unread_first':
+        return [{ unreadCount: 'desc' }, { lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
+      case 'hot_first':
+        return [{ hotLead: 'desc' }, { lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
+      case 'newest_activity':
+      default:
+        return [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
+    }
+  }
+
+  private static normalizeDealStage(raw: unknown): string {
+    const value = String(raw || '').toUpperCase().trim();
+    if (value && DEAL_STAGE_LABELS[value]) return value;
+    return 'NEW_LEAD';
   }
 
   private static withConditions(baseWhere: any, extraConditions: any[]): any {
@@ -56,9 +107,54 @@ export class InboxController {
     };
   }
 
+  private static async enrichFromNumberFields<T extends { twilioNumber?: any; stickyNumber?: any; messages?: any[]; deals?: any[]; unreadCount?: number }>(
+    conversations: T[],
+  ): Promise<Array<T & { fromNumber: string; fromNumberFriendlyName: string | null; isInPipeline: boolean; unreadDot: boolean }>> {
+    const candidateNumbers = new Set<string>();
+    for (const conv of conversations) {
+      const lastMessage = conv.messages?.[0];
+      const derived =
+        conv.twilioNumber?.phoneNumber ||
+        conv.stickyNumber?.phoneNumber ||
+        (lastMessage ? (lastMessage.direction === 'OUTBOUND' ? lastMessage.fromNumber : lastMessage.toNumber) : '');
+      if (derived) candidateNumbers.add(derived);
+    }
+
+    const fallbackNumbers =
+      candidateNumbers.size > 0
+        ? await prisma.phoneNumber.findMany({
+            where: { phoneNumber: { in: Array.from(candidateNumbers) } },
+            select: { phoneNumber: true, friendlyName: true },
+          })
+        : [];
+    const fallbackMap = new Map(fallbackNumbers.map((n) => [n.phoneNumber, n.friendlyName || null]));
+
+    return conversations.map((conv) => {
+      const lastMessage = conv.messages?.[0];
+      const fromNumber =
+        conv.twilioNumber?.phoneNumber ||
+        conv.stickyNumber?.phoneNumber ||
+        (lastMessage ? (lastMessage.direction === 'OUTBOUND' ? lastMessage.fromNumber : lastMessage.toNumber) : '') ||
+        '';
+      const fromNumberFriendlyName =
+        conv.twilioNumber?.friendlyName || conv.stickyNumber?.friendlyName || fallbackMap.get(fromNumber) || null;
+      const isInPipeline = (conv.deals || []).some((d: any) => d.createdFromSms);
+
+      return {
+        ...conv,
+        fromNumber,
+        fromNumberFriendlyName,
+        isInPipeline,
+        unreadDot: (conv.unreadCount || 0) > 0,
+      };
+    });
+  }
+
   static async listConversations(req: AuthRequest, res: Response): Promise<void> {
-    const { page = '1', limit = '50', search, unreadOnly, filter = 'all', withFilterCounts = 'false' } = req.query;
-    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const { page = '1', limit = '50', search, unreadOnly, filter = 'all', sort, withFilterCounts = 'false' } = req.query;
+    const parsedPage = Math.max(parseInt(page as string, 10) || 1, 1);
+    const parsedLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 100);
+    const skip = (parsedPage - 1) * parsedLimit;
 
     const baseWhere: any = { isActive: true };
     const baseAndFilters: any[] = [];
@@ -68,27 +164,35 @@ export class InboxController {
       baseWhere.assignedRepId = req.user.id;
     }
 
-    const normalizedFilter: InboxFilter = InboxController.FILTER_KEYS.includes(
-      (filter as string).toLowerCase() as InboxFilter,
-    )
-      ? ((filter as string).toLowerCase() as InboxFilter)
-      : 'all';
+    const normalizedFilter = InboxController.resolveFilter(filter);
+    const normalizedSort = InboxController.resolveSort(sort);
     const includeFilterCounts = withFilterCounts === 'true';
 
     const listConditions: any[] = [];
     if (unreadOnly === 'true') listConditions.push({ unreadCount: { gt: 0 } });
-    const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter);
+    const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter, req);
     if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
 
-    if (search) {
+    if (search && String(search).trim()) {
+      const text = String(search).trim();
       baseAndFilters.push({
-        lead: {
-          OR: [
-            { firstName: { contains: search as string } },
-            { lastName: { contains: search as string } },
-            { phone: { contains: search as string } },
-          ],
-        },
+        OR: [
+          {
+            lead: {
+              OR: [
+                { firstName: { contains: text } },
+                { lastName: { contains: text } },
+                { phone: { contains: text } },
+                { company: { contains: text } },
+              ],
+            },
+          },
+          {
+            messages: {
+              some: { body: { contains: text } },
+            },
+          },
+        ],
       });
     }
 
@@ -104,8 +208,8 @@ export class InboxController {
       prisma.conversation.findMany({
         where,
         skip,
-        take: parseInt(limit as string),
-        orderBy: { lastMessageAt: 'desc' },
+        take: parsedLimit,
+        orderBy: InboxController.buildOrderBy(normalizedSort),
         include: {
           lead: {
             select: {
@@ -113,6 +217,9 @@ export class InboxController {
               firstName: true,
               lastName: true,
               phone: true,
+              email: true,
+              company: true,
+              source: true,
               status: true,
               optedOut: true,
               tags: {
@@ -128,13 +235,32 @@ export class InboxController {
               direction: true,
               createdAt: true,
               status: true,
+              fromNumber: true,
+              toNumber: true,
             },
+          },
+          twilioNumber: {
+            select: { id: true, phoneNumber: true, friendlyName: true },
+          },
+          stickyNumber: {
+            select: { id: true, phoneNumber: true, friendlyName: true },
           },
           assignedRep: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
+            },
+          },
+          deals: {
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              stage: true,
+              stageLabel: true,
+              createdFromSms: true,
+              assignedRepId: true,
+              createdByUserId: true,
             },
           },
         },
@@ -148,7 +274,7 @@ export class InboxController {
             };
             const counts = await Promise.all(
               InboxController.FILTER_KEYS.map(async (key) => {
-                const condition = InboxController.buildFilterCondition(key);
+                const condition = InboxController.buildFilterCondition(key, req);
                 const scopedWhere = InboxController.withConditions(baseWithSearch, condition ? [condition] : []);
                 const count = await prisma.conversation.count({ where: scopedWhere });
                 return [key, count] as const;
@@ -159,15 +285,18 @@ export class InboxController {
           })()
         : Promise.resolve(null),
     ]);
+    const enriched = await InboxController.enrichFromNumberFields(conversations);
 
     res.json({
-      conversations,
+      conversations: enriched,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: parsedPage,
+        limit: parsedLimit,
         total,
-        pages: Math.ceil(total / parseInt(limit as string)),
+        pages: Math.ceil(total / parsedLimit),
       },
+      sort: normalizedSort,
+      filter: normalizedFilter,
       ...(filterCounts ? { filterCounts } : {}),
     });
   }
@@ -175,7 +304,9 @@ export class InboxController {
   static async getConversation(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
     const { page = '1', limit = '50' } = req.query;
-    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const parsedPage = Math.max(parseInt(page as string, 10) || 1, 1);
+    const parsedLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 200);
+    const skip = (parsedPage - 1) * parsedLimit;
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
@@ -191,16 +322,40 @@ export class InboxController {
         assignedRep: {
           select: { id: true, firstName: true, lastName: true },
         },
+        twilioNumber: {
+          select: { id: true, phoneNumber: true, friendlyName: true },
+        },
+        stickyNumber: {
+          select: { id: true, phoneNumber: true, friendlyName: true },
+        },
+        deals: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            stage: true,
+            stageLabel: true,
+            createdAt: true,
+            createdFromSms: true,
+            productType: true,
+            assignedRepId: true,
+            assignedRep: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+          },
+        },
       },
     });
 
     if (!conversation) throw new AppError('Conversation not found', 404);
+    if (req.user?.role === 'REP' && conversation.assignedRepId !== req.user.id) {
+      throw new AppError('Conversation not found', 404);
+    }
 
     const messages = await prisma.message.findMany({
       where: { conversationId: id },
       orderBy: { createdAt: 'desc' },
       skip,
-      take: parseInt(limit as string),
+      take: parsedLimit,
       select: {
         id: true,
         direction: true,
@@ -217,9 +372,180 @@ export class InboxController {
       },
     });
 
-    const totalMessages = await prisma.message.count({
-      where: { conversationId: id },
-    });
+    const [totalMessages, latestCampaignLead, latestTemplateUse, notes, activityMessages, pipelineDeals, scheduled] =
+      await Promise.all([
+        prisma.message.count({ where: { conversationId: id } }),
+        prisma.campaignLead.findFirst({
+          where: { leadId: conversation.leadId },
+          orderBy: { createdAt: 'desc' },
+          include: { campaign: { select: { name: true } } },
+        }),
+        prisma.smsTemplateUsageLog.findFirst({
+          where: { conversationId: id },
+          orderBy: { usedAt: 'desc' },
+          include: { template: { select: { name: true } } },
+        }),
+        prisma.conversationNote.findMany({
+          where: { conversationId: id },
+          orderBy: { createdAt: 'desc' },
+          take: 40,
+          select: { id: true, createdAt: true, createdById: true, body: true },
+        }),
+        prisma.message.findMany({
+          where: { conversationId: id },
+          orderBy: { createdAt: 'desc' },
+          take: 80,
+          select: {
+            id: true,
+            direction: true,
+            body: true,
+            status: true,
+            sentAt: true,
+            createdAt: true,
+          },
+        }),
+        prisma.deal.findMany({
+          where: { smsConversationId: id },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            stage: true,
+            stageLabel: true,
+            createdAt: true,
+            assignedRepId: true,
+            assignedRep: { select: { firstName: true, lastName: true } },
+          },
+        }),
+        prisma.scheduledMessage.findMany({
+          where: { conversationId: id, status: 'PENDING' },
+          orderBy: { scheduledAt: 'asc' },
+          take: 20,
+          select: { id: true, scheduledAt: true, body: true, createdById: true },
+        }),
+      ]);
+
+    const noteAuthorIds = Array.from(new Set(notes.map((n) => n.createdById).filter(Boolean)));
+    const noteAuthors =
+      noteAuthorIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: noteAuthorIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+    const noteAuthorMap = new Map(
+      noteAuthors.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.firstName]),
+    );
+
+    const messageForFrom = messages[0];
+    let fromNumber =
+      conversation.twilioNumber?.phoneNumber ||
+      conversation.stickyNumber?.phoneNumber ||
+      (messageForFrom
+        ? messageForFrom.direction === 'OUTBOUND'
+          ? messageForFrom.fromNumber
+          : messageForFrom.toNumber
+        : '') ||
+      '';
+    let fromNumberFriendlyName = conversation.twilioNumber?.friendlyName || conversation.stickyNumber?.friendlyName || null;
+
+    if (fromNumber && !fromNumberFriendlyName) {
+      const fallback = await prisma.phoneNumber.findUnique({
+        where: { phoneNumber: fromNumber },
+        select: { id: true, friendlyName: true },
+      });
+      if (fallback) {
+        fromNumberFriendlyName = fallback.friendlyName || null;
+        if (!conversation.twilioNumberId) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: {
+              twilioNumberId: fallback.id,
+              stickyNumberId: conversation.stickyNumberId || fallback.id,
+            },
+          });
+        }
+      }
+    }
+
+    const sourceName = latestCampaignLead?.campaign?.name || conversation.lead.source || '';
+    const latestSmsDeal = conversation.deals.find((d) => d.createdFromSms) || conversation.deals[0] || null;
+    const statusStrip = {
+      hotLead: !!conversation.hotLead,
+      pipelineState: latestSmsDeal ? 'in_pipeline' : 'not_in_pipeline',
+      pipelineLabel: latestSmsDeal ? '→ In Pipeline' : 'Not in pipeline',
+      fromNumber,
+      fromNumberFriendlyName,
+      assignedRep: conversation.assignedRep
+        ? `${conversation.assignedRep.firstName} ${conversation.assignedRep.lastName || ''}`.trim()
+        : null,
+      followUpAt: conversation.nextFollowupAt,
+    };
+
+    const contactInfo = {
+      email: conversation.lead.email || '',
+      phone: conversation.lead.phone || '',
+      company: conversation.lead.company || '',
+      source: sourceName,
+      product: latestSmsDeal?.productType || '',
+      assignedRep: statusStrip.assignedRep || '',
+      conversationNumber: conversation.id,
+      createdAt: conversation.createdAt,
+      lastTemplateUsed: latestTemplateUse?.template?.name || '',
+    };
+
+    const activityEvents: Array<{
+      id: string;
+      type: string;
+      text: string;
+      at: Date;
+      tone?: 'default' | 'teal' | 'gold';
+    }> = [];
+    for (const msg of activityMessages) {
+      activityEvents.push({
+        id: `msg_${msg.id}`,
+        type: msg.direction === 'OUTBOUND' ? 'message_sent' : 'message_received',
+        text: msg.direction === 'OUTBOUND' ? 'Message sent' : 'Message received',
+        at: msg.sentAt || msg.createdAt,
+      });
+    }
+    for (const note of notes) {
+      const by = noteAuthorMap.get(note.createdById) || 'Rep';
+      activityEvents.push({
+        id: `note_${note.id}`,
+        type: 'note_added',
+        text: `Note added · ${by}`,
+        at: note.createdAt,
+      });
+    }
+    if (latestTemplateUse?.template?.name) {
+      activityEvents.push({
+        id: `template_${latestTemplateUse.id}`,
+        type: 'template_used',
+        text: `Template used · ${latestTemplateUse.template.name}`,
+        at: latestTemplateUse.usedAt,
+        tone: 'gold',
+      });
+    }
+    for (const deal of pipelineDeals) {
+      activityEvents.push({
+        id: `pipe_${deal.id}`,
+        type: 'pipeline_added',
+        text: `→ Added to Pipeline · ${(deal.assignedRep?.firstName || '').trim() || 'Rep'}`,
+        at: deal.createdAt,
+        tone: 'teal',
+      });
+    }
+    for (const item of scheduled) {
+      activityEvents.push({
+        id: `scheduled_${item.id}`,
+        type: 'message_scheduled',
+        text: `Scheduled message · ${item.scheduledAt.toISOString()}`,
+        at: item.scheduledAt,
+        tone: 'gold',
+      });
+    }
+    activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime());
 
     // Mark as read
     if (conversation.unreadCount > 0) {
@@ -230,11 +556,20 @@ export class InboxController {
     }
 
     res.json({
-      conversation,
+      conversation: {
+        ...conversation,
+        fromNumber,
+        fromNumberFriendlyName,
+        isInPipeline: !!latestSmsDeal,
+      },
       messages: messages.reverse(), // Chronological order
+      statusStrip,
+      contactInfo,
+      activity: activityEvents.slice(0, 120),
+      scheduled,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: parsedPage,
+        limit: parsedLimit,
         total: totalMessages,
       },
     });
@@ -265,7 +600,7 @@ export class InboxController {
 
     if (!conversation) {
       conversation = await prisma.conversation.create({
-        data: { leadId, isActive: true },
+        data: { leadId, assignedRepId: lead.assignedRepId || null, isActive: true },
         include: {
           lead: {
             select: {
@@ -323,7 +658,7 @@ export class InboxController {
         body: body.trim(),
         leadId: conversation.lead.id,
         sentByUserId: req.user!.id,
-        preferredNumberId: conversation.stickyNumberId || undefined,
+        preferredNumberId: conversation.twilioNumberId || conversation.stickyNumberId || undefined,
         priority: 10, // High priority for manual replies
       });
     } catch (err: any) {
@@ -383,24 +718,61 @@ export class InboxController {
     const { id } = req.params;
     const { repId } = req.body;
 
-    await prisma.conversation.update({
-      where: { id },
-      data: { assignedRepId: repId },
-    });
+    const [conversation, nextRep] = await Promise.all([
+      prisma.conversation.findUnique({
+        where: { id },
+        include: {
+          assignedRep: { select: { id: true, firstName: true, lastName: true } },
+        },
+      }),
+      prisma.user.findFirst({
+        where: { id: repId, role: 'REP', isActive: true },
+        select: { id: true, firstName: true, lastName: true },
+      }),
+    ]);
 
-    // Also update lead assignment
-    const conversation = await prisma.conversation.findUnique({
-      where: { id },
-    });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+    if (!nextRep) throw new AppError('Assigned rep must be an active REP user', 400);
 
-    if (conversation) {
-      await prisma.lead.update({
+    const previousRepLabel = conversation.assignedRep
+      ? `${conversation.assignedRep.firstName} ${conversation.assignedRep.lastName || ''}`.trim()
+      : 'Unassigned';
+    const nextRepLabel = `${nextRep.firstName} ${nextRep.lastName || ''}`.trim();
+    const actorLabel = `${req.user!.firstName} ${req.user!.lastName || ''}`.trim();
+
+    await prisma.$transaction([
+      prisma.conversation.update({
+        where: { id },
+        data: { assignedRepId: repId },
+      }),
+      prisma.lead.update({
         where: { id: conversation.leadId },
         data: { assignedRepId: repId },
-      });
+      }),
+      prisma.conversationNote.create({
+        data: {
+          conversationId: id,
+          createdById: req.user!.id,
+          body: `Rep reassigned: ${previousRepLabel} → ${nextRepLabel} · by ${actorLabel}`,
+        },
+      }),
+    ]);
+
+    const io = (req.app as any).io;
+    if (io) {
+      const payload = { conversationId: id, type: 'assignment' };
+      io.to(`inbox:${repId}`).emit('new-message', payload);
+      io.to(`inbox:${req.user!.id}`).emit('new-message', payload);
+      if (conversation.assignedRepId && conversation.assignedRepId !== repId) {
+        io.to(`inbox:${conversation.assignedRepId}`).emit('new-message', payload);
+      }
     }
 
-    res.json({ message: 'Rep assigned' });
+    res.json({
+      message: 'Rep assigned',
+      assignedRep: nextRep,
+      previousRepId: conversation.assignedRepId || null,
+    });
   }
 
   // ============================================
@@ -516,13 +888,23 @@ export class InboxController {
    * GET /templates — Список шаблонов (доступных пользователю)
    */
   static async listTemplates(req: AuthRequest, res: Response): Promise<void> {
-    const { search, category } = req.query;
+    const { search, category, scope } = req.query;
     const userId = req.user!.id;
 
     const where: any = {
       isActive: true,
-      OR: [{ visibility: 'GLOBAL' }, { visibility: 'TEAM' }, { createdById: userId, visibility: 'PRIVATE' }],
     };
+
+    const normalizedScope = String(scope || '').toLowerCase();
+    if (normalizedScope === 'mine') {
+      where.createdById = userId;
+    } else if (normalizedScope === 'team') {
+      where.visibility = 'TEAM';
+    } else if (normalizedScope === 'global') {
+      where.visibility = 'GLOBAL';
+    } else {
+      where.OR = [{ visibility: 'GLOBAL' }, { visibility: 'TEAM' }, { createdById: userId, visibility: 'PRIVATE' }];
+    }
 
     if (search) {
       where.AND = [
@@ -537,7 +919,7 @@ export class InboxController {
 
     const templates = await prisma.smsTemplate.findMany({
       where,
-      orderBy: { usageCount: 'desc' },
+      orderBy: [{ usageCount: 'desc' }, { updatedAt: 'desc' }],
       include: {
         favorites: {
           where: { userId },
@@ -546,10 +928,21 @@ export class InboxController {
       },
     });
 
+    const ownerIds = Array.from(new Set(templates.map((t) => t.createdById)));
+    const owners =
+      ownerIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: ownerIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
+    const ownerMap = new Map(owners.map((o) => [o.id, `${o.firstName} ${o.lastName || ''}`.trim()]));
+
     // Добавляем флаг isFavorite
     const result = templates.map((t) => ({
       ...t,
       isFavorite: t.favorites.length > 0,
+      ownerName: ownerMap.get(t.createdById) || '',
       favorites: undefined,
     }));
 
@@ -699,9 +1092,12 @@ export class InboxController {
    * POST /scheduled — Создать отложенное сообщение
    */
   static async createScheduledMessage(req: AuthRequest, res: Response): Promise<void> {
-    const { conversationId, body, scheduledAt, fromNumber } = req.body;
+    const { conversationId, body, scheduledAt } = req.body;
 
-    const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { lead: { select: { phone: true } } },
+    });
     if (!conversation) throw new AppError('Conversation not found', 404);
 
     const scheduledDate = new Date(scheduledAt);
@@ -709,12 +1105,43 @@ export class InboxController {
       throw new AppError('Scheduled time must be in the future', 400);
     }
 
+    let senderNumber =
+      (conversation.twilioNumberId
+        ? await prisma.phoneNumber.findUnique({
+            where: { id: conversation.twilioNumberId },
+            select: { id: true, phoneNumber: true },
+          })
+        : null) ||
+      (conversation.stickyNumberId
+        ? await prisma.phoneNumber.findUnique({
+            where: { id: conversation.stickyNumberId },
+            select: { id: true, phoneNumber: true },
+          })
+        : null);
+
+    if (!senderNumber) {
+      senderNumber = await NumberService.getStickyNumber(conversation.lead.phone, conversation.assignedRepId || req.user!.id);
+    }
+    if (!senderNumber) {
+      throw new AppError('No sender number available for this conversation', 400);
+    }
+
+    if (!conversation.twilioNumberId || conversation.twilioNumberId !== senderNumber.id) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          twilioNumberId: senderNumber.id,
+          stickyNumberId: conversation.stickyNumberId || senderNumber.id,
+        },
+      });
+    }
+
     const scheduled = await prisma.scheduledMessage.create({
       data: {
         conversationId,
         body,
         scheduledAt: scheduledDate,
-        fromNumber,
+        fromNumber: senderNumber.phoneNumber,
         createdById: req.user!.id,
       },
     });
@@ -747,7 +1174,7 @@ export class InboxController {
    */
   static async addToPipeline(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const { stageId } = req.body;
+    const { stageId, dealStage, stage } = req.body as { stageId?: string; dealStage?: string; stage?: string };
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
@@ -778,26 +1205,57 @@ export class InboxController {
       });
     }
 
+    const latestCampaignLead = await prisma.campaignLead.findFirst({
+      where: { leadId: conversation.leadId },
+      orderBy: { createdAt: 'desc' },
+      include: { campaign: { select: { name: true } } },
+    });
+    const leadSource = (conversation.lead.source || '').trim();
+    const sourceFromCampaign = latestCampaignLead?.campaign?.name?.trim() || '';
+    const normalizedSource = sourceFromCampaign || leadSource || 'Inbox';
+    const normalizedDealStage = InboxController.normalizeDealStage(dealStage || stage);
+    const normalizedDealStageLabel = DEAL_STAGE_LABELS[normalizedDealStage] || 'New Lead';
+
     // Создаём deal
     const deal = await prisma.deal.create({
       data: {
         clientId: client.id,
-        stage: 'NEW_LEAD',
-        stageLabel: 'New Lead',
+        stage: normalizedDealStage as any,
+        stageLabel: normalizedDealStageLabel,
         assignedRepId: conversation.assignedRepId || req.user!.id,
         createdFromSms: true,
         smsConversationId: id,
         createdByUserId: req.user!.id,
         leadId: conversation.leadId,
-        clientNotes: `Source: SMS — Inbox`,
+        clientNotes: `Source: SMS — ${normalizedSource}`,
       },
     });
 
-    // Создаём pipeline card
-    await prisma.pipelineCard.create({
-      data: {
+    let resolvedStageId = stageId;
+    if (!resolvedStageId) {
+      const existingCard = await prisma.pipelineCard.findUnique({
+        where: { leadId: conversation.leadId },
+        select: { stageId: true },
+      });
+      resolvedStageId = existingCard?.stageId;
+    }
+    if (!resolvedStageId) {
+      const defaultStage =
+        (await prisma.pipelineStage.findFirst({ where: { isDefault: true }, select: { id: true } })) ||
+        (await prisma.pipelineStage.findFirst({ orderBy: { order: 'asc' }, select: { id: true } }));
+      if (!defaultStage) throw new AppError('No pipeline stages configured', 400);
+      resolvedStageId = defaultStage.id;
+    }
+
+    // Создаём или обновляем pipeline card
+    await prisma.pipelineCard.upsert({
+      where: { leadId: conversation.leadId },
+      create: {
         leadId: conversation.leadId,
-        stageId,
+        stageId: resolvedStageId,
+      },
+      update: {
+        stageId: resolvedStageId,
       },
     });
 

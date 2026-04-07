@@ -586,7 +586,8 @@ function DealClientTab({
   const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
   const clientRevenue = clientMeta.monthlyRevenue ?? '';
   // FIX 2: Source из clientNotes (если deal создан из SMS) или из localStorage
-  const smsSource = deal.clientNotes?.startsWith('Source: SMS') ? deal.clientNotes.replace('Source: ', '') : '';
+  const smsSourceMatch = deal.clientNotes?.match(/Source:\s*SMS\s*[—-]\s*([^\n\r]+)/i);
+  const smsSource = smsSourceMatch ? `SMS — ${smsSourceMatch[1].trim()}` : '';
   const clientSource = (smsSource || clientMeta.source) ?? '';
   const isSubmittedProduct = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
   const amountLabel = isSubmittedProduct ? 'Submitted Amount' : 'Requested Amount';
@@ -886,7 +887,7 @@ function DealClientTab({
                   day: 'numeric',
                   year: 'numeric',
                 })}{' '}
-                · {Math.round((Date.now() - new Date(deal.externalFundedDate).getTime()) / 86400000)}d ago
+                · {Math.round((new Date().getTime() - new Date(deal.externalFundedDate).getTime()) / 86400000)}d ago
               </div>
             )}
             {deal.followUpNote && <div style={{ fontSize: 10, color: 'var(--text2)' }}>{deal.followUpNote}</div>}

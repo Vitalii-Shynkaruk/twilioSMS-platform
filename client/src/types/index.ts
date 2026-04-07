@@ -61,9 +61,14 @@ export interface Conversation {
   id: string;
   leadId: string;
   lead: Lead;
+  createdAt?: string;
+  updatedAt?: string;
   assignedRepId?: string;
   assignedRep?: User;
   stickyNumberId?: string;
+  twilioNumberId?: string;
+  twilioNumber?: { id: string; phoneNumber: string; friendlyName?: string | null };
+  stickyNumber?: { id: string; phoneNumber: string; friendlyName?: string | null };
   lastMessageAt?: string;
   lastDirection?: string;
   unreadCount: number;
@@ -75,7 +80,48 @@ export interface Conversation {
   nextFollowupAt?: string | null;
   emailReceived?: boolean;
   notes?: ConversationNote[];
-  deals?: any[];
+  deals?: Array<{
+    id: string;
+    stage: string;
+    stageLabel?: string;
+    createdAt: string;
+    createdFromSms?: boolean;
+    productType?: string | null;
+    assignedRepId?: string;
+  }>;
+  fromNumber?: string;
+  fromNumberFriendlyName?: string | null;
+  unreadDot?: boolean;
+  isInPipeline?: boolean;
+  statusStrip?: {
+    hotLead: boolean;
+    pipelineState: 'in_pipeline' | 'not_in_pipeline';
+    pipelineLabel: string;
+    fromNumber: string;
+    fromNumberFriendlyName?: string | null;
+    assignedRep?: string | null;
+    followUpAt?: string | null;
+  };
+  contactInfo?: {
+    email?: string;
+    phone?: string;
+    company?: string;
+    source?: string;
+    product?: string;
+    assignedRep?: string;
+    conversationNumber?: string;
+    createdAt?: string;
+    lastTemplateUsed?: string;
+  };
+  activity?: ConversationActivity[];
+}
+
+export interface ConversationActivity {
+  id: string;
+  type: string;
+  text: string;
+  at: string;
+  tone?: 'default' | 'teal' | 'gold';
 }
 
 export interface Message {
@@ -114,6 +160,7 @@ export interface SmsTemplate {
   lastUsedAt?: string;
   isActive: boolean;
   isFavorite?: boolean;
+  ownerName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,6 +206,10 @@ export interface Campaign {
   totalReplied: number;
   totalOptedOut: number;
   createdAt: string;
+  sentBreakdown?: {
+    numbers: Array<{ number: string; count: number }>;
+    reps: Array<{ name: string; count: number }>;
+  };
 }
 
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';

@@ -166,12 +166,24 @@ export const createScheduledMessageSchema = z.object({
   conversationId: z.string().min(1),
   body: z.string().min(1).max(1600).trim(),
   scheduledAt: z.string().datetime(),
-  fromNumber: z.string().min(1),
 });
 
 // Phase 1: Добавить в pipeline из inbox
 export const addToPipelineSchema = z.object({
-  stageId: z.string().min(1),
+  stageId: z.string().min(1).optional(),
+  dealStage: z
+    .enum([
+      'NEW_LEAD',
+      'ENGAGED_INTERESTED',
+      'QUALIFIED',
+      'SUBMITTED_IN_REVIEW',
+      'APPROVED_OFFERS',
+      'COMMITTED_FUNDING',
+      'FUNDED',
+      'NURTURE',
+    ])
+    .optional(),
+  stage: z.string().optional(),
 });
 
 // ─── Numbers ───

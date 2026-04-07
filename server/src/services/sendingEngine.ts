@@ -124,13 +124,33 @@ export class SendingEngine {
     // Create or get conversation
     const conversation = await this.getOrCreateConversation(options.leadId, options.sentByUserId);
 
-    // Get best number
-    const fromNumber = options.preferredNumberId
+    // Get sender number (Phase 1: canonical source is conversation.twilioNumberId)
+    let fromNumber = options.preferredNumberId
       ? await prisma.phoneNumber.findUnique({ where: { id: options.preferredNumberId } })
-      : await NumberService.getStickyNumber(options.toNumber, options.sentByUserId);
+      : null;
+
+    if (!fromNumber && conversation.twilioNumberId) {
+      fromNumber = await prisma.phoneNumber.findUnique({ where: { id: conversation.twilioNumberId } });
+    }
+    if (!fromNumber && conversation.stickyNumberId) {
+      fromNumber = await prisma.phoneNumber.findUnique({ where: { id: conversation.stickyNumberId } });
+    }
+    if (!fromNumber) {
+      fromNumber = await NumberService.getStickyNumber(options.toNumber, options.sentByUserId);
+    }
 
     if (!fromNumber) {
       throw new Error('No available phone numbers for sending');
+    }
+
+    if (conversation.twilioNumberId !== fromNumber.id || conversation.stickyNumberId !== fromNumber.id) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          twilioNumberId: fromNumber.id,
+          stickyNumberId: fromNumber.id,
+        },
+      });
     }
 
     // Create message record
@@ -646,6 +666,11 @@ export class SendingEngine {
           assignedRepId: repId,
           isActive: true,
         },
+      });
+    } else if (!conversation.assignedRepId && repId) {
+      conversation = await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { assignedRepId: repId },
       });
     }
 

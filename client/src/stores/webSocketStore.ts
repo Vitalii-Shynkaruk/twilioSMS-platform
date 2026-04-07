@@ -50,17 +50,20 @@ export function useWebSocketQuerySync() {
 
     const handlers = {
       'new-message': () => {
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
         queryClient.invalidateQueries({ queryKey: ['conversation'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       },
       message: () => {
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
         queryClient.invalidateQueries({ queryKey: ['conversation'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       },
       'message-sent': () => {
-        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
         queryClient.invalidateQueries({ queryKey: ['conversation'] });
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
       },
       'message-status': () => {
         queryClient.invalidateQueries({ queryKey: ['conversation'] });

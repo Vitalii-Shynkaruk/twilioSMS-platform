@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import type { Deal, CommitSubStatus } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -213,12 +213,30 @@ interface DealCardProps {
   onClick?: () => void;
   viewMode?: 'simple' | 'execution';
   compact?: boolean;
+  highlightTerm?: string;
 }
 
-export default function DealCard({ deal, onClick, viewMode, compact }: DealCardProps) {
+function renderHighlightedText(value: string, query?: string): ReactNode {
+  const text = value || '';
+  const term = (query || '').trim().toLowerCase();
+  if (!term) return text;
+  const lower = text.toLowerCase();
+  const start = lower.indexOf(term);
+  if (start === -1) return text;
+  const end = start + term.length;
+  return (
+    <>
+      {text.slice(0, start)}
+      <mark className="pipeline-search-hl">{text.slice(start, end)}</mark>
+      {text.slice(end)}
+    </>
+  );
+}
+
+export default function DealCard({ deal, onClick, viewMode, compact, highlightTerm }: DealCardProps) {
   const mode = viewMode || (compact ? 'simple' : 'execution');
-  if (mode === 'simple') return <SimpleCard deal={deal} onClick={onClick} />;
-  return <ExecutionCard deal={deal} onClick={onClick} />;
+  if (mode === 'simple') return <SimpleCard deal={deal} onClick={onClick} highlightTerm={highlightTerm} />;
+  return <ExecutionCard deal={deal} onClick={onClick} highlightTerm={highlightTerm} />;
 }
 
 // ═══════════════════════════════════════
@@ -226,18 +244,19 @@ export default function DealCard({ deal, onClick, viewMode, compact }: DealCardP
 // name · $amount (if offer) · 1 action · time
 // ═══════════════════════════════════════
 
-function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
+function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: () => void; highlightTerm?: string }) {
   const state = simpleCardState(deal);
   const amt = simpleAmount(deal);
   const due = simpleDueInfo(deal.nextActionDue);
   const hot = isDealHot(deal);
+  const businessName = deal.client?.businessName || 'Unknown';
 
   return (
     <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} onClick={onClick}>
       <div style={{ padding: '10px 11px 8px' }}>
         {hot && <div className="sc-hot-badge">🔥 HOT</div>}
         <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
-        <div className="sc-name">{deal.client?.businessName || 'Unknown'}</div>
+        <div className="sc-name">{renderHighlightedText(businessName, highlightTerm)}</div>
 
         {deal.nextAction ? (
           <div className="sc-action-row">
@@ -256,13 +275,15 @@ function SimpleCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
 // EXECUTION CARD — full analytical mode
 // ═══════════════════════════════════════
 
-function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) {
+function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: () => void; highlightTerm?: string }) {
   const priority = cardPriority(deal);
   const sbar = staleBarCls(deal.staleDays);
   const stale = staleTxt(deal.staleDays);
   const due = dueInfo(deal.nextActionDue);
   const hot = isDealHot(deal);
   const { user } = useAuthStore();
+  const businessName = deal.client?.businessName || 'Unknown';
+  const contactName = deal.client?.contactName || '';
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
   const showSubmittedBadge =
@@ -300,8 +321,8 @@ function ExecutionCard({ deal, onClick }: { deal: Deal; onClick?: () => void }) 
         {/* Top: name + badges */}
         <div className="c-top">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="c-name">{deal.client?.businessName || 'Unknown'}</div>
-            {deal.client?.contactName && <div className="c-biz">{deal.client.contactName}</div>}
+            <div className="c-name">{renderHighlightedText(businessName, highlightTerm)}</div>
+            {contactName && <div className="c-biz">{renderHighlightedText(contactName, highlightTerm)}</div>}
           </div>
           <div className="bdgs">
             {hot && <span className="b b-hot">🔥HOT</span>}

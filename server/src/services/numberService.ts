@@ -387,16 +387,24 @@ export class NumberService {
   }
 
   /**
-   * Assign numbers to a rep for the day
+   * Assign numbers to a rep
    */
   static async assignNumbersToRep(repId: string, phoneNumberIds: string[]): Promise<void> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
 
-    // Deactivate old assignments
+    // Deactivate old assignments for this rep
     await prisma.numberAssignment.updateMany({
       where: {
         userId: repId,
+        isActive: true,
+      },
+      data: { isActive: false },
+    });
+
+    // Assignment is exclusive: deactivate active assignments of selected numbers for other reps
+    await prisma.numberAssignment.updateMany({
+      where: {
+        phoneNumberId: { in: phoneNumberIds },
         isActive: true,
       },
       data: { isActive: false },
@@ -407,10 +415,9 @@ export class NumberService {
       data: phoneNumberIds.map((phoneNumberId) => ({
         userId: repId,
         phoneNumberId,
-        assignedDate: today,
+        assignedDate: now,
         isActive: true,
       })),
-      skipDuplicates: true,
     });
 
     logger.info(`Assigned ${phoneNumberIds.length} numbers to rep ${repId}`);
@@ -434,11 +441,84 @@ export class NumberService {
       _count: { id: true },
     });
 
+    // Breakdown по статусам для каждого номера
+    const statusBreakdown = await prisma.message.groupBy({
+      by: ['phoneNumberId', 'status'],
+      where: {
+        direction: 'OUTBOUND',
+        status: { in: [...this.SEND_ATTEMPT_STATUSES] },
+        OR: [{ sentAt: { gte: todayStart } }, { failedAt: { gte: todayStart } }],
+        phoneNumberId: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    // Breakdown: campaign vs manual
+    const campaignCounts = await prisma.message.groupBy({
+      by: ['phoneNumberId'],
+      where: {
+        direction: 'OUTBOUND',
+        status: { in: [...this.SEND_ATTEMPT_STATUSES] },
+        OR: [{ sentAt: { gte: todayStart } }, { failedAt: { gte: todayStart } }],
+        phoneNumberId: { not: null },
+        campaignId: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    // Breakdown: per-rep отправки (sentByUserId)
+    const repCounts = await prisma.message.groupBy({
+      by: ['phoneNumberId', 'sentByUserId'],
+      where: {
+        direction: 'OUTBOUND',
+        status: { in: [...this.SEND_ATTEMPT_STATUSES] },
+        OR: [{ sentAt: { gte: todayStart } }, { failedAt: { gte: todayStart } }],
+        phoneNumberId: { not: null },
+        sentByUserId: { not: null },
+      },
+      _count: { id: true },
+    });
+
+    // Получаем имена репов
+    const repIds = [...new Set(repCounts.map((r) => r.sentByUserId).filter(Boolean))] as string[];
+    const reps = repIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: repIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const repNameMap = new Map(reps.map((r) => [r.id, `${r.firstName} ${r.lastName?.[0] || ''}.`]));
+
     const sentTodayMap = new Map<string, number>();
     for (const row of sentTodayCounts) {
       if (row.phoneNumberId) {
         sentTodayMap.set(row.phoneNumberId, row._count.id);
       }
+    }
+
+    // Собираем breakdown maps
+    const statusMap = new Map<string, Array<{ status: string; count: number }>>();
+    for (const row of statusBreakdown) {
+      if (!row.phoneNumberId) continue;
+      const arr = statusMap.get(row.phoneNumberId) || [];
+      arr.push({ status: row.status, count: row._count.id });
+      statusMap.set(row.phoneNumberId, arr);
+    }
+
+    const campaignMap = new Map<string, number>();
+    for (const row of campaignCounts) {
+      if (row.phoneNumberId) campaignMap.set(row.phoneNumberId, row._count.id);
+    }
+
+    const repMap = new Map<string, Array<{ name: string; count: number }>>();
+    for (const row of repCounts) {
+      if (!row.phoneNumberId || !row.sentByUserId) continue;
+      const arr = repMap.get(row.phoneNumberId) || [];
+      arr.push({
+        name: repNameMap.get(row.sentByUserId) || 'Unknown',
+        count: row._count.id,
+      });
+      repMap.set(row.phoneNumberId, arr);
     }
 
     const numbers = await prisma.phoneNumber.findMany({
@@ -473,11 +553,25 @@ export class NumberService {
       orderBy: { phoneNumber: 'asc' },
     });
 
-    // Override dailySentCount with actual message counts
-    const numbersWithActualCounts = numbers.map((n) => ({
-      ...n,
-      dailySentCount: sentTodayMap.get(n.id) ?? n.dailySentCount,
-    }));
+    // Override dailySentCount with actual message counts + breakdown
+    const numbersWithActualCounts = numbers.map((n) => {
+      const total = sentTodayMap.get(n.id) ?? n.dailySentCount;
+      const campaignCount = campaignMap.get(n.id) ?? 0;
+      const manualCount = total - campaignCount;
+      const statuses = statusMap.get(n.id) || [];
+      const reps = (repMap.get(n.id) || []).sort((a, b) => b.count - a.count);
+
+      return {
+        ...n,
+        dailySentCount: total,
+        sentBreakdown: {
+          campaign: campaignCount,
+          manual: manualCount < 0 ? 0 : manualCount,
+          statuses,
+          reps,
+        },
+      };
+    });
 
     const summary = {
       total: numbersWithActualCounts.length,

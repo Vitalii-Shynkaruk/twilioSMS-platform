@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
@@ -221,7 +221,7 @@ export default function CampaignsPage() {
                   <td className="table-cell">
                     <CampaignStatusBadge status={campaign.status} />
                   </td>
-                  <td className="table-cell text-center font-mono">{campaign.totalSent.toLocaleString()}</td>
+                  <CampaignSentTooltip campaign={campaign} />
                   <td className="table-cell text-center font-mono text-green-400">
                     {campaign.totalDelivered.toLocaleString()}
                   </td>
@@ -990,5 +990,104 @@ function CampaignStatusBadge({ status }: { status: string }) {
       <Icon className="w-3 h-3 mr-1" />
       {status}
     </span>
+  );
+}
+
+/* ── Тултип разбивки Sent для кампаний ── */
+function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const triggerRef = useRef<HTMLTableCellElement>(null);
+  const bd = campaign.sentBreakdown;
+  const total = campaign.totalSent;
+
+  const handleEnter = useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPos({ x: rect.left + rect.width / 2, y: rect.top });
+    }
+    setShow(true);
+  }, []);
+
+  return (
+    <td
+      ref={triggerRef}
+      className="table-cell text-center font-mono cursor-default"
+      onMouseEnter={handleEnter}
+      onMouseLeave={() => setShow(false)}
+    >
+      {total.toLocaleString()}
+
+      {show && bd && total > 0 && (
+        <div
+          className="fixed z-[9999] bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none w-64 text-left"
+          style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -100%) translateY(-8px)' }}
+        >
+          <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">
+            Campaign Breakdown
+          </p>
+
+          {/* Статусы */}
+          <div className="space-y-1 mb-3">
+            {[
+              { label: 'Delivered', value: campaign.totalDelivered, color: '#10b981' },
+              { label: 'Sent', value: campaign.totalSent - campaign.totalDelivered - campaign.totalFailed - campaign.totalBlocked, color: '#3b82f6' },
+              { label: 'Failed', value: campaign.totalFailed, color: '#ef4444' },
+              { label: 'Blocked', value: campaign.totalBlocked, color: '#a855f7' },
+            ]
+              .filter((s) => s.value > 0)
+              .map((s) => (
+                <div key={s.label} className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+                    <span className="text-dark-400">{s.label}</span>
+                  </div>
+                  <span className="text-dark-300 font-medium">
+                    {s.value.toLocaleString()} ({total > 0 ? ((s.value / total) * 100).toFixed(0) : 0}%)
+                  </span>
+                </div>
+              ))}
+          </div>
+
+          {/* По номерам */}
+          {bd.numbers.length > 0 && (
+            <div className="border-t border-dark-700 pt-2 mb-3">
+              <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Number</p>
+              <div className="space-y-1">
+                {bd.numbers.map((n) => (
+                  <div key={n.number} className="flex items-center justify-between text-[11px]">
+                    <span className="text-dark-400 font-mono text-[10px]">📱 {n.number}</span>
+                    <span className="text-dark-300 font-medium">{n.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* По репам */}
+          {bd.reps.length > 0 && (
+            <div className="border-t border-dark-700 pt-2">
+              <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Rep</p>
+              <div className="space-y-1">
+                {bd.reps.map((r) => (
+                  <div key={r.name} className="flex items-center justify-between text-[11px]">
+                    <span className="text-dark-400">👤 {r.name}</span>
+                    <span className="text-dark-300 font-medium">{r.count.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Пояснение */}
+          <p className="text-[10px] text-dark-500 mt-3 leading-tight border-t border-dark-700 pt-2">
+            Messages are distributed across all numbers in the pool by the sending engine.
+          </p>
+
+          {/* Стрелочка */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-dark-600" />
+        </div>
+      )}
+    </td>
   );
 }

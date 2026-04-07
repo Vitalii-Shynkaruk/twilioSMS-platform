@@ -1575,43 +1575,43 @@ function TeamView({
       </div>
 
       {/* Stat cards — 6 cards matching prototype */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' as const }}>
-        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
+      <div className="team-stat-cards">
+        <div className="team-stat-card">
           <div className="stat-label">Funded MTD</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(stats?.fundedMTD)}
           </div>
           <div className="stat-sub">Goal: {formatCurrency(stats?.monthlyGoal)}</div>
         </div>
-        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
+        <div className="team-stat-card">
           <div className="stat-label">Active Pipeline $</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--gold)', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(stats?.activePipeline)}
           </div>
           <div className="stat-sub">Approved + Committed</div>
         </div>
-        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
+        <div className="team-stat-card">
           <div className="stat-label">Active Deals</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--info)', fontVariantNumeric: 'tabular-nums' }}>
             {activeDealsCount}
           </div>
           <div className="stat-sub">All stages excl. funded</div>
         </div>
-        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
+        <div className="team-stat-card">
           <div className="stat-label">Nurture Pool</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(nurtureValue)}
           </div>
           <div className="stat-sub">{nurtureDeals.length} deals · prev offer totals</div>
         </div>
-        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
+        <div className="team-stat-card">
           <div className="stat-label">Deals Funded</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
             {stats?.fundedThisMonthCount ?? fundedDeals.length}
           </div>
           <div className="stat-sub">This month</div>
         </div>
-        <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
+        <div className="team-stat-card">
           <div className="stat-label">Conversion</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: convColor, fontVariantNumeric: 'tabular-nums' }}>
             {conversionPct.toFixed(0)}%
@@ -1678,7 +1678,7 @@ function TeamView({
               >
                 Rep Scoreboard
               </div>
-              <div style={{ display: 'flex' }}>
+              <div className="rep-scoreboard">
                 {displayReps.map((rep) => {
                   const repActiveDeals =
                     board?.stages
@@ -1692,10 +1692,7 @@ function TeamView({
                   const goalBg = goalPct >= 0.8 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
 
                   return (
-                    <div
-                      key={rep.id}
-                      style={{ flex: 1, padding: '10px 12px', borderRight: '1px solid var(--border)', minWidth: 0 }}
-                    >
+                    <div key={rep.id} className="rep-score-card">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
                         <div
                           className="av"

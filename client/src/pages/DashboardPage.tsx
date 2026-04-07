@@ -93,7 +93,7 @@ export default function DashboardPage() {
       <div className="p-8">
         <div className="animate-pulse space-y-6">
           <div className="h-8 bg-dark-800 rounded w-48" />
-          <div className="grid grid-cols-5 gap-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
             {[...Array(5)].map((_, i) => (
               <div key={i} className="h-32 bg-dark-800 rounded-xl" />
             ))}
@@ -132,14 +132,14 @@ export default function DashboardPage() {
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px]">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-dark-50">Dashboard</h1>
           <p className="text-sm text-dark-400 mt-1">
             {format(new Date(), 'EEEE, MMMM d, yyyy')} &middot; {format(new Date(), 'HH:mm')}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={() => navigate('/campaigns', { state: { openCreate: true } })}
             className="btn-primary text-sm"
@@ -389,7 +389,7 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-header flex items-center justify-between">
             <h3 className="text-sm font-semibold text-dark-200">Pipeline Snapshot</h3>
-            <Link to="/pipeline" className="text-xs text-scl-400 hover:text-scl-300">
+            <Link to="/pipeline" className="text-xs text-scl-400 hover:text-scl-300 px-2 py-1.5 rounded -mr-2">
               View →
             </Link>
           </div>
@@ -429,7 +429,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="p-6">
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
             {[
               { label: 'Total Sent', value: d7.sent || 0, color: 'text-dark-200', Icon: Send },
               { label: 'Delivered', value: d7.delivered || 0, color: 'text-green-400', Icon: CheckCircle2 },

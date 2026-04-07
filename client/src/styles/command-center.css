@@ -481,6 +481,9 @@ button { font-family: var(--mono); cursor: pointer; }
 .esb-dd-init { font-size: 9px; font-weight: 700; color: var(--muted); min-width: 20px; }
 .esb-dd-name { font-size: 10px; color: var(--text); min-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* SCORECARD GRID — 4 scorecards + future opps */
+.cc-score-grid { display: grid; grid-template-columns: repeat(4, 1fr) 180px; gap: 8px; }
+
 /* FUTURE OPPORTUNITIES — compact metric card */
 .future-opps { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; border-top: 1px solid #1a3060; }
 .fo-label { font-size: 8px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 7px; }
@@ -751,6 +754,9 @@ button { font-family: var(--mono); cursor: pointer; }
   .page { padding: 10px 14px; }
   .topbar { padding: 0 12px; }
 
+  /* Score grid: drop future-opps column */
+  .cc-score-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+
   /* Grids: reduce columns */
   .g-3-2 { grid-template-columns: 1fr 1fr; }
   .g-pipe { grid-template-columns: 1fr 1fr; }
@@ -799,6 +805,13 @@ button { font-family: var(--mono); cursor: pointer; }
    RESPONSIVE — MOBILE (≤768px)
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
+  /* Score grid: stack fully */
+  .cc-score-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .cc-score-grid .future-opps { grid-column: 1 / -1; }
+
+  /* Minimum tap targets 44px */
+  .tnv, .rb, .add-btn, .dma, .oqi-call, .oqi-doc { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
   /* Main layout */
   .page { padding: 8px 10px; gap: 7px; }
 
@@ -871,6 +884,18 @@ button { font-family: var(--mono); cursor: pointer; }
    RESPONSIVE — SMALL MOBILE (≤480px)
    ═══════════════════════════════════════════ */
 @media (max-width: 480px) {
+  /* Score grid: single column */
+  .cc-score-grid { grid-template-columns: 1fr; gap: 5px; }
+  .fo-label { font-size: 10px; }
+  .fo-lbl { font-size: 10px; }
+  .fo-val { font-size: 12px; }
+  .fo-total-lbl { font-size: 10px; }
+  .fo-total-val { font-size: 12px; }
+
+  /* Execution score bar: larger text */
+  .esb-name { font-size: 10px; }
+  .esb-pct { font-size: 10px; }
+
   .page { padding: 6px 8px; gap: 6px; }
 
   .topbar { padding: 6px 8px; }

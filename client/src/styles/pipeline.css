@@ -913,6 +913,15 @@ body.simple-view .queue-dock .sum-bar{
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 
 /* ═══════════════════════════════════════════
+   TEAM VIEW — Stat cards & Rep Scoreboard
+   ═══════════════════════════════════════════ */
+.team-stat-cards { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.team-stat-card { background: var(--bg4); border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 0; }
+.rep-scoreboard { display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rep-score-card { flex: 1; padding: 10px 12px; border-right: 1px solid var(--border); min-width: 0; }
+.rep-score-card:last-child { border-right: none; }
+
+/* ═══════════════════════════════════════════
    RESPONSIVE — TABLET (≤1024px)
    ═══════════════════════════════════════════ */
 @media (max-width: 1024px) {
@@ -945,6 +954,12 @@ body.simple-view .queue-dock .sum-bar{
   .goal-modal { width: 440px; }
   .modal-rev-grid { grid-template-columns: 1fr; }
   .modal-dt { grid-template-columns: 1fr; }
+  /* Team: stat cards 3x2 */
+  .team-stat-cards { gap: 6px; }
+  .team-stat-card { flex: 1 1 calc(33% - 6px); min-width: 120px; }
+  /* Rep scoreboard: scroll */
+  .rep-scoreboard { overflow-x: auto; }
+  .rep-score-card { min-width: 160px; flex-shrink: 0; }
 }
 
 /* ═══════════════════════════════════════════
@@ -1009,6 +1024,14 @@ body.simple-view .queue-dock .sum-bar{
   .team-stats { grid-template-columns: 1fr 1fr; gap: 6px; }
   .team-cards { flex-direction: column; align-items: stretch; }
   .deal-tile { width: 100%; }
+  /* Team stat cards: 2x3 grid */
+  .team-stat-cards { gap: 6px; }
+  .team-stat-card { flex: 1 1 calc(50% - 6px); min-width: 120px; padding: 8px 10px; }
+  /* Rep scoreboard: horizontal scroll */
+  .rep-scoreboard { overflow-x: auto; scroll-snap-type: x mandatory; }
+  .rep-score-card { min-width: 140px; flex-shrink: 0; scroll-snap-align: start; }
+  /* Минимальные тач-размеры */
+  .pipeline-root .vs, .pipeline-root .fp, .pipeline-root .rs, .pipeline-root .add-btn, .pipeline-root .goal-btn { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
 
   /* Queue view */
   .queue-view { padding: 10px; }
@@ -1050,6 +1073,10 @@ body.simple-view .queue-dock .sum-bar{
   .stat-label { font-size: 8px; }
 
   .team-stats { grid-template-columns: 1fr; }
+  /* Team stat cards: stack 1 column */
+  .team-stat-card { flex: 1 1 100%; min-width: 0; padding: 7px 9px; }
+  .team-stat-card div[style*="fontSize"] { font-size: 16px !important; }
+  .rep-score-card { min-width: 130px; padding: 8px 10px; }
 
   .q-stat-val { font-size: 17px; }
   .q-card { padding: 8px 10px; }

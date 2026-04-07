@@ -751,7 +751,7 @@ export default function CommandCenterPage() {
             </div>
 
             {/* Scorecards + Future Opps */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr) 180px', gap: 8 }}>
+            <div className="cc-score-grid">
               <div className="sc tg">
                 <div className="scl">Funded MTD</div>
                 <div className="scv gold">{fmtCurrency(metrics?.fundedMTD)}</div>

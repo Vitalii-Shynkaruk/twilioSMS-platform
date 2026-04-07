@@ -505,10 +505,7 @@ export default function PipelinePage() {
 
   // ═══ RENDER ═══
   return (
-    <div
-      className={`pipeline-root ${visualMode === 'light' ? 'light-mode' : 'dark-mode'}`}
-      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-    >
+    <div className={`pipeline-root ${visualMode === 'light' ? 'light-mode' : 'dark-mode'}`}>
       {/* ═══ TOPBAR ═══ */}
       <div className="topbar">
         <div className="logo">

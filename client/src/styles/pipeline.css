@@ -49,6 +49,8 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 .pipeline-root{
+  display:flex;
+  flex-direction:column;
   height:100%;
   background:var(--bg);
   color:var(--text);
@@ -968,6 +970,7 @@ body.simple-view .queue-dock .sum-bar{
 @media (max-width: 768px) {
   html, body { overflow: auto; }
   #app { height: auto; min-height: 100vh; }
+  .pipeline-root { overflow: visible; height: auto; }
 
   /* Topbar: stack items */
   .pipeline-root .topbar { flex-wrap: wrap; height: auto; padding: 8px 10px; gap: 6px; }

@@ -321,10 +321,10 @@ export default function InboxPage() {
         )}
       </div>
 
-      <div className="inbox-center">
-        {selectedId ? (
-          <MessageThread conversationId={selectedId} onBack={() => setSelectedId(null)} wsConnected={wsConnected} />
-        ) : (
+      {selectedId ? (
+        <MessageThread conversationId={selectedId} onBack={() => setSelectedId(null)} wsConnected={wsConnected} />
+      ) : (
+        <div className="inbox-center">
           <div className="inbox-empty">
             <div className="inbox-empty-content">
               <MessageSquare className="inbox-empty-icon" />
@@ -332,8 +332,8 @@ export default function InboxPage() {
               <p className="inbox-empty-sub">Choose from the list to view messages</p>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -607,10 +607,12 @@ function MessageThread({
 
   if (!conversation) {
     return (
-      <div className="inbox-empty">
-        <div className="inbox-empty-content">
-          <MessageSquare className="inbox-empty-icon" />
-          <p className="inbox-empty-text">Loading conversation...</p>
+      <div className="inbox-center">
+        <div className="inbox-empty">
+          <div className="inbox-empty-content">
+            <MessageSquare className="inbox-empty-icon" />
+            <p className="inbox-empty-text">Loading conversation...</p>
+          </div>
         </div>
       </div>
     );
@@ -622,6 +624,7 @@ function MessageThread({
 
   return (
     <>
+      <div className="inbox-center">
       <div className="inbox-thread-header phase1">
         <div className="inbox-thread-row row1">
           <div className="inbox-thread-info">
@@ -997,6 +1000,7 @@ function MessageThread({
           </div>
         </div>
       )}
+      </div>
 
       <RightSidebar conversationId={conversationId} conversation={conversation} activity={data?.activity || []} />
     </>

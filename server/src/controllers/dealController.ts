@@ -243,9 +243,10 @@ export class DealController {
 
   // GET /api/deals/board - Pipeline board data grouped by stage
   static async getBoard(req: AuthRequest, res: Response) {
-    const filter = repFilter(req.user);
-    const { repId } = req.query;
+    const { repId, teamView } = req.query;
 
+    // teamView=true → показываем все данные команды (даже для REP)
+    const filter = teamView === 'true' ? {} : repFilter(req.user);
     const where: any = { ...filter };
     if (isAdminLike(req.user) && repId) {
       Object.assign(where, repScopeFilter(repId as string, true));
@@ -1442,15 +1443,17 @@ export class DealController {
 
   // GET /api/deals/stats - Bottom stats bar data
   static async getStats(req: AuthRequest, res: Response) {
-    const { repId } = req.query;
+    const { repId, teamView } = req.query;
     const selectedRepId = isAdminLike(req.user) && repId ? String(repId) : null;
-    const where: any = selectedRepId ? repScopeFilter(selectedRepId, true) : repFilter(req.user);
-    const fundingScopedRepId = selectedRepId || (!isAdminLike(req.user) ? req.user!.id : null);
+    // teamView=true → показываем командные данные (без фильтра по пользователю)
+    const isTeamView = teamView === 'true';
+    const where: any = selectedRepId ? repScopeFilter(selectedRepId, true) : isTeamView ? {} : repFilter(req.user);
+    const fundingScopedRepId = selectedRepId || (!isTeamView && !isAdminLike(req.user) ? req.user!.id : null);
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [deals, fundedMTD, allDeals] = await Promise.all([
+    const [deals, fundedMTD, fundedMTDCount, allDeals] = await Promise.all([
       // Active pipeline deals
       prisma.deal.findMany({
         where: { ...where, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
@@ -1463,10 +1466,15 @@ export class DealController {
           offers: { select: { amount: true } },
         },
       }),
-      // Funded MTD
+      // Funded MTD — сумма
       prisma.fundingEvent.aggregate({
         where: { ...(fundingScopedRepId ? { repId: fundingScopedRepId } : {}), fundedDate: { gte: startOfMonth } },
         _sum: { amountFunded: true },
+      }),
+      // Funded MTD — количество уникальных deals
+      prisma.fundingEvent.groupBy({
+        by: ['dealId'],
+        where: { ...(fundingScopedRepId ? { repId: fundingScopedRepId } : {}), fundedDate: { gte: startOfMonth } },
       }),
       // All active deals for counts
       prisma.deal.findMany({
@@ -1564,6 +1572,7 @@ export class DealController {
       activePipeline,
       activeCount: allDeals.length,
       fundedMTD: fundedMTD._sum.amountFunded || 0,
+      fundedThisMonthCount: fundedMTDCount.length,
       lifetimeFunded: lifetimeFunded._sum.amountFunded || 0,
       monthlyGoal,
       atRisk,

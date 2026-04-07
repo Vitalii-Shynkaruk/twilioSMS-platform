@@ -423,6 +423,7 @@ export interface DealStats {
   activePipeline: number;
   activeCount: number;
   fundedMTD: number;
+  fundedThisMonthCount: number;
   lifetimeFunded: number;
   monthlyGoal: number;
   atRisk: number;

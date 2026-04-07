@@ -244,12 +244,13 @@ export default function PipelinePage() {
     const params: Record<string, string> = {};
     if (effectiveRepFilter) {
       params.repId = effectiveRepFilter;
-    } else if (pipelineScope === 'mine' && !isAdmin && userId) {
+    } else if (pipelineScope === 'mine' && !isAdmin && userId && viewTab !== 'team') {
       params.repId = userId;
     }
-    if (isAdmin) params.teamView = 'true';
+    // Team Pipeline → командные данные (для всех ролей, включая REP)
+    if (viewTab === 'team' || isAdmin) params.teamView = 'true';
     return params;
-  }, [effectiveRepFilter, pipelineScope, isAdmin, userId]);
+  }, [effectiveRepFilter, pipelineScope, isAdmin, userId, viewTab]);
 
   const { data: board, isLoading: boardLoading } = useQuery({
     queryKey: ['deals', 'board', boardParams],
@@ -1541,7 +1542,13 @@ function TeamView({
   reps: Rep[];
   onDealClick: (id: string) => void;
 }) {
-  const fundedDeals = board?.stages?.find((s) => s.stage === 'FUNDED')?.deals || [];
+  const allFundedDeals = board?.stages?.find((s) => s.stage === 'FUNDED')?.deals || [];
+  // Фильтруем funded deals только за текущий месяц (для карточек)
+  const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const fundedDeals = allFundedDeals.filter((d) => {
+    const fd = d.fundedDate || d.fundingEvents?.[0]?.fundedDate;
+    return fd && new Date(fd) >= startOfMonth;
+  });
   const activeOfferDeals =
     board?.stages?.filter((s) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage)).flatMap((s) => s.deals) ||
     [];
@@ -1600,7 +1607,7 @@ function TeamView({
         <div style={{ background: 'var(--bg4)', borderRadius: '8px', padding: '10px 14px', flex: 1, minWidth: 0 }}>
           <div className="stat-label">Deals Funded</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
-            {fundedDeals.length}
+            {stats?.fundedThisMonthCount ?? fundedDeals.length}
           </div>
           <div className="stat-sub">This month</div>
         </div>
@@ -2325,7 +2332,13 @@ function QueueView({
 
 function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
   const allDeals = board?.stages?.flatMap((s: any) => s.deals) || [];
-  const fundedDeals = board?.stages?.find((s: any) => s.stage === 'FUNDED')?.deals || [];
+  const allFundedDeals = board?.stages?.find((s: any) => s.stage === 'FUNDED')?.deals || [];
+  // Только funded за текущий месяц для MTD Goal %
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const fundedDeals = allFundedDeals.filter((d: any) => {
+    const fd = d.fundedDate || d.fundingEvents?.[0]?.fundedDate;
+    return fd && new Date(fd) >= monthStart;
+  });
   const pipelineDeals =
     board?.stages
       ?.filter((s: any) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))

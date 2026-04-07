@@ -1297,7 +1297,7 @@ const STATUS_COLORS: Record<string, string> = {
 /* ── Тултип разбивки Sent Today ── */
 function SentTodayTooltip({ number }: { number: PhoneNumberItem }) {
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [pos, setPos] = useState<{ x: number; y: number; flip: boolean }>({ x: 0, y: 0, flip: false });
   const triggerRef = useRef<HTMLDivElement>(null);
   const bd = number.sentBreakdown;
   const total = number.dailySentCount;
@@ -1305,7 +1305,12 @@ function SentTodayTooltip({ number }: { number: PhoneNumberItem }) {
   const handleEnter = useCallback(() => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPos({ x: rect.left + rect.width / 2, y: rect.top });
+      const flip = rect.top < 300;
+      setPos({
+        x: rect.left + rect.width / 2,
+        y: flip ? rect.bottom : rect.top,
+        flip,
+      });
     }
     setShow(true);
   }, []);
@@ -1325,7 +1330,13 @@ function SentTodayTooltip({ number }: { number: PhoneNumberItem }) {
       {show && bd && total > 0 && (
         <div
           className="fixed z-[9999] bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none w-64"
-          style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -100%) translateY(-8px)' }}
+          style={{
+            left: pos.x,
+            top: pos.y,
+            transform: pos.flip
+              ? 'translate(-50%, 0) translateY(8px)'
+              : 'translate(-50%, -100%) translateY(-8px)',
+          }}
         >
           <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">
             Sent Today Breakdown
@@ -1402,7 +1413,11 @@ function SentTodayTooltip({ number }: { number: PhoneNumberItem }) {
 
           {/* Стрелочка */}
           <div
-            className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-dark-600"
+            className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${
+              pos.flip
+                ? 'bottom-full border-b-[6px] border-b-dark-600'
+                : 'top-full border-t-[6px] border-t-dark-600'
+            }`}
           />
         </div>
       )}

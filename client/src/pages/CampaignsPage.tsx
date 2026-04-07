@@ -996,7 +996,7 @@ function CampaignStatusBadge({ status }: { status: string }) {
 /* ── Тултип разбивки Sent для кампаний ── */
 function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [pos, setPos] = useState<{ x: number; y: number; flip: boolean }>({ x: 0, y: 0, flip: false });
   const triggerRef = useRef<HTMLTableCellElement>(null);
   const bd = campaign.sentBreakdown;
   const total = campaign.totalSent;
@@ -1004,7 +1004,12 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   const handleEnter = useCallback(() => {
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPos({ x: rect.left + rect.width / 2, y: rect.top });
+      const flip = rect.top < 300;
+      setPos({
+        x: rect.left + rect.width / 2,
+        y: flip ? rect.bottom : rect.top,
+        flip,
+      });
     }
     setShow(true);
   }, []);
@@ -1021,7 +1026,13 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
       {show && bd && total > 0 && (
         <div
           className="fixed z-[9999] bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none w-64 text-left"
-          style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -100%) translateY(-8px)' }}
+          style={{
+            left: pos.x,
+            top: pos.y,
+            transform: pos.flip
+              ? 'translate(-50%, 0) translateY(8px)'
+              : 'translate(-50%, -100%) translateY(-8px)',
+          }}
         >
           <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">
             Campaign Breakdown
@@ -1085,7 +1096,13 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
           </p>
 
           {/* Стрелочка */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-dark-600" />
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${
+              pos.flip
+                ? 'bottom-full border-b-[6px] border-b-dark-600'
+                : 'top-full border-t-[6px] border-t-dark-600'
+            }`}
+          />
         </div>
       )}
     </td>

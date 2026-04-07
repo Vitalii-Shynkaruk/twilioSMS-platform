@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
@@ -282,36 +283,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Error Rate */}
-        <div className="card p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertOctagon className="w-4 h-4 text-red-400" />
-            <span className="text-xs font-semibold text-dark-300 uppercase tracking-wider">Error Rate</span>
-          </div>
-          <p
-            className={clsx(
-              'text-3xl font-bold',
-              d24ErrorRate > 5
-                ? 'text-red-400'
-                : d24ErrorRate > 0
-                  ? 'text-yellow-400'
-                  : 'text-green-400',
-            )}
-          >
-            {d24ErrorRate}%
-          </p>
-          <p className="text-xs text-dark-500 mt-1">last 24 hours</p>
-          {diag.errorBreakdown?.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-dark-700/50 space-y-1.5">
-              {diag.errorBreakdown.slice(0, 3).map((e: any) => (
-                <div key={e.code} className="flex items-center justify-between text-xs">
-                  <span className="text-dark-400 font-mono">{e.code || 'unknown'}</span>
-                  <span className="text-red-400 font-medium">{e.count}×</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Error Rate — с hover-тултипом */}
+        <ErrorRateCard errorRate={d24ErrorRate} breakdown={diag.errorBreakdown || []} total24h={d24} />
 
         {/* Numbers & Last Activity */}
         <div className="card p-5">
@@ -449,9 +422,7 @@ export default function DashboardPage() {
                 </span>
                 <span>
                   Errors:{' '}
-                  <strong className={clsx(d7ErrorRate > 5 ? 'text-red-400' : 'text-yellow-400')}>
-                    {d7ErrorRate}%
-                  </strong>
+                  <strong className={clsx(d7ErrorRate > 5 ? 'text-red-400' : 'text-yellow-400')}>{d7ErrorRate}%</strong>
                 </span>
               </>
             )}
@@ -462,7 +433,6 @@ export default function DashboardPage() {
             {[
               { label: 'Total Sent', value: d7.sent || 0, color: 'text-dark-200', Icon: Send },
               { label: 'Delivered', value: d7.delivered || 0, color: 'text-green-400', Icon: CheckCircle2 },
-              { label: 'Failed', value: d7.failed || 0, color: 'text-red-400', Icon: XCircle },
               { label: 'Blocked', value: d7.blocked || 0, color: 'text-yellow-400', Icon: ShieldAlert },
               { label: 'Queued', value: d7.queued || 0, color: 'text-blue-400', Icon: Clock },
               { label: 'Sending', value: d7.sending || 0, color: 'text-purple-400', Icon: Activity },
@@ -473,6 +443,8 @@ export default function DashboardPage() {
                 <p className="text-[11px] text-dark-500 mt-1">{m.label}</p>
               </div>
             ))}
+            {/* Failed — с тултипом */}
+            <FailedMetricWithTooltip value={d7.failed || 0} breakdown={diag.errorBreakdown || []} />
           </div>
         </div>
       </div>
@@ -699,4 +671,133 @@ function CampaignStatusBadge({ status }: { status: string }) {
     CANCELLED: 'badge-danger',
   };
   return <span className={styles[status] || 'badge'}>{status}</span>;
+}
+
+/* ── Цвета для полос разбивки ошибок ── */
+const ERROR_COLORS = ['#ef4444', '#f97316', '#eab308', '#a855f7', '#3b82f6', '#14b8a6', '#ec4899', '#6366f1'];
+
+/* ── Общий тултип с разбивкой ошибок ── */
+function ErrorBreakdownTooltip({
+  breakdown,
+  total,
+}: {
+  breakdown: Array<{ code: string; count: number; label?: string }>;
+  total: number;
+}) {
+  if (!breakdown.length) {
+    return <div className="text-xs text-dark-400 p-2">No error data</div>;
+  }
+
+  const sorted = [...breakdown].sort((a, b) => b.count - a.count);
+  const maxCount = sorted[0]?.count || 1;
+
+  return (
+    <div className="w-72 space-y-3">
+      <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider">
+        Error Breakdown ({total.toLocaleString()} total)
+      </p>
+
+      {/* Горизонтальные полосы */}
+      <div className="space-y-2">
+        {sorted.map((e, i) => {
+          const pct = total > 0 ? ((e.count / total) * 100).toFixed(1) : '0';
+          const barW = Math.max((e.count / maxCount) * 100, 4);
+          const color = ERROR_COLORS[i % ERROR_COLORS.length];
+          return (
+            <div key={e.code}>
+              <div className="flex items-center justify-between text-[11px] mb-0.5">
+                <span className="text-dark-300 font-medium truncate max-w-[140px]">
+                  {e.code === 'internal' ? 'Internal' : `Code ${e.code}`}
+                </span>
+                <span className="text-dark-400 ml-2 shrink-0">
+                  {e.count.toLocaleString()} ({pct}%)
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-dark-700 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${barW}%`, backgroundColor: color }}
+                />
+              </div>
+              {e.label && <p className="text-[10px] text-dark-500 mt-0.5 leading-tight">{e.label}</p>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── ErrorRateCard — карточка Error Rate с hover-тултипом ── */
+function ErrorRateCard({
+  errorRate,
+  breakdown,
+  total24h,
+}: {
+  errorRate: number;
+  breakdown: Array<{ code: string; count: number; label?: string }>;
+  total24h: { sent?: number; failed?: number; blocked?: number };
+}) {
+  const [show, setShow] = useState(false);
+  const totalErrors = (total24h.failed || 0) + (total24h.blocked || 0);
+
+  return (
+    <div className="card p-5 relative" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <div className="flex items-center gap-2 mb-3">
+        <AlertOctagon className="w-4 h-4 text-red-400" />
+        <span className="text-xs font-semibold text-dark-300 uppercase tracking-wider">Error Rate</span>
+      </div>
+      <p
+        className={clsx(
+          'text-3xl font-bold',
+          errorRate > 10 ? 'text-red-400' : errorRate > 5 ? 'text-yellow-400' : 'text-green-400',
+        )}
+      >
+        {errorRate.toFixed(1)}%
+      </p>
+      <p className="text-xs text-dark-500 mt-1">
+        {totalErrors.toLocaleString()} errors / {(total24h.sent || 0).toLocaleString()} sent
+      </p>
+      {breakdown.length > 0 && <p className="text-[10px] text-dark-500 mt-2 cursor-default">ⓘ Hover for breakdown</p>}
+
+      {/* Тултип */}
+      {show && breakdown.length > 0 && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none">
+          <ErrorBreakdownTooltip breakdown={breakdown} total={totalErrors} />
+          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-dark-600" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── FailedMetricWithTooltip — ячейка Failed в 7-Day Health с hover-тултипом ── */
+function FailedMetricWithTooltip({
+  value,
+  breakdown,
+}: {
+  value: number;
+  breakdown: Array<{ code: string; count: number; label?: string }>;
+}) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <div
+      className="text-center relative cursor-default"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <XCircle className="w-5 h-5 mx-auto mb-2 text-red-400" />
+      <p className="text-xl font-bold text-red-400">{(value || 0).toLocaleString()}</p>
+      <p className="text-[11px] text-dark-500 mt-1">Failed</p>
+
+      {/* Тултип */}
+      {show && breakdown.length > 0 && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none">
+          <ErrorBreakdownTooltip breakdown={breakdown} total={value} />
+          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-dark-600" />
+        </div>
+      )}
+    </div>
+  );
 }

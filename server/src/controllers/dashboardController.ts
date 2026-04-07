@@ -7,6 +7,28 @@ import redis from '../config/redis';
 import { config } from '../config';
 import logger from '../config/logger';
 
+// Краткие описания ошибок Twilio для тултипа
+const TWILIO_ERROR_LABELS: Record<string, string> = {
+  '21408': 'SMS not enabled for region (e.g. Puerto Rico, USVI)',
+  '21610': 'Recipient unsubscribed (STOP)',
+  '21611': 'SMS queue overflow',
+  '21612': 'Trial account — unverified number',
+  '21614': 'Invalid mobile number',
+  '21617': 'Non-mobile number (landline)',
+  '30001': 'Queue overflow',
+  '30002': 'Account suspended',
+  '30003': 'Unreachable — phone off or invalid',
+  '30004': 'Message blocked by carrier',
+  '30005': 'Unknown destination — invalid number',
+  '30006': 'Landline or unreachable',
+  '30007': 'Carrier filtering (spam)',
+  '30008': 'Unknown error from carrier',
+  '30010': 'Message price exceeds max',
+  '30034': 'T-Mobile EcoSystem violation',
+  '63003': 'A2P 10DLC — campaign not approved',
+  '63016': 'A2P rate limit exceeded',
+};
+
 export class DashboardController {
   static async getStats(req: AuthRequest, res: Response): Promise<void> {
     const now = new Date();
@@ -241,7 +263,7 @@ export class DashboardController {
       prisma.message.groupBy({
         by: ['errorCode'],
         where: {
-          status: { in: ['FAILED', 'BLOCKED'] },
+          status: { in: ['FAILED', 'UNDELIVERED', 'BLOCKED'] },
           createdAt: { gte: last24h },
           errorCode: { not: null },
         },
@@ -295,7 +317,7 @@ export class DashboardController {
 
       prisma.message.findMany({
         where: {
-          status: { in: ['FAILED', 'BLOCKED'] },
+          status: { in: ['FAILED', 'UNDELIVERED', 'BLOCKED'] },
           createdAt: { gte: last24h },
         },
         orderBy: { createdAt: 'desc' },
@@ -395,6 +417,7 @@ export class DashboardController {
       errorBreakdown: errorBreakdown.map((e) => ({
         code: e.errorCode,
         count: e._count,
+        label: TWILIO_ERROR_LABELS[e.errorCode || ''] || 'Unknown error',
       })),
       recentErrors: recentErrors.map((e) => ({
         id: e.id,

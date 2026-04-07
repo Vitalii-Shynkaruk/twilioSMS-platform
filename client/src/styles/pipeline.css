@@ -968,9 +968,8 @@ body.simple-view .queue-dock .sum-bar{
    RESPONSIVE — MOBILE (≤768px)
    ═══════════════════════════════════════════ */
 @media (max-width: 768px) {
-  html, body { overflow: auto; }
-  #app { height: auto; min-height: 100vh; }
-  .pipeline-root { overflow: visible; height: auto; }
+  /* Pipeline — фиксированный полноэкранный контейнер */
+  .pipeline-root { height: 100dvh; height: 100vh; overflow: hidden; }
 
   /* Topbar: stack items */
   .pipeline-root .topbar { flex-wrap: wrap; height: auto; padding: 8px 10px; gap: 6px; }
@@ -990,10 +989,21 @@ body.simple-view .queue-dock .sum-bar{
   .vb { font-size: 9px; }
   .btext { font-size: 10px; }
 
-  /* Board: horizontal swipe columns */
-  .board-wrap { padding: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .board { gap: 6px; }
-  .col { width: 75vw; min-width: 75vw; flex-shrink: 0; }
+  /* Board: горизонтальный свайп + вертикальный скролл внутри колонок */
+  .board-wrap {
+    flex: 1; min-height: 0;
+    padding: 8px;
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+  .board { gap: 6px; height: 100%; }
+  .col {
+    width: 80vw; min-width: 80vw; flex-shrink: 0;
+    scroll-snap-align: start;
+    height: 100%;
+  }
+  .col-cards { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
   /* Stat bars: vertical stack */
   .mgr-bar { flex-direction: column; }

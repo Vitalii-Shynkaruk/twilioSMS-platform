@@ -120,7 +120,6 @@ export class InboxController {
     return InboxController.OPT_OUT_KEYWORDS.map((keyword) => ({
       body: {
         contains: keyword,
-        mode: 'insensitive',
       },
     }));
   }

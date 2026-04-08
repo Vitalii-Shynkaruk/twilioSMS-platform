@@ -44,6 +44,7 @@ export const updateUserSchema = z.object({
   lastName: z.string().min(1).max(50).trim().optional(),
   role: z.enum(['ADMIN', 'MANAGER', 'REP']).optional(),
   isActive: z.boolean().optional(),
+  password: z.string().min(8, 'Password must be at least 8 characters').optional(),
   email: z
     .string()
     .email()

@@ -18,14 +18,9 @@ export interface AuthRequest extends Request {
 const USER_CACHE_TTL = 60; // seconds
 const USER_CACHE_PREFIX = 'auth:user:';
 
-export const authenticate = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ||
-                  req.cookies?.token;
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
 
     if (!token) {
       res.status(401).json({ error: 'Authentication required' });
@@ -40,7 +35,14 @@ export const authenticate = async (
 
     // ── Redis user cache: avoid DB hit on every request ──
     const cacheKey = `${USER_CACHE_PREFIX}${decoded.userId}`;
-    let user: { id: string; email: string; role: string; firstName: string; lastName: string; isActive: boolean } | null = null;
+    let user: {
+      id: string;
+      email: string;
+      role: string;
+      firstName: string;
+      lastName: string;
+      isActive: boolean;
+    } | null = null;
 
     try {
       const cached = await redis.get(cacheKey);
@@ -88,13 +90,22 @@ export const authenticate = async (
 
     next();
   } catch (error) {
-    res.status(401).json({ error: 'Invalid token' });
+    // JWT-ошибки → 401, ошибки БД/Redis → 500 (клиент сохранит кэш пользователя)
+    if (error instanceof jwt.JsonWebTokenError || error instanceof jwt.TokenExpiredError) {
+      res.status(401).json({ error: 'Invalid token' });
+    } else {
+      res.status(500).json({ error: 'Authentication service unavailable' });
+    }
   }
 };
 
 /** Invalidate cached user (call on role/profile update) */
 export const invalidateUserCache = async (userId: string) => {
-  try { await redis.del(`${USER_CACHE_PREFIX}${userId}`); } catch { /* non-fatal */ }
+  try {
+    await redis.del(`${USER_CACHE_PREFIX}${userId}`);
+  } catch {
+    /* non-fatal */
+  }
 };
 
 export const requireRole = (...roles: string[]) => {

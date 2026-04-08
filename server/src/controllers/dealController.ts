@@ -476,7 +476,7 @@ export class DealController {
 
     // FIX 2: Автоматически заполняем source из SMS-кампании/листа, если deal связан с lead
     if (linkedLeadId) {
-      const [campaignLead, campaignMessage, linkedLead] = await Promise.all([
+      const [campaignLead, campaignMessage, importListTag, linkedLead] = await Promise.all([
         prisma.campaignLead.findFirst({
           where: { leadId: linkedLeadId },
           orderBy: { createdAt: 'desc' },
@@ -492,16 +492,35 @@ export class DealController {
           orderBy: { createdAt: 'desc' },
           include: { campaign: { select: { name: true } } },
         }),
+        prisma.tag.findFirst({
+          where: {
+            isImportList: true,
+            leads: {
+              some: {
+                leadId: linkedLeadId,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { name: true },
+        }),
         prisma.lead.findUnique({
           where: { id: linkedLeadId },
           select: { source: true },
         }),
       ]);
 
+      const normalizedLeadSource = (() => {
+        const raw = (linkedLead?.source || '').trim();
+        if (!raw) return '';
+        const token = raw.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        return ['csvimport', 'import', 'inbox', 'sms', 'smsinbox'].includes(token) ? '' : raw;
+      })();
       const resolvedSource =
         campaignLead?.campaign?.name?.trim() ||
         campaignMessage?.campaign?.name?.trim() ||
-        (linkedLead?.source || '').trim();
+        importListTag?.name?.trim() ||
+        normalizedLeadSource;
 
       if (resolvedSource) {
         const sourceNote = `Source: SMS — ${resolvedSource}`;

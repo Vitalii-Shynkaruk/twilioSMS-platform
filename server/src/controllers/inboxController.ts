@@ -42,6 +42,7 @@ export class InboxController {
     'opt out',
     'optout',
   ];
+  private static readonly GENERIC_SOURCE_TOKENS = new Set(['csvimport', 'import', 'inbox', 'sms', 'smsinbox']);
 
   private static resolveFilter(raw: unknown): InboxFilter {
     const normalized = String(raw || 'all').toLowerCase() as InboxFilter;
@@ -163,7 +164,7 @@ export class InboxController {
     leadId: string,
     leadSource?: string | null,
   ): Promise<string> {
-    const [campaignLead, campaignMessage] = await Promise.all([
+    const [campaignLead, campaignMessage, importListTag] = await Promise.all([
       prisma.campaignLead.findFirst({
         where: { leadId },
         orderBy: { createdAt: 'desc' },
@@ -177,11 +178,32 @@ export class InboxController {
         orderBy: { createdAt: 'desc' },
         include: { campaign: { select: { name: true } } },
       }),
+      prisma.tag.findFirst({
+        where: {
+          isImportList: true,
+          leads: {
+            some: {
+              leadId,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { name: true },
+      }),
     ]);
 
     const campaignName = campaignLead?.campaign?.name?.trim() || campaignMessage?.campaign?.name?.trim() || '';
-    const fallback = (leadSource || '').trim();
-    return campaignName || fallback || 'Inbox';
+    const importListName = (importListTag?.name || '').trim();
+    const fallback = InboxController.normalizeSourceCandidate(leadSource);
+    return campaignName || importListName || fallback || 'Inbox';
+  }
+
+  private static normalizeSourceCandidate(source?: string | null): string {
+    const raw = (source || '').trim();
+    if (!raw) return '';
+    const token = raw.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    if (InboxController.GENERIC_SOURCE_TOKENS.has(token)) return '';
+    return raw;
   }
 
   private static withConditions(baseWhere: any, extraConditions: any[]): any {
@@ -481,6 +503,7 @@ export class InboxController {
       totalMessages,
       latestCampaignLead,
       latestCampaignMessage,
+      latestImportListTag,
       latestTemplateUse,
       notes,
       activityMessages,
@@ -497,6 +520,18 @@ export class InboxController {
         where: { conversationId: id, campaignId: { not: null } },
         orderBy: { createdAt: 'desc' },
         include: { campaign: { select: { name: true } } },
+      }),
+      prisma.tag.findFirst({
+        where: {
+          isImportList: true,
+          leads: {
+            some: {
+              leadId: conversation.leadId,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { name: true },
       }),
       prisma.smsTemplateUsageLog.findFirst({
         where: { conversationId: id },
@@ -588,7 +623,11 @@ export class InboxController {
     }
 
     const sourceName =
-      latestCampaignLead?.campaign?.name || latestCampaignMessage?.campaign?.name || conversation.lead.source || '';
+      latestCampaignLead?.campaign?.name ||
+      latestCampaignMessage?.campaign?.name ||
+      latestImportListTag?.name ||
+      InboxController.normalizeSourceCandidate(conversation.lead.source) ||
+      'Inbox';
     const latestSmsDeal = conversation.deals.find((d) => d.createdFromSms) || conversation.deals[0] || null;
     const statusStrip = {
       hotLead: !!conversation.hotLead,

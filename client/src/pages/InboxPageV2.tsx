@@ -943,7 +943,7 @@ function MessageThread({
                   e.preventDefault();
                   setShowTemplates(true);
                 }
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey && !(e.nativeEvent as KeyboardEvent).isComposing) {
                   e.preventDefault();
                   handleSend();
                 }
@@ -1073,25 +1073,26 @@ function RightSidebar({
   conversation: Conversation;
   activity: ConversationActivity[];
 }) {
-  const [tab, setTab] = useState<'contact' | 'activity' | 'notes'>('contact');
+  const [tab, setTab] = useState<'contact' | 'activity'>('contact');
 
   return (
     <div className="inbox-right phase1">
       <div className="inbox-sidebar-tabs">
         <button className={clsx(tab === 'contact' && 'active')} onClick={() => setTab('contact')}>
-          Contact
+          Contact / Notes
         </button>
         <button className={clsx(tab === 'activity' && 'active')} onClick={() => setTab('activity')}>
           Activity
         </button>
-        <button className={clsx(tab === 'notes' && 'active')} onClick={() => setTab('notes')}>
-          Notes
-        </button>
       </div>
 
-      {tab === 'contact' && <ContactInfoSection conversation={conversation} />}
+      {tab === 'contact' && (
+        <>
+          <ContactInfoSection conversation={conversation} />
+          <NotesSection conversationId={conversationId} title="Notes" />
+        </>
+      )}
       {tab === 'activity' && <ActivitySection activity={activity} />}
-      {tab === 'notes' && <NotesSection conversationId={conversationId} />}
     </div>
   );
 }
@@ -1149,7 +1150,7 @@ function ActivitySection({ activity }: { activity: ConversationActivity[] }) {
   );
 }
 
-function NotesSection({ conversationId }: { conversationId: string }) {
+function NotesSection({ conversationId, title }: { conversationId: string; title?: string }) {
   const [noteText, setNoteText] = useState('');
   const queryClient = useQueryClient();
 
@@ -1183,6 +1184,7 @@ function NotesSection({ conversationId }: { conversationId: string }) {
 
   return (
     <div className="inbox-sidebar-section">
+      {title ? <div className="inbox-sidebar-title">{title}</div> : null}
       {notes.map((note) => (
         <div key={note.id} className="inbox-note-item">
           <div className="inbox-note-body">{note.body}</div>

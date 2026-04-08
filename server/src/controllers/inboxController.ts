@@ -720,6 +720,7 @@ export class InboxController {
         fromNumber,
         fromNumberFriendlyName,
         isInPipeline: !!latestSmsDeal,
+        contactInfo,
       },
       messages: messages.reverse(), // Chronological order
       statusStrip,

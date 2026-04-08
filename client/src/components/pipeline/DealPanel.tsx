@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { dealApi, repApi } from '../../services/api';
 import { MessageSquare, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
-import type { Deal, DealStage, Rep, Offer, ProductType } from '../../types';
+import type { Deal, DealStage, Rep, Offer, ProductType, DealEvent } from '../../types';
 import { formatCurrency } from './DealCard';
 import CreateDealModal from './CreateDealModal';
 import { useAuthStore } from '../../stores/authStore';
@@ -20,6 +20,65 @@ const STAGE_LABELS: Record<DealStage, string> = {
   NURTURE: 'Nurture',
   CLOSED: 'Closed',
 };
+
+type DuePreset = 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date';
+
+const STAGE_QUICK_ACTIONS: Record<DealStage, string[]> = {
+  NEW_LEAD: ['Make first contact', 'Send intro text', 'Qualify business', 'Get monthly revenue'],
+  ENGAGED_INTERESTED: ['Send Follow Up Email', 'Send Case Study Email', '3/4th Follow Up'],
+  QUALIFIED: ['Submit application', 'Get remaining docs', 'Verify revenue'],
+  SUBMITTED_IN_REVIEW: ['Collect Remaining Docs', 'Follow Up With Lender'],
+  APPROVED_OFFERS: ['Presenting Offer', 'Get DL/VC', 'Get Updated Offer'],
+  COMMITTED_FUNDING: ['Send PSF', 'Get Docs Signed'],
+  FUNDED: ['Request referrals', 'Check in 30 days', 'Upsell next product'],
+  NURTURE: ['Check back in 30 days', 'Send market update', 'Re-qualify business'],
+  CLOSED: [],
+};
+
+function extractSmsCampaignSource(clientNotes?: string | null): string {
+  if (!clientNotes) return '';
+  const match = clientNotes.match(/Source:\s*SMS\s*[—-]\s*([^·\n\r]+)/i);
+  return match?.[1]?.trim() || '';
+}
+
+function getDuePresetFromDate(nextActionDue?: string | null): DuePreset {
+  if (!nextActionDue) return 'Future date';
+  const dateOnly = nextActionDue.split('T')[0];
+  if (!dateOnly) return 'Future date';
+  const due = new Date(`${dateOnly}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return 'Future date';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (diffDays < 0) return 'Overdue';
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays <= 7) return 'This week';
+  return 'Future date';
+}
+
+function dateFromDuePreset(preset: DuePreset): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (preset === 'Overdue') d.setDate(d.getDate() - 1);
+  if (preset === 'Tomorrow') d.setDate(d.getDate() + 1);
+  if (preset === 'This week') d.setDate(d.getDate() + 4);
+  return d.toISOString().split('T')[0];
+}
+
+function formatRelativeShort(iso?: string): string {
+  if (!iso) return 'No activity yet';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'No activity yet';
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 function dealSystemStatus(deal: Deal): { label: string; cls: string } | null {
   if (deal.stage === 'QUALIFIED' && !deal.appSubmitted) return { label: 'Needs app', cls: 'sp-needs-app' };
@@ -176,8 +235,31 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   const assistingIds = (deal.assistingRepIds as string[]) || [];
   const isPrimaryRep = deal.assignedRepId === user?.id;
   const isAssistRep = !!user?.id && assistingIds.includes(user.id);
+  const canEditDeal = isAdmin || isPrimaryRep || isAssistRep;
   const canDeleteDeal = (isAdmin || isPrimaryRep) && deal.stage !== 'FUNDED';
   const canDeleteOffer = (isAdmin || isPrimaryRep || isAssistRep) && !['FUNDED', 'CLOSED'].includes(deal.stage);
+  const duePreset = getDuePresetFromDate(deal.nextActionDue);
+  const latestEvent = [...(deal.dealEvents || [])]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+  const lastActionLabel = latestEvent
+    ? latestEvent.eventType.replace(/_/g, ' ')
+    : deal.nextAction
+      ? `Next action: ${deal.nextAction}`
+      : 'No activity yet';
+  const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
+
+  const handleStageChange = (nextStage: DealStage) => {
+    if (nextStage === deal.stage) return;
+    if (nextStage === 'NURTURE' || nextStage === 'CLOSED') {
+      setShowMoveModal(true);
+      return;
+    }
+    if (nextStage === 'FUNDED') {
+      setShowFundedModal(true);
+      return;
+    }
+    moveMutation.mutate({ stage: nextStage });
+  };
 
   return (
     <>
@@ -196,36 +278,21 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                 ) : (
                   <span style={{ color: 'var(--text3)' }}>+ Add email</span>
                 )}
-                {deal.nextAction && (
-                  <span
-                    className="ph-badge"
-                    style={{ background: 'var(--bg4)', border: '1px solid var(--border2)', color: 'var(--text2)' }}
-                  >
-                    {deal.nextAction}
-                  </span>
-                )}
-                {hotText && (
-                  <span
-                    className="ph-badge"
-                    style={{ background: 'var(--hot-bg)', color: 'var(--hot)', border: '1px solid var(--hot-b)' }}
-                  >
-                    🔥 {hotText}
-                  </span>
-                )}
-                <span
-                  className="ph-badge"
-                  style={{
-                    background: deal.assignedRep?.avatarColor
-                      ? `${deal.assignedRep.avatarColor}26`
-                      : 'rgba(74,158,232,0.16)',
-                    color: deal.assignedRep?.avatarColor || '#4A9EE8',
-                  }}
-                >
-                  {repLabel}
-                </span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <div className="ph-actions">
+              <span
+                className="ph-rep-badge"
+                style={{
+                  background: deal.assignedRep?.avatarColor
+                    ? `${deal.assignedRep.avatarColor}26`
+                    : 'rgba(74,158,232,0.16)',
+                  color: deal.assignedRep?.avatarColor || '#4A9EE8',
+                }}
+                title={`Assigned rep: ${repLabel}`}
+              >
+                {repLabel}
+              </span>
               {canDeleteDeal && (
                 <button
                   className="ph-close"
@@ -242,6 +309,57 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                 ×
               </button>
             </div>
+          </div>
+
+          <div className="ph-meta-row">
+            <div className="ph-meta-pill">
+              <span className="ph-meta-label">Last Contact</span>
+              <span className="ph-meta-val">{formatRelativeShort(deal.lastReplyAt || deal.createdAt)}</span>
+            </div>
+            <div className="ph-meta-pill ph-meta-blue">
+              <span className="ph-meta-label">Last Action</span>
+              <span className="ph-meta-val">{lastActionLabel}</span>
+            </div>
+            {hotText ? (
+              <div className="ph-meta-pill ph-meta-hot">
+                <span className="ph-meta-label">Hot</span>
+                <span className="ph-meta-val">{hotText}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="ph-stage-row">
+            <select
+              className="ph-stage-select"
+              value={deal.stage}
+              onChange={(e) => handleStageChange(e.target.value as DealStage)}
+              disabled={!canEditDeal}
+            >
+              {(Object.keys(STAGE_LABELS) as DealStage[]).map((s) => (
+                <option key={s} value={s}>
+                  {STAGE_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            {deal.productType ? <span className="ph-stage-badge ph-badge-good">{deal.productType}</span> : null}
+            {smsCampaignSource ? <span className="ph-stage-badge ph-badge-amber">{smsCampaignSource}</span> : null}
+            {deal.nextActionDue ? (
+              <span
+                className={clsx(
+                  'ph-stage-badge',
+                  duePreset === 'Overdue'
+                    ? 'ph-badge-danger'
+                    : duePreset === 'Today'
+                      ? 'ph-badge-good'
+                      : 'ph-badge-amber',
+                )}
+              >
+                {duePreset}
+              </span>
+            ) : null}
+            {sysStatus ? (
+              <span className={clsx('ph-stage-badge ph-badge-info', sysStatus.cls)}>{sysStatus.label}</span>
+            ) : null}
           </div>
 
           <div className="panel-tabs">
@@ -263,14 +381,10 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
             <DealClientTab
               deal={deal}
               isAdmin={isAdmin}
-              sysStatus={dealSystemStatus(deal)}
               onUpdate={(data: any) => updateMutation.mutate(data)}
               onShare={(data: any) => shareMutation.mutate(data)}
-              onMove={(data: any) => moveMutation.mutate(data)}
               onEditFundEvent={(feId: string) => setShowEditFundModal(feId)}
               onAddOffer={() => setShowOfferModal(true)}
-              onOpenActionModal={() => setShowActionModal(true)}
-              onOpenMoveModal={() => setShowMoveModal(true)}
               onOpenFollowUpModal={() => setShowFollowUpModal(true)}
               onOpenNQModal={() => setShowNQModal(true)}
               onOpenFundedModal={() => setShowFundedModal(true)}
@@ -427,13 +541,9 @@ function DealClientTab({
   deal,
   onUpdate,
   isAdmin,
-  sysStatus,
   onShare,
-  onMove,
   onEditFundEvent,
   onAddOffer,
-  onOpenActionModal,
-  onOpenMoveModal,
   onOpenFollowUpModal,
   onOpenNQModal,
   onOpenFundedModal,
@@ -444,13 +554,9 @@ function DealClientTab({
   deal: Deal;
   onUpdate: (data: any) => void;
   isAdmin: boolean;
-  sysStatus: { label: string; cls: string } | null;
   onShare: (data: any) => void;
-  onMove: (data: any) => void;
   onEditFundEvent: (feId: string) => void;
   onAddOffer: () => void;
-  onOpenActionModal: () => void;
-  onOpenMoveModal: () => void;
   onOpenFollowUpModal: () => void;
   onOpenNQModal: () => void;
   onOpenFundedModal: () => void;
@@ -465,17 +571,6 @@ function DealClientTab({
   const isPrimaryRep = deal.assignedRepId === user?.id;
   const isAssistRep = !!user?.id && assistingIds.includes(user.id);
   const canEdit = isAdmin || isPrimaryRep || isAssistRep;
-  const stages: DealStage[] = [
-    'NEW_LEAD',
-    'ENGAGED_INTERESTED',
-    'QUALIFIED',
-    'SUBMITTED_IN_REVIEW',
-    'APPROVED_OFFERS',
-    'COMMITTED_FUNDING',
-    'FUNDED',
-    'NURTURE',
-    'CLOSED',
-  ];
   const dealTypeOptions: Array<{ label: string; value: ProductType }> = [
     { label: 'MCA', value: 'MCA' },
     { label: 'LOC', value: 'LOC' },
@@ -484,28 +579,39 @@ function DealClientTab({
     { label: 'SBA', value: 'SBA' },
     { label: 'CRE', value: 'CRE' },
   ];
-  const revenueRanges = [
-    'Under $10k',
-    '$10k–$25k',
-    '$25k–$50k',
-    '$50k–$100k',
-    '$100k–$250k',
-    '$250k–$500k',
-    '$500k–$1M',
+  const dueOptions: DuePreset[] = ['Overdue', 'Today', 'Tomorrow', 'This week', 'Future date'];
+  const baseRevenueRanges = [
+    '$10k–$20k',
+    '$20k–$30k',
+    '$40k–$60k',
+    '$75k–$100k',
+    '$100k–$120k',
+    '$120k–$150k',
+    '$150k–$200k',
+    '$200k–$300k',
+    '$300k–$400k',
+    '$500k–$600k',
+    '$700k–$800k',
+    '$900k–$1M',
     '$1M+',
-    'Custom',
   ];
   const sourceOptions = ['Cold Calling', 'Email', 'SMS', 'Referral'];
   const clientMetaKey = `scl_client_meta_${deal.clientId}`;
   const [clientMeta, setClientMeta] = useState<Record<string, string>>({});
+  const [isNextActionOpen, setIsNextActionOpen] = useState(false);
   const [nextActionDraft, setNextActionDraft] = useState(deal.nextAction || '');
-  const [exactDueDate, setExactDueDate] = useState(deal.nextActionDue?.split('T')[0] || '');
-  const [showFutureDate, setShowFutureDate] = useState(false);
-  const [noteDraft, setNoteDraft] = useState(deal.notes || '');
+  const [nextDuePreset, setNextDuePreset] = useState<DuePreset>(getDuePresetFromDate(deal.nextActionDue));
+  const [nextDueDate, setNextDueDate] = useState(deal.nextActionDue?.split('T')[0] || '');
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [newNoteDraft, setNewNoteDraft] = useState('');
+  const [localNotes, setLocalNotes] = useState<Array<{ id: string; text: string; at: string }>>([]);
   const [clientNoteDraft, setClientNoteDraft] = useState(deal.clientNotes || '');
   const [amountDraft, setAmountDraft] = useState(
     String(deal.submittedAmount ?? deal.dealAmount ?? '').replace(/\.0+$/, ''),
   );
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const clientSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
 
   useEffect(() => {
     try {
@@ -517,28 +623,28 @@ function DealClientTab({
   }, [clientMetaKey]);
 
   useEffect(() => setNextActionDraft(deal.nextAction || ''), [deal.id, deal.nextAction]);
-  useEffect(() => setNoteDraft(deal.notes || ''), [deal.id, deal.notes]);
+  useEffect(() => {
+    setNextDuePreset(getDuePresetFromDate(deal.nextActionDue));
+    setNextDueDate(deal.nextActionDue?.split('T')[0] || '');
+    setSelectedPreset(null);
+    setIsNextActionOpen(false);
+  }, [deal.id, deal.nextActionDue]);
   useEffect(() => setClientNoteDraft(deal.clientNotes || ''), [deal.id, deal.clientNotes]);
   useEffect(
     () => setAmountDraft(String(deal.submittedAmount ?? deal.dealAmount ?? '').replace(/\.0+$/, '')),
     [deal.id, deal.submittedAmount, deal.dealAmount],
   );
+  useEffect(
+    () => () => {
+      if (clientSaveTimer.current) clearTimeout(clientSaveTimer.current);
+    },
+    [],
+  );
   useEffect(() => {
-    const date = deal.nextActionDue?.split('T')[0] || '';
-    setExactDueDate(date);
-    if (!date) {
-      setShowFutureDate(true);
-      return;
-    }
-    const diff = Math.round(
-      (new Date(date + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000,
-    );
-    setShowFutureDate(diff > 7);
-  }, [deal.id, deal.nextActionDue]);
+    setLocalNotes([]);
+  }, [deal.id, deal.updatedAt]);
 
-  const clientSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function saveClientMeta(patch: Record<string, string>) {
+  function saveClientMeta(patch: Record<string, string>, persistToClient = false) {
     const next = { ...clientMeta, ...patch };
     setClientMeta(next);
     try {
@@ -546,135 +652,366 @@ function DealClientTab({
     } catch {
       // no-op
     }
-    // Debounced persist to backend
+    if (!persistToClient) return;
     if (clientSaveTimer.current) clearTimeout(clientSaveTimer.current);
     clientSaveTimer.current = setTimeout(() => {
       onUpdate({ clientUpdate: patch });
     }, 600);
   }
 
-  function applyDuePreset(preset: 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date') {
-    const d = new Date();
-    if (preset === 'Future date') {
-      setShowFutureDate(true);
-      return;
-    }
-    if (preset === 'Overdue') d.setDate(d.getDate() - 1);
-    if (preset === 'Tomorrow') d.setDate(d.getDate() + 1);
-    if (preset === 'This week') d.setDate(d.getDate() + 4);
-    const iso = d.toISOString().split('T')[0];
-    setExactDueDate(iso);
-    setShowFutureDate(false);
-    onUpdate({ nextActionDue: iso });
-  }
-
-  function currentDuePreset(): 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date' {
-    if (!exactDueDate) return 'Future date';
-    const diff = Math.round(
-      (new Date(exactDueDate + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000,
-    );
-    if (diff < 0) return 'Overdue';
-    if (diff === 0) return 'Today';
-    if (diff === 1) return 'Tomorrow';
-    if (diff <= 7) return 'This week';
-    return 'Future date';
-  }
-
-  const duePreset = currentDuePreset();
   const clientPhone = clientMeta.phone ?? deal.client?.phone ?? '';
   const clientEmail = clientMeta.email ?? deal.client?.email ?? '';
   const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
   const clientRevenue = clientMeta.monthlyRevenue ?? '';
-  // FIX 2: Source из clientNotes (если deal создан из SMS) или из localStorage
-  const smsSourceMatch = deal.clientNotes?.match(/Source:\s*SMS\s*[—-]\s*([^\n\r]+)/i);
-  const smsSource = smsSourceMatch ? `SMS — ${smsSourceMatch[1].trim()}` : '';
-  const clientSource = (smsSource || clientMeta.source) ?? '';
+  const sourceType = (clientMeta.source || (smsCampaignSource ? 'SMS' : '')).trim();
+  const leadSource = (clientMeta.leadSource ?? smsCampaignSource ?? '').trim();
   const isSubmittedProduct = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
   const amountLabel = isSubmittedProduct ? 'Submitted Amount' : 'Requested Amount';
   const amountPayloadKey = isSubmittedProduct ? 'submittedAmount' : 'dealAmount';
-
   const offers = deal.offers || [];
   const fundingEvent = (deal.fundingEvents || [])[0];
+  const stagePresets = STAGE_QUICK_ACTIONS[deal.stage] || [];
+  const persistedDuePreset = getDuePresetFromDate(deal.nextActionDue);
+  const persistedDueLabel = deal.nextActionDue ? persistedDuePreset : 'No due';
+
+  const revenueRanges = useMemo(() => {
+    if (!clientRevenue || baseRevenueRanges.includes(clientRevenue)) return baseRevenueRanges;
+    return [clientRevenue, ...baseRevenueRanges];
+  }, [baseRevenueRanges, clientRevenue]);
+
+  const sortedEvents = useMemo(
+    () =>
+      [...(deal.dealEvents || [])].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [deal.dealEvents],
+  );
+
+  const noteEntries = useMemo(() => {
+    const items = sortedEvents
+      .filter((event) => (event.eventType || '').toLowerCase().includes('note') && event.note?.trim())
+      .map((event) => ({
+        id: event.id,
+        text: event.note?.trim() || '',
+        at: event.createdAt,
+      }));
+
+    if (items.length === 0 && (deal.notes || '').trim()) {
+      items.push({
+        id: `deal-note-${deal.id}`,
+        text: deal.notes!.trim(),
+        at: deal.updatedAt || deal.createdAt,
+      });
+    }
+    const merged = [...localNotes, ...items];
+    const seen = new Set<string>();
+    const deduped = merged.filter((item) => {
+      const key = `${item.text}|${item.at}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return deduped.slice(0, 8);
+  }, [sortedEvents, deal.notes, deal.updatedAt, deal.createdAt, deal.id, localNotes]);
+
+  const recentActivity = sortedEvents.slice(0, 3);
+
+  function dueClassName(preset: DuePreset | 'No due'): string {
+    if (preset === 'Overdue') return 'overdue';
+    if (preset === 'Today') return 'today';
+    if (preset === 'No due') return 'none';
+    return 'tomorrow';
+  }
+
+  function openNextActionEditor() {
+    if (!canEdit || isClosed) return;
+    setNextActionDraft(deal.nextAction || '');
+    setNextDuePreset(getDuePresetFromDate(deal.nextActionDue));
+    setNextDueDate(deal.nextActionDue?.split('T')[0] || '');
+    setSelectedPreset(null);
+    setIsNextActionOpen(true);
+  }
+
+  function closeNextActionEditor() {
+    setNextActionDraft(deal.nextAction || '');
+    setNextDuePreset(getDuePresetFromDate(deal.nextActionDue));
+    setNextDueDate(deal.nextActionDue?.split('T')[0] || '');
+    setSelectedPreset(null);
+    setIsNextActionOpen(false);
+  }
+
+  function setDuePreset(preset: DuePreset) {
+    setNextDuePreset(preset);
+    if (preset !== 'Future date') setNextDueDate(dateFromDuePreset(preset));
+  }
+
+  function saveNextAction() {
+    const value = nextActionDraft.trim();
+    if (!value) {
+      toast.error('Next action is required');
+      return;
+    }
+
+    const payload: Record<string, string | null> = {};
+    if (value !== (deal.nextAction || '')) payload.nextAction = value;
+
+    let dueForSave = '';
+    if (nextDuePreset === 'Future date') {
+      dueForSave = nextDueDate;
+    } else {
+      dueForSave = dateFromDuePreset(nextDuePreset);
+    }
+    const existingDue = deal.nextActionDue?.split('T')[0] || '';
+
+    if (dueForSave !== existingDue) payload.nextActionDue = dueForSave || null;
+    if (Object.keys(payload).length > 0) onUpdate(payload);
+    setIsNextActionOpen(false);
+  }
+
+  function saveQuickNote() {
+    const value = newNoteDraft.trim();
+    if (!value || !canEdit) return;
+    onUpdate({ notes: value });
+    setLocalNotes((prev) => [
+      { id: `local-${Date.now()}`, text: value, at: new Date().toISOString() },
+      ...prev,
+    ]);
+    setNewNoteDraft('');
+    requestAnimationFrame(() => {
+      noteInputRef.current?.focus();
+    });
+  }
+
+  function formatActivityText(event: DealEvent): string {
+    const label = event.eventType.replace(/_/g, ' ');
+    return event.note ? `${label} — ${event.note}` : label;
+  }
 
   return (
-    <div className="deal-tab">
-      {sysStatus && (
-        <div className="dsb">
-          <div className="dsbt">System Status</div>
-          <div className={`status-pill ${sysStatus.cls}`} style={{ display: 'inline-flex' }}>
-            <div className="sp-dot" />
-            <span className="sp-text">{sysStatus.label}</span>
+    <div className="deal-tab dc-tab">
+      {isClosed && (
+        <div className="dc-section">
+          <div className="dc-inline-warning">
+            This deal is currently closed. You can still review notes, activity, and deal details.
           </div>
         </div>
       )}
 
-      <div className="dsb">
-        <div className="dsbt">Deal</div>
-        <div className="sf">
-          <div className="sf-l">Stage</div>
-          <select
-            className="si"
-            value={deal.stage}
-            onChange={(e) => {
-              const nextStage = e.target.value as DealStage;
-              if (nextStage === deal.stage) return;
-              if (nextStage === 'NURTURE' || nextStage === 'CLOSED') {
-                onOpenMoveModal();
-                return;
-              }
-              if (nextStage === 'FUNDED') {
-                onOpenFundedModal();
-                return;
-              }
-              onMove({ stage: nextStage });
-            }}
-            disabled={!canEdit}
-          >
-            {stages.map((s) => (
-              <option key={s} value={s}>
-                {STAGE_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="sf">
-          <div className="sf-l">Deal types</div>
-          <div className="dt-grid">
-            {dealTypeOptions.map((opt) => {
-              const selected = deal.productType === opt.value;
-              return (
-                <div
-                  key={opt.value}
-                  className={clsx('dt-opt', selected && 'sel')}
-                  onClick={() => canEdit && onUpdate({ productType: selected ? null : opt.value })}
+      <div className="dc-section">
+        <div className="dc-sec-title">Next Action</div>
+        <div className="na-box">
+          {!isNextActionOpen && (
+            <button
+              type="button"
+              className="na-collapsed"
+              onClick={openNextActionEditor}
+              disabled={!canEdit || isClosed}
+              style={!canEdit || isClosed ? { cursor: 'default', opacity: 0.75 } : undefined}
+            >
+              <span className={clsx('na-current', !(deal.nextAction || '').trim() && 'empty')}>
+                {(deal.nextAction || '').trim() ? deal.nextAction : 'Tap to set next action'}
+              </span>
+              <span className={clsx('na-due-chip', dueClassName(persistedDueLabel as DuePreset | 'No due'))}>
+                {persistedDueLabel}
+              </span>
+              <span className="na-edit-icon">✎</span>
+            </button>
+          )}
+          <div className={clsx('na-expanded', isNextActionOpen && 'open')}>
+            <div className="preset-label">
+              Quick actions — <span>{STAGE_LABELS[deal.stage]}</span>
+            </div>
+            <div className="preset-row">
+              {stagePresets.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className={clsx('preset', selectedPreset === preset && 'selected')}
+                  onClick={() => {
+                    if (!canEdit) return;
+                    setSelectedPreset(preset);
+                    setNextActionDraft(preset);
+                  }}
                 >
-                  <div className="dt-chk">
-                    {selected ? (
-                      <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                        <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-                      </svg>
-                    ) : (
-                      ''
-                    )}
-                  </div>
-                  <span>{opt.label}</span>
-                </div>
-              );
-            })}
+                  {preset}
+                </button>
+              ))}
+            </div>
+            <div className="na-edit-lbl">Custom / edit</div>
+            <textarea
+              className="na-ta"
+              value={nextActionDraft}
+              onChange={(e) => setNextActionDraft(e.target.value)}
+              placeholder="Or type a custom action..."
+              disabled={!canEdit}
+            />
+            <div className="na-footer">
+              <div className="drow" style={{ marginTop: 0 }}>
+                {dueOptions.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    className={clsx('dbtn', nextDuePreset === opt && 'active')}
+                    onClick={() => setDuePreset(opt)}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button type="button" className="na-cancel" onClick={closeNextActionEditor}>
+                  Cancel
+                </button>
+                <button type="button" className="na-set-btn" onClick={saveNextAction} disabled={!canEdit || isClosed}>
+                  Set Action
+                </button>
+              </div>
+            </div>
+            {nextDuePreset === 'Future date' && (
+              <div className="dc-future-wrap">
+                <input
+                  type="date"
+                  className="si"
+                  value={nextDueDate}
+                  onChange={(e) => setNextDueDate(e.target.value)}
+                  disabled={!canEdit}
+                />
+              </div>
+            )}
           </div>
         </div>
+        <div className="brow">
+          <button type="button" className="bfu" onClick={onOpenFollowUpModal}>
+            📅 Schedule Follow-Up
+          </button>
+          <button type="button" className="blo" onClick={onOpenNQModal}>
+            Lost / NQ / Close
+          </button>
+        </div>
+        {canEdit && (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && (
+          <button type="button" className="dc-inline-action" onClick={onOpenFundedModal}>
+            🎉 Mark as Funded ✓
+          </button>
+        )}
+      </div>
 
-        <div className="sf">
-          <div className="sf-l">
+      <div className="dc-divider" />
+
+      <div className="dc-section">
+        <div className="dc-sec-title">Notes</div>
+        <div className="nwrap">
+          <textarea
+            ref={noteInputRef}
+            className="nta"
+            value={newNoteDraft}
+            onChange={(e) => setNewNoteDraft(e.target.value)}
+            placeholder="Add note... Enter saves · Shift+Enter new line"
+            disabled={!canEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                saveQuickNote();
+              }
+            }}
+          />
+          <button type="button" className="nsave" onClick={saveQuickNote} disabled={!canEdit}>
+            Save
+          </button>
+        </div>
+
+        <div className="nlog">
+          {noteEntries.length > 0 ? (
+            noteEntries.map((entry) => (
+              <div key={entry.id} className="ni">
+                <div className="ndot" style={{ background: '#d4a832' }} />
+                <div>
+                  <div className="ntxt">{entry.text}</div>
+                  <div className="ntm">{new Date(entry.at).toLocaleString('en-US')}</div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="dc-empty-row">No notes yet.</div>
+          )}
+        </div>
+
+        <div className="dc-field-block">
+          <div className="lbl">Client Notes</div>
+          <textarea
+            className="fita dc-client-note"
+            value={clientNoteDraft}
+            onChange={(e) => setClientNoteDraft(e.target.value)}
+            onBlur={() => {
+              if (clientNoteDraft !== (deal.clientNotes || '')) onUpdate({ clientNotes: clientNoteDraft });
+            }}
+            disabled={!canEdit}
+          />
+        </div>
+
+        <div className="rbox">
+          <div className="rbhdr">Recent Activity</div>
+          {recentActivity.length === 0 ? (
+            <div className="dc-empty-row">No activity yet.</div>
+          ) : (
+            recentActivity.map((event) => (
+              <div key={event.id} className="ri">
+                <div className="rdot" />
+                <div>
+                  <div className="rtxt">{formatActivityText(event)}</div>
+                  <div className="rtm">{new Date(event.createdAt).toLocaleString('en-US')}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="dc-divider" />
+
+      <div className="dc-section">
+        <div className="dc-sec-title">Deal Details</div>
+        <div className="lbl" style={{ marginBottom: 5 }}>
+          Deal Type
+        </div>
+        <div className="pr">
+          {dealTypeOptions.map((opt) => {
+            const selected = deal.productType === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                className={clsx('pill', selected && 'on')}
+                onClick={() => canEdit && onUpdate({ productType: selected ? null : opt.value })}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="lbl" style={{ marginTop: 10, marginBottom: 5 }}>
+          Monthly Revenue
+        </div>
+        <div className="pr">
+          {revenueRanges.map((range) => (
+            <button
+              key={range}
+              type="button"
+              className={clsx('pill', clientRevenue === range && 'on')}
+              onClick={() => saveClientMeta({ monthlyRevenue: range })}
+            >
+              {range}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <div className="lbl" style={{ marginBottom: 4 }}>
             {amountLabel}
-            {deal.stage === 'SUBMITTED_IN_REVIEW' && isSubmittedProduct ? (
-              <span style={{ color: 'var(--text3)', fontSize: 9 }}> · shown in Submitted total</span>
-            ) : null}
           </div>
           <input
             type="number"
-            className="si"
+            className="fi"
             value={amountDraft}
             onChange={(e) => setAmountDraft(e.target.value)}
             onBlur={() => {
@@ -691,406 +1028,171 @@ function DealClientTab({
           />
         </div>
 
-        <div className="sf">
-          <div className="sf-l">
-            Ownership{' '}
-            {!isAdmin && !isPrimaryRep && (
-              <span style={{ fontSize: 9, color: 'var(--text3)' }}>(primary rep or admin)</span>
-            )}
+        {deal.productType === 'HELOC' && (deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'FUNDED') && (
+          <div className="dc-inline-warning" style={{ marginTop: 10 }}>
+            ⚠ HELOC — 3-Day Right of Rescission. Do not disburse funds until the legal rescission window expires.
           </div>
-          <RepOwnershipSection deal={deal} isAdmin={isAdmin} onShare={onShare} onUpdate={onUpdate} />
-        </div>
+        )}
       </div>
 
-      {!isClosed && (
-        <div className="dsb">
-          <div className="dsbt">
-            <span>Lender Offers ({offers.length})</span>
-            <button className="dsbt-action" onClick={onAddOffer}>
+      <div className="dc-divider" />
+
+      <div className="dc-section">
+        <div className="dc-sec-title">
+          <span>Lender Offers ({offers.length})</span>
+          {!isClosed && (
+            <button className="dc-link-action" type="button" onClick={onAddOffer}>
               + Add offer
             </button>
-          </div>
-          {offers.length > 0 ? (
-            <div className="offer-list">
-              {offers.map((offer) => (
-                <div key={offer.id} className={clsx('offer-item', offer.isAccepted && 'selected-offer')}>
-                  <div className="oi-left">
-                    <div className="oi-lender">{offer.lenderName}</div>
-                    <div className="oi-detail">{offer.terms || offer.productType || '—'}</div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    <div className="oi-amount">{formatCurrency(offer.amount)}</div>
-                    {offer.isAccepted ? <span style={{ fontSize: 9, color: 'var(--good)' }}>✓ Accepted</span> : null}
-                    {canDeleteOffer && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Delete offer from "${offer.lenderName}"?`)) onDeleteOffer(offer.id);
-                        }}
-                        disabled={deletingOfferId === offer.id}
-                        style={{
-                          border: '1px solid var(--urgent-b)',
-                          background: 'var(--urgent-bg)',
-                          color: 'var(--urgent)',
-                          borderRadius: 6,
-                          fontSize: 10,
-                          padding: '2px 6px',
-                          cursor: deletingOfferId === offer.id ? 'not-allowed' : 'pointer',
-                          opacity: deletingOfferId === offer.id ? 0.7 : 1,
-                        }}
-                      >
-                        {deletingOfferId === offer.id ? 'Deleting…' : 'Delete'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: 'var(--text3)', padding: '4px 0 8px' }}>
-              No offers yet. {deal.appSubmitted ? 'Awaiting lender response.' : 'Submit app to start receiving offers.'}
-            </div>
           )}
-          <button className="add-offer-btn" onClick={onAddOffer}>
-            + Record lender offer
-          </button>
         </div>
-      )}
-
-      <div className="dsb">
-        <div className="dsbt">
-          Client Info
-          {clientBusiness ? (
-            <span
-              style={{ color: 'var(--good)', fontWeight: 400, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}
-            >
-              · {clientBusiness}
-            </span>
-          ) : null}
-        </div>
-        <div className="sf">
-          <div className="sf-l">Monthly revenue</div>
-          <div className="rev-grid">
-            {revenueRanges.map((range) => (
-              <div
-                key={range}
-                className={clsx('rev-opt', clientRevenue === range && 'sel')}
-                onClick={() => saveClientMeta({ monthlyRevenue: range })}
-              >
-                {range}
+        {offers.length > 0 ? (
+          <div className="offer-list">
+            {offers.map((offer) => (
+              <div key={offer.id} className={clsx('offer-item', offer.isAccepted && 'selected-offer')}>
+                <div className="oi-left">
+                  <div className="oi-lender">{offer.lenderName}</div>
+                  <div className="oi-detail">{offer.terms || offer.productType || '—'}</div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <div className="oi-amount">{formatCurrency(offer.amount)}</div>
+                  {offer.isAccepted ? <span style={{ fontSize: 9, color: 'var(--good)' }}>✓ Accepted</span> : null}
+                  {canDeleteOffer && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Delete offer from "${offer.lenderName}"?`)) onDeleteOffer(offer.id);
+                      }}
+                      disabled={deletingOfferId === offer.id}
+                      style={{
+                        border: '1px solid var(--urgent-b)',
+                        background: 'var(--urgent-bg)',
+                        color: 'var(--urgent)',
+                        borderRadius: 6,
+                        fontSize: 10,
+                        padding: '2px 6px',
+                        cursor: deletingOfferId === offer.id ? 'not-allowed' : 'pointer',
+                        opacity: deletingOfferId === offer.id ? 0.7 : 1,
+                      }}
+                    >
+                      {deletingOfferId === offer.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
-        </div>
-        <div className="sf">
-          <div className="sf-l">Source</div>
-          <div className="src-row">
-            {smsSource ? (
-              <span className="src-chip sel" style={{ cursor: 'default' }}>
-                {smsSource}
-              </span>
-            ) : (
-              sourceOptions.map((src) => (
-                <button
-                  key={src}
-                  type="button"
-                  className={clsx('src-chip', clientSource === src && 'sel')}
-                  onClick={() => saveClientMeta({ source: src })}
-                >
-                  {src}
-                </button>
-              ))
-            )}
+        ) : (
+          <div className="dc-empty-row">
+            No offers yet. {deal.appSubmitted ? 'Awaiting lender response.' : 'Submit app to start receiving offers.'}
           </div>
-        </div>
-        <div className="sf">
-          <div className="sf-l">Phone</div>
-          <input
-            className="si"
-            value={clientPhone}
-            onChange={(e) => saveClientMeta({ phone: e.target.value })}
-            placeholder="(555) 000-0000"
-            disabled={!canEdit}
-          />
-        </div>
-        <div className="sf">
-          <div className="sf-l" style={{ color: 'var(--info)' }}>
-            ✉ Email
-          </div>
-          <input
-            className="si"
-            value={clientEmail}
-            onChange={(e) => saveClientMeta({ email: e.target.value })}
-            placeholder="email@company.com"
-            disabled={!canEdit}
-          />
-        </div>
-        <div className="sf">
-          <div className="sf-l">Business</div>
-          <input
-            className="si"
-            value={clientBusiness}
-            onChange={(e) => saveClientMeta({ businessName: e.target.value })}
-            onBlur={(e) => {
-              const nextBusiness = e.target.value.trim();
-              const currentBusiness = (deal.client?.businessName || '').trim();
-              if (nextBusiness !== currentBusiness) {
-                onUpdate({ clientUpdate: { businessName: nextBusiness } });
-              }
-            }}
-            placeholder="Business name"
-            disabled={!canEdit}
-          />
-        </div>
+        )}
+        {!isClosed && (
+          <button className="blndr" onClick={onAddOffer}>
+            + Record lender offer
+          </button>
+        )}
+        {isFunded && fundingEvent && (
+          <button className="dc-inline-action" type="button" onClick={() => onEditFundEvent(fundingEvent.id)}>
+            Edit funded details
+          </button>
+        )}
       </div>
 
-      {/* Scheduled Follow-Up section for NURTURE deals */}
-      {deal.stage === 'NURTURE' && deal.followUpType && (
-        <div className="dsb">
-          <div className="dsbt">
-            Scheduled Follow-Up
-            <button className="dsbt-action" onClick={onOpenFollowUpModal}>
-              Edit
-            </button>
-          </div>
-          <div style={{ background: 'var(--bg4)', borderRadius: 7, padding: '8px 10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <span className={`q-reason-pill qr-${deal.followUpType}`}>
-                {deal.followUpType === 'renewal'
-                  ? '♻️ Renewal'
-                  : deal.followUpType === 'reengage'
-                    ? '↩ Re-engage'
-                    : deal.followUpType === 'timing'
-                      ? '⏰ Check Timing'
-                      : deal.followUpType === 'nurture'
-                        ? '🌱 Nurture'
-                        : deal.followUpType === 'statement'
-                          ? '📄 Statement'
-                          : deal.followUpType}
-              </span>
-              {deal.followUpDate && (
-                <span className={`q-due ${new Date(deal.followUpDate) < new Date() ? 'qd-overdue' : 'qd-ok'}`}>
-                  Due{' '}
-                  {new Date(deal.followUpDate).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </span>
-              )}
-            </div>
-            {deal.externalFundedDate && (
-              <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 3 }}>
-                External funded:{' '}
-                {new Date(deal.externalFundedDate).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}{' '}
-                · {Math.round((new Date().getTime() - new Date(deal.externalFundedDate).getTime()) / 86400000)}d ago
-              </div>
-            )}
-            {deal.followUpNote && <div style={{ fontSize: 10, color: 'var(--text2)' }}>{deal.followUpNote}</div>}
-          </div>
-        </div>
-      )}
+      <div className="dc-divider" />
 
-      {isFunded && fundingEvent && (
-        <div className="dsb">
-          <div className="dsbt">
-            Funded Details
-            <button className="dsbt-action" onClick={() => onEditFundEvent(fundingEvent.id)}>
-              Edit
-            </button>
-          </div>
-          <div className="sf-row">
-            <div className="sf">
-              <div className="sf-l">Amount</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--good)' }}>
-                {formatCurrency(fundingEvent.amountFunded)}
-              </div>
-            </div>
-            <div className="sf">
-              <div className="sf-l">Funder</div>
-              <div style={{ fontSize: 12 }}>{fundingEvent.lender || '—'}</div>
-            </div>
-            <div className="sf">
-              <div className="sf-l">Product</div>
-              <div style={{ fontSize: 12 }}>{fundingEvent.productType || deal.productType || '—'}</div>
-            </div>
-            <div className="sf">
-              <div className="sf-l">Funded date</div>
-              <div style={{ fontSize: 12 }}>
-                {fundingEvent.fundedDate ? new Date(fundingEvent.fundedDate).toLocaleDateString('en-US') : '—'}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!isClosed && (
-        <div className="dsb">
-          <div className="dsbt">Next Action</div>
-          <div className="sf">
-            <div className="sf-l">Action</div>
+      <div className="dc-section">
+        <div className="dc-sec-title">Client Info</div>
+        <div className="dc-client-grid">
+          <div>
+            <div className="lbl">Phone</div>
             <input
-              className="si"
-              value={nextActionDraft}
-              onChange={(e) => setNextActionDraft(e.target.value)}
-              onBlur={() => {
-                if (nextActionDraft !== (deal.nextAction || '')) onUpdate({ nextAction: nextActionDraft });
-              }}
-              placeholder="e.g. Present offer, Follow up..."
+              className="fi"
+              value={clientPhone}
+              onChange={(e) => saveClientMeta({ phone: e.target.value }, true)}
+              placeholder="(555) 000-0000"
               disabled={!canEdit}
             />
           </div>
-          <div className="sf">
-            <div className="sf-l">Due</div>
-            <div className="due-row">
-              {(['Overdue', 'Today', 'Tomorrow', 'This week', 'Future date'] as const).map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  className={clsx('due-chip', duePreset === opt && 'sel')}
-                  onClick={() => applyDuePreset(opt)}
-                >
-                  {opt}
-                </button>
-              ))}
-            </div>
-            <div className={clsx('dp-wrap', showFutureDate && 'show')}>
-              <input
-                type="date"
-                className="dp-inp"
-                value={exactDueDate}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setExactDueDate(v);
-                  setShowFutureDate(true);
-                  onUpdate({ nextActionDue: v || null });
-                }}
-              />
-            </div>
+          <div>
+            <div className="lbl">Email</div>
+            <input
+              className="fi"
+              value={clientEmail}
+              onChange={(e) => saveClientMeta({ email: e.target.value }, true)}
+              placeholder="email@company.com"
+              disabled={!canEdit}
+            />
+          </div>
+          <div className="dc-grid-full">
+            <div className="lbl">Business Name</div>
+            <input
+              className="fi"
+              value={clientBusiness}
+              onChange={(e) => saveClientMeta({ businessName: e.target.value })}
+              onBlur={(e) => {
+                const nextBusiness = e.target.value.trim();
+                const currentBusiness = (deal.client?.businessName || '').trim();
+                if (nextBusiness !== currentBusiness) onUpdate({ clientUpdate: { businessName: nextBusiness } });
+              }}
+              placeholder="Business name"
+              disabled={!canEdit}
+            />
           </div>
         </div>
-      )}
-
-      {/* HELOC Rescission Window Notice (legal requirement) */}
-      {deal.productType === 'HELOC' && (deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'FUNDED') && (
-        <div className="dsb" style={{ background: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.3)' }}>
-          <div
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#fbbf24', fontWeight: 600 }}
-          >
-            ⚠️ HELOC — 3-Day Right of Rescission
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
-            Federal law (Reg Z) gives borrowers 3 business days after closing to cancel a HELOC. Do not disburse funds
-            until the rescission window has expired.
-          </div>
-        </div>
-      )}
-
-      {/* Admin unlock for closed deals */}
-      {isClosed && isAdmin && (
-        <div className="dsb" style={{ background: 'rgba(99,102,241,0.08)', borderColor: 'rgba(99,102,241,0.3)' }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>
-            🔒 This deal is closed. As admin, you can reopen it.
-          </div>
-          <button
-            className="act-btn"
-            style={{ background: 'rgba(99,102,241,0.15)', borderColor: 'rgba(99,102,241,0.4)', color: '#818cf8' }}
-            onClick={() => onMove({ stage: 'ENGAGED_INTERESTED' })}
-          >
-            🔓 Reopen Deal → Engaged
-          </button>
-        </div>
-      )}
-
-      {canEdit && !isClosed && (
-        <div className="dsb">
-          <div className="dsbt">Actions</div>
-          {deal.stage === 'APPROVED_OFFERS' && (
-            <button
-              className="act-btn"
-              style={{ background: 'var(--good-bg)', borderColor: 'var(--good-b)', color: 'var(--good)' }}
-              onClick={() => onMove({ stage: 'COMMITTED_FUNDING' })}
-            >
-              ✅ Client Accepted Terms → Committed
-            </button>
-          )}
-          {(deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'APPROVED_OFFERS') && (
-            <button className="act-btn act-funded" onClick={onOpenFundedModal}>
-              🎉 Mark as Funded ✓
-            </button>
-          )}
-          <button
-            className="act-btn"
-            style={{ background: 'var(--info-bg)', borderColor: 'var(--info-b)', color: 'var(--info)' }}
-            onClick={onOpenFollowUpModal}
-          >
-            📅 Schedule Follow-Up
-          </button>
-          <button className="act-btn act-nq" onClick={onOpenNQModal}>
-            Lost / NQ / Close Deal
-          </button>
-        </div>
-      )}
-
-      <div className="dsb">
-        <div className="dsbt">Notes</div>
-        <textarea
-          className="note-box"
-          value={noteDraft}
-          onChange={(e) => setNoteDraft(e.target.value)}
-          onBlur={() => {
-            if (noteDraft !== (deal.notes || '')) onUpdate({ notes: noteDraft });
-          }}
-          disabled={!canEdit}
-          placeholder="Add notes..."
-        />
-        <div className="sf-l" style={{ marginTop: 8 }}>
-          Client notes
-        </div>
-        <textarea
-          className="note-box"
-          value={clientNoteDraft}
-          onChange={(e) => setClientNoteDraft(e.target.value)}
-          onBlur={() => {
-            if (clientNoteDraft !== (deal.clientNotes || '')) onUpdate({ clientNotes: clientNoteDraft });
-          }}
-          disabled={!canEdit}
-          placeholder="Notes about the client relationship..."
-        />
       </div>
 
-      <div className="dsb">
-        <div className="dsbt">Activity</div>
-        {(deal.dealEvents || []).length === 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>No activity yet.</div>
+      <div className="dc-divider" />
+
+      <div className="dc-section">
+        <div className="dc-sec-title">Source</div>
+        <div className="src-row">
+          {sourceOptions.map((src) => (
+            <button
+              key={src}
+              type="button"
+              className={clsx('sbtn', sourceType === src && 'on')}
+              onClick={() => saveClientMeta({ source: src })}
+            >
+              {src}
+            </button>
+          ))}
+        </div>
+        <div className="dc-field-block">
+          <div className="lbl">Lead Source / Leadsheet</div>
+          <input
+            className="fi"
+            value={leadSource}
+            onChange={(e) => saveClientMeta({ leadSource: e.target.value })}
+            placeholder="e.g. April Cold List, Q1 RE List"
+            disabled={!canEdit && !smsCampaignSource}
+          />
+        </div>
+      </div>
+
+      <div className="dc-divider" />
+
+      <div className="dc-section">
+        <div className="dc-sec-title">Ownership</div>
+        <RepOwnershipSection deal={deal} isAdmin={isAdmin} onShare={onShare} onUpdate={onUpdate} />
+      </div>
+
+      <div className="dc-divider" />
+
+      <div className="dc-section">
+        <div className="dc-sec-title">Full Activity</div>
+        {sortedEvents.length === 0 ? (
+          <div className="dc-empty-row">No activity yet.</div>
         ) : (
-          (deal.dealEvents || []).slice(0, 8).map((event) => {
-            const type = event.eventType?.toLowerCase() || '';
-            let dotColor = 'var(--text3)';
-            if (type.includes('funded') || type.includes('offer')) dotColor = 'var(--good)';
-            else if (type.includes('submit') || type.includes('app')) dotColor = 'var(--watch)';
-            else if (type.includes('stage') || type.includes('move') || type.includes('created'))
-              dotColor = 'var(--gold)';
-            else if (type.includes('sms') || type.includes('reply') || type.includes('message'))
-              dotColor = 'var(--info)';
-            else if (type.includes('action') || type.includes('complete')) dotColor = 'var(--good)';
-            return (
-              <div key={event.id} className="tl-item">
-                <div className="tl-dot" style={{ background: dotColor }} />
-                <div>
-                  <div className="tl-text">
-                    {event.eventType.replace(/_/g, ' ')}
-                    {event.note ? ` — ${event.note}` : ''}
-                  </div>
-                  <div className="tl-time">{new Date(event.createdAt).toLocaleString('en-US')}</div>
-                </div>
+          sortedEvents.map((event) => (
+            <div key={event.id} className="ai">
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#d4a832', marginTop: 4 }} />
+              <div>
+                <div className="atxt">{formatActivityText(event)}</div>
+                <div className="atm">{new Date(event.createdAt).toLocaleString('en-US')}</div>
               </div>
-            );
-          })
+            </div>
+          ))
         )}
       </div>
     </div>
@@ -2410,8 +2512,6 @@ function RepOwnershipSection({
     ...basePool,
     ...activeReps.filter((r) => requiredIds.has(r.id) && !basePool.some((b) => b.id === r.id)),
   ].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
-  const primary = allReps.find((r) => r.id === deal.assignedRepId);
-  const assists = allReps.filter((r) => assistIds.includes(r.id));
 
   function setPrimary(repId: string) {
     if (!isAdmin || repId === deal.assignedRepId) return;
@@ -2426,85 +2526,49 @@ function RepOwnershipSection({
 
   return (
     <>
-      <div className="own-row">
-        <span className="own-label pl">Primary</span>
-        {allReps.map((r) => {
-          const isSel = r.id === deal.assignedRepId;
-          return (
-            <div
-              key={r.id}
-              className={clsx('own-rep-chip', isSel && 'sel-primary')}
-              onClick={() => setPrimary(r.id)}
-              style={!isAdmin ? { cursor: 'default', opacity: 0.6 } : undefined}
-              title={`${r.firstName} ${r.lastName}${isSel ? ' (primary)' : ''}`}
-            >
-              <div
-                className="av"
-                style={{
-                  background: `${r.avatarColor || '#6366f1'}2e`,
-                  color: r.avatarColor || '#6366f1',
-                  width: 16,
-                  height: 16,
-                  fontSize: 7,
-                }}
+      <div className="dc-own-wrap">
+        <div className="dc-own-row">
+          <span className="dc-own-label">Primary</span>
+          {allReps.map((r) => {
+            const isSel = r.id === deal.assignedRepId;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                className={clsx('dc-own-avatar', isSel && 'pri')}
+                onClick={() => setPrimary(r.id)}
+                disabled={!isAdmin}
+                title={`${r.firstName} ${r.lastName}${isSel ? ' (primary)' : ''}`}
               >
                 {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
-              </div>
-              {r.firstName}
-              {isSel && <span style={{ fontSize: 9, opacity: 0.7 }}>✓</span>}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="own-row">
-        <span className="own-label al">
-          Assist
-          {!canManageAssists && (
-            <span style={{ fontSize: 8, color: 'var(--text3)', marginLeft: 3 }}>(primary rep or admin)</span>
-          )}
-        </span>
-        {allReps
-          .filter((r) => r.id !== deal.assignedRepId)
-          .map((r) => {
-            const isAssisting = assistIds.includes(r.id);
-            return (
-              <div
-                key={r.id}
-                className={clsx('own-rep-chip', isAssisting && 'sel-assist')}
-                onClick={() => toggleAssist(r.id)}
-                style={!canManageAssists ? { cursor: 'default', opacity: 0.6 } : undefined}
-                title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ' — click to add'}`}
-              >
-                <div
-                  className="av"
-                  style={{
-                    background: `${r.avatarColor || '#6366f1'}2e`,
-                    color: r.avatarColor || '#6366f1',
-                    width: 16,
-                    height: 16,
-                    fontSize: 7,
-                  }}
-                >
-                  {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
-                </div>
-                {r.firstName}
-                {isAssisting ? (
-                  <span style={{ fontSize: 9, opacity: 0.7 }}>✓</span>
-                ) : (
-                  <span style={{ fontSize: 9, color: 'var(--text3)' }}>+</span>
-                )}
-              </div>
+              </button>
             );
           })}
-        {assists.length === 0 && <span style={{ fontSize: 9, color: 'var(--text3)' }}>None — click rep to add</span>}
-      </div>
-
-      {assists.length > 0 && primary && (
-        <div style={{ fontSize: 10, color: 'var(--info)', marginTop: 3 }}>
-          👥 Shared with {assists.map((r) => r.firstName).join(', ')}. Primary owner: {primary.firstName}.
         </div>
-      )}
+
+        <div className="dc-own-row">
+          <span className="dc-own-label">
+            Assist
+          </span>
+          {allReps
+            .filter((r) => r.id !== deal.assignedRepId)
+            .map((r) => {
+              const isAssisting = assistIds.includes(r.id);
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  className={clsx('dc-own-avatar', isAssisting && 'asc')}
+                  onClick={() => toggleAssist(r.id)}
+                  disabled={!canManageAssists}
+                  title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ''}`}
+                >
+                  {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
+                </button>
+              );
+            })}
+        </div>
+      </div>
     </>
   );
 }

@@ -31,11 +31,16 @@ export class InboxController {
     'in_pipeline',
     'dnc',
   ];
-  private static readonly SORT_KEYS: InboxSort[] = [
-    'newest_activity',
-    'oldest_untouched',
-    'unread_first',
-    'hot_first',
+  private static readonly SORT_KEYS: InboxSort[] = ['newest_activity', 'oldest_untouched', 'unread_first', 'hot_first'];
+  private static readonly OPT_OUT_KEYWORDS = [
+    'stop',
+    'stopall',
+    'unsubscribe',
+    'cancel',
+    'end',
+    'quit',
+    'opt out',
+    'optout',
   ];
 
   private static resolveFilter(raw: unknown): InboxFilter {
@@ -58,7 +63,10 @@ export class InboxController {
         return { emailReceived: true };
       case 'interested':
         return {
-          OR: [{ leadStatus: 'Interested' }, { lead: { status: { in: ['INTERESTED', 'DOCS_REQUESTED', 'SUBMITTED'] } } }],
+          OR: [
+            { leadStatus: 'Interested' },
+            { lead: { status: { in: ['INTERESTED', 'DOCS_REQUESTED', 'SUBMITTED'] } } },
+          ],
         };
       case 'followup':
         return { nextFollowupAt: { not: null } };
@@ -72,7 +80,14 @@ export class InboxController {
           },
         };
       case 'dnc':
-        return { OR: [{ leadStatus: 'DNC' }, { lead: { status: 'DNC' } }] };
+        return {
+          OR: [
+            { leadStatus: 'DNC' },
+            { lead: { status: 'DNC' } },
+            { lead: { optedOut: true } },
+            InboxController.optOutOnlyCondition(),
+          ],
+        };
       case 'all':
       default:
         return null;
@@ -94,9 +109,80 @@ export class InboxController {
   }
 
   private static normalizeDealStage(raw: unknown): string {
-    const value = String(raw || '').toUpperCase().trim();
+    const value = String(raw || '')
+      .toUpperCase()
+      .trim();
     if (value && DEAL_STAGE_LABELS[value]) return value;
     return 'NEW_LEAD';
+  }
+
+  private static optOutBodyConditions(): Array<any> {
+    return InboxController.OPT_OUT_KEYWORDS.map((keyword) => ({
+      body: {
+        contains: keyword,
+        mode: 'insensitive',
+      },
+    }));
+  }
+
+  private static inboundAnyCondition(): any {
+    return {
+      messages: {
+        some: {
+          direction: 'INBOUND',
+        },
+      },
+    };
+  }
+
+  private static inboundNonOptOutCondition(): any {
+    return {
+      messages: {
+        some: {
+          direction: 'INBOUND',
+          NOT: {
+            OR: InboxController.optOutBodyConditions(),
+          },
+        },
+      },
+    };
+  }
+
+  private static optOutOnlyCondition(): any {
+    return {
+      AND: [
+        InboxController.inboundAnyCondition(),
+        {
+          NOT: InboxController.inboundNonOptOutCondition(),
+        },
+      ],
+    };
+  }
+
+  private static async resolveSmsSource(
+    conversationId: string,
+    leadId: string,
+    leadSource?: string | null,
+  ): Promise<string> {
+    const [campaignLead, campaignMessage] = await Promise.all([
+      prisma.campaignLead.findFirst({
+        where: { leadId },
+        orderBy: { createdAt: 'desc' },
+        include: { campaign: { select: { name: true } } },
+      }),
+      prisma.message.findFirst({
+        where: {
+          conversationId,
+          campaignId: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { campaign: { select: { name: true } } },
+      }),
+    ]);
+
+    const campaignName = campaignLead?.campaign?.name?.trim() || campaignMessage?.campaign?.name?.trim() || '';
+    const fallback = (leadSource || '').trim();
+    return campaignName || fallback || 'Inbox';
   }
 
   private static withConditions(baseWhere: any, extraConditions: any[]): any {
@@ -107,9 +193,13 @@ export class InboxController {
     };
   }
 
-  private static async enrichFromNumberFields<T extends { twilioNumber?: any; stickyNumber?: any; messages?: any[]; deals?: any[]; unreadCount?: number }>(
+  private static async enrichFromNumberFields<
+    T extends { twilioNumber?: any; stickyNumber?: any; messages?: any[]; deals?: any[]; unreadCount?: number },
+  >(
     conversations: T[],
-  ): Promise<Array<T & { fromNumber: string; fromNumberFriendlyName: string | null; isInPipeline: boolean; unreadDot: boolean }>> {
+  ): Promise<
+    Array<T & { fromNumber: string; fromNumberFriendlyName: string | null; isInPipeline: boolean; unreadDot: boolean }>
+  > {
     const candidateNumbers = new Set<string>();
     for (const conv of conversations) {
       const lastMessage = conv.messages?.[0];
@@ -151,7 +241,15 @@ export class InboxController {
   }
 
   static async listConversations(req: AuthRequest, res: Response): Promise<void> {
-    const { page = '1', limit = '50', search, unreadOnly, filter = 'all', sort, withFilterCounts = 'false' } = req.query;
+    const {
+      page = '1',
+      limit = '50',
+      search,
+      unreadOnly,
+      filter = 'all',
+      sort,
+      withFilterCounts = 'false',
+    } = req.query;
     const parsedPage = Math.max(parseInt(page as string, 10) || 1, 1);
     const parsedLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 100);
     const skip = (parsedPage - 1) * parsedLimit;
@@ -170,6 +268,9 @@ export class InboxController {
 
     const listConditions: any[] = [];
     if (unreadOnly === 'true') listConditions.push({ unreadCount: { gt: 0 } });
+    listConditions.push(
+      normalizedFilter === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition(),
+    );
     const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter, req);
     if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
 
@@ -275,7 +376,12 @@ export class InboxController {
             const counts = await Promise.all(
               InboxController.FILTER_KEYS.map(async (key) => {
                 const condition = InboxController.buildFilterCondition(key, req);
-                const scopedWhere = InboxController.withConditions(baseWithSearch, condition ? [condition] : []);
+                const visibilityCondition =
+                  key === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition();
+                const scopedWhere = InboxController.withConditions(
+                  baseWithSearch,
+                  condition ? [visibilityCondition, condition] : [visibilityCondition],
+                );
                 const count = await prisma.conversation.count({ where: scopedWhere });
                 return [key, count] as const;
               }),
@@ -372,58 +478,71 @@ export class InboxController {
       },
     });
 
-    const [totalMessages, latestCampaignLead, latestTemplateUse, notes, activityMessages, pipelineDeals, scheduled] =
-      await Promise.all([
-        prisma.message.count({ where: { conversationId: id } }),
-        prisma.campaignLead.findFirst({
-          where: { leadId: conversation.leadId },
-          orderBy: { createdAt: 'desc' },
-          include: { campaign: { select: { name: true } } },
-        }),
-        prisma.smsTemplateUsageLog.findFirst({
-          where: { conversationId: id },
-          orderBy: { usedAt: 'desc' },
-          include: { template: { select: { name: true } } },
-        }),
-        prisma.conversationNote.findMany({
-          where: { conversationId: id },
-          orderBy: { createdAt: 'desc' },
-          take: 40,
-          select: { id: true, createdAt: true, createdById: true, body: true },
-        }),
-        prisma.message.findMany({
-          where: { conversationId: id },
-          orderBy: { createdAt: 'desc' },
-          take: 80,
-          select: {
-            id: true,
-            direction: true,
-            body: true,
-            status: true,
-            sentAt: true,
-            createdAt: true,
-          },
-        }),
-        prisma.deal.findMany({
-          where: { smsConversationId: id },
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-          select: {
-            id: true,
-            stage: true,
-            stageLabel: true,
-            createdAt: true,
-            assignedRepId: true,
-            assignedRep: { select: { firstName: true, lastName: true } },
-          },
-        }),
-        prisma.scheduledMessage.findMany({
-          where: { conversationId: id, status: 'PENDING' },
-          orderBy: { scheduledAt: 'asc' },
-          take: 20,
-          select: { id: true, scheduledAt: true, body: true, createdById: true },
-        }),
-      ]);
+    const [
+      totalMessages,
+      latestCampaignLead,
+      latestCampaignMessage,
+      latestTemplateUse,
+      notes,
+      activityMessages,
+      pipelineDeals,
+      scheduled,
+    ] = await Promise.all([
+      prisma.message.count({ where: { conversationId: id } }),
+      prisma.campaignLead.findFirst({
+        where: { leadId: conversation.leadId },
+        orderBy: { createdAt: 'desc' },
+        include: { campaign: { select: { name: true } } },
+      }),
+      prisma.message.findFirst({
+        where: { conversationId: id, campaignId: { not: null } },
+        orderBy: { createdAt: 'desc' },
+        include: { campaign: { select: { name: true } } },
+      }),
+      prisma.smsTemplateUsageLog.findFirst({
+        where: { conversationId: id },
+        orderBy: { usedAt: 'desc' },
+        include: { template: { select: { name: true } } },
+      }),
+      prisma.conversationNote.findMany({
+        where: { conversationId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 40,
+        select: { id: true, createdAt: true, createdById: true, body: true },
+      }),
+      prisma.message.findMany({
+        where: { conversationId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 80,
+        select: {
+          id: true,
+          direction: true,
+          body: true,
+          status: true,
+          sentAt: true,
+          createdAt: true,
+        },
+      }),
+      prisma.deal.findMany({
+        where: { smsConversationId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          stage: true,
+          stageLabel: true,
+          createdAt: true,
+          assignedRepId: true,
+          assignedRep: { select: { firstName: true, lastName: true } },
+        },
+      }),
+      prisma.scheduledMessage.findMany({
+        where: { conversationId: id, status: 'PENDING' },
+        orderBy: { scheduledAt: 'asc' },
+        take: 20,
+        select: { id: true, scheduledAt: true, body: true, createdById: true },
+      }),
+    ]);
 
     const noteAuthorIds = Array.from(new Set(notes.map((n) => n.createdById).filter(Boolean)));
     const noteAuthors =
@@ -447,7 +566,8 @@ export class InboxController {
           : messageForFrom.toNumber
         : '') ||
       '';
-    let fromNumberFriendlyName = conversation.twilioNumber?.friendlyName || conversation.stickyNumber?.friendlyName || null;
+    let fromNumberFriendlyName =
+      conversation.twilioNumber?.friendlyName || conversation.stickyNumber?.friendlyName || null;
 
     if (fromNumber && !fromNumberFriendlyName) {
       const fallback = await prisma.phoneNumber.findUnique({
@@ -468,7 +588,8 @@ export class InboxController {
       }
     }
 
-    const sourceName = latestCampaignLead?.campaign?.name || conversation.lead.source || '';
+    const sourceName =
+      latestCampaignLead?.campaign?.name || latestCampaignMessage?.campaign?.name || conversation.lead.source || '';
     const latestSmsDeal = conversation.deals.find((d) => d.createdFromSms) || conversation.deals[0] || null;
     const statusStrip = {
       hotLead: !!conversation.hotLead,
@@ -852,14 +973,66 @@ export class InboxController {
     const conversation = await prisma.conversation.findUnique({ where: { id } });
     if (!conversation) throw new AppError('Conversation not found', 404);
 
-    const note = await prisma.conversationNote.create({
-      data: {
-        conversationId: id,
-        body,
-        dealId: dealId || null,
-        createdById: req.user!.id,
-      },
-    });
+    const normalizedBody = String(body || '').trim();
+    if (!normalizedBody) throw new AppError('Note body is required', 400);
+
+    const explicitDeal =
+      dealId && typeof dealId === 'string'
+        ? await prisma.deal.findFirst({
+            where: {
+              id: dealId,
+              smsConversationId: id,
+            },
+            select: { id: true, notes: true },
+          })
+        : null;
+
+    const linkedSmsDeal =
+      explicitDeal ||
+      (await prisma.deal.findFirst({
+        where: { smsConversationId: id, createdFromSms: true },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, notes: true },
+      }));
+
+    const syncLine = `[Inbox ${new Date().toISOString()}] ${normalizedBody}`;
+    const nextDealNotes = linkedSmsDeal
+      ? linkedSmsDeal.notes
+        ? `${linkedSmsDeal.notes.trim()}\n${syncLine}`.trim()
+        : syncLine
+      : null;
+
+    const txOps: any[] = [
+      prisma.conversationNote.create({
+        data: {
+          conversationId: id,
+          body: normalizedBody,
+          dealId: linkedSmsDeal?.id || null,
+          createdById: req.user!.id,
+        },
+      }),
+    ];
+
+    if (linkedSmsDeal && nextDealNotes) {
+      txOps.push(
+        prisma.deal.update({
+          where: { id: linkedSmsDeal.id },
+          data: { notes: nextDealNotes },
+        }),
+      );
+      txOps.push(
+        prisma.dealEvent.create({
+          data: {
+            dealId: linkedSmsDeal.id,
+            repId: req.user!.id,
+            eventType: 'note_added',
+            note: `Inbox note synced · ${normalizedBody.slice(0, 80)}`,
+          },
+        }),
+      );
+    }
+
+    const [note] = await prisma.$transaction(txOps);
 
     res.status(201).json({ note });
   }
@@ -1120,7 +1293,10 @@ export class InboxController {
         : null);
 
     if (!senderNumber) {
-      senderNumber = await NumberService.getStickyNumber(conversation.lead.phone, conversation.assignedRepId || req.user!.id);
+      senderNumber = await NumberService.getStickyNumber(
+        conversation.lead.phone,
+        conversation.assignedRepId || req.user!.id,
+      );
     }
     if (!senderNumber) {
       throw new AppError('No sender number available for this conversation', 400);
@@ -1205,14 +1381,21 @@ export class InboxController {
       });
     }
 
-    const latestCampaignLead = await prisma.campaignLead.findFirst({
-      where: { leadId: conversation.leadId },
-      orderBy: { createdAt: 'desc' },
-      include: { campaign: { select: { name: true } } },
-    });
-    const leadSource = (conversation.lead.source || '').trim();
-    const sourceFromCampaign = latestCampaignLead?.campaign?.name?.trim() || '';
-    const normalizedSource = sourceFromCampaign || leadSource || 'Inbox';
+    const [normalizedSource, conversationNotes] = await Promise.all([
+      InboxController.resolveSmsSource(id, conversation.leadId, conversation.lead.source),
+      prisma.conversationNote.findMany({
+        where: { conversationId: id },
+        orderBy: { createdAt: 'asc' },
+        select: { body: true },
+      }),
+    ]);
+
+    const syncedNotes = conversationNotes
+      .map((n) => (n.body || '').trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    const assignedRepId = req.user!.role === 'REP' ? req.user!.id : conversation.assignedRepId || req.user!.id;
     const normalizedDealStage = InboxController.normalizeDealStage(dealStage || stage);
     const normalizedDealStageLabel = DEAL_STAGE_LABELS[normalizedDealStage] || 'New Lead';
 
@@ -1222,12 +1405,13 @@ export class InboxController {
         clientId: client.id,
         stage: normalizedDealStage as any,
         stageLabel: normalizedDealStageLabel,
-        assignedRepId: conversation.assignedRepId || req.user!.id,
+        assignedRepId,
         createdFromSms: true,
         smsConversationId: id,
         createdByUserId: req.user!.id,
         leadId: conversation.leadId,
         clientNotes: `Source: SMS — ${normalizedSource}`,
+        notes: syncedNotes ? syncedNotes.slice(0, 5000) : null,
       },
     });
 

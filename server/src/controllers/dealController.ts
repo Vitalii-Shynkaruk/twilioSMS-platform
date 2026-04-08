@@ -474,15 +474,37 @@ export class DealController {
       },
     });
 
-    // FIX 2: Автоматически заполняем source из SMS-кампании, если deal связан с lead
+    // FIX 2: Автоматически заполняем source из SMS-кампании/листа, если deal связан с lead
     if (linkedLeadId) {
-      const campaignLead = await prisma.campaignLead.findFirst({
-        where: { leadId: linkedLeadId },
-        orderBy: { createdAt: 'desc' },
-        include: { campaign: { select: { name: true } } },
-      });
-      if (campaignLead?.campaign?.name) {
-        const sourceNote = `Source: SMS — ${campaignLead.campaign.name}`;
+      const [campaignLead, campaignMessage, linkedLead] = await Promise.all([
+        prisma.campaignLead.findFirst({
+          where: { leadId: linkedLeadId },
+          orderBy: { createdAt: 'desc' },
+          include: { campaign: { select: { name: true } } },
+        }),
+        prisma.message.findFirst({
+          where: {
+            campaignId: { not: null },
+            conversation: {
+              leadId: linkedLeadId,
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          include: { campaign: { select: { name: true } } },
+        }),
+        prisma.lead.findUnique({
+          where: { id: linkedLeadId },
+          select: { source: true },
+        }),
+      ]);
+
+      const resolvedSource =
+        campaignLead?.campaign?.name?.trim() ||
+        campaignMessage?.campaign?.name?.trim() ||
+        (linkedLead?.source || '').trim();
+
+      if (resolvedSource) {
+        const sourceNote = `Source: SMS — ${resolvedSource}`;
         await prisma.deal.update({
           where: { id: deal.id },
           data: { clientNotes: sourceNote },

@@ -233,6 +233,11 @@ function renderHighlightedText(value: string, query?: string): ReactNode {
   );
 }
 
+function blockDragOnTextPointerDown(e: { stopPropagation: () => void }) {
+  // Prevent DnD pointer listeners on card wrapper from hijacking text selection.
+  e.stopPropagation();
+}
+
 export default function DealCard({ deal, onClick, viewMode, compact, highlightTerm }: DealCardProps) {
   const mode = viewMode || (compact ? 'simple' : 'execution');
   if (mode === 'simple') return <SimpleCard deal={deal} onClick={onClick} highlightTerm={highlightTerm} />;
@@ -256,7 +261,9 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
       <div style={{ padding: '10px 11px 8px' }}>
         {hot && <div className="sc-hot-badge">🔥 HOT</div>}
         <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
-        <div className="sc-name">{renderHighlightedText(businessName, highlightTerm)}</div>
+        <div className="sc-name" onMouseDown={blockDragOnTextPointerDown} onPointerDown={blockDragOnTextPointerDown}>
+          {renderHighlightedText(businessName, highlightTerm)}
+        </div>
 
         {deal.nextAction ? (
           <div className="sc-action-row">
@@ -290,11 +297,7 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
     deal.stage === 'SUBMITTED_IN_REVIEW' &&
     ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '') &&
     !!(deal.submittedAmount ?? deal.dealAmount);
-  const notePreview = deal.notes
-    ? deal.notes.length > 60
-      ? `${deal.notes.slice(0, 60)}…`
-      : deal.notes
-    : '';
+  const notePreview = deal.notes ? (deal.notes.length > 60 ? `${deal.notes.slice(0, 60)}…` : deal.notes) : '';
 
   const naRowCls = due.isOverdue ? 'na-od' : due.isToday ? 'na-td' : '';
   const naDotBg = due.isOverdue ? 'var(--urgent)' : due.isToday ? 'var(--watch)' : 'var(--text3)';
@@ -321,14 +324,29 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
         {/* Top: name + badges */}
         <div className="c-top">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="c-name">{renderHighlightedText(businessName, highlightTerm)}</div>
-            {contactName && <div className="c-biz">{renderHighlightedText(contactName, highlightTerm)}</div>}
+            <div className="c-name" onMouseDown={blockDragOnTextPointerDown} onPointerDown={blockDragOnTextPointerDown}>
+              {renderHighlightedText(businessName, highlightTerm)}
+            </div>
+            {contactName && (
+              <div
+                className="c-biz"
+                onMouseDown={blockDragOnTextPointerDown}
+                onPointerDown={blockDragOnTextPointerDown}
+              >
+                {renderHighlightedText(contactName, highlightTerm)}
+              </div>
+            )}
           </div>
           <div className="bdgs">
             {hot && <span className="b b-hot">🔥HOT</span>}
             {deal.stage === 'NURTURE' && deal.followUpType === 'renewal' && <span className="b b-renew">RENEW</span>}
-            {deal.stage === 'NURTURE' && (!deal.followUpType || deal.followUpType === 'reengage' || deal.followUpType === 'competitor') && <span className="b b-lost">LOST</span>}
-            {deal.client && deal.client.fundingCount > 0 && deal.stage !== 'NURTURE' && <span className="b b-renew">↻</span>}
+            {deal.stage === 'NURTURE' &&
+              (!deal.followUpType || deal.followUpType === 'reengage' || deal.followUpType === 'competitor') && (
+                <span className="b b-lost">LOST</span>
+              )}
+            {deal.client && deal.client.fundingCount > 0 && deal.stage !== 'NURTURE' && (
+              <span className="b b-renew">↻</span>
+            )}
           </div>
         </div>
 
@@ -474,7 +492,10 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
         {!bestOffer && (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') && deal.dealAmount && (
           <div className={`offer-block ${offerStrength(deal.dealAmount)}`}>
             <div className="ob-main">
-              <span className="ob-amount">{deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : ''}{formatCurrency(deal.dealAmount)}</span>
+              <span className="ob-amount">
+                {deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : ''}
+                {formatCurrency(deal.dealAmount)}
+              </span>
             </div>
           </div>
         )}
@@ -511,16 +532,17 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
             )}
             {deal.lostReason && <div className="lost-r">&ldquo;{deal.lostReason}&rdquo;</div>}
             {/* Decay pill */}
-            {deal.daysInStage > 0 && (() => {
-              const d = deal.daysInStage;
-              const cls = d >= 90 ? 'nd-90' : d >= 60 ? 'nd-60' : d >= 30 ? 'nd-30' : '';
-              if (!cls) return null;
-              return (
-                <span className={`nd-pill ${cls}`}>
-                  {d >= 90 ? '🔴' : d >= 60 ? '🟠' : '🟡'} {d}d in nurture
-                </span>
-              );
-            })()}
+            {deal.daysInStage > 0 &&
+              (() => {
+                const d = deal.daysInStage;
+                const cls = d >= 90 ? 'nd-90' : d >= 60 ? 'nd-60' : d >= 30 ? 'nd-30' : '';
+                if (!cls) return null;
+                return (
+                  <span className={`nd-pill ${cls}`}>
+                    {d >= 90 ? '🔴' : d >= 60 ? '🟠' : '🟡'} {d}d in nurture
+                  </span>
+                );
+              })()}
           </>
         )}
 

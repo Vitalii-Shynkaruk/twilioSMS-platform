@@ -425,6 +425,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
   const [formData, setFormData] = useState({
     name: '',
     messageTemplate: '',
+    numberPoolId: '',
     sendingSpeed: 4,
     dailyLimit: 0,
     scheduledAt: '',
@@ -450,6 +451,16 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     },
   });
   const availableTags = tagsData?.tags || [];
+
+  // Load sender pools for campaign routing
+  const { data: poolsData } = useQuery({
+    queryKey: ['number-pools'],
+    queryFn: async () => {
+      const { data } = await api.get('/numbers/pools');
+      return data;
+    },
+  });
+  const availablePools = poolsData?.pools || [];
 
   // Load available leads for selection
   const { data: leadsData } = useQuery({
@@ -491,6 +502,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     const payload = {
       ...formData,
+      numberPoolId: formData.numberPoolId || null,
       dailyLimit: formData.dailyLimit || null,
       scheduledAt: formData.scheduledAt || null,
     };
@@ -636,6 +648,25 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
               </p>
               <SmsCounter text={formData.messageTemplate} />
             </div>
+          </div>
+
+          <div>
+            <label className="label">Sender Pool</label>
+            <select
+              className="input"
+              value={formData.numberPoolId}
+              onChange={(e) => setFormData({ ...formData, numberPoolId: e.target.value })}
+            >
+              <option value="">All Active Numbers (No Pool Filter)</option>
+              {availablePools.map((pool: any) => (
+                <option key={pool.id} value={pool.id}>
+                  {pool.name} ({pool._count?.members ?? pool.members?.length ?? 0} numbers)
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-dark-500 mt-1">
+              Choose a pool to restrict sending to that pool only. Leave blank to use all active numbers.
+            </p>
           </div>
 
           {/* Lead Selection */}
@@ -1033,14 +1064,10 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
           style={{
             left: pos.x,
             top: pos.y,
-            transform: pos.flip
-              ? 'translate(-50%, 0) translateY(8px)'
-              : 'translate(-50%, -100%) translateY(-8px)',
+            transform: pos.flip ? 'translate(-50%, 0) translateY(8px)' : 'translate(-50%, -100%) translateY(-8px)',
           }}
         >
-          <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">
-            Campaign Breakdown
-          </p>
+          <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">Campaign Breakdown</p>
           <p className="text-[10px] text-dark-500 mb-2">Total Attempts: {total.toLocaleString()}</p>
 
           {/* Статусы */}
@@ -1103,9 +1130,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
           {/* Стрелочка */}
           <div
             className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${
-              pos.flip
-                ? 'bottom-full border-b-[6px] border-b-dark-600'
-                : 'top-full border-t-[6px] border-t-dark-600'
+              pos.flip ? 'bottom-full border-b-[6px] border-b-dark-600' : 'top-full border-t-[6px] border-t-dark-600'
             }`}
           />
         </div>

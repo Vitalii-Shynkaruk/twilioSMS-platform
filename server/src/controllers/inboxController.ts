@@ -148,6 +148,18 @@ export class InboxController {
     };
   }
 
+  private static excludeDncCondition(): any {
+    return {
+      NOT: {
+        OR: [
+          { leadStatus: 'DNC' },
+          { lead: { status: 'DNC' } },
+          { lead: { optedOut: true } },
+        ],
+      },
+    };
+  }
+
   private static optOutOnlyCondition(): any {
     return {
       AND: [
@@ -289,6 +301,9 @@ export class InboxController {
 
     const listConditions: any[] = [];
     if (unreadOnly === 'true') listConditions.push({ unreadCount: { gt: 0 } });
+    if (normalizedFilter !== 'dnc') {
+      listConditions.push(InboxController.excludeDncCondition());
+    }
     listConditions.push(
       normalizedFilter === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition(),
     );
@@ -399,9 +414,10 @@ export class InboxController {
                 const condition = InboxController.buildFilterCondition(key, req);
                 const visibilityCondition =
                   key === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition();
+                const baseVisibility = key === 'dnc' ? [visibilityCondition] : [InboxController.excludeDncCondition(), visibilityCondition];
                 const scopedWhere = InboxController.withConditions(
                   baseWithSearch,
-                  condition ? [visibilityCondition, condition] : [visibilityCondition],
+                  condition ? [...baseVisibility, condition] : baseVisibility,
                 );
                 const count = await prisma.conversation.count({ where: scopedWhere });
                 return [key, count] as const;

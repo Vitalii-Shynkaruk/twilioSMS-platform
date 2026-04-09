@@ -21,7 +21,39 @@ export class ComplianceService {
   // Standard opt-out keywords
   static readonly OPT_OUT_KEYWORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
   static readonly HELP_KEYWORDS = ['HELP', 'INFO'];
+  static readonly OPT_IN_KEYWORDS = ['START', 'UNSTOP', 'SUBSCRIBE'];
+  private static readonly PREFIX_OPT_OUT_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'QUIT']);
   private static readonly CACHE_TTL = 300; // 5 minutes
+
+  private static normalizeKeywordBody(body: string): { normalized: string; compact: string; firstToken: string } {
+    const normalized = body
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/g, ' ');
+    const compact = normalized.replace(/\s+/g, '');
+    const firstToken = normalized.split(' ')[0] || '';
+    return { normalized, compact, firstToken };
+  }
+
+  private static isOptOutKeyword(body: string): boolean {
+    const { normalized, compact, firstToken } = this.normalizeKeywordBody(body);
+    if (!normalized) return false;
+    if (this.OPT_OUT_KEYWORDS.includes(compact)) return true;
+    if (this.PREFIX_OPT_OUT_KEYWORDS.has(firstToken)) return true;
+    return /\bOPT\s*OUT\b/.test(normalized);
+  }
+
+  private static isHelpKeyword(body: string): boolean {
+    const { compact, firstToken } = this.normalizeKeywordBody(body);
+    return this.HELP_KEYWORDS.includes(compact) || this.HELP_KEYWORDS.includes(firstToken);
+  }
+
+  private static isOptInKeyword(body: string): boolean {
+    const { compact, firstToken } = this.normalizeKeywordBody(body);
+    return this.OPT_IN_KEYWORDS.includes(compact) || this.OPT_IN_KEYWORDS.includes(firstToken);
+  }
 
   /**
    * Check if we can send to a number (with Redis caching)
@@ -87,10 +119,8 @@ export class ComplianceService {
     fromNumber: string,
     body: string,
   ): Promise<{ isKeyword: boolean; action?: string; response?: string }> {
-    const normalizedBody = body.trim().toUpperCase();
-
     // Check STOP
-    if (this.OPT_OUT_KEYWORDS.includes(normalizedBody)) {
+    if (this.isOptOutKeyword(body)) {
       await this.handleOptOut(fromNumber);
       return {
         isKeyword: true,
@@ -100,7 +130,7 @@ export class ComplianceService {
     }
 
     // Check HELP
-    if (this.HELP_KEYWORDS.includes(normalizedBody)) {
+    if (this.isHelpKeyword(body)) {
       return {
         isKeyword: true,
         action: 'help',
@@ -109,7 +139,7 @@ export class ComplianceService {
     }
 
     // Check START (re-subscribe) — only explicit opt-in keywords, NOT "YES" (common conversational reply)
-    if (normalizedBody === 'START' || normalizedBody === 'UNSTOP' || normalizedBody === 'SUBSCRIBE') {
+    if (this.isOptInKeyword(body)) {
       await this.handleOptIn(fromNumber);
       return {
         isKeyword: true,

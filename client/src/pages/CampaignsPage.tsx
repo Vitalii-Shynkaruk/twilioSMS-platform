@@ -1000,6 +1000,10 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   const triggerRef = useRef<HTMLTableCellElement>(null);
   const bd = campaign.sentBreakdown;
   const total = campaign.totalSent;
+  const inTransit = Math.max(
+    campaign.totalSent - campaign.totalDelivered - campaign.totalFailed - campaign.totalBlocked,
+    0,
+  );
 
   const handleEnter = useCallback(() => {
     if (triggerRef.current) {
@@ -1037,12 +1041,13 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
           <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">
             Campaign Breakdown
           </p>
+          <p className="text-[10px] text-dark-500 mb-2">Total Attempts: {total.toLocaleString()}</p>
 
           {/* Статусы */}
           <div className="space-y-1 mb-3">
             {[
               { label: 'Delivered', value: campaign.totalDelivered, color: '#10b981' },
-              { label: 'Sent', value: campaign.totalSent - campaign.totalDelivered - campaign.totalFailed - campaign.totalBlocked, color: '#3b82f6' },
+              { label: 'In Transit', value: inTransit, color: '#3b82f6' },
               { label: 'Failed', value: campaign.totalFailed, color: '#ef4444' },
               { label: 'Blocked', value: campaign.totalBlocked, color: '#a855f7' },
             ]
@@ -1078,7 +1083,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
           {/* По репам */}
           {bd.reps.length > 0 && (
             <div className="border-t border-dark-700 pt-2">
-              <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Rep</p>
+              <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Rep (Total Attempts)</p>
               <div className="space-y-1">
                 {bd.reps.map((r) => (
                   <div key={r.name} className="flex items-center justify-between text-[11px]">

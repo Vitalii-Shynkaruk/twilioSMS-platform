@@ -2538,7 +2538,7 @@ function RepOwnershipSection({
   const activeReps = allUsers.filter((r) => r.isActive !== false);
   const repOnly = activeReps.filter((r) => r.role === 'REP');
   const requiredIds = new Set<string>([deal.assignedRepId, ...assistIds].filter(Boolean) as string[]);
-  const basePool = isAdmin ? activeReps : repOnly.length > 0 ? repOnly : activeReps;
+  const basePool = repOnly.length > 0 ? repOnly : activeReps;
   const allReps = [
     ...basePool,
     ...allUsers.filter((r) => requiredIds.has(r.id) && !basePool.some((b) => b.id === r.id)),

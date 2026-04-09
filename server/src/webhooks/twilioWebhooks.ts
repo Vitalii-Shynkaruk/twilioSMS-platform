@@ -71,8 +71,15 @@ router.post('/inbound', async (req: Request, res: Response) => {
       twimlResponse = `<Response><Message>${keywordResult.response}</Message></Response>`;
     }
 
-    // Always save the inbound message to the database (even keyword messages)
-    // so reps can see all replies in the inbox
+    // STOP/opt-out keywords are processed for compliance, but hidden from inbox
+    // and do not trigger unread/new-message notifications.
+    const suppressInboxMessage = keywordResult.isKeyword && keywordResult.action === 'opt_out';
+    if (suppressInboxMessage) {
+      logger.info('Inbound opt-out keyword processed without inbox record', { from: From, to: To });
+      res.type('text/xml');
+      res.send(twimlResponse);
+      return;
+    }
 
     const inboundTwilioNumber = await prisma.phoneNumber.findUnique({
       where: { phoneNumber: To },

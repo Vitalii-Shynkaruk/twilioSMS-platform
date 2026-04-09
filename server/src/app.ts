@@ -77,10 +77,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(compression());
 
-// Global API rate limit: 200 requests per minute per IP
+// Global API rate limit: 500 requests per minute per IP
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },

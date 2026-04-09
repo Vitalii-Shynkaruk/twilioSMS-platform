@@ -3,8 +3,7 @@ import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { NumberService } from '../services/numberService';
-import { getActiveTwilioClient } from '../config/twilio';
-import { config } from '../config';
+import { getActiveMessagingServiceSid, getActiveTwilioClient } from '../config/twilio';
 import logger from '../config/logger';
 
 export class NumberController {
@@ -222,8 +221,9 @@ export class NumberController {
     let created = 0;
     let updated = 0;
 
-    // Build a set of phone number SIDs that belong to the configured Messaging Service
-    const msgSvcSid = config.twilio.messagingServiceSid;
+    // Build a set of phone number SIDs that belong to the configured Messaging Service.
+    // Prefer Settings value; fallback to env if needed.
+    const msgSvcSid = await getActiveMessagingServiceSid();
     const a2pPhoneNumberSids = new Set<string>();
     if (msgSvcSid) {
       try {
@@ -234,6 +234,8 @@ export class NumberController {
       } catch (err) {
         logger.warn('Could not list messaging service numbers', { msgSvcSid, err });
       }
+    } else {
+      logger.warn('Twilio Messaging Service SID is not configured; numbers cannot be tagged as A2P service');
     }
 
     const twilioSids = new Set<string>();
@@ -286,6 +288,7 @@ export class NumberController {
           smsCapable: tn.capabilities?.sms ?? true,
           mmsCapable: tn.capabilities?.mms ?? false,
           voiceCapable: tn.capabilities?.voice ?? false,
+          messagingServiceSid: a2pPhoneNumberSids.has(tn.sid) ? msgSvcSid : null,
           dailyLimit: 200,
           isRamping: true,
           rampDay: 1,
@@ -313,13 +316,23 @@ export class NumberController {
     }
 
     await NumberService.invalidateNumbersCache();
-    logger.info('Twilio sync completed', { created, updated, retired, total: twilioNumbers.length, by: req.user });
+    logger.info('Twilio sync completed', {
+      created,
+      updated,
+      retired,
+      total: twilioNumbers.length,
+      messagingServiceSid: msgSvcSid || null,
+      serviceNumberCount: a2pPhoneNumberSids.size,
+      by: req.user,
+    });
     res.json({
       message: `Synced: ${created} new, ${updated} updated, ${retired} retired. Total in Twilio: ${twilioNumbers.length}`,
       created,
       updated,
       retired,
       twilioTotal: twilioNumbers.length,
+      messagingServiceSid: msgSvcSid || null,
+      serviceNumberCount: a2pPhoneNumberSids.size,
     });
   }
 

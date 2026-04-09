@@ -54,6 +54,34 @@ export async function getLiveCredentials(): Promise<{ sid: string; token: string
 }
 
 /**
+ * Get Messaging Service SID from DB settings (with Redis cache), falling back to env vars.
+ */
+export async function getActiveMessagingServiceSid(): Promise<string | null> {
+  try {
+    const cached = await redis.get('setting:twilioMessagingServiceSid');
+    if (cached !== null) {
+      const sid = cached.trim();
+      return sid || null;
+    }
+
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'twilioMessagingServiceSid' },
+    });
+    const sid = typeof setting?.value === 'string' ? setting.value.trim() : '';
+    if (sid) {
+      await redis.set('setting:twilioMessagingServiceSid', sid, 'EX', 30);
+      return sid;
+    }
+
+    const envSid = config.twilio.messagingServiceSid?.trim();
+    return envSid || null;
+  } catch {
+    const envSid = config.twilio.messagingServiceSid?.trim();
+    return envSid || null;
+  }
+}
+
+/**
  * Get the standard (live) Twilio client — sync version using cached credentials.
  * Prefer getActiveTwilioClient() for DB-aware credential loading.
  */
@@ -180,4 +208,4 @@ function resetTwilioClients() {
 }
 
 export default getTwilioClient;
-export { getActiveTwilioClient, isTwilioTestMode, getSmsMode, resetTwilioClients };
+export { getActiveTwilioClient, getSmsMode, isTwilioTestMode, resetTwilioClients };

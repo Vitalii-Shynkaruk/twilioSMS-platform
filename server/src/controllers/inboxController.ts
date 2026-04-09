@@ -810,6 +810,9 @@ export class InboxController {
     });
 
     if (!conversation) throw new AppError('Conversation not found', 404);
+    if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
+      throw new AppError('Not authorized to message this conversation', 403);
+    }
 
     let messageId: string;
     try {

@@ -78,8 +78,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
       } catch (err: any) {
         const status = err?.response?.status;
-        // 5xx = server issue, keep token and use cached user
-        if (!status || status >= 500) {
+        // 5xx или 429 = серверная проблема / rate limit, сохраняем токен и кешированного юзера
+        if (!status || status >= 500 || status === 429) {
           try {
             const cachedUser = JSON.parse(userStr);
             set({

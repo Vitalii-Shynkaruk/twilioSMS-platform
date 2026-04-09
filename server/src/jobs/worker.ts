@@ -196,7 +196,7 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
         result.errors.length > 0
           ? result.errors.join('; ')
           : result.skipped > 0
-            ? `All ${result.skipped} leads skipped (opted out / suppressed)`
+            ? `All ${result.skipped} leads skipped (compliance/ownership rules)`
             : 'No messages could be queued';
       await prisma.campaign.update({
         where: { id: campaignId },

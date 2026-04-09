@@ -27,7 +27,7 @@ const STAGE_QUICK_ACTIONS: Record<DealStage, string[]> = {
   NEW_LEAD: ['Make first contact', 'Send intro text', 'Qualify business', 'Get monthly revenue'],
   ENGAGED_INTERESTED: ['Send Follow Up Email', 'Send Case Study Email', '3/4th Follow Up'],
   QUALIFIED: ['Submit application', 'Get remaining docs', 'Verify revenue'],
-  SUBMITTED_IN_REVIEW: ['Collect Remaining Docs', 'Follow Up With Lender'],
+  SUBMITTED_IN_REVIEW: ['Collect Remaining Docs', 'Follow Up With Lender', 'Book Newtek Call'],
   APPROVED_OFFERS: ['Presenting Offer', 'Get DL/VC', 'Get Updated Offer'],
   COMMITTED_FUNDING: ['Send PSF', 'Get Docs Signed'],
   FUNDED: ['Request referrals', 'Check in 30 days', 'Upsell next product'],
@@ -78,6 +78,18 @@ function formatRelativeShort(iso?: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function formatDateTimeNoSeconds(value: string): string {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return '—';
+  return dt.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 function dealSystemStatus(deal: Deal): { label: string; cls: string } | null {
@@ -313,10 +325,12 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 
           <div className="ph-meta-row">
             <div className="ph-meta-pill">
+              <span className="ph-meta-dot ph-meta-dot-stale" aria-hidden />
               <span className="ph-meta-label">Last Contact</span>
               <span className="ph-meta-val">{formatRelativeShort(deal.lastReplyAt || deal.createdAt)}</span>
             </div>
             <div className="ph-meta-pill ph-meta-blue">
+              <span className="ph-meta-dot ph-meta-dot-blue" aria-hidden />
               <span className="ph-meta-label">Last Action</span>
               <span className="ph-meta-val">{lastActionLabel}</span>
             </div>
@@ -575,8 +589,8 @@ function DealClientTab({
     { label: 'MCA', value: 'MCA' },
     { label: 'LOC', value: 'LOC' },
     { label: 'HELOC', value: 'HELOC' },
-    { label: 'Equipment', value: 'EQUIPMENT' },
     { label: 'SBA', value: 'SBA' },
+    { label: 'Equipment', value: 'EQUIPMENT' },
     { label: 'CRE', value: 'CRE' },
   ];
   const dueOptions: DuePreset[] = ['Overdue', 'Today', 'Tomorrow', 'This week', 'Future date'];
@@ -926,7 +940,7 @@ function DealClientTab({
                 <div className="ndot" style={{ background: '#d4a832' }} />
                 <div>
                   <div className="ntxt">{entry.text}</div>
-                  <div className="ntm">{new Date(entry.at).toLocaleString('en-US')}</div>
+                  <div className="ntm">{formatDateTimeNoSeconds(entry.at)}</div>
                 </div>
               </div>
             ))
@@ -958,7 +972,7 @@ function DealClientTab({
                 <div className="rdot" />
                 <div>
                   <div className="rtxt">{formatActivityText(event)}</div>
-                  <div className="rtm">{new Date(event.createdAt).toLocaleString('en-US')}</div>
+                  <div className="rtm">{formatDateTimeNoSeconds(event.createdAt)}</div>
                 </div>
               </div>
             ))
@@ -1088,7 +1102,23 @@ function DealClientTab({
           </div>
         )}
         {!isClosed && (
-          <button className="blndr" onClick={onAddOffer}>
+          <button
+            type="button"
+            className="blndr"
+            onClick={onAddOffer}
+            style={{
+              width: '100%',
+              marginTop: 8,
+              background: 'transparent',
+              border: '1px solid #22543d',
+              borderRadius: 7,
+              color: '#68d391',
+              fontSize: 12,
+              padding: 8,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
             + Record lender offer
           </button>
         )}
@@ -1189,7 +1219,7 @@ function DealClientTab({
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#d4a832', marginTop: 4 }} />
               <div>
                 <div className="atxt">{formatActivityText(event)}</div>
-                <div className="atm">{new Date(event.createdAt).toLocaleString('en-US')}</div>
+                <div className="atm">{formatDateTimeNoSeconds(event.createdAt)}</div>
               </div>
             </div>
           ))
@@ -1470,7 +1500,7 @@ function ActivityTab({ deal }: { deal: Deal }) {
             {event.note && <p className="text-xs text-[var(--text-muted)] mt-0.5">{event.note}</p>}
             <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
               {event.rep ? `${event.rep.firstName} ${event.rep.lastName}` : ''}{' '}
-              {new Date(event.createdAt).toLocaleString()}
+              {formatDateTimeNoSeconds(event.createdAt)}
             </p>
           </div>
         </div>
@@ -2512,6 +2542,10 @@ function RepOwnershipSection({
     ...basePool,
     ...activeReps.filter((r) => requiredIds.has(r.id) && !basePool.some((b) => b.id === r.id)),
   ].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+  const assistRowReps = [
+    ...allReps.filter((r) => r.id !== deal.assignedRepId),
+    ...allReps.filter((r) => r.id === deal.assignedRepId),
+  ];
 
   function setPrimary(repId: string) {
     if (!isAdmin || repId === deal.assignedRepId) return;
@@ -2550,23 +2584,21 @@ function RepOwnershipSection({
           <span className="dc-own-label">
             Assist
           </span>
-          {allReps
-            .filter((r) => r.id !== deal.assignedRepId)
-            .map((r) => {
-              const isAssisting = assistIds.includes(r.id);
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  className={clsx('dc-own-avatar', isAssisting && 'asc')}
-                  onClick={() => toggleAssist(r.id)}
-                  disabled={!canManageAssists}
-                  title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ''}`}
-                >
-                  {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
-                </button>
-              );
-            })}
+          {assistRowReps.map((r) => {
+            const isAssisting = assistIds.includes(r.id);
+            return (
+              <button
+                key={r.id}
+                type="button"
+                className={clsx('dc-own-avatar', isAssisting && 'asc')}
+                onClick={() => toggleAssist(r.id)}
+                disabled={!canManageAssists}
+                title={`${r.firstName} ${r.lastName}${isAssisting ? ' (assisting)' : ''}`}
+              >
+                {r.initials || `${r.firstName[0]}${r.lastName?.[0] || ''}`}
+              </button>
+            );
+          })}
         </div>
       </div>
     </>

@@ -1,5 +1,5 @@
 import prisma from '../config/database';
-import { getActiveTwilioClient, getSmsMode } from '../config/twilio';
+import { getActiveMessagingServiceSid, getActiveTwilioClient, getSmsMode } from '../config/twilio';
 import { config } from '../config';
 import logger from '../config/logger';
 import { NumberService } from './numberService';
@@ -139,8 +139,31 @@ export class SendingEngine {
       fromNumber = await NumberService.getStickyNumber(options.toNumber, options.sentByUserId);
     }
 
+    const smsMode = await getSmsMode();
+    const activeMessagingServiceSid = await getActiveMessagingServiceSid();
+    const enforceMessagingRoute = smsMode === 'live' && Boolean(activeMessagingServiceSid);
+
+    if (
+      enforceMessagingRoute &&
+      fromNumber &&
+      fromNumber.messagingServiceSid !== activeMessagingServiceSid
+    ) {
+      logger.warn('Selected sender is not linked to active Messaging Service, trying service-linked fallback', {
+        selectedNumber: fromNumber.phoneNumber,
+        selectedNumberId: fromNumber.id,
+        activeMessagingServiceSid,
+      });
+      fromNumber = await NumberService.getBestAvailableNumber([fromNumber.phoneNumber]);
+    }
+
     if (!fromNumber) {
       throw new Error('No available phone numbers for sending');
+    }
+
+    if (enforceMessagingRoute && fromNumber.messagingServiceSid !== activeMessagingServiceSid) {
+      throw new Error(
+        `No eligible sender linked to active Messaging Service (${activeMessagingServiceSid})`,
+      );
     }
 
     if (conversation.twilioNumberId !== fromNumber.id || conversation.stickyNumberId !== fromNumber.id) {
@@ -226,11 +249,19 @@ export class SendingEngine {
 
     // ── BATCH PRE-FETCH: existing conversations ──
     const leadIds = options.leads.map((l) => l.leadId);
-    const existingConvos = await prisma.conversation.findMany({
-      where: { leadId: { in: leadIds } },
-      select: { id: true, leadId: true },
-    });
+    const [existingConvos, leadOwners] = await Promise.all([
+      prisma.conversation.findMany({
+        where: { leadId: { in: leadIds } },
+        select: { id: true, leadId: true, assignedRepId: true },
+      }),
+      prisma.lead.findMany({
+        where: { id: { in: leadIds } },
+        select: { id: true, assignedRepId: true },
+      }),
+    ]);
+    const convoMetaByLead = new Map(existingConvos.map((c) => [c.leadId, c]));
     const convoMap = new Map(existingConvos.map((c) => [c.leadId, c.id]));
+    const leadOwnerById = new Map(leadOwners.map((lead) => [lead.id, lead.assignedRepId]));
 
     // ── UPDATE existing conversations: assign rep if unassigned ──
     if (options.sentByUserId && existingConvos.length > 0) {
@@ -268,10 +299,11 @@ export class SendingEngine {
       // Re-fetch to get IDs
       const newConvos = await prisma.conversation.findMany({
         where: { leadId: { in: missingConvoLeads } },
-        select: { id: true, leadId: true },
+        select: { id: true, leadId: true, assignedRepId: true },
       });
       for (const c of newConvos) {
         convoMap.set(c.leadId, c.id);
+        convoMetaByLead.set(c.leadId, c);
       }
     }
 
@@ -292,6 +324,18 @@ export class SendingEngine {
     }> = [];
 
     for (const lead of options.leads) {
+      // Ownership guard: do not let another rep text a lead already owned/engaged by someone else.
+      if (options.sentByUserId) {
+        const conversationOwnerId = convoMetaByLead.get(lead.leadId)?.assignedRepId || null;
+        const leadOwnerId = leadOwnerById.get(lead.leadId) || null;
+        const effectiveOwnerId = conversationOwnerId || leadOwnerId;
+        if (effectiveOwnerId && effectiveOwnerId !== options.sentByUserId) {
+          skipped++;
+          skippedLeadIds.push(lead.leadId);
+          continue;
+        }
+      }
+
       // Check compliance from pre-fetched set
       if (blockedPhones.has(lead.phone)) {
         skipped++;
@@ -473,9 +517,14 @@ export class SendingEngine {
 
       const twilioTestActive = smsMode === 'twilio_test';
 
-      // Use Messaging Service SID for A2P 10DLC compliance
-      // All messages MUST go through the registered Messaging Service
-      const messagingServiceSid = config.twilio.messagingServiceSid;
+      // Use Messaging Service SID from Settings for A2P 10DLC compliance.
+      // In live mode we require it so traffic is never sent outside registered routes.
+      const messagingServiceSid = await getActiveMessagingServiceSid();
+      if (smsMode === 'live' && !messagingServiceSid) {
+        throw new Error(
+          'Twilio Messaging Service SID is not configured in Settings → Integrations (twilioMessagingServiceSid)',
+        );
+      }
       const twilioMessage = await client.messages.create({
         body,
         ...(messagingServiceSid ? { messagingServiceSid, from: fromNumber } : { from: fromNumber }),

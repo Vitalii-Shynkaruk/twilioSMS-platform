@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import redis from '../config/redis';
-import '../config/twilio';
+import { getActiveMessagingServiceSid } from '../config/twilio';
 import { config } from '../config';
 import logger from '../config/logger';
 import { PhoneNumber } from '@prisma/client';
@@ -117,12 +117,27 @@ export class NumberService {
    * Uses round-robin across eligible numbers to prevent stale-cache uneven distribution
    * Also applies delivery-rate based proactive throttling
    */
-  static async getBestAvailableNumber(excludeNumbers: string[] = [], poolId?: string): Promise<PhoneNumber | null> {
-    const numbers = await this.getActiveNumbersCached(excludeNumbers, poolId);
+  static async getBestAvailableNumber(
+    excludeNumbers: string[] = [],
+    poolId?: string,
+    restrictToPhoneNumberIds?: string[],
+  ): Promise<PhoneNumber | null> {
+    let numbers = await this.getActiveNumbersCached(excludeNumbers, poolId);
 
-    // Only use A2P/10DLC-approved numbers (those with a messagingServiceSid)
-    const a2pNumbers = numbers.filter((n) => n.messagingServiceSid);
-    const pool = a2pNumbers.length > 0 ? a2pNumbers : numbers;
+    if (restrictToPhoneNumberIds !== undefined) {
+      const allowed = new Set(restrictToPhoneNumberIds);
+      numbers = numbers.filter((n) => allowed.has(n.id));
+    }
+
+    // In live routing mode, enforce Messaging Service-linked senders only.
+    const activeMessagingServiceSid = await getActiveMessagingServiceSid();
+    const requireMessagingServiceRouting = Boolean(activeMessagingServiceSid);
+    const a2pNumbers = numbers.filter(
+      (n) =>
+        Boolean(n.messagingServiceSid) &&
+        (!activeMessagingServiceSid || n.messagingServiceSid === activeMessagingServiceSid),
+    );
+    const pool = requireMessagingServiceRouting ? a2pNumbers : a2pNumbers.length > 0 ? a2pNumbers : numbers;
 
     // Filter by daily limit (considering ramp-up) and delivery rate
     const eligible = pool.filter((number) => {
@@ -139,12 +154,42 @@ export class NumberService {
       return true;
     });
 
+    if (requireMessagingServiceRouting && eligible.length === 0) {
+      logger.warn('No Messaging Service-linked numbers available for send selection', {
+        activeMessagingServiceSid,
+        poolId: poolId || null,
+        totalCandidates: numbers.length,
+        serviceCandidates: a2pNumbers.length,
+      });
+      return null;
+    }
+
     if (eligible.length === 0) return null;
 
     // Round-robin selection for even distribution across numbers
     const index = this.roundRobinIndex % eligible.length;
     this.roundRobinIndex++;
     return eligible[index];
+  }
+
+  /**
+   * Get active/available assigned sender IDs for a rep.
+   * Compatibility helper used by campaign start logic on server.
+   */
+  static async getActiveAssignedNumberIds(userId: string): Promise<string[]> {
+    const now = new Date();
+    const rows = await prisma.numberAssignment.findMany({
+      where: {
+        userId,
+        isActive: true,
+        phoneNumber: {
+          OR: [{ status: 'ACTIVE' }, { status: 'COOLING', coolingUntil: { lt: now } }],
+        },
+      },
+      select: { phoneNumberId: true },
+    });
+
+    return rows.map((r) => r.phoneNumberId);
   }
 
   /**

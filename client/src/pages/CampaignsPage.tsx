@@ -461,6 +461,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
     },
   });
   const availablePools = poolsData?.pools || [];
+  const poolCountLabel = (count: number) => `${count} ${count === 1 ? 'number' : 'numbers'}`;
 
   // Load available leads for selection
   const { data: leadsData } = useQuery({
@@ -660,7 +661,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
               <option value="">All Active Numbers (No Pool Filter)</option>
               {availablePools.map((pool: any) => (
                 <option key={pool.id} value={pool.id}>
-                  {pool.name} ({pool._count?.members ?? pool.members?.length ?? 0} numbers)
+                  {pool.name} ({poolCountLabel(pool._count?.members ?? pool.members?.length ?? 0)})
                 </option>
               ))}
             </select>

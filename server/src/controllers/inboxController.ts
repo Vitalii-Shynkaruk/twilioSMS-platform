@@ -150,13 +150,7 @@ export class InboxController {
 
   private static excludeDncCondition(): any {
     return {
-      NOT: {
-        OR: [
-          { leadStatus: 'DNC' },
-          { lead: { status: 'DNC' } },
-          { lead: { optedOut: true } },
-        ],
-      },
+      AND: [{ lead: { status: { not: 'DNC' } } }, { lead: { optedOut: false } }],
     };
   }
 

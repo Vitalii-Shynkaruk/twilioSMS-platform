@@ -2384,7 +2384,13 @@ export function NQCloseModal({
                   toast.error('Re-engage date is required');
                   return;
                 }
-                onSubmit({ stage: 'NURTURE', lostReason, followUpDate: reengageDate });
+                onSubmit({
+                  stage: 'NURTURE',
+                  lostReason,
+                  followUpType: 'reengage',
+                  followUpDate: reengageDate,
+                  followUpNote: `Lost reason: ${lostReason}`,
+                });
               } else {
                 onSubmit({ stage: 'CLOSED', disqualReason });
               }

@@ -983,9 +983,32 @@ export class DealController {
 
     if (req.body.lostReason) updateData.lostReason = req.body.lostReason;
     if (req.body.disqualReason) updateData.disqualReason = req.body.disqualReason;
-    if (req.body.followUpDate) updateData.followUpDate = new Date(req.body.followUpDate);
+    if (req.body.followUpDate) {
+      const parsedFollowUpDate =
+        typeof req.body.followUpDate === 'string' && !req.body.followUpDate.includes('T')
+          ? new Date(req.body.followUpDate + 'T12:00:00.000Z')
+          : new Date(req.body.followUpDate);
+      if (Number.isNaN(parsedFollowUpDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid follow-up date' });
+      }
+      updateData.followUpDate = parsedFollowUpDate;
+    }
     if (req.body.followUpType) updateData.followUpType = req.body.followUpType;
     if (req.body.followUpNote) updateData.followUpNote = req.body.followUpNote;
+
+    // Lost → Nurture must reset next-action timeline to re-engage date.
+    // Otherwise cards keep stale overdue action from previous stage.
+    if (stage === 'NURTURE') {
+      const followUpType = req.body.followUpType || updateData.followUpType || existing.followUpType || 'reengage';
+      updateData.followUpType = followUpType;
+
+      const lostReasonText = (req.body.lostReason || updateData.lostReason || existing.lostReason || '').trim();
+      updateData.nextAction = lostReasonText ? `Re-engage — ${lostReasonText}` : 'Re-engage';
+
+      if (updateData.followUpDate) {
+        updateData.nextActionDue = updateData.followUpDate;
+      }
+    }
 
     // When moving to FUNDED: should use markFunded endpoint via modal.
     // moveDeal keeps minimal support in case it's called directly.

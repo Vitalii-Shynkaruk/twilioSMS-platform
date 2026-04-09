@@ -2534,13 +2534,14 @@ function RepOwnershipSection({
   });
 
   const assistIds: string[] = (deal.assistingRepIds as string[]) || [];
-  const activeReps = (reps || []).filter((r) => r.isActive !== false);
+  const allUsers = reps || [];
+  const activeReps = allUsers.filter((r) => r.isActive !== false);
   const repOnly = activeReps.filter((r) => r.role === 'REP');
   const requiredIds = new Set<string>([deal.assignedRepId, ...assistIds].filter(Boolean) as string[]);
-  const basePool = repOnly.length > 0 ? repOnly : activeReps;
+  const basePool = isAdmin ? activeReps : repOnly.length > 0 ? repOnly : activeReps;
   const allReps = [
     ...basePool,
-    ...activeReps.filter((r) => requiredIds.has(r.id) && !basePool.some((b) => b.id === r.id)),
+    ...allUsers.filter((r) => requiredIds.has(r.id) && !basePool.some((b) => b.id === r.id)),
   ].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
   const assistRowReps = [
     ...allReps.filter((r) => r.id !== deal.assignedRepId),

@@ -1407,9 +1407,61 @@ export class DealController {
       return res.status(403).json({ error: 'Only the primary rep or admin can share deals' });
     }
 
+    const currentAssists = Array.isArray(deal.assistingRepIds)
+      ? ((deal.assistingRepIds as string[]) || []).filter(Boolean)
+      : [];
+    const requestedPrimary = typeof assignedRepId === 'string' && assignedRepId.trim() ? assignedRepId.trim() : undefined;
+
+    if (assistingRepIds !== undefined && !Array.isArray(assistingRepIds)) {
+      return res.status(400).json({ error: 'assistingRepIds must be an array' });
+    }
+
+    let normalizedAssists: string[] | undefined =
+      assistingRepIds !== undefined
+        ? Array.from(
+            new Set(
+              (assistingRepIds || [])
+                .filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+                .map((v: string) => v.trim()),
+            ),
+          )
+        : undefined;
+
+    if (requestedPrimary) {
+      const primaryUser = await prisma.user.findFirst({
+        where: { id: requestedPrimary, isActive: true },
+        select: { id: true },
+      });
+      if (!primaryUser) return res.status(400).json({ error: 'Assigned rep must be an active user' });
+      if (normalizedAssists) normalizedAssists = normalizedAssists.filter((repId) => repId !== requestedPrimary);
+    }
+
+    if (normalizedAssists && normalizedAssists.length > 0) {
+      const validAssistCount = await prisma.user.count({
+        where: { id: { in: normalizedAssists }, isActive: true },
+      });
+      if (validAssistCount !== normalizedAssists.length) {
+        return res.status(400).json({ error: 'All assisting reps must be active users' });
+      }
+    }
+
+    const sameIds = (a: string[], b: string[]) => {
+      const sa = [...a].sort();
+      const sb = [...b].sort();
+      return sa.length === sb.length && sa.every((id, idx) => id === sb[idx]);
+    };
+
+    const assignedChanged = requestedPrimary !== undefined && requestedPrimary !== deal.assignedRepId;
+    const assistsChanged = normalizedAssists !== undefined && !sameIds(currentAssists, normalizedAssists);
+
+    if (!assignedChanged && !assistsChanged) {
+      const unchanged = await prisma.deal.findUnique({ where: { id } });
+      return res.json(unchanged);
+    }
+
     const updateData: any = {};
-    if (assistingRepIds !== undefined) updateData.assistingRepIds = assistingRepIds || [];
-    if (assignedRepId !== undefined) updateData.assignedRepId = assignedRepId;
+    if (assistsChanged) updateData.assistingRepIds = normalizedAssists || [];
+    if (assignedChanged) updateData.assignedRepId = requestedPrimary;
 
     const updated = await prisma.deal.update({
       where: { id },
@@ -1417,11 +1469,11 @@ export class DealController {
     });
 
     const noteFragments: string[] = [];
-    if (assignedRepId && assignedRepId !== deal.assignedRepId) {
+    if (assignedChanged) {
       noteFragments.push(`Primary rep changed`);
     }
-    if (assistingRepIds) {
-      noteFragments.push(`Shared with ${(assistingRepIds || []).length} rep(s)`);
+    if (assistsChanged) {
+      noteFragments.push(`Shared with ${(normalizedAssists || []).length} rep(s)`);
     }
 
     await prisma.dealEvent.create({

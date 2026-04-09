@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
+import { ComplianceService } from '../services/complianceService';
 
 type InboxFilter = 'all' | 'unread' | 'hot' | 'email_rcv' | 'interested' | 'followup' | 'in_pipeline' | 'dnc';
 type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
@@ -978,22 +979,58 @@ export class InboxController {
       },
     });
 
-    // Если DNC — обновляем lead.status
+    // Lead status + compliance side-effects
     if (leadStatus === 'DNC') {
-      await prisma.lead.update({
+      const lead = await prisma.lead.update({
         where: { id: conversation.leadId },
-        data: { status: 'DNC' },
+        data: {
+          status: 'DNC',
+          optedOut: true,
+          optedOutAt: new Date(),
+          isSuppressed: true,
+          suppressedAt: new Date(),
+          suppressReason: 'DNC',
+        },
+        select: { phone: true },
       });
+      if (lead.phone) {
+        await prisma.suppressionEntry.upsert({
+          where: { phone: lead.phone },
+          create: { phone: lead.phone, reason: 'DNC', source: 'inbox_manual' },
+          update: { reason: 'DNC', source: 'inbox_manual' },
+        });
+        await ComplianceService.invalidateCache(lead.phone);
+      }
     } else if (leadStatus === 'Interested') {
       await prisma.lead.update({
         where: { id: conversation.leadId },
-        data: { status: 'INTERESTED' },
+        data: {
+          status: 'INTERESTED',
+          optedOut: false,
+          optedOutAt: null,
+        },
       });
     } else if (leadStatus === 'Not Interested') {
-      await prisma.lead.update({
+      const lead = await prisma.lead.update({
         where: { id: conversation.leadId },
-        data: { status: 'NOT_INTERESTED' },
+        data: {
+          status: 'NOT_INTERESTED',
+          optedOut: true,
+          optedOutAt: new Date(),
+          isSuppressed: true,
+          suppressedAt: new Date(),
+          suppressReason: 'NOT_INTERESTED',
+        },
+        select: { phone: true },
       });
+      if (lead.phone) {
+        await prisma.suppressionEntry.upsert({
+          where: { phone: lead.phone },
+          create: { phone: lead.phone, reason: 'NOT_INTERESTED', source: 'inbox_manual' },
+          update: { reason: 'NOT_INTERESTED', source: 'inbox_manual' },
+        });
+        await ComplianceService.invalidateCache(lead.phone);
+      }
     }
 
     res.json({ conversation: updated });

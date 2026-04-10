@@ -142,6 +142,7 @@ export const commandCenterApi = {
 export const repApi = {
   getReps: (params?: Record<string, string>) => api.get('/reps', { params }),
   getRep: (id: string) => api.get(`/reps/${id}`),
+  getTeamGoals: () => api.get('/reps/team-goals'),
   createRep: (data: any) => api.post('/reps', data),
   updateRep: (id: string, data: any) => api.put(`/reps/${id}`, data),
   updateGoals: (id: string, data: any) => api.put(`/reps/${id}/goals`, data),

@@ -7,6 +7,7 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get('/team-goals', asyncHandler(RepController.getTeamGoals));
 router.get('/', asyncHandler(RepController.getReps));
 router.get('/:id', asyncHandler(RepController.getRep));
 router.post('/', requireRole('ADMIN'), asyncHandler(RepController.createRep));

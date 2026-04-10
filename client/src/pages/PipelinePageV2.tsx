@@ -2714,8 +2714,19 @@ function QueueSummaryBar({ stats }: { stats: DealStats }) {
 
 function GoalsModal({ reps, onClose }: { reps: Rep[]; onClose: () => void }) {
   const qc = useQueryClient();
-  const [teamMonthly, setTeamMonthly] = useState('');
-  const [teamAnnual, setTeamAnnual] = useState('');
+  const [teamMonthlyInput, setTeamMonthlyInput] = useState<string | null>(null);
+  const [teamAnnualInput, setTeamAnnualInput] = useState<string | null>(null);
+
+  const { data: teamGoalsData } = useQuery({
+    queryKey: ['reps', 'team-goals'],
+    queryFn: async () => {
+      const { data } = await repApi.getTeamGoals();
+      return data as { monthlyGoal: number; annualGoal: number; updatedAt?: string | null };
+    },
+  });
+
+  const teamMonthly = teamMonthlyInput ?? (teamGoalsData?.monthlyGoal ? String(teamGoalsData.monthlyGoal) : '');
+  const teamAnnual = teamAnnualInput ?? (teamGoalsData?.annualGoal ? String(teamGoalsData.annualGoal) : '');
 
   const initialGoals = useMemo(() => {
     const goals: Record<string, { monthly: string; annual: string }> = {};
@@ -2754,6 +2765,7 @@ function GoalsModal({ reps, onClose }: { reps: Rep[]; onClose: () => void }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reps'] });
+      qc.invalidateQueries({ queryKey: ['reps', 'team-goals'] });
       toast.success('Goals saved');
       onClose();
     },
@@ -2796,7 +2808,7 @@ function GoalsModal({ reps, onClose }: { reps: Rep[]; onClose: () => void }) {
             <input
               className="goal-inp"
               value={teamMonthly}
-              onChange={(e) => setTeamMonthly(e.target.value)}
+              onChange={(e) => setTeamMonthlyInput(e.target.value)}
               placeholder="$5,800,000"
             />
           </div>
@@ -2805,7 +2817,7 @@ function GoalsModal({ reps, onClose }: { reps: Rep[]; onClose: () => void }) {
             <input
               className="goal-inp"
               value={teamAnnual}
-              onChange={(e) => setTeamAnnual(e.target.value)}
+              onChange={(e) => setTeamAnnualInput(e.target.value)}
               placeholder="$70,000,000"
             />
           </div>

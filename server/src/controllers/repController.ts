@@ -4,6 +4,20 @@ import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
 
 export class RepController {
+  // GET /api/reps/team-goals - Get team goal
+  static async getTeamGoals(req: AuthRequest, res: Response) {
+    const goal = await prisma.goal.findUnique({
+      where: { entityType_entityId: { entityType: 'team', entityId: 'team' } },
+      select: { monthlyGoal: true, annualGoal: true, updatedAt: true },
+    });
+
+    res.json({
+      monthlyGoal: goal?.monthlyGoal || 0,
+      annualGoal: goal?.annualGoal || 0,
+      updatedAt: goal?.updatedAt || null,
+    });
+  }
+
   // GET /api/reps - List all reps
   static async getReps(req: AuthRequest, res: Response) {
     const { activeOnly } = req.query;

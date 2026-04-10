@@ -37,7 +37,16 @@ import { useWebSocketStore } from '../stores/webSocketStore';
 import { useAuthStore } from '../stores/authStore';
 import '../styles/sms-inbox.css';
 
-type InboxFilter = 'all' | 'unread' | 'hot' | 'email_rcv' | 'interested' | 'followup' | 'in_pipeline' | 'dnc';
+type InboxFilter =
+  | 'all'
+  | 'unread'
+  | 'hot'
+  | 'email_rcv'
+  | 'my_campaigns'
+  | 'interested'
+  | 'followup'
+  | 'in_pipeline'
+  | 'dnc';
 type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
 const FILTER_ROW_1: Array<{ id: InboxFilter; label: string }> = [
@@ -45,6 +54,7 @@ const FILTER_ROW_1: Array<{ id: InboxFilter; label: string }> = [
   { id: 'unread', label: 'Unread' },
   { id: 'hot', label: '🔥 Hot' },
   { id: 'email_rcv', label: '✉ Email Rcv' },
+  { id: 'my_campaigns', label: '🎯 My Campaigns' },
 ];
 
 const FILTER_ROW_2: Array<{ id: InboxFilter; label: string }> = [
@@ -464,6 +474,17 @@ function MessageThread({
     retry: false,
   });
 
+  const markUnreadMutation = useMutation({
+    mutationFn: () => inboxApi.markUnread(conversationId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      onBack();
+      toast.success('Marked as unread');
+    },
+    onError: () => toast.error('Failed to mark unread'),
+  });
+
   const sendMutation = useMutation({
     mutationFn: (body: string) => inboxApi.sendReply(conversationId, body),
     onSuccess: () => {
@@ -731,6 +752,9 @@ function MessageThread({
             </button>
             <button className="inbox-action-btn" onClick={() => setShowFollowupPopover((p) => !p)}>
               <CalendarClock size={13} /> Follow-Up
+            </button>
+            <button className="inbox-action-btn" onClick={() => markUnreadMutation.mutate()}>
+              <CheckCheck size={13} /> Mark Unread
             </button>
             <button className="inbox-action-btn" onClick={() => setShowNotePopover((p) => !p)}>
               <StickyNote size={13} /> Note
@@ -1233,6 +1257,12 @@ function TemplateModal({
   const [category, setCategory] = useState<'all' | 'favs' | 'recent' | 'follow_up' | 'first_touch'>('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState<{ name: string; body: string; category: string }>({
+    name: '',
+    body: '',
+    category: '',
+  });
   const [draft, setDraft] = useState<{
     name: string;
     body: string;
@@ -1283,6 +1313,40 @@ function TemplateModal({
     },
   });
 
+  const updateTemplateMutation = useMutation({
+    mutationFn: (payload: { id: string; name: string; body: string; category?: string }) =>
+      inboxApi.updateTemplate(payload.id, {
+        name: payload.name,
+        body: payload.body,
+        category: payload.category || null,
+      }),
+    onSuccess: ({ data }) => {
+      const updated: SmsTemplate | undefined = data?.template;
+      toast.success('Template updated');
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      if (updated?.id) setSelectedId(updated.id);
+      setIsEditing(false);
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.error || 'Failed to update template';
+      toast.error(message);
+    },
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: (id: string) => inboxApi.deleteTemplate(id),
+    onSuccess: () => {
+      toast.success('Template deleted');
+      queryClient.invalidateQueries({ queryKey: ['templates'] });
+      setSelectedId(null);
+      setIsEditing(false);
+    },
+    onError: (err: any) => {
+      const message = err?.response?.data?.error || 'Failed to delete template';
+      toast.error(message);
+    },
+  });
+
   const { data } = useQuery({
     queryKey: ['templates', scope, debouncedSearch],
     queryFn: async () => {
@@ -1319,13 +1383,31 @@ function TemplateModal({
         <div className="inbox-template-body-grid">
           <div className="inbox-template-left-pane">
             <div className="inbox-template-scope-tabs">
-              <button className={clsx(scope === 'mine' && 'active')} onClick={() => onScopeChange('mine')}>
+              <button
+                className={clsx(scope === 'mine' && 'active')}
+                onClick={() => {
+                  setIsEditing(false);
+                  onScopeChange('mine');
+                }}
+              >
                 Mine
               </button>
-              <button className={clsx(scope === 'team' && 'active')} onClick={() => onScopeChange('team')}>
+              <button
+                className={clsx(scope === 'team' && 'active')}
+                onClick={() => {
+                  setIsEditing(false);
+                  onScopeChange('team');
+                }}
+              >
                 Team
               </button>
-              <button className={clsx(scope === 'global' && 'active')} onClick={() => onScopeChange('global')}>
+              <button
+                className={clsx(scope === 'global' && 'active')}
+                onClick={() => {
+                  setIsEditing(false);
+                  onScopeChange('global');
+                }}
+              >
                 Global
               </button>
             </div>
@@ -1431,7 +1513,10 @@ function TemplateModal({
                 <button
                   key={t.id}
                   className={clsx('inbox-template-item compact', selectedTemplate?.id === t.id && 'selected')}
-                  onClick={() => setSelectedId(t.id)}
+                  onClick={() => {
+                    setSelectedId(t.id);
+                    setIsEditing(false);
+                  }}
                 >
                   <div className="inbox-template-name">{t.name}</div>
                   <div className="inbox-template-meta-row">
@@ -1447,13 +1532,39 @@ function TemplateModal({
           <div className="inbox-template-preview-pane">
             {selectedTemplate ? (
               <>
-                <div className="inbox-template-preview-title">{selectedTemplate.name}</div>
+                <div className="inbox-template-preview-title">{isEditing ? editDraft.name : selectedTemplate.name}</div>
                 <div className="inbox-template-preview-badges">
                   <span>{selectedTemplate.visibility}</span>
-                  <span>{selectedTemplate.category || 'General'}</span>
+                  <span>{(isEditing ? editDraft.category : selectedTemplate.category) || 'General'}</span>
                   <span>{selectedTemplate.ownerName || 'Owner'}</span>
                 </div>
-                <pre className="inbox-template-preview-body">{selectedTemplate.body}</pre>
+                {isEditing ? (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <input
+                      type="text"
+                      className="inbox-search-input"
+                      placeholder="Template name"
+                      value={editDraft.name}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
+                    />
+                    <input
+                      type="text"
+                      className="inbox-search-input"
+                      placeholder="Category"
+                      value={editDraft.category}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, category: e.target.value }))}
+                    />
+                    <textarea
+                      className="inbox-note-input"
+                      rows={8}
+                      placeholder="Template body..."
+                      value={editDraft.body}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, body: e.target.value }))}
+                    />
+                  </div>
+                ) : (
+                  <pre className="inbox-template-preview-body">{selectedTemplate.body}</pre>
+                )}
                 <div className="inbox-template-preview-meta">
                   <div>Used count: {selectedTemplate.usageCount || 0}</div>
                   <div>
@@ -1464,9 +1575,69 @@ function TemplateModal({
                   </div>
                 </div>
                 <div className="inbox-template-preview-actions">
-                  <button type="button" className="inbox-action-btn" onClick={() => onSelect(selectedTemplate)}>
-                    Insert Template
-                  </button>
+                  {!isEditing ? (
+                    <>
+                      <button type="button" className="inbox-action-btn" onClick={() => onSelect(selectedTemplate)}>
+                        Insert Template
+                      </button>
+                      <button
+                        type="button"
+                        className="inbox-action-btn"
+                        onClick={() => {
+                          setIsEditing(true);
+                          setEditDraft({
+                            name: selectedTemplate.name || '',
+                            body: selectedTemplate.body || '',
+                            category: selectedTemplate.category || '',
+                          });
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="inbox-action-btn"
+                        onClick={() => {
+                          if (!window.confirm('Delete this template?')) return;
+                          deleteTemplateMutation.mutate(selectedTemplate.id);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="inbox-action-btn"
+                        disabled={!editDraft.name.trim() || !editDraft.body.trim() || updateTemplateMutation.isPending}
+                        onClick={() =>
+                          updateTemplateMutation.mutate({
+                            id: selectedTemplate.id,
+                            name: editDraft.name.trim(),
+                            body: editDraft.body.trim(),
+                            category: editDraft.category.trim() || undefined,
+                          })
+                        }
+                      >
+                        Save Changes
+                      </button>
+                      <button
+                        type="button"
+                        className="inbox-action-btn"
+                        onClick={() => {
+                          setIsEditing(false);
+                          setEditDraft({
+                            name: selectedTemplate.name || '',
+                            body: selectedTemplate.body || '',
+                            category: selectedTemplate.category || '',
+                          });
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  )}
                 </div>
               </>
             ) : (

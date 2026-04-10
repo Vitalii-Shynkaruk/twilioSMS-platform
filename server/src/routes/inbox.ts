@@ -23,6 +23,7 @@ router.get('/', asyncHandler(InboxController.listConversations));
 router.get('/by-lead/:leadId', asyncHandler(InboxController.getOrCreateByLead));
 router.get('/:id', asyncHandler(InboxController.getConversation));
 router.post('/:id/read', asyncHandler(InboxController.markRead));
+router.post('/:id/unread', asyncHandler(InboxController.markUnread));
 router.post('/:id/reply', validate(sendReplySchema), asyncHandler(InboxController.sendReply));
 router.put(
   '/:id/assign',

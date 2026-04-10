@@ -267,13 +267,13 @@ export default function PipelinePage() {
   useEffect(() => {
     const wrapper = pipelineRef.current?.parentElement;
     if (wrapper) {
-      wrapper.style.overflow = "hidden";
-      wrapper.style.display = "flex";
-      wrapper.style.flexDirection = "column";
+      wrapper.style.overflow = 'hidden';
+      wrapper.style.display = 'flex';
+      wrapper.style.flexDirection = 'column';
       return () => {
-        wrapper.style.overflow = "";
-        wrapper.style.display = "";
-        wrapper.style.flexDirection = "";
+        wrapper.style.overflow = '';
+        wrapper.style.display = '';
+        wrapper.style.flexDirection = '';
       };
     }
   }, []);
@@ -370,6 +370,16 @@ export default function PipelinePage() {
       const { data } = await dealApi.getStats(boardParams);
       return data as DealStats;
     },
+    refetchInterval: 30000,
+  });
+
+  const { data: teamStats } = useQuery({
+    queryKey: ['deals', 'stats', { teamView: 'true', scope: 'team-total' }],
+    queryFn: async () => {
+      const { data } = await dealApi.getStats({ teamView: 'true' });
+      return data as DealStats;
+    },
+    enabled: viewTab === 'team',
     refetchInterval: 30000,
   });
 
@@ -1125,6 +1135,7 @@ export default function PipelinePage() {
       {viewTab === 'team' && (
         <TeamView
           stats={stats}
+          teamStats={teamStats}
           scopedBoard={board}
           teamBoard={teamSectionsBoard}
           reps={displayReps}
@@ -1655,12 +1666,14 @@ function repFullName(deal: Deal, reps: Rep[]) {
 
 function TeamView({
   stats,
+  teamStats,
   scopedBoard,
   teamBoard,
   reps,
   onDealClick,
 }: {
   stats?: DealStats;
+  teamStats?: DealStats;
   scopedBoard?: DealBoard;
   teamBoard?: DealBoard;
   reps: Rep[];
@@ -1684,7 +1697,8 @@ function TeamView({
       ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
       .reduce((sum, s) => sum + s.deals.length, 0) || 0;
   const topTotalSubmittedAndBeyond = topSubmittedDeals.length + topActiveOfferDeals.length + topFundedDeals.length;
-  const topConversionPct = topTotalSubmittedAndBeyond > 0 ? (topFundedDeals.length / topTotalSubmittedAndBeyond) * 100 : 0;
+  const topConversionPct =
+    topTotalSubmittedAndBeyond > 0 ? (topFundedDeals.length / topTotalSubmittedAndBeyond) * 100 : 0;
   const convColor = topConversionPct >= 60 ? 'var(--good)' : topConversionPct >= 40 ? 'var(--watch)' : 'var(--urgent)';
 
   const allFundedDeals = teamBoard?.stages?.find((s) => s.stage === 'FUNDED')?.deals || [];
@@ -1692,13 +1706,16 @@ function TeamView({
     isDealFundedInRange(d, currentMonthRange.start, currentMonthRange.end),
   );
   const activeOfferDeals =
-    teamBoard?.stages?.filter((s) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage)).flatMap((s) => s.deals) ||
-    [];
+    teamBoard?.stages
+      ?.filter((s) => ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(s.stage))
+      .flatMap((s) => s.deals) || [];
   const nurtureDeals = teamBoard?.stages?.find((s) => s.stage === 'NURTURE')?.deals || [];
   const activeOfferValue = activeOfferDeals.reduce((sum, d) => sum + (d.dealAmount || 0), 0);
   const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
-  const teamGoalPct =
-    stats?.monthlyGoal && stats.monthlyGoal > 0 ? ((stats?.fundedMTD || 0) / stats.monthlyGoal) * 100 : 0;
+  const individualFundedMTD = stats?.fundedMTD || 0;
+  const teamFundedMTD = teamStats?.fundedMTD ?? stats?.fundedMTD ?? 0;
+  const teamMonthlyGoal = teamStats?.monthlyGoal ?? stats?.monthlyGoal ?? 0;
+  const teamGoalPct = teamMonthlyGoal > 0 ? (teamFundedMTD / teamMonthlyGoal) * 100 : 0;
 
   return (
     <div className="team-view">
@@ -1711,11 +1728,11 @@ function TeamView({
       {/* Stat cards — 6 cards matching prototype */}
       <div className="team-stat-cards">
         <div className="team-stat-card">
-          <div className="stat-label">Funded MTD</div>
+          <div className="stat-label">My Funded MTD</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
-            {formatCurrency(stats?.fundedMTD)}
+            {formatCurrency(individualFundedMTD)}
           </div>
-          <div className="stat-sub">Goal: {formatCurrency(stats?.monthlyGoal)}</div>
+          <div className="stat-sub">Team Funded MTD: {formatCurrency(teamFundedMTD)}</div>
         </div>
         <div className="team-stat-card">
           <div className="stat-label">Active Pipeline $</div>
@@ -1755,7 +1772,7 @@ function TeamView({
       </div>
 
       {/* Team goal progress — in container like prototype */}
-      {stats?.monthlyGoal && stats.monthlyGoal > 0 && (
+      {teamMonthlyGoal > 0 && (
         <div
           style={{
             background: 'var(--bg3)',
@@ -1776,14 +1793,15 @@ function TeamView({
               />
             </div>
             <div className={`goal-pct ${teamGoalPct >= 80 ? 'on-track' : teamGoalPct >= 50 ? 'at-risk' : 'behind'}`}>
-              {teamGoalPct.toFixed(0)}% of {formatCurrency(stats.monthlyGoal)} monthly team goal
+              {teamGoalPct.toFixed(0)}% of {formatCurrency(teamMonthlyGoal)} monthly team goal
             </div>
           </div>
         </div>
       )}
 
       {/* Rep scoreboard — flex layout like prototype */}
-      {teamBoard && reps.length > 0 &&
+      {teamBoard &&
+        reps.length > 0 &&
         (() => {
           const activeReps = reps.filter((r) => r.isActive);
           const repOnly = activeReps.filter((r) => r.role === 'REP');
@@ -1797,7 +1815,32 @@ function TeamView({
             repOnly.length > 0
               ? [...repOnly, ...nonRepWithGoals.filter((r) => !repOnly.some((rep) => rep.id === r.id))]
               : activeReps.filter((r) => r.role !== 'MANAGER');
-          return scoreboardReps.length > 0 ? (
+          const sortedRepRows = scoreboardReps
+            .map((rep) => {
+              const repActiveDeals =
+                teamBoard?.stages
+                  ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
+                  .flatMap((s) => s.deals.filter((d) => d.assignedRepId === rep.id)) || [];
+              const repNurtureCount = nurtureDeals.filter((d) => d.assignedRepId === rep.id).length;
+              const repFundedTotal = getRepFundedAmountInRange(
+                fundedDeals,
+                rep.id,
+                currentMonthRange.start,
+                currentMonthRange.end,
+              );
+
+              return {
+                rep,
+                repActiveDeals,
+                repNurtureCount,
+                repFundedTotal,
+              };
+            })
+            .sort((a, b) => {
+              if (b.repFundedTotal !== a.repFundedTotal) return b.repFundedTotal - a.repFundedTotal;
+              return `${a.rep.firstName} ${a.rep.lastName}`.localeCompare(`${b.rep.firstName} ${b.rep.lastName}`);
+            });
+          return sortedRepRows.length > 0 ? (
             <div
               style={{
                 background: 'var(--bg3)',
@@ -1821,18 +1864,7 @@ function TeamView({
                 Rep Scoreboard
               </div>
               <div className="rep-scoreboard">
-                {scoreboardReps.map((rep) => {
-                  const repActiveDeals =
-                    teamBoard?.stages
-                      ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
-                      .flatMap((s) => s.deals.filter((d) => d.assignedRepId === rep.id)) || [];
-                  const repNurtureCount = nurtureDeals.filter((d) => d.assignedRepId === rep.id).length;
-                  const repFundedTotal = getRepFundedAmountInRange(
-                    fundedDeals,
-                    rep.id,
-                    currentMonthRange.start,
-                    currentMonthRange.end,
-                  );
+                {sortedRepRows.map(({ rep, repActiveDeals, repNurtureCount, repFundedTotal }) => {
                   const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
                   const goalBg = goalPct >= 0.8 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
 
@@ -2514,12 +2546,7 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
               const best = d.offers?.length ? d.offers.reduce((a, b) => (a.amount > b.amount ? a : b)).amount : 0;
               return sum + best;
             }, 0);
-          const funded = getRepFundedAmountInRange(
-            fundedDeals,
-            rep.id,
-            currentMonthRange.start,
-            currentMonthRange.end,
-          );
+          const funded = getRepFundedAmountInRange(fundedDeals, rep.id, currentMonthRange.start, currentMonthRange.end);
           const shared = allDeals.filter(
             (d: Deal) => d.assistingRepIds?.includes(rep.id) && d.assignedRepId !== rep.id,
           ).length;

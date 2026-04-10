@@ -162,6 +162,7 @@ export const inboxApi = {
   getConversation: (id: string, params?: Record<string, string>) => api.get(`/inbox/${id}`, { params }),
   getOrCreateByLead: (leadId: string) => api.get(`/inbox/by-lead/${leadId}`),
   markRead: (id: string) => api.post(`/inbox/${id}/read`),
+  markUnread: (id: string) => api.post(`/inbox/${id}/unread`),
   sendReply: (id: string, body: string) => api.post(`/inbox/${id}/reply`, { body }),
   assignRep: (id: string, repId: string) => api.put(`/inbox/${id}/assign`, { repId }),
 

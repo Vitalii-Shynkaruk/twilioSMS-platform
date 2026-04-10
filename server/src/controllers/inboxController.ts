@@ -6,7 +6,16 @@ import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 
-type InboxFilter = 'all' | 'unread' | 'hot' | 'email_rcv' | 'interested' | 'followup' | 'in_pipeline' | 'dnc';
+type InboxFilter =
+  | 'all'
+  | 'unread'
+  | 'hot'
+  | 'email_rcv'
+  | 'my_campaigns'
+  | 'interested'
+  | 'followup'
+  | 'in_pipeline'
+  | 'dnc';
 type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
 const DEAL_STAGE_LABELS: Record<string, string> = {
@@ -27,6 +36,7 @@ export class InboxController {
     'unread',
     'hot',
     'email_rcv',
+    'my_campaigns',
     'interested',
     'followup',
     'in_pipeline',
@@ -63,6 +73,16 @@ export class InboxController {
         return { hotLead: true };
       case 'email_rcv':
         return { emailReceived: true };
+      case 'my_campaigns':
+        return {
+          messages: {
+            some: {
+              direction: 'OUTBOUND',
+              campaignId: { not: null },
+              sentByUserId: req.user?.id,
+            },
+          },
+        };
       case 'interested':
         return {
           OR: [
@@ -409,7 +429,8 @@ export class InboxController {
                 const condition = InboxController.buildFilterCondition(key, req);
                 const visibilityCondition =
                   key === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition();
-                const baseVisibility = key === 'dnc' ? [visibilityCondition] : [InboxController.excludeDncCondition(), visibilityCondition];
+                const baseVisibility =
+                  key === 'dnc' ? [visibilityCondition] : [InboxController.excludeDncCondition(), visibilityCondition];
                 const scopedWhere = InboxController.withConditions(
                   baseWithSearch,
                   condition ? [...baseVisibility, condition] : baseVisibility,
@@ -805,6 +826,20 @@ export class InboxController {
     }
 
     res.json({ message: 'Marked as read' });
+  }
+
+  static async markUnread(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+
+    await prisma.conversation.update({
+      where: { id },
+      data: { unreadCount: Math.max(1, conversation.unreadCount || 0) },
+    });
+
+    res.json({ message: 'Marked as unread' });
   }
 
   static async sendReply(req: AuthRequest, res: Response): Promise<void> {
@@ -1244,11 +1279,6 @@ export class InboxController {
     const existing = await prisma.smsTemplate.findUnique({ where: { id: templateId } });
     if (!existing) throw new AppError('Template not found', 404);
 
-    // Только автор или админ может редактировать
-    if (existing.createdById !== req.user!.id && req.user!.role !== 'ADMIN') {
-      throw new AppError('Not authorized', 403);
-    }
-
     if (req.body.visibility === 'GLOBAL' && req.user!.role !== 'ADMIN') {
       throw new AppError('Only admins can set global visibility', 403);
     }
@@ -1269,10 +1299,6 @@ export class InboxController {
 
     const existing = await prisma.smsTemplate.findUnique({ where: { id: templateId } });
     if (!existing) throw new AppError('Template not found', 404);
-
-    if (existing.createdById !== req.user!.id && req.user!.role !== 'ADMIN') {
-      throw new AppError('Not authorized', 403);
-    }
 
     await prisma.smsTemplate.update({
       where: { id: templateId },

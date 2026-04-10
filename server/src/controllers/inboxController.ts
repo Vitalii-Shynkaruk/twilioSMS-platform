@@ -91,7 +91,7 @@ export class InboxController {
           ],
         };
       case 'followup':
-        return { nextFollowupAt: { not: null } };
+        return { nextFollowupAt: { gte: new Date() } };
       case 'in_pipeline':
         return {
           deals: {
@@ -883,6 +883,7 @@ export class InboxController {
       data: {
         lastMessageAt: new Date(),
         lastDirection: 'outbound',
+        nextFollowupAt: null,
       },
     });
 

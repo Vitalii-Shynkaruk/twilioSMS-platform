@@ -537,7 +537,7 @@ export class DealController {
           dealId: deal.id,
           repId: req.user!.id,
           eventType: 'note_added',
-          note: initialNotes.slice(0, 80),
+          note: initialNotes,
         },
       });
     }
@@ -921,7 +921,7 @@ export class DealController {
           dealId: id,
           repId: req.user!.id,
           eventType: noteEventType,
-          note: nextNotes ? nextNotes.slice(0, 80) : 'Note cleared',
+          note: nextNotes ? nextNotes : 'Note cleared',
         },
       });
     }
@@ -1280,7 +1280,20 @@ export class DealController {
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
     const amount = parseFloat(amountFunded);
-    const fDate = fundedDate ? new Date(fundedDate) : new Date();
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Amount funded must be greater than 0' });
+    }
+
+    const fDateRaw =
+      typeof fundedDate === 'string' && fundedDate && !fundedDate.includes('T')
+        ? `${fundedDate}T12:00:00.000Z`
+        : fundedDate;
+    const fDate = fDateRaw ? new Date(fDateRaw) : new Date();
+    if (Number.isNaN(fDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid funded date' });
+    }
+
+    const firstCheckinDate = new Date(fDate.getTime() + 35 * 24 * 60 * 60 * 1000);
 
     // Calculate cycle time
     let cycleTime: number | null = null;
@@ -1329,7 +1342,10 @@ export class DealController {
         fundedDate: fDate,
         cycleTime,
         dealAmount: amount,
+        nextAction: 'Funded check-in',
+        nextActionDue: firstCheckinDate,
         lastActivityAt: new Date(),
+        staleDays: 0,
         daysInStage: 0,
       },
     });
@@ -1433,7 +1449,8 @@ export class DealController {
     const currentAssists = Array.isArray(deal.assistingRepIds)
       ? ((deal.assistingRepIds as string[]) || []).filter(Boolean)
       : [];
-    const requestedPrimary = typeof assignedRepId === 'string' && assignedRepId.trim() ? assignedRepId.trim() : undefined;
+    const requestedPrimary =
+      typeof assignedRepId === 'string' && assignedRepId.trim() ? assignedRepId.trim() : undefined;
 
     if (assistingRepIds !== undefined && !Array.isArray(assistingRepIds)) {
       return res.status(400).json({ error: 'assistingRepIds must be an array' });
@@ -1683,7 +1700,7 @@ export class DealController {
       .filter((d) => d.stage === DealStage.COMMITTED_FUNDING)
       .reduce((sum, d) => sum + bestOfferValue(d), 0);
 
-    // Monthly Goal — individual rep or team sum
+    // Monthly Goal — individual rep, explicit team goal, or fallback sum
     let monthlyGoal = 0;
     if (fundingScopedRepId) {
       const repUser = await prisma.user.findUnique({
@@ -1691,6 +1708,26 @@ export class DealController {
         select: { monthlyGoal: true },
       });
       monthlyGoal = repUser?.monthlyGoal || 0;
+    } else if (isTeamView) {
+      const teamGoal = await prisma.goal.findUnique({
+        where: {
+          entityType_entityId: {
+            entityType: 'team',
+            entityId: 'team',
+          },
+        },
+        select: { monthlyGoal: true },
+      });
+
+      if (teamGoal) {
+        monthlyGoal = teamGoal.monthlyGoal || 0;
+      } else {
+        const allReps = await prisma.user.aggregate({
+          where: { role: { in: ['REP', 'ADMIN', 'MANAGER'] }, isActive: true },
+          _sum: { monthlyGoal: true },
+        });
+        monthlyGoal = allReps._sum.monthlyGoal || 0;
+      }
     } else {
       const allReps = await prisma.user.aggregate({
         where: { role: { in: ['REP', 'ADMIN', 'MANAGER'] }, isActive: true },

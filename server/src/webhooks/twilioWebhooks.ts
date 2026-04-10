@@ -14,6 +14,42 @@ import redis from '../config/redis';
 
 const router = Router();
 
+const POSITIVE_REPLY_PATTERNS: RegExp[] = [
+  /\b(yes|yep|yeah|interested|i'?m interested|i am interested)\b/i,
+  /\b(send|share)\b.*\b(info|information|details|terms|application)\b/i,
+  /\b(call me|email me|reach me)\b/i,
+  /\b(looking for|need)\b.*\b(funding|capital|loan|credit)\b/i,
+  /\b(how much|what rates?|rate|terms?|qualify|qualification)\b/i,
+];
+
+const NEGATIVE_REPLY_PATTERNS: RegExp[] = [
+  /\b(no|nope|not interested|don'?t|do not|stop|unsubscribe|remove me|wrong number|dnc|bad lead)\b/i,
+];
+
+function isPositiveCampaignReply(body: string): boolean {
+  const text = body.trim();
+  if (!text) return false;
+
+  if (NEGATIVE_REPLY_PATTERNS.some((pattern) => pattern.test(text))) {
+    return false;
+  }
+
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) {
+    return true;
+  }
+
+  if (POSITIVE_REPLY_PATTERNS.some((pattern) => pattern.test(text))) {
+    return true;
+  }
+
+  // Treat clear intent questions as positive engagement.
+  if (text.includes('?') && /\b(funding|capital|loan|credit|rate|term|offer)\b/i.test(text)) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Twilio webhook signature validation middleware
  * Validates that incoming requests are genuinely from Twilio.
@@ -129,6 +165,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
           lastMessageAt: new Date(),
           lastDirection: 'inbound',
           unreadCount: { increment: 1 },
+          nextFollowupAt: null,
           ...(inboundTwilioNumber?.id
             ? {
                 twilioNumberId: inboundTwilioNumber.id,
@@ -148,31 +185,28 @@ router.post('/inbound', async (req: Request, res: Response) => {
         conversationId: conversation.id,
       });
 
-      // Update campaign lead status if applicable
-      const affectedCampaignLeads = await prisma.campaignLead.findMany({
-        where: {
-          leadId: lead.id,
-          status: { in: ['SENT', 'DELIVERED'] },
-        },
-        select: { campaignId: true },
-      });
-
-      if (affectedCampaignLeads.length > 0) {
-        await prisma.campaignLead.updateMany({
+      // Count campaign replies only for positive inbound intent.
+      if (isPositiveCampaignReply(Body)) {
+        const affectedCampaignLead = await prisma.campaignLead.findFirst({
           where: {
             leadId: lead.id,
             status: { in: ['SENT', 'DELIVERED'] },
           },
-          data: {
-            status: 'REPLIED',
-            repliedAt: new Date(),
-          },
+          select: { id: true, campaignId: true },
+          orderBy: [{ deliveredAt: 'desc' }, { sentAt: 'desc' }, { createdAt: 'desc' }],
         });
 
-        const campaignIds = [...new Set(affectedCampaignLeads.map((cl) => cl.campaignId))];
-        for (const campaignId of campaignIds) {
+        if (affectedCampaignLead) {
+          await prisma.campaignLead.update({
+            where: { id: affectedCampaignLead.id },
+            data: {
+              status: 'REPLIED',
+              repliedAt: new Date(),
+            },
+          });
+
           await prisma.campaign.update({
-            where: { id: campaignId },
+            where: { id: affectedCampaignLead.campaignId },
             data: { totalReplied: { increment: 1 } },
           });
         }

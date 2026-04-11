@@ -75,17 +75,23 @@ smsWorker.on('completed', async (job: Job) => {
             (stats.find((s) => s.status === 'UNDELIVERED')?._count ?? 0);
           const blocked = stats.find((s) => s.status === 'BLOCKED')?._count ?? 0;
 
-          await prisma.campaign.update({
-            where: { id: campaignId },
-            data: {
-              status: 'COMPLETED',
-              completedAt: new Date(),
-              totalDelivered: delivered,
-              totalFailed: failed,
-              totalBlocked: blocked,
-              totalSent: sent + delivered + failed + blocked,
-            },
-          });
+          await prisma.$transaction([
+            prisma.campaignLead.updateMany({
+              where: { campaignId, status: 'PENDING' },
+              data: { status: 'SKIPPED' },
+            }),
+            prisma.campaign.update({
+              where: { id: campaignId },
+              data: {
+                status: 'COMPLETED',
+                completedAt: new Date(),
+                totalDelivered: delivered,
+                totalFailed: failed,
+                totalBlocked: blocked,
+                totalSent: sent + delivered + failed + blocked,
+              },
+            }),
+          ]);
           logger.info(
             `Campaign ${campaignId} auto-completed: ${sent + delivered + failed + blocked} sent, ${delivered} delivered, ${failed} failed, ${blocked} blocked`,
           );

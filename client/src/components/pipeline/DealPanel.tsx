@@ -679,6 +679,7 @@ function DealClientTab({
   const clientRevenue = clientMeta.monthlyRevenue ?? '';
   const sourceType = (clientMeta.source || (smsCampaignSource ? 'SMS' : '')).trim();
   const leadSource = (clientMeta.leadSource ?? smsCampaignSource ?? '').trim();
+  const fullDealNote = (deal.notes || '').trim();
   const isSubmittedProduct = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
   const amountLabel = isSubmittedProduct ? 'Submitted Amount' : 'Requested Amount';
   const amountPayloadKey = isSubmittedProduct ? 'submittedAmount' : 'dealAmount';
@@ -701,12 +702,19 @@ function DealClientTab({
     [deal.dealEvents],
   );
 
+  function resolveEventNoteText(note?: string | null): string {
+    const text = (note || '').trim();
+    if (!text) return '';
+    if (fullDealNote && text.length < fullDealNote.length && fullDealNote.startsWith(text)) return fullDealNote;
+    return text;
+  }
+
   const noteEntries = useMemo(() => {
     const items = sortedEvents
-      .filter((event) => (event.eventType || '').toLowerCase().includes('note') && event.note?.trim())
+      .filter((event) => (event.eventType || '').toLowerCase().includes('note') && resolveEventNoteText(event.note))
       .map((event) => ({
         id: event.id,
-        text: event.note?.trim() || '',
+        text: resolveEventNoteText(event.note),
         at: event.createdAt,
       }));
 
@@ -726,7 +734,7 @@ function DealClientTab({
       return true;
     });
     return deduped.slice(0, 8);
-  }, [sortedEvents, deal.notes, deal.updatedAt, deal.createdAt, deal.id, localNotes]);
+  }, [sortedEvents, deal.notes, deal.updatedAt, deal.createdAt, deal.id, localNotes, fullDealNote]);
 
   const recentActivity = sortedEvents.slice(0, 3);
 
@@ -798,7 +806,8 @@ function DealClientTab({
 
   function formatActivityText(event: DealEvent): string {
     const label = event.eventType.replace(/_/g, ' ');
-    return event.note ? `${label} — ${event.note}` : label;
+    const noteText = resolveEventNoteText(event.note);
+    return noteText ? `${label} — ${noteText}` : label;
   }
 
   return (

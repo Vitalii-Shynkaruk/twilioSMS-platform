@@ -363,12 +363,16 @@ export class SendingEngine {
       );
       if (!fromNumber) {
         errors.push(`No available numbers for lead ${lead.leadId}`);
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
         continue;
       }
 
       const conversationId = convoMap.get(lead.leadId);
       if (!conversationId) {
         errors.push(`No conversation for lead ${lead.leadId}`);
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
         continue;
       }
 

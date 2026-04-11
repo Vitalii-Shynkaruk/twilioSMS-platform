@@ -225,9 +225,7 @@ export default function CampaignsPage() {
                   <td className="table-cell text-center font-mono text-green-400">
                     {campaign.totalDelivered.toLocaleString()}
                   </td>
-                  <td className="table-cell text-center font-mono text-red-400">
-                    {campaign.totalFailed.toLocaleString()}
-                  </td>
+                  <CampaignFailedTooltip campaign={campaign} />
                   <td className="table-cell text-center font-mono text-yellow-400">
                     {campaign.totalBlocked.toLocaleString()}
                   </td>
@@ -421,6 +419,8 @@ export default function CampaignsPage() {
 }
 
 function CreateCampaignModal({ onClose }: { onClose: () => void }) {
+  const { user } = useAuthStore();
+  const isRep = user?.role === 'REP';
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -658,16 +658,24 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
               value={formData.numberPoolId}
               onChange={(e) => setFormData({ ...formData, numberPoolId: e.target.value })}
             >
-              <option value="">All Active Numbers (No Pool Filter)</option>
+              <option value="">
+                {isRep ? 'Assigned Active Numbers (Auto)' : 'All Active Numbers (No Pool Filter)'}
+              </option>
               {availablePools.map((pool: any) => (
                 <option key={pool.id} value={pool.id}>
                   {pool.name} ({poolCountLabel(pool._count?.members ?? pool.members?.length ?? 0)})
                 </option>
               ))}
             </select>
-            <p className="text-xs text-dark-500 mt-1">
-              Choose a pool to restrict sending to that pool only. Leave blank to use all active numbers.
-            </p>
+            {isRep ? (
+              <p className="text-xs text-dark-500 mt-1">
+                Rep campaigns are hard-wired to assigned active numbers. Pool selection is an additional filter.
+              </p>
+            ) : (
+              <p className="text-xs text-dark-500 mt-1">
+                Choose a pool to restrict sending to that pool only. Leave blank to use all active numbers.
+              </p>
+            )}
           </div>
 
           {/* Lead Selection */}
@@ -1025,6 +1033,117 @@ function CampaignStatusBadge({ status }: { status: string }) {
   );
 }
 
+const TWILIO_ERROR_LABELS: Record<string, string> = {
+  '21408': 'SMS not enabled for region',
+  '21610': 'Recipient unsubscribed (STOP)',
+  '21611': 'Queue overflow',
+  '21612': 'Trial account restriction',
+  '21614': 'Invalid mobile number',
+  '21617': 'Landline / non-mobile',
+  '30001': 'Queue overflow',
+  '30002': 'Account suspended',
+  '30003': 'Unreachable destination',
+  '30004': 'Message blocked by carrier',
+  '30005': 'Unknown destination',
+  '30006': 'Landline or unreachable',
+  '30007': 'Carrier filtering',
+  '30008': 'Carrier unknown error',
+  '30010': 'Price exceeds max',
+  '30034': 'T-Mobile policy violation',
+  '63003': 'A2P campaign not approved',
+  '63016': 'A2P rate limit exceeded',
+};
+
+function CampaignFailedTooltip({ campaign }: { campaign: Campaign }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number; flip: boolean }>({ x: 0, y: 0, flip: false });
+  const triggerRef = useRef<HTMLTableCellElement>(null);
+  const total = campaign.totalFailed;
+  const reasons = campaign.failedBreakdown?.reasons || [];
+
+  const handleEnter = useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const flip = rect.top < 300;
+      setPos({
+        x: rect.left + rect.width / 2,
+        y: flip ? rect.bottom : rect.top,
+        flip,
+      });
+    }
+    setShow(true);
+  }, []);
+
+  return (
+    <td
+      ref={triggerRef}
+      className="table-cell text-center font-mono text-red-400 cursor-default"
+      onMouseEnter={handleEnter}
+      onMouseLeave={() => setShow(false)}
+    >
+      {total.toLocaleString()}
+
+      {show && total > 0 && (
+        <div
+          className="fixed z-[9999] bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none w-80 text-left"
+          style={{
+            left: pos.x,
+            top: pos.y,
+            transform: pos.flip ? 'translate(-50%, 0) translateY(8px)' : 'translate(-50%, -100%) translateY(-8px)',
+          }}
+        >
+          <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-2">Failure Reasons</p>
+          <p className="text-[10px] text-dark-500 mb-2">Total Failed: {total.toLocaleString()}</p>
+
+          {reasons.length > 0 ? (
+            <div className="space-y-2">
+              {reasons.slice(0, 6).map((reason) => {
+                const label =
+                  reason.code === 'UNKNOWN'
+                    ? 'Unknown carrier error'
+                    : TWILIO_ERROR_LABELS[reason.code] || 'Carrier error';
+                const pct = total > 0 ? ((reason.count / total) * 100).toFixed(0) : '0';
+                const msg = reason.message?.trim();
+                return (
+                  <div
+                    key={`${reason.code}-${msg || 'no-msg'}`}
+                    className="border-b border-dark-700/60 pb-2 last:border-0"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-mono text-dark-300">
+                          {reason.code === 'UNKNOWN' ? 'UNKNOWN' : `#${reason.code}`}
+                        </span>
+                        <span className="text-[11px] text-dark-400 ml-2">{label}</span>
+                      </div>
+                      <span className="text-[11px] font-medium text-dark-200 shrink-0">
+                        {reason.count.toLocaleString()} ({pct}%)
+                      </span>
+                    </div>
+                    {msg && <p className="text-[10px] text-dark-500 mt-1 truncate">{msg}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[11px] text-dark-400">No Twilio error details found for these failed messages.</p>
+          )}
+
+          <p className="text-[10px] text-dark-500 mt-3 leading-tight border-t border-dark-700 pt-2">
+            Failed includes Twilio statuses FAILED and UNDELIVERED. BLOCKED is shown in its own column.
+          </p>
+
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${
+              pos.flip ? 'bottom-full border-b-[6px] border-b-dark-600' : 'top-full border-t-[6px] border-t-dark-600'
+            }`}
+          />
+        </div>
+      )}
+    </td>
+  );
+}
+
 /* ── Тултип разбивки Sent для кампаний ── */
 function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   const [show, setShow] = useState(false);
@@ -1032,6 +1151,8 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   const triggerRef = useRef<HTMLTableCellElement>(null);
   const bd = campaign.sentBreakdown;
   const total = campaign.totalSent;
+  const skipped = campaign.leadBreakdown?.skipped ?? Math.max(campaign.totalLeads - total, 0);
+  const pending = campaign.leadBreakdown?.pending ?? 0;
   const inTransit = Math.max(
     campaign.totalSent - campaign.totalDelivered - campaign.totalFailed - campaign.totalBlocked,
     0,
@@ -1059,7 +1180,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
     >
       {total.toLocaleString()}
 
-      {show && bd && total > 0 && (
+      {show && bd && (total > 0 || skipped > 0 || pending > 0) && (
         <div
           className="fixed z-[9999] bg-dark-800 border border-dark-600 rounded-lg shadow-xl p-4 pointer-events-none w-64 text-left"
           style={{
@@ -1069,7 +1190,24 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
           }}
         >
           <p className="text-[11px] font-semibold text-dark-300 uppercase tracking-wider mb-3">Campaign Breakdown</p>
-          <p className="text-[10px] text-dark-500 mb-2">Total Attempts: {total.toLocaleString()}</p>
+          <p className="text-[10px] text-dark-500">Total Leads: {campaign.totalLeads.toLocaleString()}</p>
+          <p className="text-[10px] text-dark-500 mb-2">Attempted: {total.toLocaleString()}</p>
+          {(skipped > 0 || pending > 0) && (
+            <div className="mb-3 border-b border-dark-700 pb-2 space-y-1">
+              {skipped > 0 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-dark-400">Skipped (filtered)</span>
+                  <span className="text-dark-300 font-medium">{skipped.toLocaleString()}</span>
+                </div>
+              )}
+              {pending > 0 && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-dark-400">Pending (not queued)</span>
+                  <span className="text-dark-300 font-medium">{pending.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Статусы */}
           <div className="space-y-1 mb-3">
@@ -1125,7 +1263,8 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
 
           {/* Пояснение */}
           <p className="text-[10px] text-dark-500 mt-3 leading-tight border-t border-dark-700 pt-2">
-            Messages are distributed across all numbers in the pool by the sending engine.
+            Completed means queue finished. Skipped leads were filtered by existing-thread, ownership, or compliance
+            checks.
           </p>
 
           {/* Стрелочка */}

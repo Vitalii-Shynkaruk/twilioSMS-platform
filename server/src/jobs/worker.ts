@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq';
 import redis from '../config/redis';
 import prisma from '../config/database';
 import { SendingEngine } from '../services/sendingEngine';
+import { NumberService } from '../services/numberService';
 import logger from '../config/logger';
 
 /**
@@ -143,19 +144,13 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
           where: { status: 'PENDING' },
           include: { lead: true },
         },
+        _count: {
+          select: { leads: true },
+        },
       },
     });
 
     if (!campaign) return;
-
-    // Update campaign status
-    await prisma.campaign.update({
-      where: { id: campaignId },
-      data: {
-        status: 'SENDING',
-        startedAt: new Date(),
-      },
-    });
 
     // Queue all messages
     const leads = campaign.leads.map((cl) => ({
@@ -181,11 +176,37 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       });
     }
 
+    let restrictToPhoneNumberIds: string[] | undefined;
+    const creator = await prisma.user.findUnique({
+      where: { id: campaign.createdById },
+      select: { role: true },
+    });
+
+    if (creator?.role === 'REP') {
+      restrictToPhoneNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
+      if (restrictToPhoneNumberIds.length === 0) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: 'DRAFT',
+            startedAt: null,
+            totalLeads: campaign._count.leads,
+            totalSent: 0,
+          },
+        });
+        logger.warn(
+          `Campaign ${campaignId} reverted to DRAFT: no active assigned numbers for rep ${campaign.createdById}`,
+        );
+        return;
+      }
+    }
+
     const result = await SendingEngine.queueBulkSend({
       leads: leadsToSend,
       messageTemplate: campaign.messageTemplate,
       campaignId: campaign.id,
       poolId: campaign.numberPoolId || undefined,
+      restrictToPhoneNumberIds,
       sendingSpeed: campaign.sendingSpeed,
       sentByUserId: campaign.createdById,
     });
@@ -203,7 +224,7 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
         data: {
           status: 'DRAFT',
           startedAt: null,
-          totalLeads: leads.length,
+          totalLeads: campaign._count.leads,
           totalSent: 0,
         },
       });
@@ -215,7 +236,9 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
     await prisma.campaign.update({
       where: { id: campaignId },
       data: {
-        totalLeads: leads.length,
+        status: 'SENDING',
+        startedAt: new Date(),
+        totalLeads: campaign._count.leads,
         totalSent: result.queued,
       },
     });

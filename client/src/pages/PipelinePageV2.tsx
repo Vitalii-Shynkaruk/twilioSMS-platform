@@ -1713,6 +1713,8 @@ function TeamView({
   const activeOfferValue = activeOfferDeals.reduce((sum, d) => sum + (d.dealAmount || 0), 0);
   const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || d.dealAmount || 0), 0);
   const individualFundedMTD = stats?.fundedMTD || 0;
+  const individualMonthlyGoal = stats?.monthlyGoal || 0;
+  const individualGoalPct = individualMonthlyGoal > 0 ? (individualFundedMTD / individualMonthlyGoal) * 100 : 0;
   const teamFundedMTD = teamStats?.fundedMTD ?? stats?.fundedMTD ?? 0;
   const teamMonthlyGoal = teamStats?.monthlyGoal ?? stats?.monthlyGoal ?? 0;
   const teamGoalPct = teamMonthlyGoal > 0 ? (teamFundedMTD / teamMonthlyGoal) * 100 : 0;
@@ -1731,6 +1733,11 @@ function TeamView({
           <div className="stat-label">My Funded MTD</div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--good)', fontVariantNumeric: 'tabular-nums' }}>
             {formatCurrency(individualFundedMTD)}
+          </div>
+          <div className="stat-sub">
+            {individualMonthlyGoal > 0
+              ? `Goal: ${formatCurrency(individualMonthlyGoal)} · ${individualGoalPct.toFixed(0)}%`
+              : 'Goal not set'}
           </div>
           <div className="stat-sub">Team Funded MTD: {formatCurrency(teamFundedMTD)}</div>
         </div>

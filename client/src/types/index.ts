@@ -210,6 +210,16 @@ export interface Campaign {
     numbers: Array<{ number: string; count: number }>;
     reps: Array<{ name: string; count: number }>;
   };
+  failedBreakdown?: {
+    reasons: Array<{ code: string; message?: string; count: number }>;
+  };
+  leadBreakdown?: {
+    pending: number;
+    skipped: number;
+    delivered: number;
+    failed: number;
+    replied: number;
+  };
 }
 
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';

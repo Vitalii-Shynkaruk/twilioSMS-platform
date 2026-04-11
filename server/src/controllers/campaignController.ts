@@ -36,48 +36,57 @@ export class CampaignController {
 
     // Use message-based counters so "Sent" reflects actual attempts, not queued items.
     const campaignIds = campaigns.map((c) => c.id);
-    const liveRows =
+    const [liveRows, numberRows, repRows, failureReasonRows, leadStatusRows] =
       campaignIds.length > 0
-        ? await prisma.message.groupBy({
-            by: ['campaignId', 'status'],
-            where: {
-              campaignId: { in: campaignIds },
-              direction: 'OUTBOUND',
-              status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
-            },
-            _count: { id: true },
-          })
-        : [];
-
-    // Breakdown по номерам
-    const numberRows =
-      campaignIds.length > 0
-        ? await prisma.message.groupBy({
-            by: ['campaignId', 'phoneNumberId'],
-            where: {
-              campaignId: { in: campaignIds },
-              direction: 'OUTBOUND',
-              status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
-              phoneNumberId: { not: null },
-            },
-            _count: { id: true },
-          })
-        : [];
-
-    // Breakdown по репам
-    const repRows =
-      campaignIds.length > 0
-        ? await prisma.message.groupBy({
-            by: ['campaignId', 'sentByUserId'],
-            where: {
-              campaignId: { in: campaignIds },
-              direction: 'OUTBOUND',
-              status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
-              sentByUserId: { not: null },
-            },
-            _count: { id: true },
-          })
-        : [];
+        ? await Promise.all([
+            prisma.message.groupBy({
+              by: ['campaignId', 'status'],
+              where: {
+                campaignId: { in: campaignIds },
+                direction: 'OUTBOUND',
+                status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+              },
+              _count: { id: true },
+            }),
+            // Breakdown по номерам
+            prisma.message.groupBy({
+              by: ['campaignId', 'phoneNumberId'],
+              where: {
+                campaignId: { in: campaignIds },
+                direction: 'OUTBOUND',
+                status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+                phoneNumberId: { not: null },
+              },
+              _count: { id: true },
+            }),
+            // Breakdown по репам
+            prisma.message.groupBy({
+              by: ['campaignId', 'sentByUserId'],
+              where: {
+                campaignId: { in: campaignIds },
+                direction: 'OUTBOUND',
+                status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+                sentByUserId: { not: null },
+              },
+              _count: { id: true },
+            }),
+            // Breakdown причин только для Failed (FAILED + UNDELIVERED)
+            prisma.message.groupBy({
+              by: ['campaignId', 'errorCode', 'errorMessage'],
+              where: {
+                campaignId: { in: campaignIds },
+                direction: 'OUTBOUND',
+                status: { in: ['FAILED', 'UNDELIVERED'] },
+              },
+              _count: { id: true },
+            }),
+            prisma.campaignLead.groupBy({
+              by: ['campaignId', 'status'],
+              where: { campaignId: { in: campaignIds } },
+              _count: { id: true },
+            }),
+          ])
+        : [[], [], [], [], []];
 
     // Получаем имена номеров и репов
     const phoneNumberIds = [...new Set(numberRows.map((r) => r.phoneNumberId).filter(Boolean))] as string[];
@@ -118,6 +127,53 @@ export class CampaignController {
       repByCampaign.set(row.campaignId, arr);
     }
 
+    // Group failure reasons by campaign and error code
+    const failureReasonMapByCampaign = new Map<string, Map<string, { code: string; message: string; count: number }>>();
+    for (const row of failureReasonRows) {
+      if (!row.campaignId) continue;
+      const code = (row.errorCode || '').trim() || 'UNKNOWN';
+      const message = (row.errorMessage || '').trim();
+      const byCode = failureReasonMapByCampaign.get(row.campaignId) || new Map();
+      const current = byCode.get(code);
+      if (current) {
+        current.count += row._count.id;
+        if (!current.message && message) current.message = message;
+      } else {
+        byCode.set(code, { code, message, count: row._count.id });
+      }
+      failureReasonMapByCampaign.set(row.campaignId, byCode);
+    }
+
+    const failureReasonsByCampaign = new Map<string, Array<{ code: string; message: string; count: number }>>();
+    for (const [campaignId, byCode] of failureReasonMapByCampaign.entries()) {
+      failureReasonsByCampaign.set(
+        campaignId,
+        Array.from(byCode.values()).sort((a, b) => b.count - a.count),
+      );
+    }
+
+    const leadStatusByCampaign = new Map<
+      string,
+      { pending: number; skipped: number; delivered: number; failed: number; replied: number }
+    >();
+    for (const row of leadStatusRows) {
+      if (!row.campaignId) continue;
+      const current = leadStatusByCampaign.get(row.campaignId) || {
+        pending: 0,
+        skipped: 0,
+        delivered: 0,
+        failed: 0,
+        replied: 0,
+      };
+      const count = row._count.id;
+      if (row.status === 'PENDING') current.pending += count;
+      if (row.status === 'SKIPPED') current.skipped += count;
+      if (row.status === 'DELIVERED') current.delivered += count;
+      if (row.status === 'FAILED') current.failed += count;
+      if (row.status === 'REPLIED') current.replied += count;
+      leadStatusByCampaign.set(row.campaignId, current);
+    }
+
     const liveByCampaign = new Map<
       string,
       { totalSent: number; totalDelivered: number; totalFailed: number; totalBlocked: number }
@@ -149,13 +205,23 @@ export class CampaignController {
       };
       const numbers = (numberByCampaign.get(campaign.id) || []).sort((a, b) => b.count - a.count);
       const reps = (repByCampaign.get(campaign.id) || []).sort((a, b) => b.count - a.count);
+      const leadBreakdown = leadStatusByCampaign.get(campaign.id) || {
+        pending: 0,
+        skipped: 0,
+        delivered: 0,
+        failed: 0,
+        replied: 0,
+      };
       return {
         ...campaign,
+        totalLeads: campaign._count?.leads ?? campaign.totalLeads ?? 0,
         totalSent: live.totalSent,
         totalDelivered: live.totalDelivered,
         totalFailed: live.totalFailed,
         totalBlocked: live.totalBlocked,
         sentBreakdown: { numbers, reps },
+        failedBreakdown: { reasons: failureReasonsByCampaign.get(campaign.id) || [] },
+        leadBreakdown,
       };
     });
 
@@ -349,8 +415,32 @@ export class CampaignController {
       throw new AppError('Campaign has no leads. Add leads before starting.', 400);
     }
 
+    const pendingCount = await prisma.campaignLead.count({
+      where: { campaignId: id, status: 'PENDING' },
+    });
+    if (pendingCount === 0) {
+      throw new AppError('Campaign has no pending leads. All leads were already processed or filtered out.', 400);
+    }
+
+    let restrictToPhoneNumberIds: string[] | undefined;
+    const creator = await prisma.user.findUnique({
+      where: { id: campaign.createdById },
+      select: { role: true },
+    });
+
+    if (creator?.role === 'REP') {
+      restrictToPhoneNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
+      if (restrictToPhoneNumberIds.length === 0) {
+        throw new AppError('This rep has no active assigned numbers. Assign numbers in Numbers page first.', 400);
+      }
+    }
+
     // Pre-validate: check that at least one sending number is available
-    const availableNumber = await NumberService.getBestAvailableNumber([], campaign.numberPoolId || undefined);
+    const availableNumber = await NumberService.getBestAvailableNumber(
+      [],
+      campaign.numberPoolId || undefined,
+      restrictToPhoneNumberIds,
+    );
     if (!availableNumber) {
       throw new AppError('No available phone numbers for sending. Check Numbers settings.', 400);
     }

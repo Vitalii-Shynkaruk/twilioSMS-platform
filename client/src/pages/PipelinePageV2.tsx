@@ -1824,11 +1824,8 @@ function TeamView({
               : activeReps.filter((r) => r.role !== 'MANAGER');
           const sortedRepRows = scoreboardReps
             .map((rep) => {
-              const repActiveDeals =
-                teamBoard?.stages
-                  ?.filter((s) => !['FUNDED', 'CLOSED', 'NURTURE'].includes(s.stage))
-                  .flatMap((s) => s.deals.filter((d) => d.assignedRepId === rep.id)) || [];
-              const repNurtureCount = nurtureDeals.filter((d) => d.assignedRepId === rep.id).length;
+              const repFundedUnits = fundedDeals.filter((d) => d.assignedRepId === rep.id).length;
+              const repApprovedCommittedCount = activeOfferDeals.filter((d) => d.assignedRepId === rep.id).length;
               const repFundedTotal = getRepFundedAmountInRange(
                 fundedDeals,
                 rep.id,
@@ -1838,8 +1835,8 @@ function TeamView({
 
               return {
                 rep,
-                repActiveDeals,
-                repNurtureCount,
+                repFundedUnits,
+                repApprovedCommittedCount,
                 repFundedTotal,
               };
             })
@@ -1871,7 +1868,7 @@ function TeamView({
                 Rep Scoreboard
               </div>
               <div className="rep-scoreboard">
-                {sortedRepRows.map(({ rep, repActiveDeals, repNurtureCount, repFundedTotal }) => {
+                {sortedRepRows.map(({ rep, repFundedUnits, repApprovedCommittedCount, repFundedTotal }) => {
                   const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
                   const goalBg = goalPct >= 0.8 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
 
@@ -1910,15 +1907,17 @@ function TeamView({
                           </div>
                         </div>
                         <div>
-                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>Active</div>
+                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>Units</div>
                           <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--info)' }}>
-                            {repActiveDeals.length}
+                            {repFundedUnits}
                           </div>
                         </div>
                         <div>
-                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>Nurture</div>
+                          <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>
+                            Approved + Committed
+                          </div>
                           <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text2)' }}>
-                            {repNurtureCount}
+                            {repApprovedCommittedCount}
                           </div>
                         </div>
                       </div>

@@ -1773,7 +1773,7 @@ export class DealController {
     const twentyOneDaysAgo = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
     const oneHundredFiftyDaysAgo = new Date(now.getTime() - 150 * 24 * 60 * 60 * 1000);
 
-    const [renewalCandidates, reviveCandidates, statementRefresh, followUpDue] = await Promise.all([
+    const [renewalCandidates, reviveCandidates, statementRefresh, followUpDue, overdueActions] = await Promise.all([
       // Source 1: Renewal — funded 150+ days ago
       prisma.deal.findMany({
         where: {
@@ -1822,6 +1822,18 @@ export class DealController {
           assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
         },
       }),
+      // Also include all overdue next actions (not only explicit follow-up records)
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          nextActionDue: { lt: now },
+          stage: { notIn: [DealStage.CLOSED] },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
     ]);
 
     // Tag each with source and deduplicate
@@ -1851,11 +1863,25 @@ export class DealController {
         all.push({ ...d, reviveSource: 'follow_up' });
       }
     }
+    for (const d of overdueActions) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'overdue_action' });
+      }
+    }
 
-    // Sort by urgency: follow_up first (past due), then by amount desc
+    // Sort by urgency: overdue actions first, then follow-ups, then remaining by amount
     all.sort((a, b) => {
-      if (a.reviveSource === 'follow_up' && b.reviveSource !== 'follow_up') return -1;
-      if (b.reviveSource === 'follow_up' && a.reviveSource !== 'follow_up') return 1;
+      const sourcePriority: Record<string, number> = {
+        overdue_action: 0,
+        follow_up: 1,
+        statement_refresh: 2,
+        revive: 3,
+        renewal: 4,
+      };
+      const ap = sourcePriority[a.reviveSource] ?? 99;
+      const bp = sourcePriority[b.reviveSource] ?? 99;
+      if (ap !== bp) return ap - bp;
       return (b.dealAmount || 0) - (a.dealAmount || 0);
     });
 

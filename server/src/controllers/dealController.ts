@@ -1677,7 +1677,10 @@ export class DealController {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const queueToday = allDeals.filter((d) => d.followUpDate && new Date(d.followUpDate) <= tomorrow).length;
+    const queueToday = allDeals.filter((d) => {
+      const dueDate = d.nextActionDue || d.followUpDate;
+      return !!dueDate && new Date(dueDate) <= tomorrow;
+    }).length;
 
     // Pipeline Value = Approved + Committed + Nurture (only prevOffer > 0 per spec)
     const nurtureDeals = await prisma.deal.findMany({

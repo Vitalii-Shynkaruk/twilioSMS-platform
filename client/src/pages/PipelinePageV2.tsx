@@ -2158,6 +2158,12 @@ function QueueView({
   const endOfWeek = new Date(startOfToday);
   endOfWeek.setDate(endOfWeek.getDate() + 7);
 
+  const getQueueDueDate = (deal: Deal): Date | null => {
+    if (deal.nextActionDue) return new Date(deal.nextActionDue);
+    if (deal.followUpDate) return new Date(deal.followUpDate);
+    return null;
+  };
+
   // Categorize deals into sections
   const overdue: Deal[] = [];
   const dueToday: Deal[] = [];
@@ -2166,7 +2172,7 @@ function QueueView({
   const renewalOpps: Deal[] = [];
 
   deals.forEach((d) => {
-    const fu = d.followUpDate ? new Date(d.followUpDate) : null;
+    const fu = getQueueDueDate(d);
     if (d.followUpType === 'renewal') renewalOpps.push(d);
     if (!fu) {
       upcoming.push(d);
@@ -2188,7 +2194,7 @@ function QueueView({
       repMap.set(d.assignedRepId, { rep, overdue: 0, today: 0, upcoming: 0 });
     }
     const entry = repMap.get(d.assignedRepId)!;
-    const fu = d.followUpDate ? new Date(d.followUpDate) : null;
+    const fu = getQueueDueDate(d);
     if (!fu) {
       entry.upcoming++;
       return;
@@ -2199,7 +2205,7 @@ function QueueView({
   });
 
   function getDueLabel(d: Deal): { text: string; cls: string } {
-    const fu = d.followUpDate ? new Date(d.followUpDate) : null;
+    const fu = getQueueDueDate(d);
     if (!fu) return { text: 'No date set', cls: 'qd-ok' };
     const diffMs = fu.getTime() - startOfToday.getTime();
     const diffDays = Math.round(diffMs / 86400000);

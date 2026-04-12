@@ -134,6 +134,25 @@ function getRepFundedAmountInRange(deals: Deal[], repId: string, start: Date, en
   }, 0);
 }
 
+function getRepFundedUnitsInRange(deals: Deal[], repId: string, start: Date, end: Date): number {
+  const seenDealIds = new Set<string>();
+  return deals.reduce((count, deal) => {
+    if (!isRepInvolvedInDeal(deal, repId)) return count;
+    if (!isDealFundedInRange(deal, start, end)) return count;
+    if (seenDealIds.has(deal.id)) return count;
+    seenDealIds.add(deal.id);
+    return count + 1;
+  }, 0);
+}
+
+function getDealApprovedCommittedAmount(deal: Deal): number {
+  if (deal.offers?.length) {
+    const highestOffer = deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b));
+    return highestOffer?.amount || 0;
+  }
+  return deal.dealAmount || 0;
+}
+
 type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week' | 'shared';
 type ViewTab = 'pipeline' | 'team' | 'queue';
 type ViewMode = 'simple' | 'execution';
@@ -1824,8 +1843,16 @@ function TeamView({
               : activeReps.filter((r) => r.role !== 'MANAGER');
           const sortedRepRows = scoreboardReps
             .map((rep) => {
-              const repFundedUnits = fundedDeals.filter((d) => d.assignedRepId === rep.id).length;
-              const repApprovedCommittedCount = activeOfferDeals.filter((d) => d.assignedRepId === rep.id).length;
+              const repFundedUnits = getRepFundedUnitsInRange(
+                fundedDeals,
+                rep.id,
+                currentMonthRange.start,
+                currentMonthRange.end,
+              );
+              const repApprovedCommittedAmount = activeOfferDeals.reduce((sum, deal) => {
+                if (!isRepInvolvedInDeal(deal, rep.id)) return sum;
+                return sum + getDealApprovedCommittedAmount(deal);
+              }, 0);
               const repFundedTotal = getRepFundedAmountInRange(
                 fundedDeals,
                 rep.id,
@@ -1836,7 +1863,7 @@ function TeamView({
               return {
                 rep,
                 repFundedUnits,
-                repApprovedCommittedCount,
+                repApprovedCommittedAmount,
                 repFundedTotal,
               };
             })
@@ -1868,7 +1895,7 @@ function TeamView({
                 Rep Scoreboard
               </div>
               <div className="rep-scoreboard">
-                {sortedRepRows.map(({ rep, repFundedUnits, repApprovedCommittedCount, repFundedTotal }) => {
+                {sortedRepRows.map(({ rep, repFundedUnits, repApprovedCommittedAmount, repFundedTotal }) => {
                   const goalPct = rep.monthlyGoal && rep.monthlyGoal > 0 ? repFundedTotal / rep.monthlyGoal : 0;
                   const goalBg = goalPct >= 0.8 ? 'var(--good)' : goalPct >= 0.5 ? 'var(--watch)' : 'var(--urgent)';
 
@@ -1914,10 +1941,10 @@ function TeamView({
                         </div>
                         <div>
                           <div style={{ fontSize: '9px', color: 'var(--text3)', marginBottom: '1px' }}>
-                            Approved + Committed
+                            Approved + Committed $
                           </div>
                           <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--text2)' }}>
-                            {repApprovedCommittedCount}
+                            {formatCurrency(repApprovedCommittedAmount)}
                           </div>
                         </div>
                       </div>

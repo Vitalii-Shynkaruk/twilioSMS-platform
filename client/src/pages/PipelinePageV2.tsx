@@ -96,6 +96,18 @@ function parseDateSafe(value?: string | Date | null): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function getStartOfToday(): Date {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function isPastDueDate(value?: string | Date | null): boolean {
+  const due = parseDateSafe(value);
+  if (!due) return false;
+  return due < getStartOfToday();
+}
+
 function isDateInRange(date: Date | null, start: Date, end: Date): boolean {
   return !!date && date >= start && date < end;
 }
@@ -458,9 +470,7 @@ export default function PipelinePage() {
             return false;
           if (quickFilter === 'overdue') {
             if (['FUNDED', 'CLOSED'].includes(d.stage)) return false;
-            if (!d.nextActionDue) return false;
-            const due = new Date(d.nextActionDue);
-            if (Number.isNaN(due.getTime()) || due >= now) return false;
+            if (!isPastDueDate(d.nextActionDue)) return false;
           }
           if (quickFilter === 'hot' && !isDealHot(d)) return false;
           if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
@@ -553,12 +563,9 @@ export default function PipelinePage() {
     const weekEnd = new Date();
     weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
 
-    const overdue = allDeals.filter((d) => {
-      if (['FUNDED', 'CLOSED'].includes(d.stage)) return false;
-      if (!d.nextActionDue) return false;
-      const due = new Date(d.nextActionDue);
-      return !Number.isNaN(due.getTime()) && due < now;
-    }).length;
+    const overdue = allDeals.filter(
+      (d) => !['FUNDED', 'CLOSED'].includes(d.stage) && isPastDueDate(d.nextActionDue),
+    ).length;
     const hot = allDeals.filter((d) => isDealHot(d)).length;
     const neglected = allDeals.filter((d) => (d.staleDays || 0) >= 7 && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
     const this_week = allDeals.filter((d) => {
@@ -965,7 +972,7 @@ export default function PipelinePage() {
                   const now = new Date();
                   const active = repDeals.filter((d: Deal) => !['FUNDED', 'CLOSED'].includes(d.stage)).length;
                   const overdue = repDeals.filter(
-                    (d: Deal) => d.nextActionDue && new Date(d.nextActionDue) < now,
+                    (d: Deal) => !['FUNDED', 'CLOSED'].includes(d.stage) && isPastDueDate(d.nextActionDue),
                   ).length;
                   const hot = repDeals.filter((d: Deal) => isDealHot(d)).length;
                   const pipeline =
@@ -1445,7 +1452,7 @@ export default function PipelinePage() {
 // ═══════════════════════════════════════
 function sortPri(d: Deal): number {
   const now = new Date();
-  const overdue = d.nextActionDue && new Date(d.nextActionDue) < now;
+  const overdue = isPastDueDate(d.nextActionDue);
   const hasRenewal = d.renewalTasks?.some((t) => t.status === 'PENDING');
   if (overdue || hasRenewal) return 0;
   if (!d.nextAction) return 1; // missing next action
@@ -1487,9 +1494,7 @@ function StageColumn({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: config.value });
   const urgentCount = deals.filter(
-    (d) =>
-      (d.nextActionDue && new Date(d.nextActionDue) < new Date()) ||
-      d.renewalTasks?.some((t) => t.status === 'PENDING'),
+    (d) => isPastDueDate(d.nextActionDue) || d.renewalTasks?.some((t) => t.status === 'PENDING'),
   ).length;
 
   return (
@@ -2586,7 +2591,8 @@ function QueueManagerBar({ board, reps }: { board: DealBoard; reps: Rep[] }) {
             (d: Deal) => d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage),
           ).length;
           const overdue = allDeals.filter(
-            (d: Deal) => d.assignedRepId === rep.id && d.nextActionDue && new Date(d.nextActionDue) < now,
+            (d: Deal) =>
+              d.assignedRepId === rep.id && !['FUNDED', 'CLOSED'].includes(d.stage) && isPastDueDate(d.nextActionDue),
           ).length;
           const hot = allDeals.filter((d: Deal) => d.assignedRepId === rep.id && isDealHot(d)).length;
           const pipeline = pipelineDeals

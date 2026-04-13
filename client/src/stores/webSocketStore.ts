@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
@@ -10,16 +11,63 @@ interface WebSocketState {
   disconnect: () => void;
 }
 
-/**
- * Global WebSocket store — disabled on shared hosting.
- * The PHP proxy cannot reliably handle Socket.IO polling, causing 502 errors.
- * All data refreshing uses React Query polling instead.
- */
-export const useWebSocketStore = create<WebSocketState>(() => ({
+const SOCKET_PATH = '/api/socket.io/';
+
+export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   socket: null,
   connected: false,
-  connect: () => {},
-  disconnect: () => {},
+  connect: (token: string) => {
+    if (!token) return;
+    const existing = get().socket;
+
+    // Already connected with current token
+    if (existing?.connected && (existing.auth as any)?.token === token) {
+      return;
+    }
+
+    // Tear down stale socket before creating a new one
+    if (existing) {
+      existing.removeAllListeners();
+      existing.disconnect();
+    }
+
+    const socket = io(window.location.origin, {
+      path: SOCKET_PATH,
+      auth: { token },
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
+    });
+
+    socket.on('connect', () => {
+      // Subscribe to per-user inbox stream used by backend emits.
+      socket.emit('join:inbox');
+      set({ connected: true });
+    });
+
+    socket.on('disconnect', () => {
+      set({ connected: false });
+    });
+
+    socket.on('connect_error', () => {
+      // Keep polling fallback active if socket can't connect.
+      set({ connected: false });
+    });
+
+    set({ socket, connected: false });
+  },
+  disconnect: () => {
+    const socket = get().socket;
+    if (socket) {
+      socket.removeAllListeners();
+      socket.disconnect();
+    }
+    set({ socket: null, connected: false });
+  },
 }));
 
 /**

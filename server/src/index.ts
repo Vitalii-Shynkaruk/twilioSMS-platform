@@ -60,6 +60,12 @@ io.on('connection', (socket) => {
   const authenticatedUserId: string | undefined = (socket as any).userId;
   logger.debug(`Socket connected: ${socket.id} (user: ${authenticatedUserId})`);
 
+  // Auto-subscribe authenticated user to their own inbox room.
+  if (authenticatedUserId) {
+    socket.join(`inbox:${authenticatedUserId}`);
+    logger.debug(`User ${authenticatedUserId} auto-joined inbox channel`);
+  }
+
   // Only allow joining own inbox channel
   socket.on('join:inbox', () => {
     if (authenticatedUserId) {

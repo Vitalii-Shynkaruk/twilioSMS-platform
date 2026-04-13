@@ -243,16 +243,19 @@ export class DealController {
 
   // GET /api/deals/board - Pipeline board data grouped by stage
   static async getBoard(req: AuthRequest, res: Response) {
-    const { repId, teamView } = req.query;
+    const { repId, teamView, primaryOnly } = req.query;
+    const primaryOnlyParam = String(primaryOnly ?? '').toLowerCase();
+    const forcePrimaryOnly = primaryOnlyParam === 'true';
+    const includeAssistForBoard = !forcePrimaryOnly;
 
     // teamView=true → показываем все данные команды (даже для REP)
-    // For pipeline board we treat "my pipeline" as primary ownership only.
-    const filter = teamView === 'true' ? {} : repFilter(req.user, { primaryOnly: true });
+    // primaryOnly=true limits board to primary owner only; otherwise include shared deals.
+    const filter = teamView === 'true' ? {} : repFilter(req.user, { primaryOnly: forcePrimaryOnly });
     const where: any = { ...filter };
     const requestedRepId = repId ? String(repId) : '';
     const canScopeToRep = !!requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id);
     if (canScopeToRep) {
-      Object.assign(where, repScopeFilter(requestedRepId, false));
+      Object.assign(where, repScopeFilter(requestedRepId, includeAssistForBoard));
     }
 
     const deals = await prisma.deal.findMany({

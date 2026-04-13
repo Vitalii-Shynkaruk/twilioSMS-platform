@@ -365,6 +365,8 @@ export default function PipelinePage() {
       return params;
     }
 
+    params.primaryOnly = quickFilter === 'shared' ? 'false' : 'true';
+
     if (effectiveRepFilter) {
       params.repId = effectiveRepFilter;
     } else if (pipelineScope === 'mine' && !isAdmin && userId) {
@@ -372,7 +374,7 @@ export default function PipelinePage() {
     }
     if (isAdmin) params.teamView = 'true';
     return params;
-  }, [effectiveRepFilter, pipelineScope, isAdmin, userId, viewTab]);
+  }, [effectiveRepFilter, pipelineScope, isAdmin, userId, viewTab, quickFilter]);
 
   const { data: board, isLoading: boardLoading } = useQuery({
     queryKey: ['deals', 'board', boardParams],
@@ -466,8 +468,14 @@ export default function PipelinePage() {
             if (!biz.includes(term) && !contact.includes(term)) return false;
           }
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
-          if (quickFilter === 'shared' && !((d.assistingRepIds as string[]) || []).includes(user?.id || ''))
-            return false;
+          if (quickFilter === 'shared') {
+            const assistIds = ((d.assistingRepIds as string[]) || []).filter(Boolean);
+            if (isAdmin) {
+              if (assistIds.length === 0) return false;
+            } else if (!assistIds.includes(user?.id || '')) {
+              return false;
+            }
+          }
           if (quickFilter === 'overdue') {
             if (['FUNDED', 'CLOSED'].includes(d.stage)) return false;
             if (!isPastDueDate(d.nextActionDue)) return false;
@@ -511,7 +519,7 @@ export default function PipelinePage() {
         return { ...s, deals: filteredDeals, count: filteredDeals.length, value };
       }),
     };
-  }, [board, quickFilter, user?.id, searchTerm]);
+  }, [board, quickFilter, user?.id, searchTerm, isAdmin]);
 
   // ─── DnD handlers ───
   const handleDragEnd = useCallback(
@@ -579,9 +587,13 @@ export default function PipelinePage() {
       if (isDealHot(d)) return true;
       return false;
     }).length;
-    const shared = allDeals.filter((d) => ((d.assistingRepIds as string[]) || []).includes(user?.id || '')).length;
+    const shared = allDeals.filter((d) => {
+      const assistIds = ((d.assistingRepIds as string[]) || []).filter(Boolean);
+      if (isAdmin) return assistIds.length > 0;
+      return assistIds.includes(user?.id || '');
+    }).length;
     return { overdue, hot, neglected, this_week, shared };
-  }, [board, user?.id]);
+  }, [board, user?.id, isAdmin]);
 
   // ─── Filter labels with counts ───
   const filterLabels = useMemo(

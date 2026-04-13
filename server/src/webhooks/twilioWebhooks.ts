@@ -50,6 +50,39 @@ function isPositiveCampaignReply(body: string): boolean {
   return false;
 }
 
+function phoneDigits(raw?: string | null): string {
+  return String(raw || '').replace(/\D/g, '');
+}
+
+function phoneLookupVariants(raw?: string | null): string[] {
+  const digits = phoneDigits(raw);
+  if (!digits) return [];
+
+  const variants = new Set<string>();
+  variants.add(digits);
+  variants.add(`+${digits}`);
+
+  if (digits.length === 10) {
+    variants.add(`1${digits}`);
+    variants.add(`+1${digits}`);
+  }
+
+  if (digits.length === 11 && digits.startsWith('1')) {
+    const local = digits.slice(1);
+    variants.add(local);
+    variants.add(`+1${local}`);
+  }
+
+  return Array.from(variants);
+}
+
+function splitContactName(fullName?: string | null): { firstName: string; lastName: string } {
+  const normalized = String(fullName || '').trim();
+  if (!normalized) return { firstName: '', lastName: '' };
+  const [firstName, ...rest] = normalized.split(/\s+/);
+  return { firstName: firstName || '', lastName: rest.join(' ').trim() };
+}
+
 /**
  * Twilio webhook signature validation middleware
  * Validates that incoming requests are genuinely from Twilio.
@@ -122,10 +155,17 @@ router.post('/inbound', async (req: Request, res: Response) => {
       select: { id: true },
     });
 
-    // Find the lead by phone number
-    const lead = await prisma.lead.findUnique({
-      where: { phone: From },
+    const leadPhoneVariants = phoneLookupVariants(From);
+
+    // Find the lead by phone number (exact + normalized variants)
+    const lead = await prisma.lead.findFirst({
+      where: {
+        phone: {
+          in: leadPhoneVariants.length > 0 ? leadPhoneVariants : [From],
+        },
+      },
       include: { conversations: true },
+      orderBy: { updatedAt: 'desc' },
     });
 
     if (lead) {
@@ -237,11 +277,38 @@ router.post('/inbound', async (req: Request, res: Response) => {
         });
       }
     } else {
-      // Unknown number - create a lead record
+      // Unknown number - try to infer lead metadata from existing client/deal by phone
+      const matchedClient = await prisma.client.findFirst({
+        where: {
+          phone: {
+            in: leadPhoneVariants.length > 0 ? leadPhoneVariants : [From],
+          },
+        },
+        select: {
+          id: true,
+          businessName: true,
+          contactName: true,
+          email: true,
+        },
+      });
+
+      const matchedDeal = matchedClient
+        ? await prisma.deal.findFirst({
+            where: { clientId: matchedClient.id },
+            select: { assignedRepId: true },
+            orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+          })
+        : null;
+
+      const parsedContact = splitContactName(matchedClient?.contactName);
       const newLead = await prisma.lead.create({
         data: {
-          firstName: 'Unknown',
+          firstName: parsedContact.firstName || 'Unknown',
+          lastName: parsedContact.lastName || undefined,
           phone: From,
+          email: matchedClient?.email || undefined,
+          company: matchedClient?.businessName || undefined,
+          assignedRepId: matchedDeal?.assignedRepId || null,
           source: 'inbound_sms',
           status: 'REPLIED',
           lastRepliedAt: new Date(),
@@ -260,6 +327,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       const conversation = await prisma.conversation.create({
         data: {
           leadId: newLead.id,
+          assignedRepId: newLead.assignedRepId || null,
           twilioNumberId: inboundTwilioNumber?.id || null,
           stickyNumberId: inboundTwilioNumber?.id || null,
           isActive: true,
@@ -278,6 +346,19 @@ router.post('/inbound', async (req: Request, res: Response) => {
           sentAt: new Date(),
         },
       });
+
+      // Notify rep if conversation could be auto-assigned
+      const io = req.app.get('io');
+      if (io && conversation.assignedRepId) {
+        const updatedConversation = await prisma.conversation.findUnique({
+          where: { id: conversation.id },
+          include: {
+            lead: { select: { id: true, firstName: true, lastName: true, phone: true } },
+            messages: { take: 1, orderBy: { createdAt: 'desc' } },
+          },
+        });
+        io.to(`inbox:${conversation.assignedRepId}`).emit('new-message', { conversation: updatedConversation });
+      }
     }
 
     // Return TwiML (auto-reply for keywords, empty for regular messages)

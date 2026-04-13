@@ -94,12 +94,18 @@ export class InboxController {
         return { nextFollowupAt: { gte: new Date() } };
       case 'in_pipeline':
         return {
-          deals: {
-            some: {
-              createdFromSms: true,
-              ...(req.user?.role === 'REP' ? { assignedRepId: req.user.id } : {}),
+          OR: [
+            {
+              deals: {
+                some: {
+                  ...(req.user?.role === 'REP' ? { assignedRepId: req.user.id } : {}),
+                },
+              },
             },
-          },
+            req.user?.role === 'REP'
+              ? { lead: { deal: { is: { assignedRepId: req.user.id } } } }
+              : { lead: { deal: { isNot: null } } },
+          ],
         };
       case 'dnc':
         return {
@@ -233,6 +239,97 @@ export class InboxController {
     return raw;
   }
 
+  private static phoneDigits(raw?: string | null): string {
+    return String(raw || '').replace(/\D/g, '');
+  }
+
+  private static phoneMatchKey(raw?: string | null): string {
+    const digits = InboxController.phoneDigits(raw);
+    if (!digits) return '';
+    if (digits.length === 11 && digits.startsWith('1')) return digits.slice(1);
+    return digits;
+  }
+
+  private static phoneLookupVariants(raw?: string | null): string[] {
+    const digits = InboxController.phoneDigits(raw);
+    if (!digits) return [];
+
+    const variants = new Set<string>();
+    variants.add(digits);
+    variants.add(`+${digits}`);
+
+    if (digits.length === 10) {
+      variants.add(`1${digits}`);
+      variants.add(`+1${digits}`);
+    }
+
+    if (digits.length === 11 && digits.startsWith('1')) {
+      const local = digits.slice(1);
+      variants.add(local);
+      variants.add(`+1${local}`);
+    }
+
+    return Array.from(variants);
+  }
+
+  private static pickPreferredPipelineDeal<T extends { stage?: string | null; updatedAt?: Date; createdAt?: Date }>(
+    deals: T[],
+  ): T | null {
+    if (!deals.length) return null;
+
+    const rank = (stage?: string | null) => {
+      if (stage === 'CLOSED') return 3;
+      if (stage === 'NURTURE') return 2;
+      if (stage === 'FUNDED') return 1;
+      return 0;
+    };
+
+    const sorted = deals.slice().sort((a, b) => {
+      const stageDiff = rank(a.stage) - rank(b.stage);
+      if (stageDiff !== 0) return stageDiff;
+
+      const aTime = a.updatedAt?.getTime() || a.createdAt?.getTime() || 0;
+      const bTime = b.updatedAt?.getTime() || b.createdAt?.getTime() || 0;
+      return bTime - aTime;
+    });
+
+    return sorted[0] || null;
+  }
+
+  private static hydrateLeadFromDealClient(
+    lead: {
+      firstName?: string;
+      lastName?: string | null;
+      company?: string | null;
+      email?: string | null;
+      phone?: string | null;
+    },
+    dealClient?: { businessName?: string | null; contactName?: string | null; email?: string | null } | null,
+  ) {
+    if (!dealClient) return lead;
+
+    const next = { ...lead };
+    if (!next.company && dealClient.businessName) {
+      next.company = dealClient.businessName.trim();
+    }
+    if (!next.email && dealClient.email) {
+      next.email = dealClient.email.trim();
+    }
+
+    const first = (next.firstName || '').trim();
+    const last = (next.lastName || '').trim();
+    const unknownFirst = !first || first.toLowerCase() === 'unknown';
+    const hasNoLast = !last;
+    const contactName = (dealClient.contactName || '').trim();
+    if ((unknownFirst || hasNoLast) && contactName) {
+      const [firstPart, ...rest] = contactName.split(/\s+/);
+      if (unknownFirst && firstPart) next.firstName = firstPart;
+      if (hasNoLast && rest.length > 0) next.lastName = rest.join(' ');
+    }
+
+    return next;
+  }
+
   private static withConditions(baseWhere: any, extraConditions: any[]): any {
     const baseAnd = Array.isArray(baseWhere.AND) ? [...baseWhere.AND] : [];
     return {
@@ -242,13 +339,31 @@ export class InboxController {
   }
 
   private static async enrichFromNumberFields<
-    T extends { twilioNumber?: any; stickyNumber?: any; messages?: any[]; deals?: any[]; unreadCount?: number },
+    T extends {
+      lead?: {
+        id?: string;
+        phone?: string;
+        firstName?: string;
+        lastName?: string | null;
+        company?: string | null;
+        email?: string | null;
+        deal?: any;
+      };
+      twilioNumber?: any;
+      stickyNumber?: any;
+      messages?: any[];
+      deals?: any[];
+      unreadCount?: number;
+    },
   >(
     conversations: T[],
+    viewer?: { id: string; role: string } | null,
   ): Promise<
     Array<T & { fromNumber: string; fromNumberFriendlyName: string | null; isInPipeline: boolean; unreadDot: boolean }>
   > {
     const candidateNumbers = new Set<string>();
+    const leadIds = new Set<string>();
+    const leadPhoneLookupVariants = new Set<string>();
     for (const conv of conversations) {
       const lastMessage = conv.messages?.[0];
       const derived =
@@ -256,6 +371,10 @@ export class InboxController {
         conv.stickyNumber?.phoneNumber ||
         (lastMessage ? (lastMessage.direction === 'OUTBOUND' ? lastMessage.fromNumber : lastMessage.toNumber) : '');
       if (derived) candidateNumbers.add(derived);
+      if (conv.lead?.id) leadIds.add(conv.lead.id);
+      for (const variant of InboxController.phoneLookupVariants(conv.lead?.phone)) {
+        leadPhoneLookupVariants.add(variant);
+      }
     }
 
     const fallbackNumbers =
@@ -267,6 +386,58 @@ export class InboxController {
         : [];
     const fallbackMap = new Map(fallbackNumbers.map((n) => [n.phoneNumber, n.friendlyName || null]));
 
+    const dealOrConditions: any[] = [];
+    if (leadIds.size > 0) dealOrConditions.push({ leadId: { in: Array.from(leadIds) } });
+    if (leadPhoneLookupVariants.size > 0) {
+      dealOrConditions.push({ client: { phone: { in: Array.from(leadPhoneLookupVariants) } } });
+    }
+
+    const relatedDeals =
+      dealOrConditions.length > 0
+        ? await prisma.deal.findMany({
+            where: {
+              OR: dealOrConditions,
+              ...(viewer?.role === 'REP' ? { assignedRepId: viewer.id } : {}),
+            },
+            select: {
+              id: true,
+              leadId: true,
+              stage: true,
+              stageLabel: true,
+              createdFromSms: true,
+              assignedRepId: true,
+              smsConversationId: true,
+              createdAt: true,
+              updatedAt: true,
+              client: {
+                select: {
+                  phone: true,
+                  businessName: true,
+                  contactName: true,
+                  email: true,
+                },
+              },
+            },
+            orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+          })
+        : [];
+
+    const dealsByLeadId = new Map<string, any[]>();
+    const dealsByPhoneKey = new Map<string, any[]>();
+    for (const deal of relatedDeals) {
+      if (deal.leadId) {
+        const arr = dealsByLeadId.get(deal.leadId) || [];
+        arr.push(deal);
+        dealsByLeadId.set(deal.leadId, arr);
+      }
+      const phoneKey = InboxController.phoneMatchKey(deal.client?.phone);
+      if (phoneKey) {
+        const arr = dealsByPhoneKey.get(phoneKey) || [];
+        arr.push(deal);
+        dealsByPhoneKey.set(phoneKey, arr);
+      }
+    }
+
     return conversations.map((conv) => {
       const lastMessage = conv.messages?.[0];
       const fromNumber =
@@ -276,10 +447,28 @@ export class InboxController {
         '';
       const fromNumberFriendlyName =
         conv.twilioNumber?.friendlyName || conv.stickyNumber?.friendlyName || fallbackMap.get(fromNumber) || null;
-      const isInPipeline = (conv.deals || []).some((d: any) => d.createdFromSms);
+      const leadDeal = conv.lead?.deal ? [conv.lead.deal] : [];
+      const byLeadId = conv.lead?.id ? dealsByLeadId.get(conv.lead.id) || [] : [];
+      const byPhone = dealsByPhoneKey.get(InboxController.phoneMatchKey(conv.lead?.phone)) || [];
+      const pipelineDeal = InboxController.pickPreferredPipelineDeal([
+        ...(conv.deals || []),
+        ...leadDeal,
+        ...byLeadId,
+        ...byPhone,
+      ]);
+      const hydratedLead =
+        conv.lead && pipelineDeal?.client
+          ? InboxController.hydrateLeadFromDealClient(conv.lead, {
+              businessName: pipelineDeal.client.businessName,
+              contactName: pipelineDeal.client.contactName,
+              email: pipelineDeal.client.email,
+            })
+          : conv.lead;
+      const isInPipeline = !!pipelineDeal;
 
       return {
         ...conv,
+        ...(hydratedLead ? { lead: hydratedLead } : {}),
         fromNumber,
         fromNumberFriendlyName,
         isInPipeline,
@@ -374,6 +563,25 @@ export class InboxController {
               source: true,
               status: true,
               optedOut: true,
+              deal: {
+                select: {
+                  id: true,
+                  stage: true,
+                  stageLabel: true,
+                  createdFromSms: true,
+                  assignedRepId: true,
+                  createdAt: true,
+                  updatedAt: true,
+                  client: {
+                    select: {
+                      phone: true,
+                      businessName: true,
+                      contactName: true,
+                      email: true,
+                    },
+                  },
+                },
+              },
               tags: {
                 include: { tag: true },
               },
@@ -444,7 +652,7 @@ export class InboxController {
           })()
         : Promise.resolve(null),
     ]);
-    const enriched = await InboxController.enrichFromNumberFields(conversations);
+    const enriched = await InboxController.enrichFromNumberFields(conversations, req.user || null);
 
     res.json({
       conversations: enriched,
@@ -473,6 +681,26 @@ export class InboxController {
         lead: {
           include: {
             tags: { include: { tag: true } },
+            deal: {
+              select: {
+                id: true,
+                stage: true,
+                stageLabel: true,
+                createdFromSms: true,
+                assignedRepId: true,
+                productType: true,
+                createdAt: true,
+                updatedAt: true,
+                client: {
+                  select: {
+                    phone: true,
+                    businessName: true,
+                    contactName: true,
+                    email: true,
+                  },
+                },
+              },
+            },
             pipelineCards: {
               include: { stage: true },
             },
@@ -660,7 +888,46 @@ export class InboxController {
       latestImportListTag?.name ||
       InboxController.normalizeSourceCandidate(conversation.lead.source) ||
       'Inbox';
-    const latestSmsDeal = conversation.deals.find((d) => d.createdFromSms) || conversation.deals[0] || null;
+    const fallbackDealOrConditions: any[] = [{ leadId: conversation.leadId }];
+    const phoneVariants = InboxController.phoneLookupVariants(conversation.lead.phone);
+    if (phoneVariants.length > 0) {
+      fallbackDealOrConditions.push({ client: { phone: { in: phoneVariants } } });
+    }
+    const phoneMatchedDeals = await prisma.deal.findMany({
+      where: {
+        OR: fallbackDealOrConditions,
+        ...(req.user?.role === 'REP' ? { assignedRepId: req.user.id } : {}),
+      },
+      select: {
+        id: true,
+        stage: true,
+        stageLabel: true,
+        createdAt: true,
+        updatedAt: true,
+        createdFromSms: true,
+        assignedRepId: true,
+        productType: true,
+        client: {
+          select: {
+            phone: true,
+            businessName: true,
+            contactName: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+      take: 20,
+    });
+    const latestSmsDeal =
+      InboxController.pickPreferredPipelineDeal([
+        ...conversation.deals,
+        ...(conversation.lead.deal ? [conversation.lead.deal] : []),
+        ...phoneMatchedDeals,
+      ]) || null;
+    const latestDealClient =
+      latestSmsDeal && typeof latestSmsDeal === 'object' && 'client' in latestSmsDeal ? latestSmsDeal.client : null;
+    const hydratedLead = InboxController.hydrateLeadFromDealClient(conversation.lead, latestDealClient || null);
     const statusStrip = {
       hotLead: !!conversation.hotLead,
       pipelineState: latestSmsDeal ? 'in_pipeline' : 'not_in_pipeline',
@@ -674,11 +941,14 @@ export class InboxController {
     };
 
     const contactInfo = {
-      email: conversation.lead.email || '',
-      phone: conversation.lead.phone || '',
-      company: conversation.lead.company || '',
+      email: hydratedLead.email || '',
+      phone: hydratedLead.phone || '',
+      company: hydratedLead.company || '',
       source: sourceName,
-      product: latestSmsDeal?.productType || '',
+      product:
+        latestSmsDeal && typeof latestSmsDeal === 'object' && 'productType' in latestSmsDeal
+          ? latestSmsDeal.productType || ''
+          : '',
       assignedRep: statusStrip.assignedRep || '',
       conversationNumber: conversation.id,
       createdAt: conversation.createdAt,
@@ -749,6 +1019,7 @@ export class InboxController {
     res.json({
       conversation: {
         ...conversation,
+        lead: hydratedLead,
         fromNumber,
         fromNumberFriendlyName,
         isInPipeline: !!latestSmsDeal,
@@ -1474,15 +1745,52 @@ export class InboxController {
     });
     if (!conversation) throw new AppError('Conversation not found', 404);
 
-    // Проверяем, нет ли уже deal для этого разговора
+    // Проверяем, нет ли уже deal для этого разговора/лида/номера клиента
+    const phoneVariants = InboxController.phoneLookupVariants(conversation.lead.phone);
     const existingDeal = await prisma.deal.findFirst({
-      where: { smsConversationId: id },
+      where: {
+        OR: [
+          { smsConversationId: id },
+          { leadId: conversation.leadId },
+          ...(phoneVariants.length > 0 ? [{ client: { phone: { in: phoneVariants } } }] : []),
+        ],
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
     });
-    if (existingDeal) throw new AppError('Deal already exists for this conversation', 409);
+    if (existingDeal) {
+      const updateData: { leadId?: string; smsConversationId?: string } = {};
+      if (!existingDeal.leadId) {
+        const alreadyLinked = await prisma.deal.findFirst({
+          where: { leadId: conversation.leadId },
+          select: { id: true },
+        });
+        if (!alreadyLinked || alreadyLinked.id === existingDeal.id) {
+          updateData.leadId = conversation.leadId;
+        }
+      }
+      if (!existingDeal.smsConversationId) {
+        updateData.smsConversationId = id;
+      }
+
+      const reusedDeal =
+        Object.keys(updateData).length > 0
+          ? await prisma.deal.update({
+              where: { id: existingDeal.id },
+              data: updateData,
+            })
+          : existingDeal;
+
+      res.status(200).json({ deal: reusedDeal, reused: true });
+      return;
+    }
 
     // Ищем клиента по телефону лида
     let client = await prisma.client.findFirst({
-      where: { phone: conversation.lead.phone },
+      where: {
+        phone: {
+          in: phoneVariants.length > 0 ? phoneVariants : [conversation.lead.phone],
+        },
+      },
     });
 
     // Если нет клиента — создаём

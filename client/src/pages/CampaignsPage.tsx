@@ -419,8 +419,6 @@ export default function CampaignsPage() {
 }
 
 function CreateCampaignModal({ onClose }: { onClose: () => void }) {
-  const { user } = useAuthStore();
-  const isRep = user?.role === 'REP';
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -658,24 +656,17 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
               value={formData.numberPoolId}
               onChange={(e) => setFormData({ ...formData, numberPoolId: e.target.value })}
             >
-              <option value="">
-                {isRep ? 'Assigned Active Numbers (Auto)' : 'All Active Numbers (No Pool Filter)'}
-              </option>
+              <option value="">Assigned Active Numbers (Auto if assigned)</option>
               {availablePools.map((pool: any) => (
                 <option key={pool.id} value={pool.id}>
                   {pool.name} ({poolCountLabel(pool._count?.members ?? pool.members?.length ?? 0)})
                 </option>
               ))}
             </select>
-            {isRep ? (
-              <p className="text-xs text-dark-500 mt-1">
-                Rep campaigns are hard-wired to assigned active numbers. Pool selection is an additional filter.
-              </p>
-            ) : (
-              <p className="text-xs text-dark-500 mt-1">
-                Choose a pool to restrict sending to that pool only. Leave blank to use all active numbers.
-              </p>
-            )}
+            <p className="text-xs text-dark-500 mt-1">
+              If you have active number assignments, campaign sending is hard-wired to those numbers. If you have no
+              assignments, it uses all active numbers. Pool selection is an additional filter.
+            </p>
           </div>
 
           {/* Lead Selection */}

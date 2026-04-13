@@ -187,9 +187,10 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       where: { id: campaign.createdById },
       select: { role: true },
     });
+    const assignedActiveNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
 
     if (creator?.role === 'REP') {
-      restrictToPhoneNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
       if (restrictToPhoneNumberIds.length === 0) {
         await prisma.campaign.update({
           where: { id: campaignId },
@@ -205,6 +206,9 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
         );
         return;
       }
+    } else if (assignedActiveNumberIds.length > 0) {
+      // Admin/manager campaigns are also pinned to assigned active numbers when assignments exist.
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
     }
 
     const result = await SendingEngine.queueBulkSend({

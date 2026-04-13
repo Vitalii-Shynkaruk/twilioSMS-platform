@@ -427,12 +427,16 @@ export class CampaignController {
       where: { id: campaign.createdById },
       select: { role: true },
     });
+    const assignedActiveNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
 
     if (creator?.role === 'REP') {
-      restrictToPhoneNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
       if (restrictToPhoneNumberIds.length === 0) {
         throw new AppError('This rep has no active assigned numbers. Assign numbers in Numbers page first.', 400);
       }
+    } else if (assignedActiveNumberIds.length > 0) {
+      // Admin/manager campaigns are also pinned to assigned active numbers when assignments exist.
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
     }
 
     // Pre-validate: check that at least one sending number is available

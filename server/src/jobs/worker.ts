@@ -58,11 +58,25 @@ smsWorker.on('completed', async (job: Job) => {
         where: { campaignId, status: { in: ['QUEUED', 'SENDING'] } },
       });
       if (pending === 0) {
+        const pendingLeads = await prisma.campaignLead.count({
+          where: { campaignId, status: 'PENDING' },
+        });
         const campaign = await prisma.campaign.findUnique({
           where: { id: campaignId },
           select: { status: true },
         });
         if (campaign && campaign.status === 'SENDING') {
+          if (pendingLeads > 0) {
+            await prisma.campaign.update({
+              where: { id: campaignId },
+              data: { status: 'PAUSED' },
+            });
+            logger.info(
+              `Campaign ${campaignId} paused after queue drain: ${pendingLeads} pending leads remain for manual resume`,
+            );
+            return;
+          }
+
           const stats = await prisma.message.groupBy({
             by: ['status'],
             where: { campaignId },
@@ -76,10 +90,6 @@ smsWorker.on('completed', async (job: Job) => {
           const blocked = stats.find((s) => s.status === 'BLOCKED')?._count ?? 0;
 
           await prisma.$transaction([
-            prisma.campaignLead.updateMany({
-              where: { campaignId, status: 'PENDING' },
-              data: { status: 'SKIPPED' },
-            }),
             prisma.campaign.update({
               where: { id: campaignId },
               data: {
@@ -174,12 +184,7 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       logger.info(
         `Campaign ${campaignId}: dailyLimit=${campaign.dailyLimit}, trimmed ${leads.length} → ${leadsToSend.length} leads`,
       );
-      // Mark excess leads as SKIPPED
-      const excessLeadIds = leads.slice(campaign.dailyLimit!).map((l) => l.leadId);
-      await prisma.campaignLead.updateMany({
-        where: { campaignId, leadId: { in: excessLeadIds } },
-        data: { status: 'SKIPPED' },
-      });
+      // Keep excess leads in PENDING so campaign can be resumed safely.
     }
 
     let restrictToPhoneNumberIds: string[] | undefined;
@@ -223,6 +228,18 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
 
     // If no messages were queued, revert campaign to DRAFT
     if (result.queued === 0) {
+      const remainingPending = await prisma.campaignLead.count({
+        where: { campaignId, status: 'PENDING' },
+      });
+      if (remainingPending > 0) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: 'PAUSED', startedAt: null },
+        });
+        logger.warn(`Campaign ${campaignId} paused: 0 queued in this run, ${remainingPending} pending leads remain`);
+        return;
+      }
+
       const reason =
         result.errors.length > 0
           ? result.errors.join('; ')

@@ -415,9 +415,50 @@ export class CampaignController {
       throw new AppError('Campaign has no leads. Add leads before starting.', 400);
     }
 
-    const pendingCount = await prisma.campaignLead.count({
+    let pendingCount = await prisma.campaignLead.count({
       where: { campaignId: id, status: 'PENDING' },
     });
+    if (pendingCount === 0 && ['PAUSED', 'COMPLETED'].includes(campaign.status)) {
+      const hasUnsentGap = (campaign.totalSent || 0) < campaign._count.leads;
+      if (hasUnsentGap) {
+        const recoverableSkipped = await prisma.campaignLead.findMany({
+          where: {
+            campaignId: id,
+            status: 'SKIPPED',
+            lead: {
+              conversations: {
+                none: {
+                  messages: {
+                    some: {
+                      campaignId: id,
+                      direction: 'OUTBOUND',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          select: { id: true },
+          take: 10000,
+        });
+
+        if (recoverableSkipped.length > 0) {
+          await prisma.campaignLead.updateMany({
+            where: { id: { in: recoverableSkipped.map((row) => row.id) } },
+            data: {
+              status: 'PENDING',
+              sentAt: null,
+              deliveredAt: null,
+              repliedAt: null,
+              fromNumber: null,
+              errorCode: null,
+            },
+          });
+          pendingCount = recoverableSkipped.length;
+          logger.warn(`Campaign ${id}: recovered ${recoverableSkipped.length} skipped leads back to PENDING on resume`);
+        }
+      }
+    }
     if (pendingCount === 0) {
       throw new AppError('Campaign has no pending leads. All leads were already processed or filtered out.', 400);
     }

@@ -456,7 +456,12 @@ export default function PipelinePage() {
           if (quickFilter === 'mine' && d.assignedRepId !== user?.id) return false;
           if (quickFilter === 'shared' && !((d.assistingRepIds as string[]) || []).includes(user?.id || ''))
             return false;
-          if (quickFilter === 'overdue' && (!d.nextActionDue || new Date(d.nextActionDue) >= now)) return false;
+          if (quickFilter === 'overdue') {
+            if (['FUNDED', 'CLOSED'].includes(d.stage)) return false;
+            if (!d.nextActionDue) return false;
+            const due = new Date(d.nextActionDue);
+            if (Number.isNaN(due.getTime()) || due >= now) return false;
+          }
           if (quickFilter === 'hot' && !isDealHot(d)) return false;
           if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
           if (quickFilter === 'this_week') {
@@ -548,7 +553,12 @@ export default function PipelinePage() {
     const weekEnd = new Date();
     weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
 
-    const overdue = allDeals.filter((d) => d.nextActionDue && new Date(d.nextActionDue) < now).length;
+    const overdue = allDeals.filter((d) => {
+      if (['FUNDED', 'CLOSED'].includes(d.stage)) return false;
+      if (!d.nextActionDue) return false;
+      const due = new Date(d.nextActionDue);
+      return !Number.isNaN(due.getTime()) && due < now;
+    }).length;
     const hot = allDeals.filter((d) => isDealHot(d)).length;
     const neglected = allDeals.filter((d) => (d.staleDays || 0) >= 7 && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
     const this_week = allDeals.filter((d) => {

@@ -103,6 +103,7 @@ export async function ensureDefaultTeamUsers() {
       select: {
         id: true,
         email: true,
+        isActive: true,
         monthlyGoal: true,
         annualGoal: true,
         avatarColor: true,
@@ -117,7 +118,7 @@ export async function ensureDefaultTeamUsers() {
           lastName: user.lastName,
           role: user.role,
           initials: user.initials,
-          isActive: true,
+          // Important: do not auto-reactivate users that admin intentionally disabled.
           avatarColor: existing.avatarColor || user.avatarColor,
           monthlyGoal: existing.monthlyGoal > 0 ? existing.monthlyGoal : user.monthlyGoal,
           annualGoal: existing.annualGoal > 0 ? existing.annualGoal : user.annualGoal,
@@ -144,4 +145,3 @@ export async function ensureDefaultTeamUsers() {
     logger.info(`👥 Default team user created: ${user.initials} (${user.email})`);
   }
 }
-

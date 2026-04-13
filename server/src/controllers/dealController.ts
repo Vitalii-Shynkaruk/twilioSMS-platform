@@ -246,12 +246,13 @@ export class DealController {
     const { repId, teamView } = req.query;
 
     // teamView=true → показываем все данные команды (даже для REP)
-    const filter = teamView === 'true' ? {} : repFilter(req.user);
+    // For pipeline board we treat "my pipeline" as primary ownership only.
+    const filter = teamView === 'true' ? {} : repFilter(req.user, { primaryOnly: true });
     const where: any = { ...filter };
     const requestedRepId = repId ? String(repId) : '';
     const canScopeToRep = !!requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id);
     if (canScopeToRep) {
-      Object.assign(where, repScopeFilter(requestedRepId, true));
+      Object.assign(where, repScopeFilter(requestedRepId, false));
     }
 
     const deals = await prisma.deal.findMany({
@@ -1587,13 +1588,17 @@ export class DealController {
       requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id) ? requestedRepId : null;
     // teamView=true → показываем командные данные (без фильтра по пользователю)
     const isTeamView = teamView === 'true';
-    const where: any = selectedRepId ? repScopeFilter(selectedRepId, true) : isTeamView ? {} : repFilter(req.user);
+    const where: any = selectedRepId
+      ? repScopeFilter(selectedRepId, false)
+      : isTeamView
+        ? {}
+        : repFilter(req.user, { primaryOnly: true });
     const fundingScopedRepId = selectedRepId || (!isTeamView && !isAdminLike(req.user) ? req.user!.id : null);
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const fundingEventScope = fundingScopedRepId ? { deal: repScopeFilter(fundingScopedRepId, true) } : {};
+    const fundingEventScope = fundingScopedRepId ? { deal: repScopeFilter(fundingScopedRepId, false) } : {};
 
     const [deals, fundedMTD, fundedMTDCount, allDeals] = await Promise.all([
       // Active pipeline deals

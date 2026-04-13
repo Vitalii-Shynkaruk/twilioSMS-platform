@@ -421,41 +421,85 @@ export class CampaignController {
     if (pendingCount === 0 && ['PAUSED', 'COMPLETED'].includes(campaign.status)) {
       const hasUnsentGap = (campaign.totalSent || 0) < campaign._count.leads;
       if (hasUnsentGap) {
-        const recoverableSkipped = await prisma.campaignLead.findMany({
+        const skippedCandidates = await prisma.campaignLead.findMany({
           where: {
             campaignId: id,
             status: 'SKIPPED',
+          },
+          select: {
+            id: true,
+            leadId: true,
             lead: {
-              conversations: {
-                none: {
-                  messages: {
-                    some: {
-                      campaignId: id,
-                      direction: 'OUTBOUND',
-                    },
-                  },
-                },
+              select: {
+                phone: true,
+                assignedRepId: true,
+                optedOut: true,
+                isSuppressed: true,
               },
             },
           },
-          select: { id: true },
           take: 10000,
         });
 
-        if (recoverableSkipped.length > 0) {
-          await prisma.campaignLead.updateMany({
-            where: { id: { in: recoverableSkipped.map((row) => row.id) } },
-            data: {
-              status: 'PENDING',
-              sentAt: null,
-              deliveredAt: null,
-              repliedAt: null,
-              fromNumber: null,
-              errorCode: null,
-            },
-          });
-          pendingCount = recoverableSkipped.length;
-          logger.warn(`Campaign ${id}: recovered ${recoverableSkipped.length} skipped leads back to PENDING on resume`);
+        if (skippedCandidates.length > 0) {
+          const leadIds = skippedCandidates.map((row) => row.leadId);
+          const phones = skippedCandidates.map((row) => row.lead.phone);
+
+          const [existingConvos, suppressedEntries] = await Promise.all([
+            prisma.conversation.findMany({
+              where: { leadId: { in: leadIds } },
+              select: {
+                leadId: true,
+                assignedRepId: true,
+                _count: { select: { messages: true } },
+              },
+            }),
+            prisma.suppressionEntry.findMany({
+              where: { phone: { in: phones } },
+              select: { phone: true },
+            }),
+          ]);
+
+          const blockedPhones = new Set(suppressedEntries.map((row) => row.phone));
+          const convoByLead = new Map(existingConvos.map((row) => [row.leadId, row]));
+          const recoverableIds = skippedCandidates
+            .filter((row) => {
+              const conversation = convoByLead.get(row.leadId);
+              const hasExistingThread = (conversation?._count?.messages || 0) > 0;
+              if (hasExistingThread) return false;
+
+              const effectiveOwnerId = conversation?.assignedRepId || row.lead.assignedRepId || null;
+              if (effectiveOwnerId && effectiveOwnerId !== campaign.createdById) return false;
+
+              if (row.lead.optedOut || row.lead.isSuppressed || blockedPhones.has(row.lead.phone)) return false;
+
+              return true;
+            })
+            .map((row) => row.id);
+
+          if (recoverableIds.length === 0) {
+            logger.info(`Campaign ${id}: no policy-eligible skipped leads to recover on resume`);
+          } else {
+            await prisma.campaignLead.updateMany({
+              where: { id: { in: recoverableIds } },
+              data: {
+                status: 'PENDING',
+                sentAt: null,
+                deliveredAt: null,
+                repliedAt: null,
+                fromNumber: null,
+                errorCode: null,
+              },
+            });
+            pendingCount = recoverableIds.length;
+            logger.warn(
+              `Campaign ${id}: recovered ${recoverableIds.length} eligible skipped leads back to PENDING on resume`,
+            );
+          }
+        }
+
+        if (pendingCount === 0) {
+          logger.info(`Campaign ${id}: no recoverable leads found for resume`);
         }
       }
     }

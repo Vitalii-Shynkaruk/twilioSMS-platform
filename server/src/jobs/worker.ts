@@ -226,7 +226,7 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       sentByUserId: campaign.createdById,
     });
 
-    // If no messages were queued, revert campaign to DRAFT
+    // If no messages were queued in this run, keep campaign state consistent.
     if (result.queued === 0) {
       const remainingPending = await prisma.campaignLead.count({
         where: { campaignId, status: 'PENDING' },
@@ -237,6 +237,50 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
           data: { status: 'PAUSED', startedAt: null },
         });
         logger.warn(`Campaign ${campaignId} paused: 0 queued in this run, ${remainingPending} pending leads remain`);
+        return;
+      }
+
+      const existingMessages = await prisma.message.count({
+        where: { campaignId },
+      });
+
+      // Guard against destructive "resume" clicks:
+      // if campaign already has processed messages and this run queued 0,
+      // do NOT reset it to DRAFT/0-sent.
+      if (existingMessages > 0) {
+        const [pendingMessages, stats] = await Promise.all([
+          prisma.message.count({
+            where: { campaignId, status: { in: ['QUEUED', 'SENDING'] } },
+          }),
+          prisma.message.groupBy({
+            by: ['status'],
+            where: { campaignId },
+            _count: true,
+          }),
+        ]);
+
+        const delivered = stats.find((s) => s.status === 'DELIVERED')?._count ?? 0;
+        const sent = stats.find((s) => s.status === 'SENT')?._count ?? 0;
+        const failed =
+          (stats.find((s) => s.status === 'FAILED')?._count ?? 0) +
+          (stats.find((s) => s.status === 'UNDELIVERED')?._count ?? 0);
+        const blocked = stats.find((s) => s.status === 'BLOCKED')?._count ?? 0;
+
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: pendingMessages > 0 ? 'PAUSED' : 'COMPLETED',
+            completedAt: pendingMessages > 0 ? null : new Date(),
+            totalLeads: campaign._count.leads,
+            totalSent: sent + delivered + failed + blocked,
+            totalDelivered: delivered,
+            totalFailed: failed,
+            totalBlocked: blocked,
+          },
+        });
+        logger.warn(
+          `Campaign ${campaignId} queued 0 in this run; preserved stats from existing messages (${existingMessages})`,
+        );
         return;
       }
 

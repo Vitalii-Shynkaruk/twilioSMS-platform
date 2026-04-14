@@ -594,15 +594,53 @@ export class SendingEngine {
     } catch (error: any) {
       const isBlocked = error.code === 30007 || error.code === 30034;
 
-      await prisma.message.update({
-        where: { id: messageId },
+      const nextStatus = isBlocked ? 'BLOCKED' : 'FAILED';
+      const updated = await prisma.message.updateMany({
+        where: { id: messageId, status: { in: ['QUEUED', 'SENDING'] } },
         data: {
-          status: isBlocked ? 'BLOCKED' : 'FAILED',
+          status: nextStatus,
           errorCode: error.code?.toString(),
           errorMessage: error.message,
           failedAt: new Date(),
         },
       });
+
+      // Sync campaign/campaignLead counters once per message terminal transition.
+      if (updated.count > 0) {
+        const failedMessage = await prisma.message.findUnique({
+          where: { id: messageId },
+          select: {
+            campaignId: true,
+            conversation: { select: { leadId: true } },
+          },
+        });
+        if (failedMessage?.campaignId) {
+          if (isBlocked) {
+            await prisma.campaign.update({
+              where: { id: failedMessage.campaignId },
+              data: { totalBlocked: { increment: 1 } },
+            });
+          } else {
+            await prisma.campaign.update({
+              where: { id: failedMessage.campaignId },
+              data: { totalFailed: { increment: 1 } },
+            });
+          }
+
+          if (failedMessage.conversation?.leadId) {
+            await prisma.campaignLead.updateMany({
+              where: {
+                campaignId: failedMessage.campaignId,
+                leadId: failedMessage.conversation.leadId,
+              },
+              data: {
+                status: 'FAILED',
+                ...(error.code && { errorCode: error.code.toString() }),
+              },
+            });
+          }
+        }
+      }
 
       await NumberService.recordSend(phoneNumberId, false, isBlocked);
 

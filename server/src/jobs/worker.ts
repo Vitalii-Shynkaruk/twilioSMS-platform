@@ -13,7 +13,7 @@ import logger from '../config/logger';
 const smsWorker = new Worker(
   'sms-send',
   async (job: Job) => {
-    const { messageId, fromNumber, toNumber, body, phoneNumberId, campaignId } = job.data;
+    const { messageId, fromNumber, toNumber, body, phoneNumberId, campaignId, leadId } = job.data;
 
     // Circuit breaker: check if campaign has too many failures
     if (campaignId) {
@@ -24,10 +24,25 @@ const smsWorker = new Worker(
           where: { id: campaignId },
           data: { status: 'PAUSED' },
         });
-        await prisma.message.update({
-          where: { id: messageId },
+        const updated = await prisma.message.updateMany({
+          where: { id: messageId, status: { in: ['QUEUED', 'SENDING'] } },
           data: { status: 'FAILED', errorMessage: 'Campaign paused by circuit breaker — high failure rate' },
         });
+        if (updated.count > 0) {
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: { totalFailed: { increment: 1 } },
+          });
+          if (leadId) {
+            await prisma.campaignLead.updateMany({
+              where: { campaignId, leadId },
+              data: {
+                status: 'FAILED',
+                errorCode: 'CIRCUIT_BREAKER',
+              },
+            });
+          }
+        }
         logger.warn(`Circuit breaker triggered for campaign ${campaignId} — auto-paused`);
         return;
       }
@@ -304,13 +319,18 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
     }
 
     // Update campaign stats
+    const totalAttempted = await prisma.message.count({
+      where: { campaignId },
+    });
+
     await prisma.campaign.update({
       where: { id: campaignId },
       data: {
         status: 'SENDING',
         startedAt: new Date(),
         totalLeads: campaign._count.leads,
-        totalSent: result.queued,
+        // Keep this cumulative across resumes/restarts (never reset to only latest batch).
+        totalSent: totalAttempted,
       },
     });
 

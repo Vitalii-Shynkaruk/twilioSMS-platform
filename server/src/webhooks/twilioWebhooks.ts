@@ -20,10 +20,15 @@ const POSITIVE_REPLY_PATTERNS: RegExp[] = [
   /\b(call me|email me|reach me)\b/i,
   /\b(looking for|need)\b.*\b(funding|capital|loan|credit)\b/i,
   /\b(how much|what rates?|rate|terms?|qualify|qualification)\b/i,
+  /\b(qualification|qualifications)\b/i,
+  /\b(ok|okay|sure|thanks|thank you|thx)\b/i,
+  /\b(need|want)\b.*\b(more|info|information|details)\b/i,
+  /\b(tell me more|more info|more details)\b/i,
 ];
 
 const NEGATIVE_REPLY_PATTERNS: RegExp[] = [
   /\b(no|nope|not interested|don'?t|do not|stop|unsubscribe|remove me|wrong number|dnc|bad lead)\b/i,
+  /\b(kiss my ass|fuck off|screw you)\b/i,
 ];
 
 function isPositiveCampaignReply(body: string): boolean {
@@ -43,7 +48,10 @@ function isPositiveCampaignReply(body: string): boolean {
   }
 
   // Treat clear intent questions as positive engagement.
-  if (text.includes('?') && /\b(funding|capital|loan|credit|rate|term|offer)\b/i.test(text)) {
+  if (
+    text.includes('?') &&
+    /\b(funding|capital|loan|credit|rate|term|offer|qualification|qualifications|info|details|company)\b/i.test(text)
+  ) {
     return true;
   }
 

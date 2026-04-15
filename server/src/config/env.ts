@@ -36,7 +36,9 @@ const envSchema = z.object({
   SPINTAX_ENABLED: z.string().default('true'),
   CIRCUIT_BREAKER_THRESHOLD: z.string().default('30').transform(Number),
   DELIVERY_RATE_THROTTLE_AT: z.string().default('80').transform(Number),
-  TIME_DISTRIBUTION_ENABLED: z.string().default('true'),
+  // Keep send speed intuitive by default: selected campaign speed should be honored.
+  // Can be explicitly enabled via env to spread large batches across business hours.
+  TIME_DISTRIBUTION_ENABLED: z.string().default('false'),
   BUSINESS_HOURS_START: z.string().default('9').transform(Number),
   BUSINESS_HOURS_END: z.string().default('18').transform(Number),
 

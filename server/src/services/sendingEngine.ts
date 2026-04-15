@@ -496,6 +496,22 @@ export class SendingEngine {
         });
 
         if (msg?.conversation?.leadId) {
+          if (msg.campaignId) {
+            await prisma.campaignLead.updateMany({
+              where: {
+                campaignId: msg.campaignId,
+                leadId: msg.conversation.leadId,
+                status: { in: ['PENDING', 'FAILED'] },
+              },
+              data: {
+                status: 'SENT',
+                sentAt: new Date(),
+                fromNumber,
+                errorCode: null,
+              },
+            });
+          }
+
           const isFirstContact = msg.conversation.lead?.status === 'NEW';
           await prisma.lead.update({
             where: { id: msg.conversation.leadId },
@@ -566,6 +582,22 @@ export class SendingEngine {
       });
 
       if (msg?.conversation?.leadId) {
+        if (msg.campaignId) {
+          await prisma.campaignLead.updateMany({
+            where: {
+              campaignId: msg.campaignId,
+              leadId: msg.conversation.leadId,
+              status: { in: ['PENDING', 'FAILED'] },
+            },
+            data: {
+              status: 'SENT',
+              sentAt: new Date(),
+              fromNumber,
+              errorCode: null,
+            },
+          });
+        }
+
         const isFirstContact = msg.conversation.lead?.status === 'NEW';
         await prisma.lead.update({
           where: { id: msg.conversation.leadId },

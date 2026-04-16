@@ -14,50 +14,6 @@ import redis from '../config/redis';
 
 const router = Router();
 
-const POSITIVE_REPLY_PATTERNS: RegExp[] = [
-  /\b(yes|yep|yeah|interested|i'?m interested|i am interested)\b/i,
-  /\b(send|share)\b.*\b(info|information|details|terms|application)\b/i,
-  /\b(call me|email me|reach me)\b/i,
-  /\b(looking for|need)\b.*\b(funding|capital|loan|credit)\b/i,
-  /\b(how much|what rates?|rate|terms?|qualify|qualification)\b/i,
-  /\b(qualification|qualifications)\b/i,
-  /\b(ok|okay|sure|thanks|thank you|thx)\b/i,
-  /\b(need|want)\b.*\b(more|info|information|details)\b/i,
-  /\b(tell me more|more info|more details)\b/i,
-];
-
-const NEGATIVE_REPLY_PATTERNS: RegExp[] = [
-  /\b(no|nope|not interested|don'?t|do not|stop|unsubscribe|remove me|wrong number|dnc|bad lead)\b/i,
-  /\b(kiss my ass|fuck off|screw you)\b/i,
-];
-
-function isPositiveCampaignReply(body: string): boolean {
-  const text = body.trim();
-  if (!text) return false;
-
-  if (NEGATIVE_REPLY_PATTERNS.some((pattern) => pattern.test(text))) {
-    return false;
-  }
-
-  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) {
-    return true;
-  }
-
-  if (POSITIVE_REPLY_PATTERNS.some((pattern) => pattern.test(text))) {
-    return true;
-  }
-
-  // Treat clear intent questions as positive engagement.
-  if (
-    text.includes('?') &&
-    /\b(funding|capital|loan|credit|rate|term|offer|qualification|qualifications|info|details|company)\b/i.test(text)
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
 function phoneDigits(raw?: string | null): string {
   return String(raw || '').replace(/\D/g, '');
 }
@@ -233,29 +189,35 @@ router.post('/inbound', async (req: Request, res: Response) => {
         conversationId: conversation.id,
       });
 
-      // Count campaign replies only for positive inbound intent.
-      if (isPositiveCampaignReply(Body)) {
-        const affectedCampaignLead = await prisma.campaignLead.findFirst({
+      // Count campaign replies by attributing inbound to the latest outbound in this thread.
+      // This captures all real replies (including neutral/negative text), while avoiding
+      // cross-campaign attribution when the latest outbound was manual (campaignId = null).
+      const latestOutbound = await prisma.message.findFirst({
+        where: {
+          conversationId: conversation.id,
+          direction: 'OUTBOUND',
+        },
+        orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+        select: { campaignId: true },
+      });
+
+      if (latestOutbound?.campaignId) {
+        const replyUpdate = await prisma.campaignLead.updateMany({
           where: {
+            campaignId: latestOutbound.campaignId,
             leadId: lead.id,
             status: { in: ['SENT', 'DELIVERED'] },
           },
-          select: { id: true, campaignId: true },
-          orderBy: [{ deliveredAt: 'desc' }, { sentAt: 'desc' }, { createdAt: 'desc' }],
+          data: {
+            status: 'REPLIED',
+            repliedAt: new Date(),
+          },
         });
 
-        if (affectedCampaignLead) {
-          await prisma.campaignLead.update({
-            where: { id: affectedCampaignLead.id },
-            data: {
-              status: 'REPLIED',
-              repliedAt: new Date(),
-            },
-          });
-
+        if (replyUpdate.count > 0) {
           await prisma.campaign.update({
-            where: { id: affectedCampaignLead.campaignId },
-            data: { totalReplied: { increment: 1 } },
+            where: { id: latestOutbound.campaignId },
+            data: { totalReplied: { increment: replyUpdate.count } },
           });
         }
       }

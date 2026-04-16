@@ -858,7 +858,7 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
                       <div className="space-y-2">
                         <p className="text-xs text-dark-400">{csvPreview.totalRows} rows found. Map columns:</p>
                         <div className="grid grid-cols-2 gap-2">
-                          {['phone', 'firstName', 'lastName', 'email', 'company', 'state'].map((field) => (
+                          {['phone', 'firstName', 'lastName', 'email', 'company', 'state', 'notes'].map((field) => (
                             <div key={field} className="flex items-center gap-2">
                               <span className="text-xs text-dark-400 w-20 shrink-0 capitalize">
                                 {field === 'firstName' ? 'First Name' : field === 'lastName' ? 'Last Name' : field}

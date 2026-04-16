@@ -31,6 +31,7 @@ const STAGE_LABELS: Record<DealStage, string> = {
 };
 
 const BUSINESS_NAME_PLACEHOLDERS = new Set(['n/a', 'na', 'none', 'unknown', 'unknown business', 'null', '-']);
+const LEAD_VARCHAR_LIMIT = 191;
 
 function normalizeBusinessName(rawCompany: string | null | undefined, fallbackName: string): string {
   const fallback = fallbackName.trim() || 'Unknown Business';
@@ -38,6 +39,27 @@ function normalizeBusinessName(rawCompany: string | null | undefined, fallbackNa
   if (!company) return fallback;
   if (BUSINESS_NAME_PLACEHOLDERS.has(company.toLowerCase())) return fallback;
   return company;
+}
+
+function normalizeCell(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function truncateForLeadColumn(value: string, limit = LEAD_VARCHAR_LIMIT): string {
+  if (!value) return '';
+  return value.length > limit ? value.slice(0, limit) : value;
+}
+
+function nullableLeadValue(value: unknown, limit = LEAD_VARCHAR_LIMIT): string | null {
+  const normalized = normalizeCell(value);
+  if (!normalized) return null;
+  return truncateForLeadColumn(normalized, limit);
+}
+
+function requiredLeadValue(value: unknown, fallback: string, limit = LEAD_VARCHAR_LIMIT): string {
+  const normalized = normalizeCell(value);
+  return truncateForLeadColumn(normalized || fallback, limit);
 }
 
 export class LeadController {
@@ -483,11 +505,12 @@ export class LeadController {
         company: string | null;
         state: string | null;
         source: string;
+        notes: string | null;
       }> = [];
 
       // Parse and validate the batch
       for (const record of batch) {
-        const phone = (record.phone || record.Phone || record.PHONE || '').replace(/\D/g, '');
+        const phone = normalizeCell(record.phone || record.Phone || record.PHONE).replace(/\D/g, '');
         if (!phone) {
           errors++;
           errorDetails.push('Row missing phone number');
@@ -495,17 +518,21 @@ export class LeadController {
         }
 
         const e164Phone = phone.startsWith('1') ? `+${phone}` : `+1${phone}`;
-        const firstName = record.firstName || record.first_name || record.FirstName || record.FIRST_NAME || 'Unknown';
-        const lastName = record.lastName || record.last_name || record.LastName || record.LAST_NAME || '';
+        const firstName = requiredLeadValue(
+          record.firstName || record.first_name || record.FirstName || record.FIRST_NAME,
+          'Unknown',
+        );
+        const lastName = requiredLeadValue(record.lastName || record.last_name || record.LastName || record.LAST_NAME, '');
 
         leadsToUpsert.push({
           phone: e164Phone,
           firstName,
           lastName,
-          email: record.email || record.Email || record.EMAIL || null,
-          company: record.company || record.Company || record.COMPANY || null,
-          state: record.state || record.State || record.STATE || null,
-          source: record.source || record.Source || 'csv_import',
+          email: nullableLeadValue(record.email || record.Email || record.EMAIL),
+          company: nullableLeadValue(record.company || record.Company || record.COMPANY),
+          state: nullableLeadValue(record.state || record.State || record.STATE),
+          source: requiredLeadValue(record.source || record.Source, 'csv_import'),
+          notes: nullableLeadValue(record.notes || record.Notes || record.NOTE || record.COMMENTS, 4000),
         });
       }
 
@@ -612,17 +639,19 @@ export class LeadController {
       city: null,
       state: null,
       source: null,
+      notes: null,
     };
 
     const columnAliases: Record<string, string[]> = {
       phone: ['phone', 'phone_number', 'phonenumber', 'mobile', 'cell', 'tel', 'telephone', 'number'],
-      firstName: ['firstname', 'first_name', 'first', 'fname', 'given_name'],
+      firstName: ['firstname', 'first_name', 'first', 'fname', 'given_name', 'name'],
       lastName: ['lastname', 'last_name', 'last', 'lname', 'surname', 'family_name'],
       email: ['email', 'email_address', 'emailaddress', 'e_mail'],
       company: ['company', 'company_name', 'companyname', 'business', 'organization', 'org'],
       city: ['city', 'town', 'locality'],
       state: ['state', 'province', 'region', 'st'],
       source: ['source', 'lead_source', 'leadsource', 'origin', 'channel', 'utm_source'],
+      notes: ['notes', 'note', 'comments', 'comment', 'memo'],
     };
 
     for (const [field, aliases] of Object.entries(columnAliases)) {
@@ -700,10 +729,11 @@ export class LeadController {
         company: string | null;
         state: string | null;
         source: string;
+        notes: string | null;
       }> = [];
 
       for (const record of batch) {
-        const rawPhone = (mapping.phone ? record[mapping.phone] : '').replace(/\D/g, '');
+        const rawPhone = normalizeCell(mapping.phone ? record[mapping.phone] : '').replace(/\D/g, '');
         if (!rawPhone) {
           errors++;
           errorDetails.push('Row missing phone number');
@@ -713,18 +743,19 @@ export class LeadController {
         const e164Phone = rawPhone.startsWith('1') ? `+${rawPhone}` : `+1${rawPhone}`;
 
         // Combine city+state into state field (Lead model has no city column)
-        const city = mapping.city ? record[mapping.city] || '' : '';
-        const state = mapping.state ? record[mapping.state] || '' : '';
-        const combinedState = [city, state].filter(Boolean).join(', ') || null;
+        const city = normalizeCell(mapping.city ? record[mapping.city] : '');
+        const state = normalizeCell(mapping.state ? record[mapping.state] : '');
+        const combinedState = [city, state].filter(Boolean).join(', ');
 
         leadsToUpsert.push({
           phone: e164Phone,
-          firstName: mapping.firstName ? record[mapping.firstName] || 'Unknown' : 'Unknown',
-          lastName: mapping.lastName ? record[mapping.lastName] || '' : '',
-          email: mapping.email ? record[mapping.email] || null : null,
-          company: mapping.company ? record[mapping.company] || null : null,
-          state: combinedState,
-          source: mapping.source ? record[mapping.source] || 'csv_import' : 'csv_import',
+          firstName: requiredLeadValue(mapping.firstName ? record[mapping.firstName] : '', 'Unknown'),
+          lastName: requiredLeadValue(mapping.lastName ? record[mapping.lastName] : '', ''),
+          email: nullableLeadValue(mapping.email ? record[mapping.email] : ''),
+          company: nullableLeadValue(mapping.company ? record[mapping.company] : ''),
+          state: nullableLeadValue(combinedState),
+          source: requiredLeadValue(mapping.source ? record[mapping.source] : '', 'csv_import'),
+          notes: nullableLeadValue(mapping.notes ? record[mapping.notes] : '', 4000),
         });
       }
 

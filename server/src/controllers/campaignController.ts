@@ -2,7 +2,7 @@ import { Response } from 'express';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import { SendingEngine, campaignQueue } from '../services/sendingEngine';
+import { campaignQueue } from '../services/sendingEngine';
 import { ComplianceService } from '../services/complianceService';
 import { NumberService } from '../services/numberService';
 import { getActiveTwilioClient } from '../config/twilio';
@@ -10,6 +10,290 @@ import logger from '../config/logger';
 
 export class CampaignController {
   private static readonly SEND_ATTEMPT_STATUSES = ['SENT', 'DELIVERED', 'FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
+  private static readonly FAILED_OR_BLOCKED_STATUSES = ['FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
+
+  private static phoneDigits(raw?: string | null): string {
+    return String(raw || '').replace(/\D/g, '');
+  }
+
+  private static phoneLookupVariants(raw?: string | null): string[] {
+    const digits = CampaignController.phoneDigits(raw);
+    if (!digits) return [];
+
+    const variants = new Set<string>();
+    variants.add(digits);
+    variants.add(`+${digits}`);
+
+    if (digits.length === 10) {
+      variants.add(`1${digits}`);
+      variants.add(`+1${digits}`);
+    }
+
+    if (digits.length === 11 && digits.startsWith('1')) {
+      const local = digits.slice(1);
+      variants.add(local);
+      variants.add(`+1${local}`);
+    }
+
+    return Array.from(variants);
+  }
+
+  private static ensureRetargetAccess(sourceCampaign: { id: string; createdById: string }, req: AuthRequest): void {
+    if (req.user?.role === 'REP' && sourceCampaign.createdById !== req.user.id) {
+      throw new AppError('You can only retarget your own campaigns', 403);
+    }
+  }
+
+  private static async buildRetargetPreview(sourceCampaignId: string): Promise<{
+    sourceCampaign: {
+      id: string;
+      name: string;
+      messageTemplate: string;
+      numberPoolId: string | null;
+      sendingSpeed: number;
+      dailyLimit: number | null;
+      createdById: string;
+    };
+    summary: {
+      totalDelivered: number;
+      replied: number;
+      failedBlocked: number;
+      dncFiltered: number;
+      willReceive: number;
+    };
+    defaults: {
+      name: string;
+      messageTemplate: string;
+    };
+    eligibleLeadIds: string[];
+  }> {
+    const sourceCampaign = await prisma.campaign.findUnique({
+      where: { id: sourceCampaignId },
+      select: {
+        id: true,
+        name: true,
+        messageTemplate: true,
+        numberPoolId: true,
+        sendingSpeed: true,
+        dailyLimit: true,
+        createdById: true,
+      },
+    });
+
+    if (!sourceCampaign) throw new AppError('Source campaign not found', 404);
+
+    const [sourceCampaignLeads, sourceMessages] = await Promise.all([
+      prisma.campaignLead.findMany({
+        where: { campaignId: sourceCampaignId },
+        select: {
+          leadId: true,
+          lead: {
+            select: {
+              id: true,
+              phone: true,
+              status: true,
+              optedOut: true,
+              isSuppressed: true,
+            },
+          },
+        },
+      }),
+      prisma.message.findMany({
+        where: {
+          campaignId: sourceCampaignId,
+          direction: 'OUTBOUND',
+        },
+        select: {
+          status: true,
+          sentAt: true,
+          createdAt: true,
+          conversation: {
+            select: {
+              leadId: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const leadById = new Map(
+      sourceCampaignLeads.map((row) => [
+        row.leadId,
+        {
+          id: row.lead.id,
+          phone: row.lead.phone,
+          status: row.lead.status,
+          optedOut: row.lead.optedOut,
+          isSuppressed: row.lead.isSuppressed,
+        },
+      ]),
+    );
+
+    const outboundByLead = new Map<
+      string,
+      {
+        firstOutboundAt: Date;
+        hasDelivered: boolean;
+        hasFailedOrBlocked: boolean;
+      }
+    >();
+
+    for (const msg of sourceMessages) {
+      const leadId = msg.conversation.leadId;
+      if (!leadId) continue;
+
+      const outboundAt = msg.sentAt || msg.createdAt;
+      const current = outboundByLead.get(leadId);
+      if (!current) {
+        outboundByLead.set(leadId, {
+          firstOutboundAt: outboundAt,
+          hasDelivered: msg.status === 'DELIVERED',
+          hasFailedOrBlocked: CampaignController.FAILED_OR_BLOCKED_STATUSES.includes(
+            msg.status as (typeof CampaignController.FAILED_OR_BLOCKED_STATUSES)[number],
+          ),
+        });
+        continue;
+      }
+
+      if (outboundAt < current.firstOutboundAt) current.firstOutboundAt = outboundAt;
+      if (msg.status === 'DELIVERED') current.hasDelivered = true;
+      if (
+        CampaignController.FAILED_OR_BLOCKED_STATUSES.includes(
+          msg.status as (typeof CampaignController.FAILED_OR_BLOCKED_STATUSES)[number],
+        )
+      ) {
+        current.hasFailedOrBlocked = true;
+      }
+    }
+
+    const deliveredLeadIds = Array.from(outboundByLead.entries())
+      .filter(([, entry]) => entry.hasDelivered)
+      .map(([leadId]) => leadId);
+
+    const failedBlocked = Array.from(outboundByLead.values()).filter(
+      (entry) => entry.hasFailedOrBlocked && !entry.hasDelivered,
+    ).length;
+
+    const missingLeadIds = deliveredLeadIds.filter((leadId) => !leadById.has(leadId));
+    if (missingLeadIds.length > 0) {
+      const missingLeads = await prisma.lead.findMany({
+        where: { id: { in: missingLeadIds } },
+        select: { id: true, phone: true, status: true, optedOut: true, isSuppressed: true },
+      });
+      for (const lead of missingLeads) {
+        leadById.set(lead.id, lead);
+      }
+    }
+
+    const minOutboundAt = deliveredLeadIds.reduce<Date | null>((minAt, leadId) => {
+      const at = outboundByLead.get(leadId)?.firstOutboundAt;
+      if (!at) return minAt;
+      if (!minAt || at < minAt) return at;
+      return minAt;
+    }, null);
+
+    const inboundMessages =
+      deliveredLeadIds.length > 0 && minOutboundAt
+        ? await prisma.message.findMany({
+            where: {
+              direction: 'INBOUND',
+              createdAt: { gte: minOutboundAt },
+              conversation: {
+                leadId: { in: deliveredLeadIds },
+              },
+            },
+            select: {
+              createdAt: true,
+              conversation: {
+                select: {
+                  leadId: true,
+                },
+              },
+            },
+          })
+        : [];
+
+    const repliedLeadIds = new Set<string>();
+    for (const message of inboundMessages) {
+      const leadId = message.conversation.leadId;
+      if (!leadId) continue;
+      const firstOutboundAt = outboundByLead.get(leadId)?.firstOutboundAt;
+      if (!firstOutboundAt) continue;
+      if (message.createdAt >= firstOutboundAt) {
+        repliedLeadIds.add(leadId);
+      }
+    }
+
+    const deliveredLeads: Array<{
+      leadId: string;
+      lead: {
+        id: string;
+        phone: string;
+        status: string;
+        optedOut: boolean;
+        isSuppressed: boolean;
+      };
+    }> = [];
+    for (const leadId of deliveredLeadIds) {
+      const lead = leadById.get(leadId);
+      if (!lead) continue;
+      deliveredLeads.push({ leadId, lead });
+    }
+
+    const suppressionLookup = new Set<string>();
+    for (const row of deliveredLeads) {
+      for (const variant of CampaignController.phoneLookupVariants(row.lead.phone)) {
+        suppressionLookup.add(variant);
+      }
+    }
+
+    const suppressionRows =
+      suppressionLookup.size > 0
+        ? await prisma.suppressionEntry.findMany({
+            where: {
+              phone: { in: Array.from(suppressionLookup) },
+            },
+            select: { phone: true },
+          })
+        : [];
+
+    const suppressedDigits = new Set(
+      suppressionRows.map((row) => CampaignController.phoneDigits(row.phone)).filter(Boolean),
+    );
+
+    const dncLeadIds = new Set<string>();
+    for (const row of deliveredLeads) {
+      const isDncStatus = row.lead.status === 'DNC';
+      const isOptedOut = row.lead.optedOut;
+      const isSuppressed = row.lead.isSuppressed;
+      const phoneDigits = CampaignController.phoneDigits(row.lead.phone);
+      const inSuppressionList = phoneDigits ? suppressedDigits.has(phoneDigits) : false;
+      if (isDncStatus || isOptedOut || isSuppressed || inSuppressionList) {
+        dncLeadIds.add(row.leadId);
+      }
+    }
+
+    // Filter order is strict: Delivered -> exclude Replied -> exclude DNC.
+    const afterReplyLeadIds = deliveredLeadIds.filter((leadId) => !repliedLeadIds.has(leadId));
+    const dncFilteredLeadIds = afterReplyLeadIds.filter((leadId) => dncLeadIds.has(leadId));
+    const eligibleLeadIds = afterReplyLeadIds.filter((leadId) => !dncLeadIds.has(leadId));
+
+    return {
+      sourceCampaign,
+      summary: {
+        totalDelivered: deliveredLeadIds.length,
+        replied: repliedLeadIds.size,
+        failedBlocked: failedBlocked,
+        dncFiltered: dncFilteredLeadIds.length,
+        willReceive: eligibleLeadIds.length,
+      },
+      defaults: {
+        name: `Retarget — ${sourceCampaign.name}`,
+        messageTemplate: sourceCampaign.messageTemplate,
+      },
+      eligibleLeadIds,
+    };
+  }
 
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const { status, search, page = '1', limit = '20' } = req.query;
@@ -22,20 +306,23 @@ export class CampaignController {
     }
 
     const [campaigns, total] = await Promise.all([
-      prisma.campaign.findMany({
+      (prisma.campaign as any).findMany({
         where,
         skip,
         take: parseInt(limit as string),
         orderBy: { createdAt: 'desc' },
         include: {
           _count: { select: { leads: true } },
+          sourceCampaign: {
+            select: { id: true, name: true },
+          },
         },
       }),
       prisma.campaign.count({ where }),
     ]);
 
     // Use message-based counters so "Sent" reflects actual attempts, not queued items.
-    const campaignIds = campaigns.map((c) => c.id);
+    const campaignIds = (campaigns as any[]).map((c: any) => c.id);
     const [liveRows, numberRows, repRows, failureReasonRows, leadStatusRows] =
       campaignIds.length > 0
         ? await Promise.all([
@@ -196,7 +483,7 @@ export class CampaignController {
       liveByCampaign.set(row.campaignId, current);
     }
 
-    const campaignsWithLiveCounters = campaigns.map((campaign) => {
+    const campaignsWithLiveCounters = (campaigns as any[]).map((campaign: any) => {
       const live = liveByCampaign.get(campaign.id) || {
         totalSent: 0,
         totalDelivered: 0,
@@ -214,6 +501,7 @@ export class CampaignController {
       };
       return {
         ...campaign,
+        sourceCampaignName: campaign.sourceCampaign?.name || null,
         totalLeads: campaign._count?.leads ?? campaign.totalLeads ?? 0,
         totalSent: live.totalSent,
         totalDelivered: live.totalDelivered,
@@ -239,7 +527,7 @@ export class CampaignController {
   static async get(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
-    const campaign = await prisma.campaign.findUnique({
+    const campaign = await (prisma.campaign as any).findUnique({
       where: { id },
       include: {
         leads: {
@@ -257,6 +545,9 @@ export class CampaignController {
           take: 100,
         },
         numberPool: true,
+        sourceCampaign: {
+          select: { id: true, name: true },
+        },
       },
     });
 
@@ -541,6 +832,86 @@ export class CampaignController {
     });
 
     res.json({ message: 'Campaign queued for sending' });
+  }
+
+  static async retargetPreview(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+
+    const preview = await CampaignController.buildRetargetPreview(id);
+    CampaignController.ensureRetargetAccess(preview.sourceCampaign, req);
+
+    res.json({
+      sourceCampaign: {
+        id: preview.sourceCampaign.id,
+        name: preview.sourceCampaign.name,
+      },
+      defaults: preview.defaults,
+      summary: preview.summary,
+    });
+  }
+
+  static async retargetCreate(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { name, messageTemplate } = req.body as { name: string; messageTemplate: string };
+
+    const preview = await CampaignController.buildRetargetPreview(id);
+    CampaignController.ensureRetargetAccess(preview.sourceCampaign, req);
+
+    if (preview.summary.willReceive === 0) {
+      throw new AppError('No eligible recipients. All delivered contacts have replied or are on DNC.', 400);
+    }
+
+    if (await ComplianceService.isQuietHours()) {
+      throw new AppError('Cannot start retarget campaign during quiet hours. Adjust quiet hours in Settings.', 400);
+    }
+
+    const campaign = await prisma.$transaction(async (tx: any) => {
+      const createdCampaign = await (tx.campaign as any).create({
+        data: {
+          name,
+          messageTemplate,
+          numberPoolId: preview.sourceCampaign.numberPoolId || null,
+          sendingSpeed: preview.sourceCampaign.sendingSpeed || 60,
+          dailyLimit: preview.sourceCampaign.dailyLimit,
+          createdById: req.user!.id,
+          status: 'SENDING',
+          startedAt: new Date(),
+          totalLeads: preview.eligibleLeadIds.length,
+          isRetarget: true,
+          sourceCampaignId: preview.sourceCampaign.id,
+        },
+      });
+
+      await tx.campaignLead.createMany({
+        data: preview.eligibleLeadIds.map((leadId) => ({
+          campaignId: createdCampaign.id,
+          leadId,
+          status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      });
+
+      return createdCampaign;
+    });
+
+    try {
+      await campaignQueue.add('campaign-start', {
+        action: 'start',
+        campaignId: campaign.id,
+      });
+    } catch (error: any) {
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: 'DRAFT', startedAt: null },
+      });
+      throw new AppError(`Failed to queue retarget campaign: ${error.message}`, 500);
+    }
+
+    res.status(201).json({
+      campaign,
+      summary: preview.summary,
+      message: 'Retarget campaign created and queued for sending',
+    });
   }
 
   static async pause(req: AuthRequest, res: Response): Promise<void> {

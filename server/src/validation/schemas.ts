@@ -129,6 +129,11 @@ export const createCampaignSchema = z.object({
 
 export const updateCampaignSchema = createCampaignSchema.partial();
 
+export const retargetCampaignSchema = z.object({
+  name: z.string().min(1).max(200).trim(),
+  messageTemplate: z.string().min(1).max(1600),
+});
+
 // ─── Inbox ───
 export const sendReplySchema = z.object({
   body: z.string().min(1).max(1600).trim(),

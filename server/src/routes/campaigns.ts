@@ -3,7 +3,7 @@ import { CampaignController } from '../controllers/campaignController';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../validation/middleware';
-import { createCampaignSchema, updateCampaignSchema } from '../validation/schemas';
+import { createCampaignSchema, updateCampaignSchema, retargetCampaignSchema } from '../validation/schemas';
 
 const router = Router();
 
@@ -28,6 +28,17 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), asyncHandler(CampaignCont
 router.post('/:id/start', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(CampaignController.start));
 router.post('/:id/pause', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(CampaignController.pause));
 router.post('/:id/cancel', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(CampaignController.cancel));
+router.get(
+  '/:id/retarget-preview',
+  requireRole('ADMIN', 'MANAGER', 'REP'),
+  asyncHandler(CampaignController.retargetPreview),
+);
+router.post(
+  '/:id/retarget',
+  requireRole('ADMIN', 'MANAGER', 'REP'),
+  validate(retargetCampaignSchema),
+  asyncHandler(CampaignController.retargetCreate),
+);
 router.post('/:id/sync', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(CampaignController.syncStatuses));
 
 export default router;

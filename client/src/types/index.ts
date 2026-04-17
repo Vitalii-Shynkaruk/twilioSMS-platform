@@ -192,11 +192,15 @@ export interface Campaign {
   name: string;
   description?: string;
   status: CampaignStatus;
+  isRetarget?: boolean;
+  sourceCampaignId?: string | null;
+  sourceCampaignName?: string | null;
   messageTemplate: string;
   scheduledAt?: string;
   startedAt?: string;
   completedAt?: string;
   numberPoolId?: string;
+  createdById?: string;
   sendingSpeed: number;
   totalLeads: number;
   totalSent: number;

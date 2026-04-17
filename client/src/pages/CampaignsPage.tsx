@@ -23,6 +23,7 @@ import {
   Copy,
   Eye,
   Upload,
+  RotateCcw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -37,6 +38,7 @@ export default function CampaignsPage() {
   const [page, setPage] = useState(1);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; campaign: Campaign } | null>(null);
+  const [retargetCampaign, setRetargetCampaign] = useState<Campaign | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -105,6 +107,13 @@ export default function CampaignsPage() {
   });
 
   const statuses: CampaignStatus[] = ['DRAFT', 'SCHEDULED', 'SENDING', 'PAUSED', 'COMPLETED', 'CANCELLED'];
+  const canRetargetCampaign = useCallback(
+    (campaign: Campaign) => {
+      if (user?.role !== 'REP') return true;
+      return !campaign.createdById || campaign.createdById === user.id;
+    },
+    [user],
+  );
 
   return (
     <div className="p-8 space-y-6 max-w-[1600px]">
@@ -207,6 +216,7 @@ export default function CampaignsPage() {
                 <tr
                   key={campaign.id}
                   className="table-row cursor-context-menu"
+                  style={campaign.isRetarget ? { background: 'rgba(201,168,76,0.06)' } : undefined}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setCtxMenu({ x: e.clientX, y: e.clientY, campaign });
@@ -214,8 +224,21 @@ export default function CampaignsPage() {
                 >
                   <td className="table-cell">
                     <div>
-                      <p className="font-medium text-dark-200">{campaign.name}</p>
-                      <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
+                      <p className="font-medium text-dark-200 flex items-center gap-2">
+                        <span>{campaign.name}</span>
+                        {campaign.isRetarget && (
+                          <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
+                            ↺ Retarget
+                          </span>
+                        )}
+                      </p>
+                      {campaign.isRetarget ? (
+                        <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
+                          ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                        </p>
+                      ) : (
+                        <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
+                      )}
                     </div>
                   </td>
                   <td className="table-cell">
@@ -255,6 +278,22 @@ export default function CampaignsPage() {
                   {canManage && (
                     <td className="table-cell">
                       <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setRetargetCampaign(campaign)}
+                          className={`p-1.5 rounded transition-colors ${
+                            canRetargetCampaign(campaign)
+                              ? 'text-dark-400 hover:text-[#C9A84C] hover:bg-[#C9A84C]/10'
+                              : 'text-dark-600 cursor-not-allowed'
+                          }`}
+                          title={
+                            canRetargetCampaign(campaign)
+                              ? 'Retarget — send to non-responders'
+                              : 'You can only retarget your own campaigns'
+                          }
+                          disabled={!canRetargetCampaign(campaign)}
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
                         {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status) && (
                           <button
                             onClick={() => startMutation.mutate(campaign.id)}
@@ -358,6 +397,22 @@ export default function CampaignsPage() {
             <Copy className="w-3.5 h-3.5" /> Copy Name
           </button>
           {canManage && (
+            <button
+              onClick={() => {
+                if (!canRetargetCampaign(ctxMenu.campaign)) {
+                  toast.error('You can only retarget your own campaigns');
+                  setCtxMenu(null);
+                  return;
+                }
+                setRetargetCampaign(ctxMenu.campaign);
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-[#C9A84C]" /> Retarget Campaign
+            </button>
+          )}
+          {canManage && (
             <>
               <div className="border-t border-dark-700 my-1" />
               {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(ctxMenu.campaign.status) && (
@@ -414,6 +469,170 @@ export default function CampaignsPage() {
 
       {/* Create Campaign Modal */}
       {showCreateModal && <CreateCampaignModal onClose={() => setShowCreateModal(false)} />}
+      {retargetCampaign && (
+        <RetargetCampaignModal
+          campaign={retargetCampaign}
+          onClose={() => setRetargetCampaign(null)}
+          onCreated={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
+        />
+      )}
+    </div>
+  );
+}
+
+type RetargetPreviewResponse = {
+  sourceCampaign: { id: string; name: string };
+  defaults: { name: string; messageTemplate: string };
+  summary: {
+    totalDelivered: number;
+    replied: number;
+    failedBlocked: number;
+    dncFiltered: number;
+    willReceive: number;
+  };
+};
+
+function RetargetCampaignModal({
+  campaign,
+  onClose,
+  onCreated,
+}: {
+  campaign: Campaign;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [nameDraft, setNameDraft] = useState('');
+  const [messageDraft, setMessageDraft] = useState('');
+  const [nameEdited, setNameEdited] = useState(false);
+  const [messageEdited, setMessageEdited] = useState(false);
+
+  const { data, isLoading } = useQuery<RetargetPreviewResponse>({
+    queryKey: ['retarget-preview', campaign.id],
+    queryFn: async () => {
+      const { data } = await api.get(`/campaigns/${campaign.id}/retarget-preview`);
+      return data;
+    },
+  });
+
+  const resolvedName = nameEdited ? nameDraft : data?.defaults.name || '';
+  const resolvedMessageTemplate = messageEdited ? messageDraft : data?.defaults.messageTemplate || '';
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      return api.post(`/campaigns/${campaign.id}/retarget`, {
+        name: resolvedName.trim(),
+        messageTemplate: resolvedMessageTemplate.trim(),
+      });
+    },
+    onSuccess: () => {
+      toast.success('Retarget campaign queued');
+      onCreated();
+      onClose();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.error || 'Failed to create retarget campaign');
+    },
+  });
+
+  const summary = data?.summary;
+  const hasEligibleRecipients = (summary?.willReceive || 0) > 0;
+  const canConfirm =
+    hasEligibleRecipients && resolvedName.trim().length > 0 && resolvedMessageTemplate.trim().length > 0;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
+      <div className="card w-full max-w-xl mx-4 animate-fade-in">
+        <div className="card-header flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-dark-100">Retarget Campaign</h3>
+            <p className="text-xs text-dark-500 mt-0.5">Retargeting: {campaign.name}</p>
+          </div>
+          <button onClick={onClose} className="text-dark-500 hover:text-dark-300">
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="card-body space-y-4">
+          {isLoading ? (
+            <div className="text-sm text-dark-400">Loading recipient summary...</div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="bg-dark-800/60 rounded-lg p-2.5 border border-dark-700/60">
+                  <p className="text-xs text-dark-500">Total Delivered</p>
+                  <p className="text-dark-100 font-semibold">{summary?.totalDelivered || 0}</p>
+                </div>
+                <div className="bg-dark-800/60 rounded-lg p-2.5 border border-dark-700/60">
+                  <p className="text-xs text-dark-500">Replied</p>
+                  <p className="text-dark-100 font-semibold">{summary?.replied || 0}</p>
+                </div>
+                <div className="bg-dark-800/60 rounded-lg p-2.5 border border-dark-700/60">
+                  <p className="text-xs text-dark-500">Failed / Blocked</p>
+                  <p className="text-dark-100 font-semibold">{summary?.failedBlocked || 0}</p>
+                </div>
+                <div className="bg-dark-800/60 rounded-lg p-2.5 border border-dark-700/60">
+                  <p className="text-xs text-dark-500">DNC Filtered</p>
+                  <p className="text-dark-100 font-semibold">{summary?.dncFiltered || 0}</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[#C9A84C]/40 bg-[#C9A84C]/10 px-3 py-2">
+                <p className="text-xs text-[#C9A84C] uppercase tracking-wide">Will Receive Retarget</p>
+                <p className="text-lg font-semibold text-[#C9A84C]">{summary?.willReceive || 0}</p>
+              </div>
+
+              {!hasEligibleRecipients && (
+                <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-300">
+                  No eligible recipients. All delivered contacts have replied or are on DNC.
+                </div>
+              )}
+            </>
+          )}
+
+          <div>
+            <label className="label">Campaign Name</label>
+            <input
+              type="text"
+              className="input"
+              value={resolvedName}
+              onChange={(e) => {
+                setNameEdited(true);
+                setNameDraft(e.target.value);
+              }}
+              placeholder="Retarget — Source Campaign"
+            />
+          </div>
+
+          <div>
+            <label className="label">Message</label>
+            <textarea
+              className="input min-h-[110px] resize-y"
+              value={resolvedMessageTemplate}
+              onChange={(e) => {
+                setMessageEdited(true);
+                setMessageDraft(e.target.value);
+              }}
+            />
+            <div className="flex justify-end mt-1">
+              <SmsCounter text={resolvedMessageTemplate} />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary">
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!canConfirm || createMutation.isPending}
+              onClick={() => createMutation.mutate()}
+            >
+              {createMutation.isPending ? 'Creating...' : 'Confirm Retarget'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

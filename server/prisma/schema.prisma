@@ -399,6 +399,8 @@ model Campaign {
   name              String
   description       String?
   status            CampaignStatus @default(DRAFT)
+  isRetarget        Boolean        @default(false)
+  sourceCampaignId  String?
   
   // Message template
   messageTemplate   String         @db.Text // Supports {{firstName}}, {{company}} etc.
@@ -428,12 +430,16 @@ model Campaign {
 
   createdBy         User           @relation(fields: [createdById], references: [id], onDelete: Cascade)
   numberPool        NumberPool?    @relation(fields: [numberPoolId], references: [id], onDelete: SetNull)
+  sourceCampaign    Campaign?      @relation("CampaignRetargetLineage", fields: [sourceCampaignId], references: [id], onDelete: SetNull)
+  retargetCampaigns Campaign[]     @relation("CampaignRetargetLineage")
   leads             CampaignLead[]
   messages          Message[]
 
   @@index([status])
   @@index([createdById])
   @@index([scheduledAt])
+  @@index([isRetarget])
+  @@index([sourceCampaignId])
   @@map("campaigns")
 }
 

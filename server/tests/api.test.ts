@@ -13,6 +13,37 @@ let testLeadId: string;
 let testCampaignId: string;
 let testStageId: string;
 
+async function cleanupUserByEmail(email: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  if (!user) return;
+
+  const deals = await prisma.deal.findMany({
+    where: { assignedRepId: user.id },
+    select: { id: true, clientId: true },
+  });
+
+  if (deals.length > 0) {
+    const dealIds = deals.map((d) => d.id);
+    const clientIds = Array.from(new Set(deals.map((d) => d.clientId)));
+
+    await prisma.deal.deleteMany({
+      where: { id: { in: dealIds } },
+    });
+
+    for (const clientId of clientIds) {
+      const remainingDeals = await prisma.deal.count({ where: { clientId } });
+      if (remainingDeals === 0) {
+        await prisma.client.delete({ where: { id: clientId } }).catch(() => {});
+      }
+    }
+  }
+
+  await prisma.user.delete({ where: { id: user.id } });
+}
+
 describe('API Routes', () => {
   beforeAll(async () => {
     // Create test user and log in
@@ -29,9 +60,7 @@ describe('API Routes', () => {
       update: { passwordHash: hash, isActive: true },
     });
 
-    const res = await request(app)
-      .post('/api/auth/login')
-      .send({ email: 'test-api@test.com', password: 'TestPass!1' });
+    const res = await request(app).post('/api/auth/login').send({ email: 'test-api@test.com', password: 'TestPass!1' });
     token = res.body.token;
   });
 
@@ -52,22 +81,19 @@ describe('API Routes', () => {
       await prisma.pipelineCard.deleteMany({ where: { stageId: testStageId } });
       await prisma.pipelineStage.deleteMany({ where: { id: testStageId } });
     }
-    await prisma.user.deleteMany({ where: { email: 'test-api@test.com' } });
+    await cleanupUserByEmail('test-api@test.com');
   });
 
   // ─── LEADS ────────────────────
   describe('Leads API', () => {
     it('POST /api/leads — creates a lead', async () => {
-      const res = await request(app)
-        .post('/api/leads')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          firstName: 'Test',
-          lastName: 'Lead',
-          phone: '+12025551234',
-          email: 'testlead@test.com',
-          source: 'api_test',
-        });
+      const res = await request(app).post('/api/leads').set('Authorization', `Bearer ${token}`).send({
+        firstName: 'Test',
+        lastName: 'Lead',
+        phone: '+12025551234',
+        email: 'testlead@test.com',
+        source: 'api_test',
+      });
 
       expect(res.status).toBe(201);
       expect(res.body.lead).toHaveProperty('id');
@@ -76,9 +102,7 @@ describe('API Routes', () => {
     });
 
     it('GET /api/leads — lists leads', async () => {
-      const res = await request(app)
-        .get('/api/leads')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/leads').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.leads).toBeInstanceOf(Array);
@@ -87,9 +111,7 @@ describe('API Routes', () => {
     });
 
     it('GET /api/leads/:id — returns lead details', async () => {
-      const res = await request(app)
-        .get(`/api/leads/${testLeadId}`)
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get(`/api/leads/${testLeadId}`).set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.lead.id).toBe(testLeadId);
@@ -109,13 +131,10 @@ describe('API Routes', () => {
   // ─── CAMPAIGNS ────────────────
   describe('Campaigns API', () => {
     it('POST /api/campaigns — creates a campaign', async () => {
-      const res = await request(app)
-        .post('/api/campaigns')
-        .set('Authorization', `Bearer ${token}`)
-        .send({
-          name: 'Test Campaign',
-          messageTemplate: 'Hi {{firstName}}, this is a test!',
-        });
+      const res = await request(app).post('/api/campaigns').set('Authorization', `Bearer ${token}`).send({
+        name: 'Test Campaign',
+        messageTemplate: 'Hi {{firstName}}, this is a test!',
+      });
 
       expect(res.status).toBe(201);
       expect(res.body.campaign).toHaveProperty('id');
@@ -124,18 +143,14 @@ describe('API Routes', () => {
     });
 
     it('GET /api/campaigns — lists campaigns', async () => {
-      const res = await request(app)
-        .get('/api/campaigns')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/campaigns').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.campaigns).toBeInstanceOf(Array);
     });
 
     it('GET /api/campaigns/:id — returns campaign details', async () => {
-      const res = await request(app)
-        .get(`/api/campaigns/${testCampaignId}`)
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get(`/api/campaigns/${testCampaignId}`).set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.campaign.id).toBe(testCampaignId);
@@ -156,9 +171,7 @@ describe('API Routes', () => {
     });
 
     it('GET /api/pipeline/stages — lists stages', async () => {
-      const res = await request(app)
-        .get('/api/pipeline/stages')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/pipeline/stages').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.stages).toBeInstanceOf(Array);
@@ -168,9 +181,7 @@ describe('API Routes', () => {
   // ─── DASHBOARD ────────────────
   describe('Dashboard API', () => {
     it('GET /api/dashboard/stats — returns statistics', async () => {
-      const res = await request(app)
-        .get('/api/dashboard/stats')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/dashboard/stats').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('overview');
@@ -183,18 +194,14 @@ describe('API Routes', () => {
   // ─── SETTINGS ─────────────────
   describe('Settings API', () => {
     it('GET /api/settings/tags — lists tags', async () => {
-      const res = await request(app)
-        .get('/api/settings/tags')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/settings/tags').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.tags).toBeInstanceOf(Array);
     });
 
     it('GET /api/settings/suppression — suppression list', async () => {
-      const res = await request(app)
-        .get('/api/settings/suppression')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/settings/suppression').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.entries).toBeInstanceOf(Array);
@@ -204,9 +211,7 @@ describe('API Routes', () => {
   // ─── AUTOMATION ────────────────
   describe('Automation API', () => {
     it('GET /api/automation/rules — lists rules', async () => {
-      const res = await request(app)
-        .get('/api/automation/rules')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/automation/rules').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.rules).toBeInstanceOf(Array);
@@ -216,9 +221,7 @@ describe('API Routes', () => {
   // ─── NUMBERS ──────────────────
   describe('Numbers API', () => {
     it('GET /api/numbers — lists numbers', async () => {
-      const res = await request(app)
-        .get('/api/numbers')
-        .set('Authorization', `Bearer ${token}`);
+      const res = await request(app).get('/api/numbers').set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
       expect(res.body.numbers).toBeInstanceOf(Array);
@@ -250,29 +253,27 @@ describe('API Routes', () => {
     });
 
     afterAll(async () => {
-      await prisma.user.deleteMany({ where: { email: 'test-rep-access@test.com' } });
+      await cleanupUserByEmail('test-rep-access@test.com');
     });
 
     it('REP cannot create a user', async () => {
-      const res = await request(app)
-        .post('/api/auth/register')
-        .set('Authorization', `Bearer ${repToken}`)
-        .send({
-          email: 'new@test.com',
-          password: 'Pass!1',
-          firstName: 'No',
-          lastName: 'Way',
-        });
+      const res = await request(app).post('/api/auth/register').set('Authorization', `Bearer ${repToken}`).send({
+        email: 'new@test.com',
+        password: 'Pass!1',
+        firstName: 'No',
+        lastName: 'Way',
+      });
 
       expect(res.status).toBe(403);
     });
 
-    it('REP cannot view numbers', async () => {
-      const res = await request(app)
-        .get('/api/numbers')
-        .set('Authorization', `Bearer ${repToken}`);
+    it('REP can view numbers (assigned-only scope)', async () => {
+      const res = await request(app).get('/api/numbers').set('Authorization', `Bearer ${repToken}`);
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('numbers');
+      expect(res.body.numbers).toBeInstanceOf(Array);
+      expect(res.body).toHaveProperty('summary');
     });
   });
 });

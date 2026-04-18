@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
+import { dealApi } from '../services/api';
 import { Campaign, CampaignStatus } from '../types';
 import {
   ArrowLeft,
@@ -23,6 +24,7 @@ import {
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
+import { useAuthStore } from '../stores/authStore';
 
 interface CampaignLead {
   id: string;
@@ -55,6 +57,8 @@ export default function CampaignDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showEdit, setShowEdit] = useState(false);
+  const { user } = useAuthStore();
+  const isRep = user?.role === 'REP';
 
   const { data: campaignData, isLoading } = useQuery({
     queryKey: ['campaign', id],
@@ -74,6 +78,20 @@ export default function CampaignDetailPage() {
     enabled: !!id,
     refetchInterval: campaignData?.status === 'SENDING' ? 5000 : false,
   });
+
+  const { data: outboundGate } = useQuery<{
+    blocked: boolean;
+    overdueTasks: number;
+    threshold: number;
+    message: string;
+  }>({
+    queryKey: ['outbound-gate', user?.id],
+    queryFn: async () => (await dealApi.getOutboundGate()).data,
+    enabled: isRep,
+    refetchInterval: 15000,
+  });
+  const outboundLocked = isRep && !!outboundGate?.blocked;
+  const outboundLockMsg = outboundGate?.message || `${outboundGate?.overdueTasks || 0} overdue tasks — clear to unlock SMS`;
 
   const startMutation = useMutation({
     mutationFn: () => api.post(`/campaigns/${id}/start`),
@@ -192,8 +210,15 @@ export default function CampaignDetailPage() {
           )}
           {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status) && (
             <button
-              onClick={() => startMutation.mutate()}
-              disabled={startMutation.isPending}
+              onClick={() => {
+                if (outboundLocked) {
+                  toast.error(outboundLockMsg);
+                  return;
+                }
+                startMutation.mutate();
+              }}
+              disabled={startMutation.isPending || outboundLocked}
+              title={outboundLocked ? outboundLockMsg : undefined}
               className="btn-primary flex items-center gap-2"
             >
               <Play className="w-4 h-4" /> Start

@@ -94,6 +94,7 @@ export const dealApi = {
   getDeals: (params?: Record<string, string>) => api.get('/deals', { params }),
   getDeal: (id: string) => api.get(`/deals/${id}`),
   getStats: (params?: Record<string, string>) => api.get('/deals/stats', { params }),
+  getOutboundGate: () => api.get('/deals/outbound-gate'),
   getReviveQueue: (params?: Record<string, string>) => api.get('/deals/revive-queue', { params }),
   createDeal: (data: any) => api.post('/deals', data),
   updateDeal: (id: string, data: any) => api.put(`/deals/${id}`, data),

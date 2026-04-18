@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
+import { OutboundGateService } from '../services/outboundGateService';
 
 export class RepController {
   // GET /api/reps/team-goals - Get team goal
@@ -43,7 +44,22 @@ export class RepController {
       orderBy: { firstName: 'asc' },
     });
 
-    res.json(reps);
+    const thresholdSettings = await prisma.systemSetting.findMany({
+      where: { key: { startsWith: OutboundGateService.THRESHOLD_KEY_PREFIX } },
+      select: { key: true, value: true },
+    });
+    const thresholdByRepId = new Map<string, number>();
+    for (const setting of thresholdSettings) {
+      const repId = setting.key.replace(OutboundGateService.THRESHOLD_KEY_PREFIX, '');
+      thresholdByRepId.set(repId, OutboundGateService.parseThreshold(setting.value));
+    }
+
+    const repsWithThreshold = reps.map((rep) => ({
+      ...rep,
+      smsOutboundThreshold: thresholdByRepId.get(rep.id) ?? OutboundGateService.DEFAULT_THRESHOLD,
+    }));
+
+    res.json(repsWithThreshold);
   }
 
   // GET /api/reps/:id - Get single rep with stats
@@ -69,12 +85,14 @@ export class RepController {
     });
 
     if (!rep) return res.status(404).json({ error: 'Rep not found' });
-    res.json(rep);
+    const smsOutboundThreshold = await OutboundGateService.getThresholdForRep(rep.id);
+    res.json({ ...rep, smsOutboundThreshold });
   }
 
   // POST /api/reps - Create a new rep (Admin only)
   static async createRep(req: AuthRequest, res: Response) {
-    const { firstName, lastName, email, initials, role, monthlyGoal, annualGoal, avatarColor, password } = req.body;
+    const { firstName, lastName, email, initials, role, monthlyGoal, annualGoal, avatarColor, password, smsOutboundThreshold } =
+      req.body;
 
     if (!firstName || !email || !initials) {
       return res.status(400).json({ error: 'firstName, email, and initials are required' });
@@ -122,13 +140,20 @@ export class RepController {
       },
     });
 
-    res.status(201).json(rep);
+    const normalizedThreshold =
+      smsOutboundThreshold !== undefined
+        ? OutboundGateService.parseThreshold(smsOutboundThreshold)
+        : OutboundGateService.DEFAULT_THRESHOLD;
+    await OutboundGateService.setThresholdForRep(rep.id, normalizedThreshold);
+
+    res.status(201).json({ ...rep, smsOutboundThreshold: normalizedThreshold });
   }
 
   // PUT /api/reps/:id - Update rep
   static async updateRep(req: AuthRequest, res: Response) {
     const { id } = req.params;
-    const { firstName, lastName, email, initials, role, monthlyGoal, annualGoal, avatarColor, isActive } = req.body;
+    const { firstName, lastName, email, initials, role, monthlyGoal, annualGoal, avatarColor, isActive, smsOutboundThreshold } =
+      req.body;
 
     // Admin cannot change own role
     if (id === req.user?.id && role && role !== req.user.role) {
@@ -168,7 +193,12 @@ export class RepController {
       },
     });
 
-    res.json(rep);
+    if (smsOutboundThreshold !== undefined) {
+      await OutboundGateService.setThresholdForRep(id, OutboundGateService.parseThreshold(smsOutboundThreshold));
+    }
+    const resolvedThreshold = await OutboundGateService.getThresholdForRep(id);
+
+    res.json({ ...rep, smsOutboundThreshold: resolvedThreshold });
   }
 
   // PUT /api/reps/:id/goals - Update goals (admin only)

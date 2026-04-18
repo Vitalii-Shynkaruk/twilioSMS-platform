@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import { campaignQueue } from '../services/sendingEngine';
 import { ComplianceService } from '../services/complianceService';
 import { NumberService } from '../services/numberService';
+import { OutboundGateService } from '../services/outboundGateService';
 import { getActiveTwilioClient } from '../config/twilio';
 import logger from '../config/logger';
 
@@ -709,6 +710,8 @@ export class CampaignController {
       throw new AppError('Campaign cannot be started in current status', 400);
     }
 
+    await OutboundGateService.ensureCanLaunchOutbound(req.user);
+
     // Pre-validate: check quiet hours before queueing
     if (await ComplianceService.isQuietHours()) {
       throw new AppError('Cannot start campaign during quiet hours. Adjust quiet hours in Settings → Compliance.', 400);
@@ -869,6 +872,8 @@ export class CampaignController {
 
     const preview = await CampaignController.buildRetargetPreview(id);
     CampaignController.ensureRetargetAccess(preview.sourceCampaign, req);
+
+    await OutboundGateService.ensureCanLaunchOutbound(req.user);
 
     if (preview.summary.willReceive === 0) {
       throw new AppError('No eligible recipients. All delivered contacts have replied or are on DNC.', 400);

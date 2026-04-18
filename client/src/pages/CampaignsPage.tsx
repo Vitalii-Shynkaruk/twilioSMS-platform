@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { dealApi } from '../services/api';
 import { Campaign, CampaignStatus } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import { SmsCounter } from '../components/SmsCounter';
@@ -31,6 +32,7 @@ import { useAuthStore } from '../stores/authStore';
 
 export default function CampaignsPage() {
   const { user } = useAuthStore();
+  const isRep = user?.role === 'REP';
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -69,6 +71,34 @@ export default function CampaignsPage() {
 
   const totalPages = data?.pagination?.pages || 1;
   const total = data?.pagination?.total || 0;
+  const { data: outboundGate } = useQuery<{
+    blocked: boolean;
+    overdueTasks: number;
+    threshold: number;
+    message: string;
+  }>({
+    queryKey: ['outbound-gate', user?.id],
+    queryFn: async () => (await dealApi.getOutboundGate()).data,
+    enabled: isRep,
+    refetchInterval: 15000,
+  });
+  const outboundLocked = isRep && !!outboundGate?.blocked;
+  const outboundLockMsg = outboundGate?.message || `${outboundGate?.overdueTasks || 0} overdue tasks — clear to unlock SMS`;
+  const paginationItems = useMemo(() => {
+    if (totalPages <= 1) return [1];
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+
+    const items: Array<number | 'ellipsis-left' | 'ellipsis-right'> = [1];
+    const windowStart = Math.max(2, page - 1);
+    const windowEnd = Math.min(totalPages - 1, page + 1);
+
+    if (windowStart > 2) items.push('ellipsis-left');
+    for (let p = windowStart; p <= windowEnd; p++) items.push(p);
+    if (windowEnd < totalPages - 1) items.push('ellipsis-right');
+
+    items.push(totalPages);
+    return items;
+  }, [page, totalPages]);
 
   const startMutation = useMutation({
     mutationFn: (id: string) => api.post(`/campaigns/${id}/start`),
@@ -124,7 +154,12 @@ export default function CampaignsPage() {
           <p className="text-sm text-dark-400 mt-1">Manage your SMS campaigns</p>
         </div>
         {canManage && (
-          <button onClick={() => setShowCreateModal(true)} className="btn-primary">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className={`btn-primary ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={outboundLocked}
+            title={outboundLocked ? outboundLockMsg : undefined}
+          >
             <Plus className="w-4 h-4" />
             New Campaign
           </button>
@@ -200,7 +235,9 @@ export default function CampaignsPage() {
                     </div>
                     <button
                       onClick={() => setShowCreateModal(true)}
-                      className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mt-1"
+                      className={`btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mt-1 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={outboundLocked}
+                      title={outboundLocked ? outboundLockMsg : undefined}
                     >
                       <Plus className="w-3.5 h-3.5" /> New Campaign
                     </button>
@@ -281,24 +318,29 @@ export default function CampaignsPage() {
                         <button
                           onClick={() => setRetargetCampaign(campaign)}
                           className={`p-1.5 rounded transition-colors ${
-                            canRetargetCampaign(campaign)
+                            canRetargetCampaign(campaign) && !outboundLocked
                               ? 'text-dark-400 hover:text-[#C9A84C] hover:bg-[#C9A84C]/10'
                               : 'text-dark-600 cursor-not-allowed'
                           }`}
                           title={
-                            canRetargetCampaign(campaign)
+                            outboundLocked
+                              ? outboundLockMsg
+                              : canRetargetCampaign(campaign)
                               ? 'Retarget — send to non-responders'
                               : 'You can only retarget your own campaigns'
                           }
-                          disabled={!canRetargetCampaign(campaign)}
+                          disabled={!canRetargetCampaign(campaign) || outboundLocked}
                         >
                           <RotateCcw className="w-4 h-4" />
                         </button>
                         {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status) && (
                           <button
-                            onClick={() => startMutation.mutate(campaign.id)}
+                            onClick={() => {
+                              if (!outboundLocked) startMutation.mutate(campaign.id);
+                            }}
                             className="p-1.5 hover:bg-green-600/20 rounded text-dark-400 hover:text-green-400 transition-colors"
-                            title="Start"
+                            title={outboundLocked ? outboundLockMsg : 'Start'}
+                            disabled={outboundLocked}
                           >
                             <Play className="w-4 h-4" />
                           </button>
@@ -355,9 +397,28 @@ export default function CampaignsPage() {
               >
                 Previous
               </button>
-              <span className="text-xs text-dark-400">
-                Page {page} of {totalPages}
-              </span>
+              <div className="flex items-center gap-1">
+                {paginationItems.map((item, idx) =>
+                  typeof item === 'number' ? (
+                    <button
+                      key={item}
+                      onClick={() => setPage(item)}
+                      className={`min-w-[24px] px-1.5 py-1 rounded text-xs transition-colors ${
+                        page === item
+                          ? 'bg-scl-600/25 text-scl-300 border border-scl-500/40'
+                          : 'text-dark-400 hover:text-dark-200 hover:bg-dark-700/60'
+                      }`}
+                      aria-label={`Go to page ${item}`}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={`${item}-${idx}`} className="text-xs text-dark-500 px-1">
+                      …
+                    </span>
+                  ),
+                )}
+              </div>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
@@ -399,6 +460,11 @@ export default function CampaignsPage() {
           {canManage && (
             <button
               onClick={() => {
+                if (outboundLocked) {
+                  toast.error(outboundLockMsg);
+                  setCtxMenu(null);
+                  return;
+                }
                 if (!canRetargetCampaign(ctxMenu.campaign)) {
                   toast.error('You can only retarget your own campaigns');
                   setCtxMenu(null);
@@ -408,6 +474,8 @@ export default function CampaignsPage() {
                 setCtxMenu(null);
               }}
               className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+              title={outboundLocked ? outboundLockMsg : undefined}
+              disabled={outboundLocked}
             >
               <RotateCcw className="w-3.5 h-3.5 text-[#C9A84C]" /> Retarget Campaign
             </button>
@@ -418,10 +486,17 @@ export default function CampaignsPage() {
               {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(ctxMenu.campaign.status) && (
                 <button
                   onClick={() => {
+                    if (outboundLocked) {
+                      toast.error(outboundLockMsg);
+                      setCtxMenu(null);
+                      return;
+                    }
                     startMutation.mutate(ctxMenu.campaign.id);
                     setCtxMenu(null);
                   }}
-                  className="w-full text-left px-3 py-2 text-sm text-green-400 hover:bg-dark-700/50 flex items-center gap-2"
+                  className="w-full text-left px-3 py-2 text-sm text-green-400 hover:bg-dark-700/50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={outboundLocked ? outboundLockMsg : undefined}
+                  disabled={outboundLocked}
                 >
                   <Play className="w-3.5 h-3.5" /> Start Campaign
                 </button>
@@ -468,12 +543,20 @@ export default function CampaignsPage() {
       )}
 
       {/* Create Campaign Modal */}
-      {showCreateModal && <CreateCampaignModal onClose={() => setShowCreateModal(false)} />}
+      {showCreateModal && (
+        <CreateCampaignModal
+          onClose={() => setShowCreateModal(false)}
+          outboundLocked={outboundLocked}
+          outboundLockMsg={outboundLockMsg}
+        />
+      )}
       {retargetCampaign && (
         <RetargetCampaignModal
           campaign={retargetCampaign}
           onClose={() => setRetargetCampaign(null)}
           onCreated={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
+          outboundLocked={outboundLocked}
+          outboundLockMsg={outboundLockMsg}
         />
       )}
     </div>
@@ -496,10 +579,14 @@ function RetargetCampaignModal({
   campaign,
   onClose,
   onCreated,
+  outboundLocked,
+  outboundLockMsg,
 }: {
   campaign: Campaign;
   onClose: () => void;
   onCreated: () => void;
+  outboundLocked: boolean;
+  outboundLockMsg: string;
 }) {
   const [nameDraft, setNameDraft] = useState('');
   const [messageDraft, setMessageDraft] = useState('');
@@ -537,7 +624,7 @@ function RetargetCampaignModal({
   const summary = data?.summary;
   const hasEligibleRecipients = (summary?.willReceive || 0) > 0;
   const canConfirm =
-    hasEligibleRecipients && resolvedName.trim().length > 0 && resolvedMessageTemplate.trim().length > 0;
+    !outboundLocked && hasEligibleRecipients && resolvedName.trim().length > 0 && resolvedMessageTemplate.trim().length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
@@ -586,6 +673,11 @@ function RetargetCampaignModal({
                   No eligible recipients. All delivered contacts have replied or are on DNC.
                 </div>
               )}
+              {outboundLocked && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {outboundLockMsg}
+                </div>
+              )}
             </>
           )}
 
@@ -626,6 +718,7 @@ function RetargetCampaignModal({
               type="button"
               className="btn-primary"
               disabled={!canConfirm || createMutation.isPending}
+              title={outboundLocked ? outboundLockMsg : undefined}
               onClick={() => createMutation.mutate()}
             >
               {createMutation.isPending ? 'Creating...' : 'Confirm Retarget'}
@@ -637,7 +730,15 @@ function RetargetCampaignModal({
   );
 }
 
-function CreateCampaignModal({ onClose }: { onClose: () => void }) {
+function CreateCampaignModal({
+  onClose,
+  outboundLocked,
+  outboundLockMsg,
+}: {
+  onClose: () => void;
+  outboundLocked: boolean;
+  outboundLockMsg: string;
+}) {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -718,6 +819,10 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (outboundLocked) {
+      toast.error(outboundLockMsg);
+      return;
+    }
     const payload = {
       ...formData,
       numberPoolId: formData.numberPoolId || null,
@@ -1212,7 +1317,12 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
             <button type="button" onClick={onClose} className="btn-secondary">
               Cancel
             </button>
-            <button type="submit" className="btn-primary" disabled={createMutation.isPending || leadCount === 0}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={createMutation.isPending || leadCount === 0 || outboundLocked}
+              title={outboundLocked ? outboundLockMsg : undefined}
+            >
               {createMutation.isPending ? 'Creating...' : 'Create Campaign'}
             </button>
           </div>

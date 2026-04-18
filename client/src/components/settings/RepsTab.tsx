@@ -134,7 +134,7 @@ function RepRow({
           {!rep.isActive && <span className="ml-2 text-xs text-red-400">(inactive)</span>}
         </p>
         <p className="text-xs text-[var(--text-muted)]">
-          {rep.email} · {rep.role}
+          {rep.email} · {rep.role} · SMS lock: {rep.smsOutboundThreshold ?? 1}
         </p>
       </div>
 
@@ -194,6 +194,7 @@ function CreateRepForm({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     email: '',
     initials: '',
     password: '',
+    smsOutboundThreshold: '1',
     avatarColor: '#6366f1',
   });
 
@@ -246,6 +247,14 @@ function CreateRepForm({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           onChange={(e) => setForm({ ...form, password: e.target.value })}
           className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
         />
+        <input
+          type="number"
+          min="0"
+          placeholder="SMS lock threshold (default 1)"
+          value={form.smsOutboundThreshold}
+          onChange={(e) => setForm({ ...form, smsOutboundThreshold: e.target.value })}
+          className="px-3 py-2 text-sm rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
+        />
       </div>
       <div className="flex items-center gap-2">
         <label className="text-xs text-[var(--text-muted)]">Color:</label>
@@ -282,6 +291,7 @@ function EditRepModal({ rep, onClose, onSaved }: { rep: Rep; onClose: () => void
     email: rep.email || '',
     initials: rep.initials || '',
     role: rep.role || 'REP',
+    smsOutboundThreshold: String(rep.smsOutboundThreshold ?? 1),
     avatarColor: rep.avatarColor || '#6366f1',
   });
 
@@ -344,6 +354,16 @@ function EditRepModal({ rep, onClose, onSaved }: { rep: Rep; onClose: () => void
               value={form.avatarColor}
               onChange={(e) => setForm({ ...form, avatarColor: e.target.value })}
               className="w-6 h-6"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-[var(--text-muted)]">SMS Lock:</label>
+            <input
+              type="number"
+              min="0"
+              value={form.smsOutboundThreshold}
+              onChange={(e) => setForm({ ...form, smsOutboundThreshold: e.target.value })}
+              className="w-20 px-2 py-1 text-xs rounded bg-[var(--bg-tertiary)] border border-[var(--border-primary)] text-[var(--text-primary)]"
             />
           </div>
         </div>

@@ -469,6 +469,7 @@ export interface Rep {
   isActive: boolean;
   monthlyGoal?: number;
   annualGoal?: number;
+  smsOutboundThreshold?: number;
   avatarColor?: string;
   lastLoginAt?: string;
 }

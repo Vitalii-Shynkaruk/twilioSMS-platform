@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler';
 import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
+import { OutboundGateService } from '../services/outboundGateService';
 
 type InboxFilter =
   | 'all'
@@ -1129,6 +1130,16 @@ export class InboxController {
     if (!conversation) throw new AppError('Conversation not found', 404);
     if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
       throw new AppError('Not authorized to message this conversation', 403);
+    }
+
+    if (req.user?.role === 'REP') {
+      const inboundCount = await prisma.message.count({
+        where: { conversationId: id, direction: 'INBOUND' },
+      });
+      // Critical exception: never block replies in existing inbound threads.
+      if (inboundCount === 0) {
+        await OutboundGateService.ensureCanLaunchOutbound(req.user);
+      }
     }
 
     let messageId: string;

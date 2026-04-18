@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
+import { OutboundGateService } from '../services/outboundGateService';
 
 // ─── Lead ↔ Deal status mapping ───
 const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
@@ -155,6 +156,20 @@ function repScopeFilter(repId: string, includeAssist = true) {
   return {
     OR: [{ assignedRepId: repId }, { assistingRepIds: { array_contains: repId } }],
   };
+}
+
+async function autoResolveOpenTasksForClosingDeal(dealId: string): Promise<number> {
+  const result = await prisma.renewalTask.updateMany({
+    where: {
+      dealId,
+      status: { in: [RenewalTaskStatus.PENDING, RenewalTaskStatus.OVERDUE] },
+    },
+    data: {
+      status: RenewalTaskStatus.SKIPPED,
+      completedAt: new Date(),
+    },
+  });
+  return result.count;
 }
 
 // Helper: rep filter for data isolation
@@ -974,6 +989,14 @@ export class DealController {
       lastActivityAt: new Date(),
     };
 
+    // Close/Lost/NQ flows must clear open/overdue tasks before stage update.
+    // In this codebase, renewal tasks are stored in `renewal_tasks` and
+    // "cancelled" is represented by SKIPPED + completedAt.
+    let autoResolvedTasks = 0;
+    if (stage === 'CLOSED' || stage === 'NURTURE') {
+      autoResolvedTasks = await autoResolveOpenTasksForClosingDeal(id);
+    }
+
     // Bug 3 fix: Update nextAction if it's still the default and doesn't match new stage
     const stageDefaultActions: Record<string, string> = {
       NEW_LEAD: 'Make first contact within 24h',
@@ -1016,6 +1039,14 @@ export class DealController {
       if (updateData.followUpDate) {
         updateData.nextActionDue = updateData.followUpDate;
       }
+    }
+
+    if (stage === 'CLOSED') {
+      // Closed deals should not keep stale overdue next-action badges.
+      updateData.nextAction = null;
+      updateData.nextActionDue = null;
+      updateData.followUpDate = null;
+      updateData.followUpType = null;
     }
 
     // When moving to FUNDED: should use markFunded endpoint via modal.
@@ -1063,7 +1094,9 @@ export class DealController {
         eventType: 'stage_change',
         fromStage: existing.stage,
         toStage: stage,
-        note: `Moved to ${STAGE_LABELS[stage as DealStage]}`,
+        note:
+          `Moved to ${STAGE_LABELS[stage as DealStage]}` +
+          (autoResolvedTasks > 0 ? ` · ${autoResolvedTasks} open task(s) auto-resolved` : ''),
       },
     });
 
@@ -1585,6 +1618,12 @@ export class DealController {
     });
 
     res.json(updated);
+  }
+
+  // GET /api/deals/outbound-gate - Overdue-task gate status for outbound SMS
+  static async getOutboundGate(req: AuthRequest, res: Response) {
+    const gate = await OutboundGateService.getGateStatus(req.user);
+    res.json(gate);
   }
 
   // GET /api/deals/stats - Bottom stats bar data
@@ -2328,6 +2367,18 @@ export class DealController {
 
     // Find existing conversation or let SendingEngine create one
     const conversation = await prisma.conversation.findFirst({ where: { leadId } });
+
+    if (req.user?.role === 'REP') {
+      const inboundCount = conversation
+        ? await prisma.message.count({
+            where: { conversationId: conversation.id, direction: 'INBOUND' },
+          })
+        : 0;
+      // Critical exception: never block replies in existing inbound threads.
+      if (inboundCount === 0) {
+        await OutboundGateService.ensureCanLaunchOutbound(req.user);
+      }
+    }
 
     const { SendingEngine } = await import('../services/sendingEngine');
     const messageId = await SendingEngine.queueMessage({

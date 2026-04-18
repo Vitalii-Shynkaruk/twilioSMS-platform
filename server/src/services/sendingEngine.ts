@@ -71,6 +71,7 @@ interface BulkSendOptions {
   poolId?: string;
   restrictToPhoneNumberIds?: string[];
   sendingSpeed?: number; // messages per minute
+  isRetarget?: boolean;
 }
 
 export class SendingEngine {
@@ -324,7 +325,7 @@ export class SendingEngine {
     for (const lead of options.leads) {
       // Existing-conversation guard:
       // campaign blasts should only target fresh leads with no prior conversation thread.
-      if (options.campaignId && preExistingThreadLeadIds.has(lead.leadId)) {
+      if (options.campaignId && !options.isRetarget && preExistingThreadLeadIds.has(lead.leadId)) {
         skipped++;
         skippedLeadIds.push(lead.leadId);
         continue;

@@ -239,6 +239,9 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       restrictToPhoneNumberIds,
       sendingSpeed: campaign.sendingSpeed,
       sentByUserId: campaign.createdById,
+      // Prisma client type may lag behind schema in some environments.
+      // Treat missing field as false to preserve default blast behavior.
+      isRetarget: Boolean((campaign as any).isRetarget),
     });
 
     // If no messages were queued in this run, keep campaign state consistent.

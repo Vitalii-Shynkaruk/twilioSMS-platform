@@ -86,12 +86,12 @@ export class CampaignController {
       prisma.campaignLead.findMany({
         where: { campaignId: sourceCampaignId },
         select: {
+          status: true,
           leadId: true,
           lead: {
             select: {
               id: true,
               phone: true,
-              status: true,
               optedOut: true,
               isSuppressed: true,
             },
@@ -122,11 +122,16 @@ export class CampaignController {
         {
           id: row.lead.id,
           phone: row.lead.phone,
-          status: row.lead.status,
           optedOut: row.lead.optedOut,
           isSuppressed: row.lead.isSuppressed,
         },
       ]),
+    );
+
+    const repliedByCampaignStatusLeadIds = new Set(
+      sourceCampaignLeads
+        .filter((row) => row.status === 'REPLIED')
+        .map((row) => row.leadId),
     );
 
     const outboundByLead = new Map<
@@ -178,7 +183,7 @@ export class CampaignController {
     if (missingLeadIds.length > 0) {
       const missingLeads = await prisma.lead.findMany({
         where: { id: { in: missingLeadIds } },
-        select: { id: true, phone: true, status: true, optedOut: true, isSuppressed: true },
+        select: { id: true, phone: true, optedOut: true, isSuppressed: true },
       });
       for (const lead of missingLeads) {
         leadById.set(lead.id, lead);
@@ -214,6 +219,12 @@ export class CampaignController {
         : [];
 
     const repliedLeadIds = new Set<string>();
+    for (const leadId of deliveredLeadIds) {
+      if (repliedByCampaignStatusLeadIds.has(leadId)) {
+        repliedLeadIds.add(leadId);
+      }
+    }
+
     for (const message of inboundMessages) {
       const leadId = message.conversation.leadId;
       if (!leadId) continue;
@@ -229,7 +240,6 @@ export class CampaignController {
       lead: {
         id: string;
         phone: string;
-        status: string;
         optedOut: boolean;
         isSuppressed: boolean;
       };
@@ -263,12 +273,11 @@ export class CampaignController {
 
     const dncLeadIds = new Set<string>();
     for (const row of deliveredLeads) {
-      const isDncStatus = row.lead.status === 'DNC';
       const isOptedOut = row.lead.optedOut;
       const isSuppressed = row.lead.isSuppressed;
       const phoneDigits = CampaignController.phoneDigits(row.lead.phone);
       const inSuppressionList = phoneDigits ? suppressedDigits.has(phoneDigits) : false;
-      if (isDncStatus || isOptedOut || isSuppressed || inSuppressionList) {
+      if (isOptedOut || isSuppressed || inSuppressionList) {
         dncLeadIds.add(row.leadId);
       }
     }
@@ -865,6 +874,26 @@ export class CampaignController {
       throw new AppError('Cannot start retarget campaign during quiet hours. Adjust quiet hours in Settings.', 400);
     }
 
+    let restrictToPhoneNumberIds: string[] | undefined;
+    const assignedActiveNumberIds = await NumberService.getActiveAssignedNumberIds(req.user!.id);
+    if (req.user?.role === 'REP') {
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
+      if (restrictToPhoneNumberIds.length === 0) {
+        throw new AppError('This rep has no active assigned numbers. Assign numbers in Numbers page first.', 400);
+      }
+    } else if (assignedActiveNumberIds.length > 0) {
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
+    }
+
+    const availableNumber = await NumberService.getBestAvailableNumber(
+      [],
+      preview.sourceCampaign.numberPoolId || undefined,
+      restrictToPhoneNumberIds,
+    );
+    if (!availableNumber) {
+      throw new AppError('No available phone numbers for sending. Check Numbers settings.', 400);
+    }
+
     const campaign = await prisma.$transaction(async (tx: any) => {
       const createdCampaign = await (tx.campaign as any).create({
         data: {
@@ -874,8 +903,7 @@ export class CampaignController {
           sendingSpeed: preview.sourceCampaign.sendingSpeed || 60,
           dailyLimit: preview.sourceCampaign.dailyLimit,
           createdById: req.user!.id,
-          status: 'SENDING',
-          startedAt: new Date(),
+          status: 'DRAFT',
           totalLeads: preview.eligibleLeadIds.length,
           isRetarget: true,
           sourceCampaignId: preview.sourceCampaign.id,

@@ -759,6 +759,7 @@ model Client {
   contactName     String?
   phone           String?   @unique
   email           String?
+  monthlyRevenue  String?
   state           String?
   totalFunded     Float     @default(0)
   fundingCount    Int       @default(0)

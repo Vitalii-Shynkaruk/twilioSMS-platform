@@ -350,6 +350,7 @@ export interface Client {
   contactName?: string;
   phone?: string;
   email?: string;
+  monthlyRevenue?: string;
   state?: string;
   totalFunded: number;
   fundingCount: number;

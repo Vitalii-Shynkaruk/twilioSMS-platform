@@ -885,14 +885,18 @@ export class DealController {
     // Update last activity
     updateData.lastActivityAt = new Date();
 
-    // Handle client field updates (businessName, contactName, email, phone)
+    // Handle client field updates (businessName, contactName, email, phone, monthlyRevenue)
     const clientFields = updateData.clientUpdate;
     if (clientFields && existing.clientId) {
-      const allowedClientFields: Record<string, string> = {};
+      const allowedClientFields: Record<string, string | null> = {};
       if (clientFields.businessName !== undefined) allowedClientFields.businessName = clientFields.businessName;
       if (clientFields.contactName !== undefined) allowedClientFields.contactName = clientFields.contactName;
       if (clientFields.email !== undefined) allowedClientFields.email = clientFields.email;
       if (clientFields.phone !== undefined) allowedClientFields.phone = clientFields.phone;
+      if (clientFields.monthlyRevenue !== undefined) {
+        const monthlyRevenue = String(clientFields.monthlyRevenue || '').trim();
+        allowedClientFields.monthlyRevenue = monthlyRevenue || null;
+      }
       if (Object.keys(allowedClientFields).length > 0) {
         await prisma.client.update({ where: { id: existing.clientId }, data: allowedClientFields });
       }

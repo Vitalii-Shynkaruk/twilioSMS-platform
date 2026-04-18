@@ -630,7 +630,12 @@ function DealClientTab({
   useEffect(() => {
     try {
       const raw = localStorage.getItem(clientMetaKey);
-      setClientMeta(raw ? JSON.parse(raw) : {});
+      const parsed = raw ? JSON.parse(raw) : {};
+      // monthlyRevenue is server-backed, keep localStorage only for lightweight local UX fields.
+      if (parsed && typeof parsed === 'object' && 'monthlyRevenue' in parsed) {
+        delete parsed.monthlyRevenue;
+      }
+      setClientMeta(parsed);
     } catch {
       setClientMeta({});
     }
@@ -676,7 +681,7 @@ function DealClientTab({
   const clientPhone = clientMeta.phone ?? deal.client?.phone ?? '';
   const clientEmail = clientMeta.email ?? deal.client?.email ?? '';
   const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
-  const clientRevenue = clientMeta.monthlyRevenue ?? '';
+  const clientRevenue = deal.client?.monthlyRevenue ?? clientMeta.monthlyRevenue ?? '';
   const sourceType = (clientMeta.source || (smsCampaignSource ? 'SMS' : '')).trim();
   const leadSource = (clientMeta.leadSource ?? smsCampaignSource ?? '').trim();
   const fullDealNote = (deal.notes || '').trim();
@@ -1021,7 +1026,7 @@ function DealClientTab({
               key={range}
               type="button"
               className={clsx('pill', clientRevenue === range && 'on')}
-              onClick={() => saveClientMeta({ monthlyRevenue: range })}
+              onClick={() => saveClientMeta({ monthlyRevenue: range }, true)}
             >
               {range}
             </button>

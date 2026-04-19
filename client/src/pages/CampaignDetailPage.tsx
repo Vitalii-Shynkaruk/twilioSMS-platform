@@ -251,6 +251,11 @@ export default function CampaignDetailPage() {
           )}
         </div>
       </div>
+      {outboundLocked && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {outboundLockMsg}
+        </div>
+      )}
 
       {/* Progress Bar (for sending campaigns) */}
       {campaign.status === 'SENDING' && (

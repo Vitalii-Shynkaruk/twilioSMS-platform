@@ -165,6 +165,11 @@ export default function CampaignsPage() {
           </button>
         )}
       </div>
+      {outboundLocked && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          {outboundLockMsg}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-4">

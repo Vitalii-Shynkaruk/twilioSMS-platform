@@ -56,12 +56,17 @@ export class OutboundGateService {
   }
 
   static async getOverdueTasksForRep(repId: string): Promise<number> {
-    const now = new Date();
+    // Keep SMS gate aligned with Pipeline "Overdue" badge semantics:
+    // - overdue means before start of today (not "earlier today")
+    // - include NURTURE (pipeline excludes only FUNDED + CLOSED)
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const overdueDeals = await prisma.deal.count({
       where: {
         assignedRepId: repId,
-        stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED, DealStage.NURTURE] },
-        nextActionDue: { lt: now },
+        stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] },
+        nextActionDue: { lt: startOfToday },
       },
     });
     return overdueDeals;

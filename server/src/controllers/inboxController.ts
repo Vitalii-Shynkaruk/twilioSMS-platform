@@ -146,11 +146,19 @@ export class InboxController {
   }
 
   private static optOutBodyConditions(): Array<any> {
-    return InboxController.OPT_OUT_KEYWORDS.map((keyword) => ({
-      body: {
-        contains: keyword,
-      },
-    }));
+    // Используем equals на точное совпадение, чтобы избежать false positives:
+    // "Send it" содержит "end", "Equity" содержит "quit" и т.д.
+    // Twilio сам обрабатывает opt-out keywords на своей стороне; здесь мы лишь
+    // дополнительно фильтруем сообщения, которые целиком состоят из ключевого слова
+    // (с возможными знаками препинания/пробелами).
+    return InboxController.OPT_OUT_KEYWORDS.flatMap((keyword) => [
+      { body: { equals: keyword } },
+      { body: { equals: keyword.toUpperCase() } },
+      { body: { equals: keyword + '.' } },
+      { body: { equals: keyword.toUpperCase() + '.' } },
+      { body: { equals: keyword + ' ' } },
+      { body: { equals: ' ' + keyword } },
+    ]);
   }
 
   private static inboundAnyCondition(): any {

@@ -223,21 +223,21 @@ export default function IntegrationsTab() {
           <div>
             <h3 className="text-base font-semibold text-dark-100">AI Provider</h3>
             <p className="text-xs text-dark-400">
-              Классификация лидов, AI-подсказки, скоринг. Активный провайдер используется для всех AI-запросов.
+              Lead classification, AI suggestions, scoring. The active provider is used for all AI requests.
             </p>
           </div>
         </div>
 
-        {/* Переключатель провайдера */}
+        {/* Provider switcher */}
         <div>
-          <label className="label">Провайдер</label>
+          <label className="label">Provider</label>
           <div className="flex items-center gap-2">
             <select
               className="input flex-1"
               value={getVal('aiProvider', 'anthropic')}
               onChange={(e) => handleChange('aiProvider', e.target.value)}
             >
-              <option value="anthropic">Anthropic (Claude) — рекомендуется</option>
+              <option value="anthropic">Anthropic (Claude) — recommended</option>
               <option value="openai">OpenAI (GPT)</option>
             </select>
             {dirty.has('aiProvider') && (
@@ -251,11 +251,11 @@ export default function IntegrationsTab() {
             )}
           </div>
           <p className="text-[11px] text-dark-400 mt-1">
-            Текущий: <span className="text-dark-200 font-mono">{getVal('aiProvider', 'anthropic')}</span>
+            Current: <span className="text-dark-200 font-mono">{getVal('aiProvider', 'anthropic')}</span>
           </p>
         </div>
 
-        {/* Anthropic блок */}
+        {/* Anthropic block */}
         {getVal('aiProvider', 'anthropic') === 'anthropic' && (
           <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4 space-y-4">
             <div className="flex items-center gap-2">
@@ -273,16 +273,16 @@ export default function IntegrationsTab() {
               onToggle={() => setShowAnthropicKey(!showAnthropicKey)}
             />
             <div>
-              <label className="label">Модель Claude</label>
+              <label className="label">Claude Model</label>
               <div className="flex items-center gap-2">
                 <select
                   className="input flex-1"
                   value={getVal('anthropicModel', 'claude-sonnet-4-5')}
                   onChange={(e) => handleChange('anthropicModel', e.target.value)}
                 >
-                  <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (рекомендуется)</option>
-                  <option value="claude-opus-4-1">Claude Opus 4.1 (максимум качества)</option>
-                  <option value="claude-haiku-4-5">Claude Haiku 4.5 (быстрый, дешёвый)</option>
+                  <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (recommended)</option>
+                  <option value="claude-opus-4-1">Claude Opus 4.1 (highest quality)</option>
+                  <option value="claude-haiku-4-5">Claude Haiku 4.5 (fast, cheap)</option>
                 </select>
                 {dirty.has('anthropicModel') && (
                   <button
@@ -298,7 +298,7 @@ export default function IntegrationsTab() {
           </div>
         )}
 
-        {/* OpenAI блок */}
+        {/* OpenAI block */}
         {getVal('aiProvider', 'anthropic') === 'openai' && (
           <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-4">
             <div className="flex items-center gap-2">
@@ -314,16 +314,16 @@ export default function IntegrationsTab() {
               onToggle={() => setShowOpenAIKey(!showOpenAIKey)}
             />
             <div>
-              <label className="label">Модель OpenAI</label>
+              <label className="label">OpenAI Model</label>
               <div className="flex items-center gap-2">
                 <select
                   className="input flex-1"
                   value={getVal('openaiModel', 'gpt-4.1-mini')}
                   onChange={(e) => handleChange('openaiModel', e.target.value)}
                 >
-                  <option value="gpt-4.1-mini">GPT-4.1 Mini (рекомендуется)</option>
-                  <option value="gpt-4.1">GPT-4.1 (баланс)</option>
-                  <option value="gpt-4.1-nano">GPT-4.1 Nano (самый быстрый)</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini (recommended)</option>
+                  <option value="gpt-4.1">GPT-4.1 (balanced)</option>
+                  <option value="gpt-4.1-nano">GPT-4.1 Nano (fastest)</option>
                   <option value="o3-mini">o3-mini (reasoning)</option>
                   <option value="o4-mini">o4-mini (reasoning, latest)</option>
                 </select>
@@ -341,16 +341,15 @@ export default function IntegrationsTab() {
           </div>
         )}
 
-        {/* Hot Alert From Number — общий для AI workflow */}
+        {/* Hot Alert From Number — shared across AI workflow */}
         <div className="rounded-lg border border-dark-700/50 bg-dark-800/30 p-4 space-y-3">
-          <p className="text-xs font-semibold text-dark-200">HOT-алерты (мобильные SMS-уведомления)</p>
+          <p className="text-xs font-semibold text-dark-200">HOT Alerts (mobile SMS notifications)</p>
           <p className="text-[11px] text-dark-400">
-            Номер, с которого менеджерам приходят уведомления о горячих лидах. Если пусто — берётся первый активный
-            номер платформы.
+            Number used to send hot lead notifications to managers. If empty — the first active platform number is used.
           </p>
           <IntegrationField
             {...fieldProps}
-            label="Hot Alert From Number (E.164, например +13105551234)"
+            label="Hot Alert From Number (E.164, e.g. +13105551234)"
             settingKey="hotAlertFromNumber"
           />
         </div>

@@ -273,11 +273,11 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
               </div>
             )}
           </div>
-          {/* HOT-алерты: мобильный номер + включение */}
+          {/* HOT alerts: mobile phone + toggle */}
           <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 space-y-3">
-            <p className="text-xs font-semibold text-orange-300">HOT-алерты (мобильные SMS)</p>
+            <p className="text-xs font-semibold text-orange-300">HOT Alerts (mobile SMS)</p>
             <div>
-              <label className="label">Mobile Phone (E.164, напр. +13105551234)</label>
+              <label className="label">Mobile Phone (E.164, e.g. +13105551234)</label>
               <input
                 className="input"
                 type="tel"
@@ -293,7 +293,7 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
                 onChange={(e) => setForm({ ...form, hotAlertsEnabled: e.target.checked })}
                 className="w-4 h-4 rounded"
               />
-              <span className="text-sm text-dark-200">Получать SMS о горячих лидах</span>
+              <span className="text-sm text-dark-200">Receive SMS for hot leads</span>
             </label>
           </div>
           <div className="flex items-center justify-between pt-2">

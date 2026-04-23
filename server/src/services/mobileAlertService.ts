@@ -1,6 +1,6 @@
 import prisma from '../config/database';
 import logger from '../config/logger';
-import { getActiveTwilioClient } from '../config/twilio';
+import { getActiveTwilioClient, getActiveMessagingServiceSid } from '../config/twilio';
 
 /**
  * MobileAlertService — Phase 1 AI Inbox: HOT lead SMS alerts.
@@ -8,29 +8,37 @@ import { getActiveTwilioClient } from '../config/twilio';
  * При классификации входящего как HOT отправляет один SMS на мобильный номер
  * назначенного rep'а (User.mobilePhone), если у него включён hotAlertsEnabled.
  *
+ * Источник отправки (следует SCL_AI_INBOX_BUILD_PLAN.md «Twilio SMS service»):
+ *   1. SystemSetting.hotAlertFromNumber — явный override
+ *   2. Активный Messaging Service SID (основной канал платформы)
+ *   3. env TWILIO_FROM_NUMBER
+ *   4. Первый ACTIVE PhoneNumber
+ *
  * Эскалационная лестница, BullMQ retry и автопереназначение — НЕ в Phase 1.
  */
 export class MobileAlertService {
   /**
-   * Источник "from" номера для алертов.
-   * Приоритет: SystemSetting.hotAlertFromNumber → env TWILIO_FROM_NUMBER → первый ACTIVE PhoneNumber.
+   * Определяет источник отправки. Возвращает либо { messagingServiceSid }, либо { from }.
    */
-  private static async getFromNumber(): Promise<string | null> {
+  private static async getSendOrigin(): Promise<{ messagingServiceSid: string } | { from: string } | null> {
     const setting = await prisma.systemSetting.findUnique({
       where: { key: 'hotAlertFromNumber' },
     });
     const fromSetting = typeof setting?.value === 'string' ? setting.value.trim() : '';
-    if (fromSetting) return fromSetting;
+    if (fromSetting) return { from: fromSetting };
+
+    const msgSid = await getActiveMessagingServiceSid();
+    if (msgSid) return { messagingServiceSid: msgSid };
 
     const envFrom = (process.env.TWILIO_FROM_NUMBER || '').trim();
-    if (envFrom) return envFrom;
+    if (envFrom) return { from: envFrom };
 
     const firstActive = await prisma.phoneNumber.findFirst({
       where: { status: 'ACTIVE' },
       orderBy: { createdAt: 'asc' },
       select: { phoneNumber: true },
     });
-    return firstActive?.phoneNumber || null;
+    return firstActive ? { from: firstActive.phoneNumber } : null;
   }
 
   /**
@@ -70,9 +78,9 @@ export class MobileAlertService {
         return false;
       }
 
-      const from = await this.getFromNumber();
-      if (!from) {
-        logger.error('HOT-alert: no "from" number configured (set hotAlertFromNumber in Settings)');
+      const origin = await this.getSendOrigin();
+      if (!origin) {
+        logger.error('HOT-alert: no "from" number / messaging service configured');
         return false;
       }
 
@@ -81,12 +89,12 @@ export class MobileAlertService {
 
       const to = rep.mobilePhone.startsWith('+') ? rep.mobilePhone : `+${rep.mobilePhone.replace(/\D/g, '')}`;
 
-      const msg = await client.messages.create({ to, from, body });
+      const msg = await client.messages.create({ to, body, ...origin });
 
       logger.info('HOT-alert: SMS sent', {
         repId,
         to,
-        from,
+        origin,
         sid: msg.sid,
         status: msg.status,
       });

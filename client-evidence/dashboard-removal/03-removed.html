@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Build Plan v1.1 — lines 448-449 (Dashboard removed + route deleted)</title><style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px; font-family: -apple-system, "SF Pro Display", "Segoe UI", sans-serif;
+         background: #0d1117; color: #c9d1d9; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; max-width: 1280px; }
+  .hdr { padding: 16px 24px; background: linear-gradient(90deg, #1f6feb22, #161b22);
+         border-bottom: 1px solid #30363d; }
+  .hdr .title { font-size: 18px; font-weight: 600; color: #e6edf3; }
+  .hdr .sub { font-size: 13px; color: #8b949e; margin-top: 4px; font-family: "SF Mono", Menlo, monospace; }
+  pre { margin: 0; padding: 20px 0; background: #0d1117; overflow-x: auto;
+        font-family: "SF Mono", "Menlo", "Consolas", monospace;
+        font-size: 13.5px; line-height: 1.55; }
+  .row { display: flex; padding: 0 24px; }
+  .row.hl { background: #ffd33d22; border-left: 3px solid #ffd33d; padding-left: 21px; }
+  .ln { width: 48px; color: #6e7681; user-select: none; flex-shrink: 0; text-align: right; padding-right: 16px; }
+  .row.hl .ln { color: #ffd33d; font-weight: 600; }
+  .ct { white-space: pre; flex: 1; }
+  .row.hl .ct { color: #ffd33d; font-weight: 500; }
+  .footer { padding: 12px 24px; border-top: 1px solid #30363d; font-size: 12px; color: #8b949e; }
+  .badge { display: inline-block; background: #1f6feb33; color: #58a6ff; padding: 2px 8px;
+           border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 8px; }
+</style></head>
+  <body><div class="card">
+    <div class="hdr">
+      <div class="title">Build Plan v1.1 — lines 448-449 (Dashboard removed + route deleted)</div>
+      <div class="sub"><span class="badge">SOURCE</span>docs/SCL_AI_INBOX_BUILD_PLAN.md</div>
+    </div>
+    <pre><div class="row"><span class="ln">444</span><span class="ct">**File:** `client/src/components/layout/AppLayout.tsx`</span></div><div class="row"><span class="ln">445</span><span class="ct"> </span></div><div class="row"><span class="ln">446</span><span class="ct">| Change          | Before                   | After                                                               |</span></div><div class="row"><span class="ln">447</span><span class="ct">| --------------- | ------------------------ | ------------------------------------------------------------------- |</span></div><div class="row hl"><span class="ln">448</span><span class="ct">| Dashboard       | Separate nav item + page | **Removed.** SMS metrics merged into Command Center bottom section. |</span></div><div class="row hl"><span class="ln">449</span><span class="ct">| Dashboard route | `/dashboard`             | **Deleted.** Redirect to `/command-center` if bookmarked.           |</span></div><div class="row"><span class="ln">450</span><span class="ct">| Pipeline icon   | `Kanban` (lucide-react)  | Custom 4-square grid SVG (2×2, rounded corners, 1px gap)            |</span></div><div class="row"><span class="ln">451</span><span class="ct">| Automation icon | `Bot` (lucide-react)     | Lightning bolt polygon SVG                                          |</span></div><div class="row"><span class="ln">452</span><span class="ct"> </span></div></pre>
+    <div class="footer">Highlighted lines: 448, 449 · client-confirmed source for Dashboard → Command Center merge</div>
+  </div></body></html>

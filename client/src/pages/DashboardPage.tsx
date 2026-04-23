@@ -464,9 +464,9 @@ export function DashboardOverview() {
               { label: 'Queued', value: d7.queued || 0, color: 'text-blue-400', Icon: Clock },
               { label: 'Sending', value: d7.sending || 0, color: 'text-purple-400', Icon: Activity },
             ].map((m) => (
-              <div key={m.label} className="text-center">
-                <m.Icon className={clsx('w-5 h-5 mx-auto mb-2', m.color)} />
-                <p className={clsx('text-xl font-bold', m.color)}>{(m.value || 0).toLocaleString()}</p>
+              <div key={m.label} className="flex flex-col items-center text-center">
+                <m.Icon className={clsx('w-5 h-5 mb-2 shrink-0', m.color)} />
+                <p className={clsx('text-xl font-bold leading-none', m.color)}>{(m.value || 0).toLocaleString()}</p>
                 <p className="text-[11px] text-dark-500 mt-1">{m.label}</p>
               </div>
             ))}
@@ -810,12 +810,12 @@ function FailedMetricWithTooltip({
 
   return (
     <div
-      className="text-center relative cursor-default"
+      className="flex flex-col items-center text-center relative cursor-default"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
     >
-      <XCircle className="w-5 h-5 mx-auto mb-2 text-red-400" />
-      <p className="text-xl font-bold text-red-400">{(value || 0).toLocaleString()}</p>
+      <XCircle className="w-5 h-5 mb-2 shrink-0 text-red-400" />
+      <p className="text-xl font-bold leading-none text-red-400">{(value || 0).toLocaleString()}</p>
       <p className="text-[11px] text-dark-500 mt-1">Failed</p>
 
       {/* Тултип */}

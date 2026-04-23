@@ -191,22 +191,27 @@ router.post('/inbound', async (req: Request, res: Response) => {
         conversationId: conversation.id,
       });
 
-      // Count campaign replies by attributing inbound to the latest outbound in this thread.
-      // This captures all real replies (including neutral/negative text), while avoiding
-      // cross-campaign attribution when the latest outbound was manual (campaignId = null).
-      const latestOutbound = await prisma.message.findFirst({
+      // Count campaign replies by attributing inbound to the latest CAMPAIGN outbound in this thread.
+      // Важно: ищем последнее outbound с campaignId IS NOT NULL, чтобы manual rep replies
+      // (campaignId=null) не «съедали» атрибуцию ответа лида.
+      // Time window 14 дней: если последняя кампания была давно — это уже не reply на неё.
+      const ATTRIBUTION_WINDOW_DAYS = 14;
+      const attributionCutoff = new Date(Date.now() - ATTRIBUTION_WINDOW_DAYS * 86400000);
+      const latestCampaignOutbound = await prisma.message.findFirst({
         where: {
           conversationId: conversation.id,
           direction: 'OUTBOUND',
+          campaignId: { not: null },
+          OR: [{ sentAt: { gte: attributionCutoff } }, { createdAt: { gte: attributionCutoff } }],
         },
         orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
         select: { campaignId: true },
       });
 
-      if (latestOutbound?.campaignId) {
+      if (latestCampaignOutbound?.campaignId) {
         const replyUpdate = await prisma.campaignLead.updateMany({
           where: {
-            campaignId: latestOutbound.campaignId,
+            campaignId: latestCampaignOutbound.campaignId,
             leadId: lead.id,
             status: { in: ['SENT', 'DELIVERED'] },
           },
@@ -218,7 +223,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
 
         if (replyUpdate.count > 0) {
           await prisma.campaign.update({
-            where: { id: latestOutbound.campaignId },
+            where: { id: latestCampaignOutbound.campaignId },
             data: { totalReplied: { increment: replyUpdate.count } },
           });
         }

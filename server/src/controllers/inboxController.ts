@@ -486,11 +486,16 @@ export class InboxController {
     });
   }
 
-  // Быстрый агрегат для бейджа в sidebar:
-  // - unreadConversations: сколько тредов имеют unreadCount > 0
-  // - unreadMessages: суммарное число непрочитанных входящих сообщений
+  // Быстрый агрегат для бейджа в sidebar.
+  // Должен соответствовать тому, что видит rep в Inbox под фильтром "Unread":
+  // — исключаем DNC/opted-out лиды
+  // — требуем хотя бы одно входящее non-opt-out сообщение
   static async getUnreadSummary(req: AuthRequest, res: Response): Promise<void> {
-    const baseWhere: any = { isActive: true, unreadCount: { gt: 0 } };
+    const baseWhere: any = {
+      isActive: true,
+      unreadCount: { gt: 0 },
+      AND: [InboxController.excludeDncCondition(), InboxController.inboundNonOptOutCondition()],
+    };
     if (req.user?.role === 'REP') {
       baseWhere.assignedRepId = req.user.id;
     }

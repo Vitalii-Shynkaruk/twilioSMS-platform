@@ -181,6 +181,45 @@ router.post('/inbound', async (req: Request, res: Response) => {
         },
       });
 
+      // Auto-assign conversation to the rep who last messaged the lead (если ещё не назначен).
+      // Раньше: assignedRepId оставался NULL у CSV-импортированных лидов → reps не видели unread в своём Inbox.
+      // Теперь: ищем последнее OUTBOUND с sentByUserId, и назначаем conversation + lead этому rep.
+      if (!conversation.assignedRepId) {
+        const lastOutboundCandidates = await prisma.message.findMany({
+          where: {
+            conversationId: conversation.id,
+            direction: 'OUTBOUND',
+            sentByUserId: { not: null },
+          },
+          orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+          take: 10,
+          select: { sentByUserId: true },
+        });
+        const candidateIds = lastOutboundCandidates.map((m) => m.sentByUserId).filter((id): id is string => !!id);
+        let pickedRepId: string | null = null;
+        if (candidateIds.length > 0) {
+          const activeUsers = await prisma.user.findMany({
+            where: { id: { in: candidateIds }, isActive: true },
+            select: { id: true },
+          });
+          const activeSet = new Set(activeUsers.map((u) => u.id));
+          pickedRepId = candidateIds.find((id) => activeSet.has(id)) || null;
+        }
+        if (pickedRepId) {
+          await prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { assignedRepId: pickedRepId },
+          });
+          if (!lead.assignedRepId) {
+            await prisma.lead.update({
+              where: { id: lead.id },
+              data: { assignedRepId: pickedRepId },
+            });
+          }
+          conversation.assignedRepId = pickedRepId;
+        }
+      }
+
       // Handle reply - pause automations, update lead status
       await AutomationService.onLeadReply(lead.id);
       await AutoTagService.onReply(lead.id);

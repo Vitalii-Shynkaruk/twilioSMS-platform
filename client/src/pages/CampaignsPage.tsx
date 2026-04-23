@@ -470,7 +470,17 @@ export default function CampaignsPage() {
                       {campaign.totalBlocked.toLocaleString()}
                     </td>
                     <td className="table-cell text-center font-mono text-purple-400">
-                      {campaign.totalReplied.toLocaleString()}
+                      {campaign.totalReplied > 0 ? (
+                        <button
+                          onClick={() => navigate(`/inbox?campaign=${campaign.id}`)}
+                          className="font-mono text-purple-400 hover:text-purple-300 hover:underline underline-offset-2 transition-colors"
+                          title="View replies in Inbox"
+                        >
+                          {campaign.totalReplied.toLocaleString()}
+                        </button>
+                      ) : (
+                        <span className="text-dark-600">0</span>
+                      )}
                     </td>
                     <td className="table-cell text-center">
                       {deliveryRate !== null ? (

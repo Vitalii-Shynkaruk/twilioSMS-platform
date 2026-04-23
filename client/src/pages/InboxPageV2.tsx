@@ -149,8 +149,18 @@ export default function InboxPage() {
   const socket = useWebSocketStore((s) => s.socket);
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Инициализируем campaign filter прямо из URL (ленивый initializer, без useEffect)
+  const [campaignFilter, setCampaignFilter] = useState<string | null>(() => searchParams.get('campaign'));
+
+  // Обработка ?campaign=ID и ?lead=ID — очищаем URL после считывания
   useEffect(() => {
+    const campId = searchParams.get('campaign');
     const leadId = searchParams.get('lead');
+
+    if (campId || leadId) {
+      setSearchParams({}, { replace: true });
+    }
+
     if (leadId) {
       inboxApi
         .getOrCreateByLead(leadId)
@@ -161,7 +171,6 @@ export default function InboxPage() {
           }
         })
         .catch(() => {});
-      setSearchParams({}, { replace: true });
     }
   }, [queryClient, searchParams, setSearchParams]);
 
@@ -202,7 +211,7 @@ export default function InboxPage() {
   const selectedSort = SORT_OPTIONS.find((option) => option.id === sort) || SORT_OPTIONS[0];
 
   const { data: convData, isLoading } = useQuery({
-    queryKey: ['inbox-conversations', debouncedSearch, filter, sort, page],
+    queryKey: ['inbox-conversations', debouncedSearch, filter, sort, page, campaignFilter],
     queryFn: async () => {
       const params: Record<string, string> = {
         page: String(page),
@@ -212,6 +221,7 @@ export default function InboxPage() {
         sort,
       };
       if (debouncedSearch) params.search = debouncedSearch;
+      if (campaignFilter) params.campaignId = campaignFilter;
       const { data } = await inboxApi.listConversations(params);
       return data;
     },
@@ -236,9 +246,21 @@ export default function InboxPage() {
 
   return (
     <div className={clsx('inbox-root', selectedId && 'has-selected')}>
-      {/* HOT lead toast (top-right, подписан на socket hot-lead-detected) — скрыт в PHASE1_LEAN, возвращается в Phase 2 */}
+      {/* HOT lead toast (top-right, подписан на socket hot-led-detected) — скрыт в PHASE1_LEAN, возвращается в Phase 2 */}
       {!PHASE1_LEAN && <HOTToast />}
       <div className="inbox-left">
+        {/* Campaign filter banner */}
+        {campaignFilter && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 border-b border-purple-500/20 text-xs text-purple-300">
+            <span className="font-medium">📬 Showing replies from campaign</span>
+            <button
+              onClick={() => setCampaignFilter(null)}
+              className="ml-auto text-purple-400 hover:text-purple-200 font-medium"
+            >
+              ✕ Clear
+            </button>
+          </div>
+        )}
         <div className="inbox-left-header">
           <div className="inbox-search">
             <Search className="inbox-search-icon" />

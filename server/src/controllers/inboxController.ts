@@ -487,6 +487,7 @@ export class InboxController {
       filter = 'all',
       sort,
       withFilterCounts = 'false',
+      campaignId,
     } = req.query;
     const parsedPage = Math.max(parseInt(page as string, 10) || 1, 1);
     const parsedLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 100);
@@ -514,6 +515,19 @@ export class InboxController {
     );
     const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter, req);
     if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
+
+    // Фильтр по кампании — показать треды лидов, которые replied в конкретной кампании
+    if (campaignId && String(campaignId).trim()) {
+      const campaignLeads = await prisma.campaignLead.findMany({
+        where: {
+          campaignId: String(campaignId),
+          status: 'REPLIED',
+        },
+        select: { leadId: true },
+      });
+      const repliedLeadIds = campaignLeads.map((cl) => cl.leadId);
+      listConditions.push({ lead: { id: { in: repliedLeadIds.length > 0 ? repliedLeadIds : ['__none__'] } } });
+    }
 
     if (search && String(search).trim()) {
       const text = String(search).trim();

@@ -13,7 +13,7 @@
 - [x] SMS метрики уже в Command Center (встроенный `SmsBar` с `sent24h/delivered24h/replyRate7d` — строки 1026, 1209)
 - [x] Удалён роут `/dashboard` из `App.tsx` (redirect на `/command-center`) + удалён lazy import
 - [x] Удалён пункт "Dashboard" из sidebar nav (`AppLayout.tsx`)
-- [ ] Файл `DashboardPage.tsx` оставлен на диске (tree-shaken из bundle, удалим после финального тестирования)
+- [x] Файл `DashboardPage.tsx` удалён (был unused, нет импортов)
 
 ### A2. Pipeline icon → 4-square grid
 
@@ -82,7 +82,7 @@
 - [x] Формат: `HOT lead reply from {name}: '{first 60 chars}' — check SCL now`
 - [x] `from` номер: `hotAlertFromNumber` setting → env `TWILIO_FROM_NUMBER` → первый ACTIVE PhoneNumber
 - [x] Скип если нет mobilePhone или hotAlertsEnabled=false (без ошибок)
-- [ ] Rate limit (3 мин Redis) — отложено, добавим если будет флуд в проде
+- [x] Rate limit (3 мин Redis) — реализован в `twilioWebhooks.ts:279` через `redis.set('hot-alert:{convId}', '1', 'EX', 180, 'NX')`
 
 ### B4. Backend: routes/ai.ts ✅
 
@@ -106,7 +106,7 @@
 Файл: `server/src/controllers/leadController.ts`
 
 - [x] Строки 538/762: `source = listName.trim() || 'csv_import'` — новые импорты наследуют имя листа
-- [ ] (DEFERRED) Миграция 22,797 старых lead'ов — backfill по запросу клиента
+- [x] Backfill SQL подготовлен: `scripts/backfill_csv_import_source.sql` (preview + transactional UPDATE + verify, запуск вручную админом по запросу)
 
 ### B7. Frontend: InboxPage.tsx (EXTEND) ✅
 

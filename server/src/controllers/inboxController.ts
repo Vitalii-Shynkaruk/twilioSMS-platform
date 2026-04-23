@@ -1059,8 +1059,13 @@ export class InboxController {
     }
     activityEvents.sort((a, b) => b.at.getTime() - a.at.getTime());
 
-    // Mark as read
-    if (conversation.unreadCount > 0) {
+    // Mark as read — ТОЛЬКО если открывает assigned rep этого треда.
+    // Раньше: любой просмотр (включая ADMIN/MANAGER) сбрасывал unread →
+    // assigned rep терял unread навсегда, не зная что пришёл ответ.
+    // Теперь: ADMIN/MANAGER могут просматривать треды, не «съедая» unread у rep'а.
+    // Для явного сброса есть отдельный endpoint markRead.
+    const isAssignedRep = !!req.user?.id && conversation.assignedRepId === req.user.id;
+    if (conversation.unreadCount > 0 && isAssignedRep) {
       await prisma.conversation.update({
         where: { id },
         data: { unreadCount: 0 },

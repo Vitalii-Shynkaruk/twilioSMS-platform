@@ -6,6 +6,10 @@ import { Conversation, Message } from '../types';
 import { useDebounce } from '../hooks/useDebounce';
 import { SmsCounter } from '../components/SmsCounter';
 import { useWebSocketStore } from '../stores/webSocketStore';
+import AIBanner from '../components/inbox/AIBanner';
+import AISuggestions from '../components/inbox/AISuggestions';
+import HOTToast from '../components/inbox/HOTToast';
+import { InboxCardAIChips, InboxCardScoreBar } from '../components/inbox/InboxCardAI';
 import {
   Search,
   Send,
@@ -29,6 +33,7 @@ import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 
 type InboxFilter = 'all' | 'unread' | 'replied' | 'interested' | 'not_interested' | 'dnc' | 'opted_out';
+type InboxSort = 'ai_priority' | 'newest' | 'oldest';
 
 const INBOX_FILTERS: Array<{
   id: InboxFilter;
@@ -119,6 +124,7 @@ export default function InboxPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState<InboxFilter>('all');
+  const [sortBy, setSortBy] = useState<InboxSort>('ai_priority');
   const [inboxPage, setInboxPage] = useState(1);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; conv: Conversation } | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
@@ -163,16 +169,33 @@ export default function InboxPage() {
   }, [socket, selectedId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInboxPage(1);
-  }, [debouncedSearch, statusFilter]);
+  }, [debouncedSearch, statusFilter, sortBy]);
+
+  // Socket.io: слушаем обновления AI — обновляем список без refresh
+  useEffect(() => {
+    if (!socket) return;
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    };
+    socket.on('ai-classified', refresh);
+    socket.on('revenue_updated', refresh);
+    return () => {
+      socket.off('ai-classified', refresh);
+      socket.off('revenue_updated', refresh);
+    };
+  }, [socket, queryClient]);
 
   const { data: conversationsData, isLoading } = useQuery({
-    queryKey: ['conversations', debouncedSearch, statusFilter, inboxPage],
+    queryKey: ['conversations', debouncedSearch, statusFilter, sortBy, inboxPage],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('page', inboxPage.toString());
       params.set('limit', '50');
       params.set('withFilterCounts', 'true');
+      params.set('sort', sortBy);
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter !== 'all') params.set('filter', statusFilter);
       if (statusFilter === 'unread') params.set('unreadOnly', 'true');
@@ -183,11 +206,26 @@ export default function InboxPage() {
   });
 
   const conversations: Conversation[] = conversationsData?.conversations || [];
+  // Клиентская сортировка по AI Priority — на случай если backend ещё не реализовал sort=ai_priority
+  const sortedConversations =
+    sortBy === 'ai_priority'
+      ? [...conversations].sort((a, b) => {
+          const sa = a.aiClassification === 'HOT' ? 1000 : 0;
+          const sb = b.aiClassification === 'HOT' ? 1000 : 0;
+          const scoreDiff = sb + (b.aiLeadScore ?? 0) - (sa + (a.aiLeadScore ?? 0));
+          if (scoreDiff !== 0) return scoreDiff;
+          const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+          const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+          return tb - ta;
+        })
+      : conversations;
   const inboxTotalPages = conversationsData?.pagination?.pages || 1;
   const filterCounts = (conversationsData?.filterCounts || {}) as Partial<Record<InboxFilter, number>>;
 
   return (
     <div className="flex h-full min-h-0">
+      {/* HOT lead toast — глобальный, слушает socket */}
+      <HOTToast />
       {/* Conversation List */}
       <div
         className="w-[380px] flex flex-col border-r border-dark-700/50"
@@ -197,6 +235,17 @@ export default function InboxPage() {
         <div className="p-4 border-b border-dark-700/50 space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-dark-50">Inbox</h2>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as InboxSort)}
+              className="text-[11px] bg-dark-800 border border-dark-700 rounded-md px-2 py-1 text-dark-300 focus:outline-none focus:ring-1 focus:ring-scl-500"
+              aria-label="Sort conversations"
+              title="Sort conversations"
+            >
+              <option value="ai_priority">⚡ AI Priority</option>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
           </div>
           <div className="flex flex-wrap gap-2 pb-1">
             {INBOX_FILTERS.map((f) => (
@@ -258,7 +307,7 @@ export default function InboxPage() {
               </p>
             </div>
           )}
-          {conversations.map((conv) => (
+          {sortedConversations.map((conv) => (
             <ConversationItem
               key={conv.id}
               conversation={conv}
@@ -408,7 +457,12 @@ function ConversationItem({
         </div>
         {statusPill && (
           <div className="mt-1">
-            <span className={clsx('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium', statusPill.className)}>
+            <span
+              className={clsx(
+                'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium',
+                statusPill.className,
+              )}
+            >
               {statusPill.label}
             </span>
           </div>
@@ -416,6 +470,8 @@ function ConversationItem({
         <p className="text-xs text-dark-500 truncate mt-0.5">
           {lastMessage ? `${lastMessage.direction === 'OUTBOUND' ? 'You: ' : ''}${lastMessage.body}` : lead?.phone}
         </p>
+        {/* AI signal chips (HOT badge + revenue/ask/urgency) */}
+        <InboxCardAIChips conversation={conversation} />
         {/* Tags */}
         {lead?.tags && lead.tags.length > 0 && (
           <div className="flex gap-1 mt-1.5">
@@ -430,6 +486,8 @@ function ConversationItem({
             ))}
           </div>
         )}
+        {/* AI score bar (тонкая, без числа) */}
+        <InboxCardScoreBar conversation={conversation} />
       </div>
     </button>
   );
@@ -655,6 +713,9 @@ function MessageThread({ conversationId, wsConnected }: { conversationId: string
         </div>
       </div>
 
+      {/* AI Intelligence Banner (скрыт если нет classification) */}
+      {conversation && <AIBanner conversation={conversation as any} />}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {isLoading && (
@@ -667,6 +728,15 @@ function MessageThread({ conversationId, wsConnected }: { conversationId: string
         ))}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* AI Suggestions (BEST + ALT) — над compose */}
+      {conversation?.aiSuggestions && conversation.aiSuggestions.length > 0 && !conversation?.lead?.optedOut && (
+        <AISuggestions
+          suggestions={conversation.aiSuggestions}
+          signals={conversation.aiSignals}
+          onUseSuggestion={(text) => setReplyText(text)}
+        />
+      )}
 
       {/* Reply Input */}
       <div className="border-t border-dark-700/50 p-4" style={{ backgroundColor: 'var(--bg-secondary)' }}>

@@ -35,6 +35,10 @@ import { useDebounce } from '../hooks/useDebounce';
 import { SmsCounter } from '../components/SmsCounter';
 import { useWebSocketStore } from '../stores/webSocketStore';
 import { useAuthStore } from '../stores/authStore';
+import AIBanner from '../components/inbox/AIBanner';
+import AISuggestions from '../components/inbox/AISuggestions';
+import HOTToast from '../components/inbox/HOTToast';
+import { InboxCardAIChips, InboxCardScoreBar } from '../components/inbox/InboxCardAI';
 import '../styles/sms-inbox.css';
 
 type InboxFilter =
@@ -47,7 +51,7 @@ type InboxFilter =
   | 'followup'
   | 'in_pipeline'
   | 'dnc';
-type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
+type InboxSort = 'ai_priority' | 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
 const FILTER_ROW_1: Array<{ id: InboxFilter; label: string }> = [
   { id: 'all', label: 'All' },
@@ -65,6 +69,7 @@ const FILTER_ROW_2: Array<{ id: InboxFilter; label: string }> = [
 ];
 
 const SORT_OPTIONS: Array<{ id: InboxSort; label: string }> = [
+  { id: 'ai_priority', label: '⚡ AI Priority' },
   { id: 'newest_activity', label: 'Newest Activity' },
   { id: 'oldest_untouched', label: 'Oldest Untouched' },
   { id: 'unread_first', label: 'Unread First' },
@@ -134,7 +139,7 @@ export default function InboxPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
   const [filter, setFilter] = useState<InboxFilter>('all');
-  const [sort, setSort] = useState<InboxSort>('newest_activity');
+  const [sort, setSort] = useState<InboxSort>('ai_priority');
   const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const sortRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +172,21 @@ export default function InboxPage() {
     };
   }, [socket, selectedId]);
 
+  // Phase 1: Socket.io listeners для AI обновлений (список + открытый thread)
+  useEffect(() => {
+    if (!socket) return;
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation'] });
+    };
+    socket.on('ai-classified', refresh);
+    socket.on('revenue_updated', refresh);
+    return () => {
+      socket.off('ai-classified', refresh);
+      socket.off('revenue_updated', refresh);
+    };
+  }, [socket, queryClient]);
+
   useEffect(() => {
     function onDocClick(event: MouseEvent) {
       if (!sortRef.current) return;
@@ -198,11 +218,25 @@ export default function InboxPage() {
   });
 
   const conversations: Conversation[] = convData?.conversations || [];
+  // Phase 1: клиентская AI Priority сортировка (HOT наверх → score DESC → время)
+  const sortedConversations = useMemo(() => {
+    if (sort !== 'ai_priority') return conversations;
+    return [...conversations].sort((a, b) => {
+      const sa = (a.aiClassification === 'HOT' ? 1000 : 0) + (a.aiLeadScore ?? 0);
+      const sb = (b.aiClassification === 'HOT' ? 1000 : 0) + (b.aiLeadScore ?? 0);
+      if (sb !== sa) return sb - sa;
+      const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return tb - ta;
+    });
+  }, [conversations, sort]);
   const filterCounts = (convData?.filterCounts || {}) as Record<string, number>;
   const totalPages = convData?.pagination?.pages || 1;
 
   return (
     <div className={clsx('inbox-root', selectedId && 'has-selected')}>
+      {/* HOT lead toast (top-right, подписан на socket hot-lead-detected) */}
+      <HOTToast />
       <div className="inbox-left">
         <div className="inbox-left-header">
           <div className="inbox-search">
@@ -306,7 +340,7 @@ export default function InboxPage() {
             </div>
           )}
 
-          {conversations.map((conv) => (
+          {sortedConversations.map((conv) => (
             <ConversationItem
               key={conv.id}
               conversation={conv}
@@ -401,6 +435,11 @@ function ConversationItem({
             ))}
           </div>
         )}
+
+        {/* Phase 1 AI: HOT badge + signal chips (revenue/ask/urgency) */}
+        <InboxCardAIChips conversation={conversation} />
+        {/* Phase 1 AI: тонкая score-bar (без числа) */}
+        <InboxCardScoreBar conversation={conversation} />
       </div>
 
       {conversation.unreadCount > 0 && <span className="inbox-unread-dot" />}
@@ -800,6 +839,9 @@ function MessageThread({
           )}
         </div>
 
+        {/* Phase 1 AI: Intelligence banner — после thread header, до сообщений */}
+        <AIBanner conversation={conversation as any} />
+
         <div className="inbox-messages phase1">
           {isLoading && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
@@ -828,6 +870,18 @@ function MessageThread({
           })}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* Phase 1 AI: BEST + ALT suggestions — над compose */}
+        {!conversation?.lead?.optedOut && (
+          <AISuggestions
+            suggestions={(conversation as any)?.aiSuggestions}
+            signals={(conversation as any)?.aiSignals}
+            onUseSuggestion={(text) => {
+              setReplyText(text);
+              composeTextareaRef.current?.focus();
+            }}
+          />
+        )}
 
         <div className="inbox-compose phase1">
           <div className="inbox-sending-from">

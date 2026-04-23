@@ -114,6 +114,30 @@ export interface Conversation {
     lastTemplateUsed?: string;
   };
   activity?: ConversationActivity[];
+  // Phase 1 AI Inbox
+  aiClassification?: 'HOT' | 'WARM' | 'NURTURE' | null;
+  aiSignals?: AISignals | null;
+  aiSuggestions?: AISuggestion[] | null;
+  isCaliforniaNumber?: boolean;
+  aiLeadScore?: number;
+  aiClassifiedAt?: string | null;
+}
+
+export interface AISignals {
+  revenue?: string | null;
+  ask?: string | null;
+  urgency?: string | null;
+  product?: string | null;
+  industry?: string | null;
+  objections?: string | null;
+}
+
+export interface AISuggestion {
+  type?: 'agg' | 'soft' | 'doc' | 'reschedule' | 'block';
+  lbl?: string;
+  text: string;
+  cta?: string;
+  blocked?: boolean;
 }
 
 export interface ConversationActivity {

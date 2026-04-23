@@ -108,62 +108,58 @@
 - [ ] Заменить hardcoded `"csv_import"` на актуальное название кампании/листа
 - [ ] Запустить миграцию для существующих 22,797 leads (если требуется)
 
-### B7. Frontend: InboxPage.tsx (EXTEND)
+### B7. Frontend: InboxPage.tsx (EXTEND) ✅
 
-Файл: `client/src/pages/InboxPage.tsx`
+Файл: `client/src/pages/InboxPageV2.tsx` (активная версия в prod)
 
-- [ ] Добавить опцию "AI Priority" в sort dropdown как **default**
-- [ ] Подписаться на Socket.io событие `hot-lead-detected` → показать HOTToast
-- [ ] Подписаться на `revenue_updated` → обновить signal chip на карточке
-- [ ] Reorder logic: при AI Priority сортировать по `aiLeadScore DESC`
-- [ ] **НЕ ЛОМАТЬ** существующие фильтры (All, Unread, Hot, Email, Interested, Follow-Up, In Pip)
+- [x] Опция `⚡ AI Priority` в sort dropdown и выбрана **по умолчанию**
+- [x] Socket.io слушает `ai-classified` и `revenue_updated` → invalidate query без refresh
+- [x] Socket.io `hot-lead-detected` обрабатывает HOTToast (см. B11)
+- [x] AI Priority sort: HOT наверх → score DESC → время DESC
+- [x] Существующие фильтры (All / Unread / Hot / Email / My Campaigns / Interested / Follow-Up / In Pipeline / DNC) НЕ сломаны
 
-### B8. Frontend: AIBanner.tsx (NEW)
+### B8. Frontend: AIBanner.tsx (NEW) ✅
 
 Файл: `client/src/components/inbox/AIBanner.tsx`
 
-- [ ] Renders над message thread (после toolbar)
-- [ ] Скрыт если `aiClassification === null`
-- [ ] Classification badge (HOT=red, WARM=amber, NURTURE=blue)
-- [ ] Signal chips (revenue 💰, ask 🎯, urgency ⚡, product, industry)
-- [ ] Имя rep (`assignedRepId`)
-- [ ] Live countdown timer для HOT (count up since classification)
-- [ ] Цвета и стили **точно как в прототипе** (`.ai-banner.hot`, `.signal-chip` и т.д.)
+- [x] Над тредом, скрыт если `aiClassification === null`
+- [x] Classification badge: HOT=red, WARM=amber, NURTURE=blue, CA=orange
+- [x] Signal chips: revenue 💰, ask 📊, urgency ⚡, product 🏦, industry 🏗, objections ⚠
+- [x] Имя rep (из `assignedRep`)
+- [x] Live count-up timer для HOT (зелёный <2м, жёлтый <5м, красный после 5м)
+- [x] State label: "🔥 HOT · $X DEAL" / "⚠ CA COMPLIANCE" / "◆ WARM" / "◆ NURTURE"
 
-### B9. Frontend: InboxCardAI.tsx (NEW)
+### B9. Frontend: InboxCardAI.tsx (NEW) ✅
 
 Файл: `client/src/components/inbox/InboxCardAI.tsx`
 
-- [ ] Расширяет существующую inbox card
-- [ ] HOT badge (если classification=HOT)
-- [ ] Signal chips: revenue, ask, urgency
-- [ ] Score bar — тонкая полоса под карточкой:
-  - red >= 80
-  - amber 50-79
-  - grey < 50
-  - **число НЕ показывать!**
-- [ ] Revenue chip с `.rev-pop` анимацией при socket event
+- [x] `<InboxCardAIChips>`: HOT badge + revenue/ask/urgency chips на карточке
+- [x] `<InboxCardScoreBar>`: тонкая полоса (red ≥0, amber 50-79, grey <50), **число не показывается**
+- [x] aria-label для скринридеров (`progressbar`)
 
-### B10. Frontend: AISuggestions.tsx (NEW)
+### B10. Frontend: AISuggestions.tsx (NEW) ✅
 
 Файл: `client/src/components/inbox/AISuggestions.tsx`
 
-- [ ] Renders под AI banner / над compose
-- [ ] Максимум 2 карточки (BEST + ALT, никогда 3)
-- [ ] BEST: gold accent border-left, gold badge "BEST"
-- [ ] ALT: hot/nurture accent
-- [ ] Click → `text` вставляется в compose box (не блокировать send)
-- [ ] CTA метка снизу (`→ SEND FUNDING LINK` etc.)
+- [x] Максимум 2 карточки: BEST + ALT (никогда 3)
+- [x] BEST: gold border-left + gold badge "BEST"
+- [x] ALT: свой цвет по type (agg/soft/doc/reschedule/block)
+- [x] Click → вставка в compose textarea без блокировки send + autofocus
+- [x] CTA лейбл снизу карточки
+- [x] Highlight для $-сумм
+- [x] Blocked suggestions disabled визуально
 
-### B11. Frontend: HOTToast.tsx (NEW)
+### B11. Frontend: HOTToast.tsx (NEW) ✅
 
 Файл: `client/src/components/inbox/HOTToast.tsx`
 
-- [ ] Красный toast в top-right
-- [ ] Срабатывает на Socket.io `hot-lead-detected`
-- [ ] 3-pulse Web Audio API звук: 600Hz → 800Hz → 1050Hz, интервал 170ms
-- [ ] Auto-dismiss через 8s + close button
-- [ ] Click → переход на conversation
+- [x] Красный toast в top-right (z-index 200)
+- [x] Срабатывает на Socket.io `hot-lead-detected`
+- [x] 3-pulse Web Audio API звук: 600 → 800 → 1050 Hz, 170ms интервал, sine + exp envelope
+- [x] Auto-dismiss 8s + close button (X)
+- [x] Click → навигация `/inbox?conv=...`
+- [x] Показывает имя + 60-char preview
+- [x] Может отображать до 4 toast'ов одновременно
 
 ### B12. Frontend: CommandCenterPage.tsx (EXTEND)
 

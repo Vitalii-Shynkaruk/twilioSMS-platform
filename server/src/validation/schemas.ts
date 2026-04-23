@@ -37,6 +37,14 @@ export const registerSchema = z.object({
   firstName: z.string().min(1).max(50).trim(),
   lastName: z.string().min(1).max(50).trim(),
   role: z.enum(['ADMIN', 'MANAGER', 'REP']).default('REP'),
+  mobilePhone: z
+    .string()
+    .trim()
+    .regex(/^\+[1-9]\d{6,14}$/u, 'mobilePhone must be E.164 (e.g. +13105551234)')
+    .nullable()
+    .or(z.literal(''))
+    .optional(),
+  hotAlertsEnabled: z.boolean().optional(),
 });
 
 export const updateUserSchema = z.object({
@@ -50,6 +58,14 @@ export const updateUserSchema = z.object({
     .email()
     .transform((s) => s.toLowerCase().trim())
     .optional(),
+  mobilePhone: z
+    .string()
+    .trim()
+    .regex(/^\+[1-9]\d{6,14}$/u, 'mobilePhone must be E.164 (e.g. +13105551234)')
+    .nullable()
+    .or(z.literal(''))
+    .optional(),
+  hotAlertsEnabled: z.boolean().optional(),
 });
 
 // ─── Leads ───

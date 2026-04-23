@@ -5,6 +5,7 @@ import type { CommandCenterMetrics, Rep, Deal } from '../types';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { DashboardOverview } from './DashboardPage';
 import '../styles/command-center.css';
 
 // ── Helpers ──
@@ -656,6 +657,15 @@ export default function CommandCenterPage() {
 
       {/* PAGE */}
       <div className="page">
+        {/* ── DASHBOARD OVERVIEW (full data merged from legacy /dashboard) ── */}
+        <div className="zone">
+          <div className="zd" style={{ background: 'var(--blue)' }} />
+          Operational Dashboard — SMS · Pipeline · Health
+        </div>
+        <div className="cc-dashboard-embed" style={{ marginBottom: 24 }}>
+          <DashboardOverview />
+        </div>
+
         {/* ADMIN VIEW */}
         {isAdmin && (
           <div className="view on">

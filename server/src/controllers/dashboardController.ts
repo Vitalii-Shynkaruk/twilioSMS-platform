@@ -83,10 +83,12 @@ export class DashboardController {
         },
       }),
 
-      // Pipeline snapshot (deals-based)
+      // Pipeline snapshot (deals-based) — counts + total $ value + avg deal size per stage.
       prisma.deal.groupBy({
         by: ['stage'],
-        _count: true,
+        _count: { _all: true },
+        _sum: { dealAmount: true },
+        _avg: { dealAmount: true },
       }),
 
       // Recent campaigns
@@ -164,13 +166,27 @@ export class DashboardController {
           { key: 'NURTURE', label: 'Nurture', color: '#4A9EE8' },
           { key: 'CLOSED', label: 'Closed', color: '#536070' },
         ];
-        const countMap = new Map(pipelineSnapshot.map((s: any) => [s.stage, s._count]));
-        return DEAL_STAGES.map((s) => ({
-          id: s.key,
-          name: s.label,
-          color: s.color,
-          count: countMap.get(s.key) || 0,
-        }));
+        const aggMap = new Map(
+          pipelineSnapshot.map((s: any) => [
+            s.stage,
+            {
+              count: s._count?._all ?? 0,
+              totalValue: Number(s._sum?.dealAmount ?? 0),
+              avgValue: Number(s._avg?.dealAmount ?? 0),
+            },
+          ]),
+        );
+        return DEAL_STAGES.map((s) => {
+          const agg = aggMap.get(s.key) || { count: 0, totalValue: 0, avgValue: 0 };
+          return {
+            id: s.key,
+            name: s.label,
+            color: s.color,
+            count: agg.count,
+            totalValue: agg.totalValue,
+            avgValue: Math.round(agg.avgValue),
+          };
+        });
       })(),
       recentCampaigns,
       numberHealth: numberHealth.map((g) => ({

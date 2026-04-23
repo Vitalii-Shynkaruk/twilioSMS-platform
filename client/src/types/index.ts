@@ -327,6 +327,8 @@ export interface DashboardStats {
     name: string;
     color: string;
     count: number;
+    totalValue: number;
+    avgValue: number;
   }>;
   recentCampaigns: Campaign[];
   numberHealth: Array<{

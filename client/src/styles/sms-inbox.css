@@ -1133,6 +1133,31 @@
   border-color: rgba(201, 149, 42, 0.34);
 }
 
+/* Phase 1: AI classification badge (на thread header рядом со status-strip) */
+.inbox-strip-badge.ai-cls {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.inbox-strip-badge.ai-cls.hot {
+  color: #ff8f88;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.inbox-strip-badge.ai-cls.warm {
+  color: #e7c77a;
+  background: rgba(201, 149, 42, 0.12);
+  border-color: rgba(201, 149, 42, 0.34);
+}
+.inbox-strip-badge.ai-cls.nurture {
+  color: #7dd3a8;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.32);
+}
+.inbox-strip-badge.ai-cls.dim {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .inbox-action-btn.pipeline {
   color: #7dd3a8;
   border-color: rgba(16, 185, 129, 0.35);

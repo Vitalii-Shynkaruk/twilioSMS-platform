@@ -1,6 +1,31 @@
 # Phase 1 — AI SMS Inbox Build · Checklist
 
-> Источник: `AI-SMSRevised.pdf` · Прототип: `scl-inbox-v5.html` · Бюджет: $400 · Срок: 7 дней
+> Источник: `AI-SMSRevised.pdf` · Прототип: `scl-inbox-v5.html`
+>
+> **🔄 Scope revision 23.04.2026 вечер** (сообщение клиента):
+> «True Phase 1 is classifier validation only. Out of scope for now: AI banner,
+> BEST/ALT suggestions, HOT toast, HOT SMS alerts, escalation, CA compliance,
+> right panel tabs, InboxCardAI full layer. All deferred to Phase 2.»
+>
+> **Решение:** код всех Phase 2-фичей ОСТАВЛЯЕМ в репозитории,
+> временно скрываем за feature flag `PHASE1_LEAN=true` (по дефолту).
+> Включаем обратно в Phase 2 снятием флага без повторного кода.
+>
+> **Активный Phase 1 scope (lean):**
+>
+> - Backend: `classifyInbound()` Claude Sonnet 4.5 + revenue normalization + 5-signal score + persist 6 AI-полей + webhook non-blocking + AI Priority sort API
+> - Frontend: classification badge в thread header, revenue chip на inbox card, AI Priority option в sort dropdown
+> - Schema: все 6 AI-полей в Conversation (чтобы не делать вторую миграцию в Phase 2)
+>
+> **Гейтированные Phase 2 фичи (готовы, но выключены):**
+>
+> - AIBanner в thread — скрыт в UI
+> - AISuggestions (BEST/ALT) — скрыты в UI
+> - HOTToast тосты + звук — не монтируются
+> - MobileAlertService HOT SMS — не вызывается (webhook early-return)
+> - Socket `hot-lead-detected` emit — пропускается
+> - InboxCardAIChips HOT badge + ask + urgency chips — скрыты
+> - InboxCardScoreBar — скрыт
 >
 > Принцип: попиксельно по прототипу. Каждый чек ставим только после реальной проверки.
 
@@ -73,7 +98,7 @@
 - [x] `anthropicApiKey` в SENSITIVE_KEYS — маскируется в read responses
 - [x] TypeScript компилируется без ошибок
 
-### B3. Backend: mobileAlertService.ts ✅ CODE READY
+### B3. Backend: mobileAlertService.ts ✅ CODE READY · выкл. в PHASE1_LEAN (Phase 2)
 
 Файл: `server/src/services/mobileAlertService.ts`
 
@@ -118,7 +143,7 @@
 - [x] AI Priority sort: HOT наверх → score DESC → время DESC
 - [x] Существующие фильтры (All / Unread / Hot / Email / My Campaigns / Interested / Follow-Up / In Pipeline / DNC) НЕ сломаны
 
-### B8. Frontend: AIBanner.tsx (NEW) ✅
+### B8. Frontend: AIBanner.tsx (NEW) ✅ выкл. в PHASE1_LEAN (Phase 2)
 
 Файл: `client/src/components/inbox/AIBanner.tsx`
 
@@ -129,7 +154,7 @@
 - [x] Live count-up timer для HOT (зелёный <2м, жёлтый <5м, красный после 5м)
 - [x] State label: "🔥 HOT · $X DEAL" / "⚠ CA COMPLIANCE" / "◆ WARM" / "◆ NURTURE"
 
-### B9. Frontend: InboxCardAI.tsx (NEW) ✅
+### B9. Frontend: InboxCardAI.tsx (NEW) ✅ · в PHASE1_LEAN только revenue chip; HOT badge/ask/urgency/score bar — Phase 2
 
 Файл: `client/src/components/inbox/InboxCardAI.tsx`
 
@@ -137,7 +162,7 @@
 - [x] `<InboxCardScoreBar>`: тонкая полоса (red ≥0, amber 50-79, grey <50), **число не показывается**
 - [x] aria-label для скринридеров (`progressbar`)
 
-### B10. Frontend: AISuggestions.tsx (NEW) ✅
+### B10. Frontend: AISuggestions.tsx (NEW) ✅ выкл. в PHASE1_LEAN (Phase 2)
 
 Файл: `client/src/components/inbox/AISuggestions.tsx`
 
@@ -149,7 +174,7 @@
 - [x] Highlight для $-сумм
 - [x] Blocked suggestions disabled визуально
 
-### B11. Frontend: HOTToast.tsx (NEW) ✅
+### B11. Frontend: HOTToast.tsx (NEW) ✅ выкл. в PHASE1_LEAN (Phase 2)
 
 Файл: `client/src/components/inbox/HOTToast.tsx`
 
@@ -182,16 +207,23 @@
 
 ---
 
-## ✅ AI Acceptance Criteria — все 8 тестов на проде
+## ✅ AI Acceptance Criteria — аудит с учётом lean-режима
 
-- [x] **T1**: POST /api/ai/classify-inbound → `aiClassification` + `aiClassifiedAt` в БД за ~8с (Anthropic Claude Sonnet 4.5)
-- [x] **T2**: результат персистится в conversations — 5 AI-полей записаны (визуальный chip refresh — через socket `ai-classified`, проверяется в UI при реальном входящем)
-- [x] **T3**: AI Banner рендерится на прототип-CSS (`.ai-banner.hot/warm/nurture/ca` в bundle)
-- [x] **T4**: BEST + ALT карточки возвращаются (suggestions array length=2, type=BEST + type=ALT)
-- [x] **T5**: AISuggestions компонент вызывает `onUseSuggestion(text)` → InboxPageV2 вставляет в compose textarea (frontend wired, финальный manual click остаётся клиенту)
-- [x] **T6**: Lead "$500K–$600K monthly revenue" → `revenueMonthly=550000`, `ask='$500k'`, `classification='HOT'`, `score=80` — всё корректно извлечено и сохранено
-- [ ] **T7**: HOT alert SMS на мобильный rep — ОЖИДАЕТ заполнения `mobilePhone` в Settings → Users (все 17 users имеют NULL в mobilePhone)
-- [x] **T8**: csv_import fix в prod bundle (обе ветки импорта — legacy + smart-mapping) — верифицируется при следующем клиентском импорте
+### Активный Phase 1 (lean) — должны работать сейчас:
+
+- [x] **T1**: POST /api/ai/classify-inbound → `aiClassification` + `aiClassifiedAt` в БД за ~8с (Claude Sonnet 4.5) — проверено на 3 реальных conversations
+- [x] **T2**: 6 AI-полей персистятся в conversations (включая aiSuggestions — задел под Phase 2 без second migration)
+- [x] **T3**: classification badge в thread header (`.inbox-strip-badge.ai-cls.hot/warm/nurture`) — добавлен в InboxPageV2
+- [x] **T6**: `$500K–$600K monthly revenue` → `revenueMonthly=550000`, `ask='$500k'`, cls=HOT, score=80 — проверено
+- [x] **T8**: csv_import fix в prod bundle (legacy + smart-mapping) — верифицируется при следующем импорте клиента
+- [x] **AI Priority sort**: опция в dropdown + default; HOT наверх → score DESC → время DESC
+- [x] **Revenue chip on card**: InboxCardAIChips в lean-режиме показывает только `💰 revenue`
+
+### Phase 2 фичи (готовы, гейтированы PHASE1_LEAN=true):
+
+- [x] **T4**: BEST + ALT suggestions возвращаются API (suggestions.length=2, type=BEST/ALT) — backend готов, UI скрыт
+- [x] **T5**: AISuggestions вызывает `onUseSuggestion(text)` → compose (frontend wired, скрыт)
+- [ ] **T7**: HOT alert SMS — выключен в webhook (PHASE1_LEAN); проверяется в Phase 2 при заполненном `mobilePhone`
 
 ---
 

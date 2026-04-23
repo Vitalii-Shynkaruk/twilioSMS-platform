@@ -272,9 +272,13 @@ router.post('/inbound', async (req: Request, res: Response) => {
           const ai = await AIService.classifyInbound(convId);
           if (!ai) return;
 
+          // Phase 1 LEAN mode (default true): пропускаем HOT SMS alerts и hot-lead-detected emit.
+          // Возвращается в Phase 2 через PHASE1_LEAN=false.
+          const phase1Lean = (process.env.PHASE1_LEAN ?? 'true').toLowerCase() !== 'false';
+
           // Rate limit HOT alerts: один в 3 минуты на conversation
           let alertSent = false;
-          if (ai.classification === 'HOT' && repId) {
+          if (!phase1Lean && ai.classification === 'HOT' && repId) {
             const guardKey = `hot-alert:${convId}`;
             const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
             if (guard === 'OK') {
@@ -310,7 +314,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
             };
             if (repId) {
               io.to(`inbox:${repId}`).emit('ai-classified', aiPayload);
-              if (ai.classification === 'HOT') {
+              if (!phase1Lean && ai.classification === 'HOT') {
                 io.to(`inbox:${repId}`).emit('hot-lead-detected', {
                   ...aiPayload,
                   leadName,

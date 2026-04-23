@@ -1,6 +1,7 @@
 // © BuyReadySite.com — AI расширения для inbox card (HOT badge, signal chips, score bar)
 import { clsx } from 'clsx';
 import type { AISignals, Conversation } from '../../types';
+import { PHASE1_LEAN } from '../../config/featureFlags';
 
 type ConvSlice = Pick<Conversation, 'aiClassification' | 'aiSignals' | 'aiLeadScore'>;
 
@@ -8,7 +9,11 @@ interface AICardProps {
   conversation: ConvSlice;
 }
 
-/* HOT badge + signal chips (revenue / ask / urgency) */
+/**
+ * Chips на карточке inbox.
+ * PHASE1_LEAN=true (23.04): только revenue chip.
+ * PHASE1_LEAN=false (Phase 2): HOT + revenue + ask + urgency.
+ */
 export function InboxCardAIChips({ conversation }: AICardProps) {
   const cls = conversation.aiClassification;
   const signals = (conversation.aiSignals || {}) as AISignals;
@@ -16,6 +21,17 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
   const hasRevenue = !!signals.revenue;
   const hasAsk = !!signals.ask;
   const hasUrgency = !!signals.urgency;
+
+  if (PHASE1_LEAN) {
+    if (!hasRevenue) return null;
+    return (
+      <div className="ai-card-chips" aria-label="AI revenue signal">
+        <span className="chip rev" title="Monthly revenue (extracted)">
+          💰<strong>{signals.revenue}</strong>
+        </span>
+      </div>
+    );
+  }
 
   if (!isHot && !hasRevenue && !hasAsk && !hasUrgency) return null;
 
@@ -41,8 +57,11 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
   );
 }
 
-/* Тонкая score bar — без числа (требование прототипа) */
+/**
+ * Тонкая score bar — без числа. Скрыта в PHASE1_LEAN, возвращается в Phase 2.
+ */
 export function InboxCardScoreBar({ conversation }: AICardProps) {
+  if (PHASE1_LEAN) return null;
   const score = Math.max(0, Math.min(100, Number(conversation.aiLeadScore || 0)));
   if (score <= 0) return null;
   const tier = score >= 80 ? 'high' : score >= 50 ? 'mid' : 'low';

@@ -39,6 +39,7 @@ import AIBanner from '../components/inbox/AIBanner';
 import AISuggestions from '../components/inbox/AISuggestions';
 import HOTToast from '../components/inbox/HOTToast';
 import { InboxCardAIChips, InboxCardScoreBar } from '../components/inbox/InboxCardAI';
+import { PHASE1_LEAN } from '../config/featureFlags';
 import '../styles/sms-inbox.css';
 
 type InboxFilter =
@@ -235,8 +236,8 @@ export default function InboxPage() {
 
   return (
     <div className={clsx('inbox-root', selectedId && 'has-selected')}>
-      {/* HOT lead toast (top-right, подписан на socket hot-lead-detected) */}
-      <HOTToast />
+      {/* HOT lead toast (top-right, подписан на socket hot-lead-detected) — скрыт в PHASE1_LEAN, возвращается в Phase 2 */}
+      {!PHASE1_LEAN && <HOTToast />}
       <div className="inbox-left">
         <div className="inbox-left-header">
           <div className="inbox-search">
@@ -740,6 +741,21 @@ function MessageThread({
           </div>
 
           <div className="inbox-thread-row row2 status-strip">
+            {conversation.aiClassification ? (
+              <span
+                className={clsx(
+                  'inbox-strip-badge ai-cls',
+                  conversation.aiClassification === 'HOT' && 'hot',
+                  conversation.aiClassification === 'WARM' && 'warm',
+                  conversation.aiClassification === 'NURTURE' && 'nurture',
+                )}
+                title="AI classification"
+              >
+                {conversation.aiClassification === 'HOT' && '🔥 HOT'}
+                {conversation.aiClassification === 'WARM' && '🌡 WARM'}
+                {conversation.aiClassification === 'NURTURE' && '🌱 NURTURE'}
+              </span>
+            ) : null}
             {conversation.hotLead ? <span className="inbox-strip-badge hot">🔥 Hot Lead</span> : null}
             <span className={clsx('inbox-strip-badge', inPipeline ? 'pipe' : 'dim')}>
               {inPipeline ? '→ In Pipeline' : 'Not in pipeline'}
@@ -839,8 +855,8 @@ function MessageThread({
           )}
         </div>
 
-        {/* Phase 1 AI: Intelligence banner — после thread header, до сообщений */}
-        <AIBanner conversation={conversation as any} />
+        {/* Phase 1 AI: Intelligence banner — скрыт в lean-режиме (флаг PHASE1_LEAN), возвращается в Phase 2 */}
+        {!PHASE1_LEAN && <AIBanner conversation={conversation as any} />}
 
         <div className="inbox-messages phase1">
           {isLoading && (
@@ -871,8 +887,8 @@ function MessageThread({
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Phase 1 AI: BEST + ALT suggestions — над compose */}
-        {!conversation?.lead?.optedOut && (
+        {/* Phase 1 AI: BEST + ALT suggestions — скрыты в lean-режиме (флаг PHASE1_LEAN), возвращаются в Phase 2 */}
+        {!PHASE1_LEAN && !conversation?.lead?.optedOut && (
           <AISuggestions
             suggestions={(conversation as any)?.aiSuggestions}
             signals={(conversation as any)?.aiSignals}

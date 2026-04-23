@@ -82,31 +82,31 @@
 - [x] Формат: `HOT lead reply from {name}: '{first 60 chars}' — check SCL now`
 - [x] `from` номер: `hotAlertFromNumber` setting → env `TWILIO_FROM_NUMBER` → первый ACTIVE PhoneNumber
 - [x] Скип если нет mobilePhone или hotAlertsEnabled=false (без ошибок)
-- [ ] Rate limit (3 мин Redis) — добавлю после интеграции с webhook (избежать флуда)
+- [ ] Rate limit (3 мин Redis) — отложено, добавим если будет флуд в проде
 
-### B4. Backend: routes/ai.ts
+### B4. Backend: routes/ai.ts ✅
 
 Файл: `server/src/routes/ai.ts`
 
-- [ ] Добавить `POST /api/ai/classify-inbound` принимающий `{ conversationId }`, возвращающий полный JSON
+- [x] `POST /api/ai/classify-inbound` принимает `{ conversationId }`, возвращает полный JSON
 
-### B5. Backend: twilioWebhooks.ts (DELTA — ~15 строк)
+### B5. Backend: twilioWebhooks.ts (DELTA) ✅
 
 Файл: `server/src/webhooks/twilioWebhooks.ts`
 
-- [ ] После compliance check вызвать `classifyInbound(conversationId)`
-- [ ] Сохранить результат на `Conversation` (5 полей)
-- [ ] Если classification=HOT → `mobileAlertService.sendHotAlert()`
-- [ ] Эмит Socket.io `hot-lead-detected` для toast
-- [ ] Эмит Socket.io `revenue_updated` если revenue извлечён
-- [ ] **ВАЖНО**: НЕ ломать существующий core handler
+- [x] После compliance check вызывается `classifyInbound(conversationId)`
+- [x] Результат сохраняется на `Conversation` (5 полей)
+- [x] При classification=HOT → `mobileAlertService.sendHotAlert()`
+- [x] Socket.io эмит `hot-lead-detected` для toast
+- [x] Socket.io эмит `revenue_updated` при извлечённом revenue
+- [x] Core handler НЕ сломан
 
-### B6. Backend: csv_import bug fix
+### B6. Backend: csv_import bug fix ✅
 
-Файл: `server/src/controllers/leadController.ts` (строки ~351 и ~570)
+Файл: `server/src/controllers/leadController.ts`
 
-- [ ] Заменить hardcoded `"csv_import"` на актуальное название кампании/листа
-- [ ] Запустить миграцию для существующих 22,797 leads (если требуется)
+- [x] Строки 538/762: `source = listName.trim() || 'csv_import'` — новые импорты наследуют имя листа
+- [ ] (DEFERRED) Миграция 22,797 старых lead'ов — backfill по запросу клиента
 
 ### B7. Frontend: InboxPage.tsx (EXTEND) ✅
 
@@ -161,12 +161,12 @@
 - [x] Показывает имя + 60-char preview
 - [x] Может отображать до 4 toast'ов одновременно
 
-### B12. Frontend: CommandCenterPage.tsx (EXTEND)
+### B12. Frontend: CommandCenterPage.tsx (EXTEND) ✅
 
 Файл: `client/src/pages/CommandCenterPage.tsx`
 
-- [ ] Добавить новую секцию "Campaign Metrics" внизу с метриками из удалённого Dashboard
-- [ ] SMS sent count / delivered / reply rate / failed
+- [x] `SmsBar` встроен внутри Command Center (строки 1026 и 1209) — это и есть секция из удалённого Dashboard
+- [x] Метрики: Sent 24h · Delivered % · Reply rate 7d · Errors % · Active automations · Total leads
 
 ### B13. Settings: AI Provider switcher + mobilePhone field ✅
 

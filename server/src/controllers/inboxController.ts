@@ -486,6 +486,29 @@ export class InboxController {
     });
   }
 
+  // Быстрый агрегат для бейджа в sidebar:
+  // - unreadConversations: сколько тредов имеют unreadCount > 0
+  // - unreadMessages: суммарное число непрочитанных входящих сообщений
+  static async getUnreadSummary(req: AuthRequest, res: Response): Promise<void> {
+    const baseWhere: any = { isActive: true, unreadCount: { gt: 0 } };
+    if (req.user?.role === 'REP') {
+      baseWhere.assignedRepId = req.user.id;
+    }
+
+    const [unreadConversations, agg] = await Promise.all([
+      prisma.conversation.count({ where: baseWhere }),
+      prisma.conversation.aggregate({
+        where: baseWhere,
+        _sum: { unreadCount: true },
+      }),
+    ]);
+
+    res.json({
+      unreadConversations,
+      unreadMessages: agg._sum.unreadCount || 0,
+    });
+  }
+
   static async listConversations(req: AuthRequest, res: Response): Promise<void> {
     const {
       page = '1',

@@ -20,6 +20,7 @@ router.use(authenticate);
 
 // Базовые маршруты (существующие)
 router.get('/', asyncHandler(InboxController.listConversations));
+router.get('/unread-summary', asyncHandler(InboxController.getUnreadSummary));
 router.get('/by-lead/:leadId', asyncHandler(InboxController.getOrCreateByLead));
 router.get('/:id', asyncHandler(InboxController.getConversation));
 router.post('/:id/read', asyncHandler(InboxController.markRead));

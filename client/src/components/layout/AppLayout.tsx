@@ -103,16 +103,16 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   // Auto-invalidate queries on WebSocket events (messages, campaigns, leads)
   useWebSocketQuerySync();
 
-  // Unread inbox count for badge
+  // Unread inbox count for badge — показываем число непрочитанных сообщений
   const { data: inboxData } = useQuery({
-    queryKey: ['inbox-unread-count'],
+    queryKey: ['inbox-unread-summary'],
     queryFn: async () => {
-      const { data } = await api.get('/inbox?unreadOnly=true&limit=1');
-      return data;
+      const { data } = await api.get('/inbox/unread-summary');
+      return data as { unreadConversations: number; unreadMessages: number };
     },
-    refetchInterval: 30000,
+    refetchInterval: 15000,
   });
-  const unreadCount = inboxData?.conversations?.length || 0;
+  const unreadCount = inboxData?.unreadMessages || 0;
 
   // SMS mode from diagnostics
   const { data: diagData } = useQuery({

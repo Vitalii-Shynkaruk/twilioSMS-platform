@@ -532,7 +532,10 @@ function MessageThread({
 
   const markReadMutation = useMutation({
     mutationFn: () => inboxApi.markRead(conversationId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-unread-summary'] });
+    },
     retry: false,
   });
 
@@ -540,6 +543,7 @@ function MessageThread({
     mutationFn: () => inboxApi.markUnread(conversationId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-unread-summary'] });
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
       onBack();
       toast.success('Marked as unread');

@@ -272,13 +272,14 @@ router.post('/inbound', async (req: Request, res: Response) => {
           const ai = await AIService.classifyInbound(convId);
           if (!ai) return;
 
-          // Phase 1 LEAN mode (default true): пропускаем HOT SMS alerts и hot-lead-detected emit.
-          // Возвращается в Phase 2 через PHASE1_LEAN=false.
+          // Phase 1 LEAN mode (default true): «Lean» по решению клиента 23.04.
+          // В LEAN режиме остаётся one-time HOT SMS alert (без escalation/retry/scheduling),
+          // но отключается socket emit `hot-lead-detected` (HOTToast deferred в Phase 2).
           const phase1Lean = (process.env.PHASE1_LEAN ?? 'true').toLowerCase() !== 'false';
 
-          // Rate limit HOT alerts: один в 3 минуты на conversation
+          // Rate limit HOT alerts: один в 3 минуты на conversation (дедуп, не retry)
           let alertSent = false;
-          if (!phase1Lean && ai.classification === 'HOT' && repId) {
+          if (ai.classification === 'HOT' && repId) {
             const guardKey = `hot-alert:${convId}`;
             const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
             if (guard === 'OK') {

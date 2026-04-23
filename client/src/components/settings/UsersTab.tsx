@@ -5,6 +5,7 @@ import { Plus, Edit3, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { ConfirmDialog } from '../ConfirmDialog';
+import { PHASE1_LEAN } from '../../config/featureFlags';
 
 export default function UsersTab() {
   const [showCreate, setShowCreate] = useState(false);
@@ -273,7 +274,7 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
               </div>
             )}
           </div>
-          {/* HOT alerts: mobile phone + toggle */}
+          {/* HOT alerts: mobile phone + toggle (toggle скрыт в PHASE1_LEAN) */}
           <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 space-y-3">
             <p className="text-xs font-semibold text-orange-300">HOT Alerts (mobile SMS)</p>
             <div>
@@ -286,15 +287,17 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
                 placeholder="+1..."
               />
             </div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.hotAlertsEnabled}
-                onChange={(e) => setForm({ ...form, hotAlertsEnabled: e.target.checked })}
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm text-dark-200">Receive SMS for hot leads</span>
-            </label>
+            {!PHASE1_LEAN && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.hotAlertsEnabled}
+                  onChange={(e) => setForm({ ...form, hotAlertsEnabled: e.target.checked })}
+                  className="w-4 h-4 rounded"
+                />
+                <span className="text-sm text-dark-200">Receive SMS for hot leads</span>
+              </label>
+            )}
           </div>
           <div className="flex items-center justify-between pt-2">
             {isEdit && onDelete ? (

@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { Phone, Brain, Shield, Webhook, Eye, EyeOff, Save, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
+import { PHASE1_LEAN } from '../../config/featureFlags';
 
 const isMasked = (val: string) => typeof val === 'string' && val.startsWith('****');
 
@@ -214,146 +215,151 @@ export default function IntegrationsTab() {
         </div>
       </div>
 
-      {/* AI Provider (Anthropic / OpenAI) */}
-      <div className="card p-6 space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
-            <Brain className="w-5 h-5 text-green-400" />
+      {/* AI Provider (Anthropic / OpenAI) — скрыто в PHASE1_LEAN по директиве клиента 23.04 (defer в Phase 2) */}
+      {!PHASE1_LEAN && (
+        <div className="card p-6 space-y-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+              <Brain className="w-5 h-5 text-green-400" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-dark-100">AI Provider</h3>
+              <p className="text-xs text-dark-400">
+                Lead classification, AI suggestions, scoring. The active provider is used for all AI requests.
+              </p>
+            </div>
           </div>
+
+          {/* Provider switcher */}
           <div>
-            <h3 className="text-base font-semibold text-dark-100">AI Provider</h3>
-            <p className="text-xs text-dark-400">
-              Lead classification, AI suggestions, scoring. The active provider is used for all AI requests.
+            <label className="label">Provider</label>
+            <div className="flex items-center gap-2">
+              <select
+                className="input flex-1"
+                value={getVal('aiProvider', 'anthropic')}
+                onChange={(e) => handleChange('aiProvider', e.target.value)}
+              >
+                <option value="anthropic">Anthropic (Claude) — recommended</option>
+                <option value="openai">OpenAI (GPT)</option>
+              </select>
+              {dirty.has('aiProvider') && (
+                <button
+                  onClick={() => handleSave('aiProvider')}
+                  disabled={saveMutation.isPending}
+                  className="btn-primary py-2 px-3 text-xs"
+                >
+                  <Save className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-dark-400 mt-1">
+              Current: <span className="text-dark-200 font-mono">{getVal('aiProvider', 'anthropic')}</span>
             </p>
           </div>
-        </div>
 
-        {/* Provider switcher */}
-        <div>
-          <label className="label">Provider</label>
-          <div className="flex items-center gap-2">
-            <select
-              className="input flex-1"
-              value={getVal('aiProvider', 'anthropic')}
-              onChange={(e) => handleChange('aiProvider', e.target.value)}
-            >
-              <option value="anthropic">Anthropic (Claude) — recommended</option>
-              <option value="openai">OpenAI (GPT)</option>
-            </select>
-            {dirty.has('aiProvider') && (
-              <button
-                onClick={() => handleSave('aiProvider')}
-                disabled={saveMutation.isPending}
-                className="btn-primary py-2 px-3 text-xs"
-              >
-                <Save className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-          <p className="text-[11px] text-dark-400 mt-1">
-            Current: <span className="text-dark-200 font-mono">{getVal('aiProvider', 'anthropic')}</span>
-          </p>
-        </div>
-
-        {/* Anthropic block */}
-        {getVal('aiProvider', 'anthropic') === 'anthropic' && (
-          <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-orange-300">Anthropic Claude</span>
-              <span className="badge bg-orange-500/20 text-orange-400 text-[10px] uppercase tracking-wider">
-                Active
-              </span>
-            </div>
-            <IntegrationField
-              {...fieldProps}
-              label="Anthropic API Key"
-              settingKey="anthropicApiKey"
-              isSecret
-              showSecret={showAnthropicKey}
-              onToggle={() => setShowAnthropicKey(!showAnthropicKey)}
-            />
-            <div>
-              <label className="label">Claude Model</label>
+          {/* Anthropic block */}
+          {getVal('aiProvider', 'anthropic') === 'anthropic' && (
+            <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4 space-y-4">
               <div className="flex items-center gap-2">
-                <select
-                  className="input flex-1"
-                  value={getVal('anthropicModel', 'claude-sonnet-4-5')}
-                  onChange={(e) => handleChange('anthropicModel', e.target.value)}
-                >
-                  <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (recommended)</option>
-                  <option value="claude-opus-4-1">Claude Opus 4.1 (highest quality)</option>
-                  <option value="claude-haiku-4-5">Claude Haiku 4.5 (fast, cheap)</option>
-                </select>
-                {dirty.has('anthropicModel') && (
-                  <button
-                    onClick={() => handleSave('anthropicModel')}
-                    disabled={saveMutation.isPending}
-                    className="btn-primary py-2 px-3 text-xs"
+                <span className="text-sm font-medium text-orange-300">Anthropic Claude</span>
+                <span className="badge bg-orange-500/20 text-orange-400 text-[10px] uppercase tracking-wider">
+                  Active
+                </span>
+              </div>
+              <IntegrationField
+                {...fieldProps}
+                label="Anthropic API Key"
+                settingKey="anthropicApiKey"
+                isSecret
+                showSecret={showAnthropicKey}
+                onToggle={() => setShowAnthropicKey(!showAnthropicKey)}
+              />
+              <div>
+                <label className="label">Claude Model</label>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="input flex-1"
+                    value={getVal('anthropicModel', 'claude-sonnet-4-5')}
+                    onChange={(e) => handleChange('anthropicModel', e.target.value)}
                   >
-                    <Save className="w-3 h-3" />
-                  </button>
-                )}
+                    <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (recommended)</option>
+                    <option value="claude-opus-4-1">Claude Opus 4.1 (highest quality)</option>
+                    <option value="claude-haiku-4-5">Claude Haiku 4.5 (fast, cheap)</option>
+                  </select>
+                  {dirty.has('anthropicModel') && (
+                    <button
+                      onClick={() => handleSave('anthropicModel')}
+                      disabled={saveMutation.isPending}
+                      className="btn-primary py-2 px-3 text-xs"
+                    >
+                      <Save className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* OpenAI block */}
-        {getVal('aiProvider', 'anthropic') === 'openai' && (
-          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-green-300">OpenAI GPT</span>
-              <span className="badge bg-green-500/20 text-green-400 text-[10px] uppercase tracking-wider">Active</span>
-            </div>
-            <IntegrationField
-              {...fieldProps}
-              label="OpenAI API Key"
-              settingKey="openaiApiKey"
-              isSecret
-              showSecret={showOpenAIKey}
-              onToggle={() => setShowOpenAIKey(!showOpenAIKey)}
-            />
-            <div>
-              <label className="label">OpenAI Model</label>
+          {/* OpenAI block */}
+          {getVal('aiProvider', 'anthropic') === 'openai' && (
+            <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-4">
               <div className="flex items-center gap-2">
-                <select
-                  className="input flex-1"
-                  value={getVal('openaiModel', 'gpt-4.1-mini')}
-                  onChange={(e) => handleChange('openaiModel', e.target.value)}
-                >
-                  <option value="gpt-4.1-mini">GPT-4.1 Mini (recommended)</option>
-                  <option value="gpt-4.1">GPT-4.1 (balanced)</option>
-                  <option value="gpt-4.1-nano">GPT-4.1 Nano (fastest)</option>
-                  <option value="o3-mini">o3-mini (reasoning)</option>
-                  <option value="o4-mini">o4-mini (reasoning, latest)</option>
-                </select>
-                {dirty.has('openaiModel') && (
-                  <button
-                    onClick={() => handleSave('openaiModel')}
-                    disabled={saveMutation.isPending}
-                    className="btn-primary py-2 px-3 text-xs"
+                <span className="text-sm font-medium text-green-300">OpenAI GPT</span>
+                <span className="badge bg-green-500/20 text-green-400 text-[10px] uppercase tracking-wider">
+                  Active
+                </span>
+              </div>
+              <IntegrationField
+                {...fieldProps}
+                label="OpenAI API Key"
+                settingKey="openaiApiKey"
+                isSecret
+                showSecret={showOpenAIKey}
+                onToggle={() => setShowOpenAIKey(!showOpenAIKey)}
+              />
+              <div>
+                <label className="label">OpenAI Model</label>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="input flex-1"
+                    value={getVal('openaiModel', 'gpt-4.1-mini')}
+                    onChange={(e) => handleChange('openaiModel', e.target.value)}
                   >
-                    <Save className="w-3 h-3" />
-                  </button>
-                )}
+                    <option value="gpt-4.1-mini">GPT-4.1 Mini (recommended)</option>
+                    <option value="gpt-4.1">GPT-4.1 (balanced)</option>
+                    <option value="gpt-4.1-nano">GPT-4.1 Nano (fastest)</option>
+                    <option value="o3-mini">o3-mini (reasoning)</option>
+                    <option value="o4-mini">o4-mini (reasoning, latest)</option>
+                  </select>
+                  {dirty.has('openaiModel') && (
+                    <button
+                      onClick={() => handleSave('openaiModel')}
+                      disabled={saveMutation.isPending}
+                      className="btn-primary py-2 px-3 text-xs"
+                    >
+                      <Save className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Hot Alert From Number — shared across AI workflow */}
-        <div className="rounded-lg border border-dark-700/50 bg-dark-800/30 p-4 space-y-3">
-          <p className="text-xs font-semibold text-dark-200">HOT Alerts (mobile SMS notifications)</p>
-          <p className="text-[11px] text-dark-400">
-            Number used to send hot lead notifications to managers. If empty — the first active platform number is used.
-          </p>
-          <IntegrationField
-            {...fieldProps}
-            label="Hot Alert From Number (E.164, e.g. +13105551234)"
-            settingKey="hotAlertFromNumber"
-          />
+          {/* Hot Alert From Number — shared across AI workflow */}
+          <div className="rounded-lg border border-dark-700/50 bg-dark-800/30 p-4 space-y-3">
+            <p className="text-xs font-semibold text-dark-200">HOT Alerts (mobile SMS notifications)</p>
+            <p className="text-[11px] text-dark-400">
+              Number used to send hot lead notifications to managers. If empty — the first active platform number is
+              used.
+            </p>
+            <IntegrationField
+              {...fieldProps}
+              label="Hot Alert From Number (E.164, e.g. +13105551234)"
+              settingKey="hotAlertFromNumber"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Webhooks */}
       <div className="card p-6 space-y-6">

@@ -2,32 +2,37 @@
 
 > Источник: `AI-SMSRevised.pdf` · Прототип: `scl-inbox-v5.html`
 >
-> **🔄 Scope revision 23.04.2026 вечер** (сообщение клиента):
-> «True Phase 1 is classifier validation only. Out of scope for now: AI banner,
-> BEST/ALT suggestions, HOT toast, HOT SMS alerts, escalation, CA compliance,
-> right panel tabs, InboxCardAI full layer. All deferred to Phase 2.»
+> **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >
-> **Решение:** код всех Phase 2-фичей ОСТАВЛЯЕМ в репозитории,
-> временно скрываем за feature flag `PHASE1_LEAN=true` (по дефолту).
-> Включаем обратно в Phase 2 снятием флага без повторного кода.
+> **KEEP в Phase 1:**
 >
-> **Активный Phase 1 scope (lean):**
+> - classifyInbound (Claude Sonnet 4.5) + persist 6 AI-полей (forward-compat, без second migration)
+> - 5-signal lead score (детерминированный, без over-engineering)
+> - California detection (базовый area-code matching, без UI)
+> - Socket events `ai-classified` + `revenue_updated`
+> - CSV import fix (source = list name)
+> - Navigation updates (Dashboard → Command Center, Pipeline icon, Automation icon)
+> - **Basic HOT SMS alert** (one-time при classification=HOT, без escalation/retry/scheduling)
+> - **mobilePhone** поле в User profile (простое поле, без доп. UI)
+> - UI: только classification badge в thread header + revenue chip на inbox card + AI Priority sort
 >
-> - Backend: `classifyInbound()` Claude Sonnet 4.5 + revenue normalization + 5-signal score + persist 6 AI-полей + webhook non-blocking + AI Priority sort API
-> - Frontend: classification badge в thread header, revenue chip на inbox card, AI Priority option в sort dropdown
-> - Schema: все 6 AI-полей в Conversation (чтобы не делать вторую миграцию в Phase 2)
+> **DEFER в Phase 2:**
 >
-> **Гейтированные Phase 2 фичи (готовы, но выключены):**
+> - AI provider switcher (скрыт в Settings UI)
+> - hotAlertsEnabled toggle / advanced alert settings (скрыт в UsersTab)
+> - hotAlertFromNumber конфиг (скрыт в Settings UI; runtime fallback на env / первый ACTIVE PhoneNumber)
+> - AIBanner, AISuggestions (BEST/ALT), HOTToast + звук
+> - Socket emit `hot-lead-detected` (toast deferred)
+> - InboxCardAIChips (HOT badge + ask + urgency chips)
+> - InboxCardScoreBar
+> - BullMQ HOT escalation ladder, CA compliance UI, right panel AI tabs, phone verification
 >
-> - AIBanner в thread — скрыт в UI
-> - AISuggestions (BEST/ALT) — скрыты в UI
-> - HOTToast тосты + звук — не монтируются
-> - MobileAlertService HOT SMS — не вызывается (webhook early-return)
-> - Socket `hot-lead-detected` emit — пропускается
-> - InboxCardAIChips HOT badge + ask + urgency chips — скрыты
-> - InboxCardScoreBar — скрыт
+> **Реализация:** весь код Phase 2 остаётся в репозитории. Скрытие через
+> feature flag `PHASE1_LEAN=true` (default). Включаетсь снятием флага.
 >
-> Принцип: попиксельно по прототипу. Каждый чек ставим только после реальной проверки.
+> **Цель Phase 1:** validate AI output + rep behavior. Не строим full automation сейчас.
+>
+> Принцип: каждый чек ставим только после реальной проверки.
 
 ---
 
@@ -98,7 +103,7 @@
 - [x] `anthropicApiKey` в SENSITIVE_KEYS — маскируется в read responses
 - [x] TypeScript компилируется без ошибок
 
-### B3. Backend: mobileAlertService.ts ✅ CODE READY · выкл. в PHASE1_LEAN (Phase 2)
+### B3. Backend: mobileAlertService.ts ✅ АКТИВНО (basic HOT alert one-time)
 
 Файл: `server/src/services/mobileAlertService.ts`
 
@@ -193,7 +198,7 @@
 - [x] `SmsBar` встроен внутри Command Center (строки 1026 и 1209) — это и есть секция из удалённого Dashboard
 - [x] Метрики: Sent 24h · Delivered % · Reply rate 7d · Errors % · Active automations · Total leads
 
-### B13. Settings: AI Provider switcher + mobilePhone field ✅
+### B13. Settings: только mobilePhone field ✅ · AI provider switcher / hotAlertFromNumber / hotAlertsEnabled toggle — скрыты в PHASE1_LEAN (Phase 2)
 
 - [x] Settings → Integrations: переключатель `aiProvider` (Anthropic / OpenAI)
 - [x] Anthropic: API key (masked) + model select (claude-sonnet-4-5 / opus-4-1 / haiku-4-5)
@@ -211,19 +216,22 @@
 
 ### Активный Phase 1 (lean) — должны работать сейчас:
 
-- [x] **T1**: POST /api/ai/classify-inbound → `aiClassification` + `aiClassifiedAt` в БД за ~8с (Claude Sonnet 4.5) — проверено на 3 реальных conversations
+- [x] **T1**: POST /api/ai/classify-inbound → `aiClassification` + `aiClassifiedAt` в БД за ~8с (Claude Sonnet 4.5)
 - [x] **T2**: 6 AI-полей персистятся в conversations (включая aiSuggestions — задел под Phase 2 без second migration)
-- [x] **T3**: classification badge в thread header (`.inbox-strip-badge.ai-cls.hot/warm/nurture`) — добавлен в InboxPageV2
-- [x] **T6**: `$500K–$600K monthly revenue` → `revenueMonthly=550000`, `ask='$500k'`, cls=HOT, score=80 — проверено
-- [x] **T8**: csv_import fix в prod bundle (legacy + smart-mapping) — верифицируется при следующем импорте клиента
+- [x] **T3**: classification badge в thread header (`.inbox-strip-badge.ai-cls.hot/warm/nurture`)
+- [x] **T6**: `$500K–$600K monthly revenue` → `revenueMonthly=550000`, `ask='$500k'`, cls=HOT, score=80
+- [x] **T7**: HOT SMS alert (one-time при classification=HOT, dedupe 3мин Redis) — backend активен, ожидает заполнения `mobilePhone` хотя бы у одного rep
+- [x] **T8**: csv_import fix в prod bundle (legacy + smart-mapping)
 - [x] **AI Priority sort**: опция в dropdown + default; HOT наверх → score DESC → время DESC
 - [x] **Revenue chip on card**: InboxCardAIChips в lean-режиме показывает только `💰 revenue`
+- [x] **California detection**: area-code matching → `isCaliforniaNumber` в БД (UI скрыт)
 
 ### Phase 2 фичи (готовы, гейтированы PHASE1_LEAN=true):
 
 - [x] **T4**: BEST + ALT suggestions возвращаются API (suggestions.length=2, type=BEST/ALT) — backend готов, UI скрыт
 - [x] **T5**: AISuggestions вызывает `onUseSuggestion(text)` → compose (frontend wired, скрыт)
-- [ ] **T7**: HOT alert SMS — выключен в webhook (PHASE1_LEAN); проверяется в Phase 2 при заполненном `mobilePhone`
+- [x] **HOTToast UI** — компонент в репо, не монтируется; socket emit `hot-lead-detected` гейтирован
+- [x] **AI Provider switcher / hotAlertFromNumber / hotAlertsEnabled toggle** — скрыты в Settings/UsersTab
 
 ---
 

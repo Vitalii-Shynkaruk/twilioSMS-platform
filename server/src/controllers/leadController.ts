@@ -522,7 +522,10 @@ export class LeadController {
           record.firstName || record.first_name || record.FirstName || record.FIRST_NAME,
           'Unknown',
         );
-        const lastName = requiredLeadValue(record.lastName || record.last_name || record.LastName || record.LAST_NAME, '');
+        const lastName = requiredLeadValue(
+          record.lastName || record.last_name || record.LastName || record.LAST_NAME,
+          '',
+        );
 
         leadsToUpsert.push({
           phone: e164Phone,
@@ -531,7 +534,8 @@ export class LeadController {
           email: nullableLeadValue(record.email || record.Email || record.EMAIL),
           company: nullableLeadValue(record.company || record.Company || record.COMPANY),
           state: nullableLeadValue(record.state || record.State || record.STATE),
-          source: requiredLeadValue(record.source || record.Source, 'csv_import'),
+          // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
+          source: requiredLeadValue(record.source || record.Source, listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(record.notes || record.Notes || record.NOTE || record.COMMENTS, 4000),
         });
       }
@@ -754,7 +758,8 @@ export class LeadController {
           email: nullableLeadValue(mapping.email ? record[mapping.email] : ''),
           company: nullableLeadValue(mapping.company ? record[mapping.company] : ''),
           state: nullableLeadValue(combinedState),
-          source: requiredLeadValue(mapping.source ? record[mapping.source] : '', 'csv_import'),
+          // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
+          source: requiredLeadValue(mapping.source ? record[mapping.source] : '', listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(mapping.notes ? record[mapping.notes] : '', 4000),
         });
       }

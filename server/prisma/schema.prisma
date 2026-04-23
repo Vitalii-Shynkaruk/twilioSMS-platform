@@ -40,6 +40,10 @@ model User {
   annualGoal    Float     @default(0)
   avatarColor   String    @default("#1c2e4a")
 
+  // Phase 1 AI: HOT alert routing — rep mobile for SMS notifications when AI classifies HOT
+  mobilePhone        String?   // E.164 format, set by admin in Settings
+  hotAlertsEnabled   Boolean   @default(true)
+
   // Relations
   assignedLeads     Lead[]
   conversations     Conversation[]
@@ -293,6 +297,14 @@ model Conversation {
   leadStatus      String?   // "Interested" / "Not Interested" / "DNC"
   nextFollowupAt  DateTime? // Дата follow-up
   emailReceived   Boolean   @default(false)   // Помечен как "Email Rcv"
+
+  // Phase 1 AI Inbox: Anthropic classifyInbound() output — written on every inbound
+  aiClassification    String?   // "HOT" | "WARM" | "NURTURE" | "DEAD" | "WRONG_NUMBER"
+  aiSignals           Json?     // { revenue, revenueMonthly, revenueAnnual, revenueConfidence, ask, product, industry, urgency, objections }
+  aiSuggestions       Json?     // [{ type: "BEST"|"ALT", text, cta }]
+  isCaliforniaNumber  Boolean   @default(false)
+  aiLeadScore         Int       @default(0)   // 0-100, drives "AI Priority" sort
+  aiClassifiedAt      DateTime? // Timestamp last classification ran (for HOT timer)
   
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -315,6 +327,8 @@ model Conversation {
   @@index([hotLead])
   @@index([leadStatus])
   @@index([nextFollowupAt])
+  @@index([aiClassification])
+  @@index([aiLeadScore])
   @@map("conversations")
 }
 

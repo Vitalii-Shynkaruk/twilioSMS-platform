@@ -56,6 +56,13 @@ export class SettingsController {
     // OpenAI
     'openaiApiKey',
     'openaiModel',
+    // Anthropic (Phase 1 AI Inbox)
+    'anthropicApiKey',
+    'anthropicModel',
+    // AI provider switcher: "anthropic" | "openai"
+    'aiProvider',
+    // HOT alert "from" number for SMS notifications to rep mobiles
+    'hotAlertFromNumber',
     // Outbound webhooks
     'webhookUrl',
     'webhookSecret',
@@ -72,6 +79,7 @@ export class SettingsController {
     'twilioAuthToken',
     'twilioTestAuthToken',
     'openaiApiKey',
+    'anthropicApiKey',
     'webhookSecret',
   ]);
 

@@ -67,27 +67,27 @@ export default function UsersTab() {
                 {user.firstName?.[0]}
               </div>
               <div>
-                <p className="text-sm font-medium text-dark-200">{user.firstName} {user.lastName}</p>
+                <p className="text-sm font-medium text-dark-200">
+                  {user.firstName} {user.lastName}
+                </p>
                 <p className="text-xs text-dark-500">{user.email}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {!user.isActive && (
-                <span className="badge bg-red-500/20 text-red-300 text-[10px]">Disabled</span>
-              )}
-              <span className={clsx(
-                'badge text-[10px]',
-                user.role === 'ADMIN' ? 'bg-red-500/20 text-red-300' :
-                user.role === 'MANAGER' ? 'bg-yellow-500/20 text-yellow-300' :
-                'bg-blue-500/20 text-blue-300'
-              )}>
+              {!user.isActive && <span className="badge bg-red-500/20 text-red-300 text-[10px]">Disabled</span>}
+              <span
+                className={clsx(
+                  'badge text-[10px]',
+                  user.role === 'ADMIN'
+                    ? 'bg-red-500/20 text-red-300'
+                    : user.role === 'MANAGER'
+                      ? 'bg-yellow-500/20 text-yellow-300'
+                      : 'bg-blue-500/20 text-blue-300',
+                )}
+              >
                 {user.role}
               </span>
-              <button
-                onClick={() => setEditingUser(user)}
-                className="btn-ghost p-1.5 transition-opacity"
-                title="Edit"
-              >
+              <button onClick={() => setEditingUser(user)} className="btn-ghost p-1.5 transition-opacity" title="Edit">
                 <Edit3 className="w-3.5 h-3.5 text-dark-400" />
               </button>
               <button
@@ -110,13 +110,19 @@ export default function UsersTab() {
           className="bg-dark-800 border border-dark-600 rounded-lg shadow-xl py-1 min-w-[140px]"
         >
           <button
-            onClick={() => { setEditingUser(ctxMenu.user); setCtxMenu(null); }}
+            onClick={() => {
+              setEditingUser(ctxMenu.user);
+              setCtxMenu(null);
+            }}
             className="w-full text-left px-4 py-2 text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2"
           >
             <Edit3 className="w-3.5 h-3.5" /> Edit
           </button>
           <button
-            onClick={() => { setDeletingUser(ctxMenu.user); setCtxMenu(null); }}
+            onClick={() => {
+              setDeletingUser(ctxMenu.user);
+              setCtxMenu(null);
+            }}
             className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2"
           >
             <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -129,7 +135,10 @@ export default function UsersTab() {
         <UserFormModal
           user={editingUser}
           onClose={() => setEditingUser(null)}
-          onDelete={() => { setDeletingUser(editingUser); setEditingUser(null); }}
+          onDelete={() => {
+            setDeletingUser(editingUser);
+            setEditingUser(null);
+          }}
         />
       )}
 
@@ -155,13 +164,22 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
     password: '',
     role: user?.role || 'REP',
     isActive: user?.isActive ?? true,
+    mobilePhone: user?.mobilePhone || '',
+    hotAlertsEnabled: user?.hotAlertsEnabled ?? true,
   });
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: () => {
       if (isEdit) {
-        const payload: any = { firstName: form.firstName, lastName: form.lastName, role: form.role, isActive: form.isActive };
+        const payload: any = {
+          firstName: form.firstName,
+          lastName: form.lastName,
+          role: form.role,
+          isActive: form.isActive,
+          mobilePhone: form.mobilePhone,
+          hotAlertsEnabled: form.hotAlertsEnabled,
+        };
         if (form.password) payload.password = form.password;
         return api.put(`/auth/users/${user.id}`, payload);
       } else {
@@ -181,29 +199,56 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
       <div className="card w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-dark-50">{isEdit ? 'Edit User' : 'Add User'}</h3>
-          <button onClick={onClose} className="btn-ghost p-1"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="btn-ghost p-1">
+            <X className="w-5 h-5" />
+          </button>
         </div>
         <form
-          onSubmit={(e) => { e.preventDefault(); mutation.mutate(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            mutation.mutate();
+          }}
           className="space-y-4"
         >
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">First Name</label>
-              <input className="input" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required />
+              <input
+                className="input"
+                value={form.firstName}
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                required
+              />
             </div>
             <div>
               <label className="label">Last Name</label>
-              <input className="input" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+              <input
+                className="input"
+                value={form.lastName}
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+              />
             </div>
           </div>
           <div>
             <label className="label">Email</label>
-            <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required disabled={isEdit} />
+            <input
+              className="input"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              required
+              disabled={isEdit}
+            />
           </div>
           <div>
             <label className="label">{isEdit ? 'New Password (leave blank to keep)' : 'Password'}</label>
-            <input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} {...(!isEdit && { required: true, minLength: 6 })} />
+            <input
+              className="input"
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              {...(!isEdit && { required: true, minLength: 6 })}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -217,12 +262,39 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
             {isEdit && (
               <div>
                 <label className="label">Status</label>
-                <select className="input" value={form.isActive ? 'active' : 'disabled'} onChange={(e) => setForm({ ...form, isActive: e.target.value === 'active' })}>
+                <select
+                  className="input"
+                  value={form.isActive ? 'active' : 'disabled'}
+                  onChange={(e) => setForm({ ...form, isActive: e.target.value === 'active' })}
+                >
                   <option value="active">Active</option>
                   <option value="disabled">Disabled</option>
                 </select>
               </div>
             )}
+          </div>
+          {/* HOT-алерты: мобильный номер + включение */}
+          <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3 space-y-3">
+            <p className="text-xs font-semibold text-orange-300">HOT-алерты (мобильные SMS)</p>
+            <div>
+              <label className="label">Mobile Phone (E.164, напр. +13105551234)</label>
+              <input
+                className="input"
+                type="tel"
+                value={form.mobilePhone}
+                onChange={(e) => setForm({ ...form, mobilePhone: e.target.value })}
+                placeholder="+1..."
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.hotAlertsEnabled}
+                onChange={(e) => setForm({ ...form, hotAlertsEnabled: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm text-dark-200">Получать SMS о горячих лидах</span>
+            </label>
           </div>
           <div className="flex items-center justify-between pt-2">
             {isEdit && onDelete ? (
@@ -233,9 +305,13 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
               >
                 <Trash2 className="w-3.5 h-3.5" /> Delete User
               </button>
-            ) : <span />}
+            ) : (
+              <span />
+            )}
             <div className="flex gap-3">
-              <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+              <button type="button" onClick={onClose} className="btn-ghost">
+                Cancel
+              </button>
               <button type="submit" disabled={mutation.isPending} className="btn-primary">
                 {mutation.isPending ? 'Saving...' : isEdit ? 'Update User' : 'Create User'}
               </button>

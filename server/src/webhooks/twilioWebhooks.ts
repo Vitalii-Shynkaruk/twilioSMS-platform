@@ -5,6 +5,8 @@ import { ComplianceService } from '../services/complianceService';
 import { AutomationService } from '../services/automationService';
 import { AutoTagService } from '../services/autoTagService';
 import { WebhookService } from '../services/webhookService';
+import { AIService } from '../services/aiService';
+import { MobileAlertService } from '../services/mobileAlertService';
 import '../config/twilio';
 import { getLiveCredentials } from '../config/twilio';
 import { config } from '../config';
@@ -246,6 +248,102 @@ router.post('/inbound', async (req: Request, res: Response) => {
           from: From,
         });
       }
+
+      // ────────────────────────────────────────────────────────────────
+      //  Phase 1 AI Inbox — fire-and-forget classification (DO NOT BLOCK)
+      //  Никогда не бросаем, никогда не await'им в основном potoke —
+      //  весь webhook уже сделал core work (сохранил месседж, эмитнул socket).
+      // ────────────────────────────────────────────────────────────────
+      const convId = conversation.id;
+      const repId = conversation.assignedRepId;
+      const inboundBody = Body;
+
+      void (async () => {
+        try {
+          // Подгружаем имя лида прямо тут (в основном scope нет include lead)
+          const convForLead = await prisma.conversation.findUnique({
+            where: { id: convId },
+            select: { lead: { select: { firstName: true, lastName: true } } },
+          });
+          const leadFirst = convForLead?.lead?.firstName || '';
+          const leadLast = convForLead?.lead?.lastName || '';
+          const leadName = `${leadFirst} ${leadLast}`.trim() || 'Lead';
+
+          const ai = await AIService.classifyInbound(convId);
+          if (!ai) return;
+
+          // Rate limit HOT alerts: один в 3 минуты на conversation
+          let alertSent = false;
+          if (ai.classification === 'HOT' && repId) {
+            const guardKey = `hot-alert:${convId}`;
+            const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
+            if (guard === 'OK') {
+              alertSent = await MobileAlertService.sendHotAlert(repId, leadName, inboundBody);
+            } else {
+              logger.info('HOT-alert: rate-limited (3 min window)', { convId });
+            }
+          }
+
+          // Persist AI fields — update conversation row
+          await prisma.conversation.update({
+            where: { id: convId },
+            data: {
+              aiClassification: ai.classification,
+              aiSignals: ai.signals as object,
+              aiSuggestions: ai.suggestions as object,
+              isCaliforniaNumber: ai.isCaliforniaNumber,
+              aiLeadScore: ai.leadScore,
+              aiClassifiedAt: new Date(),
+            },
+          });
+
+          // Socket.io events for live UI (рядом с existing emit'ами)
+          if (io) {
+            const aiPayload = {
+              conversationId: convId,
+              classification: ai.classification,
+              leadScore: ai.leadScore,
+              signals: ai.signals,
+              suggestions: ai.suggestions,
+              isCaliforniaNumber: ai.isCaliforniaNumber,
+              alertSent,
+            };
+            if (repId) {
+              io.to(`inbox:${repId}`).emit('ai-classified', aiPayload);
+              if (ai.classification === 'HOT') {
+                io.to(`inbox:${repId}`).emit('hot-lead-detected', {
+                  ...aiPayload,
+                  leadName,
+                  preview: (inboundBody || '').slice(0, 120),
+                });
+              }
+            }
+            io.to(`conversation:${convId}`).emit('ai-classified', aiPayload);
+
+            const sig = ai.signals as Record<string, unknown> | null;
+            if (sig && typeof sig === 'object' && sig.revenueMonthly != null) {
+              io.to(`conversation:${convId}`).emit('revenue_updated', {
+                conversationId: convId,
+                revenue: sig.revenue,
+                revenueMonthly: sig.revenueMonthly,
+                revenueAnnual: sig.revenueAnnual,
+                revenueConfidence: sig.revenueConfidence,
+              });
+              if (repId) {
+                io.to(`inbox:${repId}`).emit('revenue_updated', {
+                  conversationId: convId,
+                  revenueMonthly: sig.revenueMonthly,
+                });
+              }
+            }
+          }
+        } catch (err) {
+          logger.error('AI classification pipeline failed', {
+            convId,
+            error: (err as Error).message,
+          });
+        }
+      })();
     } else {
       // Unknown number - try to infer lead metadata from existing client/deal by phone
       const matchedClient = await prisma.client.findFirst({

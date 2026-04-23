@@ -136,4 +136,62 @@ router.post(
   }),
 );
 
+/**
+ * POST /api/ai/classify-inbound
+ * Phase 1 AI Inbox: классифицирует последний inbound conversation'а через
+ * текущего AI-провайдера (Anthropic/OpenAI), сохраняет результат на Conversation
+ * и возвращает структурированный JSON для UI (banner + suggestions).
+ *
+ * Body: { conversationId: string }
+ */
+router.post(
+  '/classify-inbound',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { conversationId } = req.body;
+    if (!conversationId || typeof conversationId !== 'string') {
+      res.status(400).json({ error: 'conversationId required' });
+      return;
+    }
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true, assignedRepId: true },
+    });
+    if (!conv) {
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
+
+    // Access control: REP может работать только со своими conversation'ами
+    if (req.user?.role !== 'ADMIN' && req.user?.role !== 'MANAGER') {
+      if (conv.assignedRepId !== req.user?.id) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+    }
+
+    const result = await AIService.classifyInbound(conversationId);
+    if (!result) {
+      res.status(503).json({ error: 'AI not configured or classification failed' });
+      return;
+    }
+
+    // Сохраняем результат на Conversation для последующих refresh'ей UI
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        aiClassification: result.classification,
+        aiSignals: result.signals as object,
+        aiSuggestions: result.suggestions as object,
+        isCaliforniaNumber: result.isCaliforniaNumber,
+        aiLeadScore: result.leadScore,
+        aiClassifiedAt: new Date(),
+      },
+    });
+
+    res.json(result);
+  }),
+);
+
 export default router;

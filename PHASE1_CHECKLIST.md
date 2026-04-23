@@ -1,0 +1,224 @@
+# Phase 1 — AI SMS Inbox Build · Checklist
+
+> Источник: `AI-SMSRevised.pdf` · Прототип: `scl-inbox-v5.html` · Бюджет: $400 · Срок: 7 дней
+>
+> Принцип: попиксельно по прототипу. Каждый чек ставим только после реальной проверки.
+
+---
+
+## 🅰️ Work Stream A — Navigation Restructure (frontend only, ~2-4ч)
+
+### A1. Удаление Dashboard
+
+- [x] SMS метрики уже в Command Center (встроенный `SmsBar` с `sent24h/delivered24h/replyRate7d` — строки 1026, 1209)
+- [x] Удалён роут `/dashboard` из `App.tsx` (redirect на `/command-center`) + удалён lazy import
+- [x] Удалён пункт "Dashboard" из sidebar nav (`AppLayout.tsx`)
+- [ ] Файл `DashboardPage.tsx` оставлен на диске (tree-shaken из bundle, удалим после финального тестирования)
+
+### A2. Pipeline icon → 4-square grid
+
+- [x] `Kanban` → `LayoutGrid` из lucide-react (4 квадрата)
+  ```html
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <rect x="14" y="14" width="7" height="7" rx="1" />
+  </svg>
+  ```
+
+### A3. Automation icon → lightning bolt
+
+- [x] `Bot` → `Zap` из lucide-react (молния)
+  ```html
+  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  ```
+
+### A4. Nav Acceptance Tests (на проде https://app.sclcapital.io)
+
+- [x] **N1**: `/dashboard` → redirect на `/command-center`; нет в sidebar ✅
+- [x] **N2**: Command Center показывает SMS метрики (встроен изначально) ✅
+- [x] **N3**: Pipeline = `LayoutGrid`, Automation = `Zap` ✅
+
+**⚡ STREAM A DEPLOYED — 23 Apr 2026**
+
+---
+
+## 🅱️ Work Stream B — AI SMS Inbox (главная работа)
+
+### B1. Database schema migration (Prisma) ✅ DEPLOYED 23.04
+
+Файл: `server/prisma/schema.prisma`
+
+- [x] Добавить в `Conversation`: `aiClassification`, `aiSignals`, `aiSuggestions`, `isCaliforniaNumber`, `aiLeadScore`, `aiClassifiedAt` + индексы по `aiClassification` и `aiLeadScore`
+- [x] Добавить в `User`: `mobilePhone` (E.164), `hotAlertsEnabled` (default true)
+- [x] `npx prisma db push` на прод (workflow без migrations folder)
+- [x] `npx prisma generate` локально + на сервере
+- [x] Verified: колонки присутствуют в `conversations` и `users`
+- ⚠ Прод-side effect: `prisma db push` удалил 2 backup-таблицы от 15.04 (не были в schema.prisma)
+
+### B2. Backend: aiService.ts (Anthropic + provider switcher) ✅ CODE READY
+
+Файл: `server/src/services/aiService.ts`
+
+- [x] Установлен `@anthropic-ai/sdk` локально + на сервере
+- [x] **Provider switcher**: `aiProvider` setting (`anthropic` | `openai`) + отдельные ключи `anthropicApiKey` / `openaiApiKey` + выбор модели для каждого
+- [x] Дефолты: `claude-sonnet-4-5` / `gpt-4.1-mini`
+- [x] `callLLM()` — провайдер-агностичный low-level вызов
+- [x] `classifyInbound(conversationId)` — возвращает точный JSON schema
+- [x] `getSystemPrompt(isCA)` — Gap Selling, Patrick Bet-David tone, "Funding Link", CA branch
+- [x] CA detection по area code (43 кода)
+- [x] `computeLeadScore()` — детерминированная формула 0-100 (revenue 30 + ask 25 + urgency 20 + recency 15 + classification 10)
+- [x] Legacy методы (`generateDraftReply`, `classifyMessage`, `scoreLead`) работают через тот же callLLM (backward-compat)
+- [x] `anthropicApiKey` в SENSITIVE_KEYS — маскируется в read responses
+- [x] TypeScript компилируется без ошибок
+
+### B3. Backend: mobileAlertService.ts ✅ CODE READY
+
+Файл: `server/src/services/mobileAlertService.ts`
+
+- [x] `MobileAlertService.sendHotAlert(repId, leadName, messageBody)`
+- [x] Twilio SMS через `getActiveTwilioClient()` (респектит test/live mode)
+- [x] Формат: `HOT lead reply from {name}: '{first 60 chars}' — check SCL now`
+- [x] `from` номер: `hotAlertFromNumber` setting → env `TWILIO_FROM_NUMBER` → первый ACTIVE PhoneNumber
+- [x] Скип если нет mobilePhone или hotAlertsEnabled=false (без ошибок)
+- [ ] Rate limit (3 мин Redis) — добавлю после интеграции с webhook (избежать флуда)
+
+### B4. Backend: routes/ai.ts
+
+Файл: `server/src/routes/ai.ts`
+
+- [ ] Добавить `POST /api/ai/classify-inbound` принимающий `{ conversationId }`, возвращающий полный JSON
+
+### B5. Backend: twilioWebhooks.ts (DELTA — ~15 строк)
+
+Файл: `server/src/webhooks/twilioWebhooks.ts`
+
+- [ ] После compliance check вызвать `classifyInbound(conversationId)`
+- [ ] Сохранить результат на `Conversation` (5 полей)
+- [ ] Если classification=HOT → `mobileAlertService.sendHotAlert()`
+- [ ] Эмит Socket.io `hot-lead-detected` для toast
+- [ ] Эмит Socket.io `revenue_updated` если revenue извлечён
+- [ ] **ВАЖНО**: НЕ ломать существующий core handler
+
+### B6. Backend: csv_import bug fix
+
+Файл: `server/src/controllers/leadController.ts` (строки ~351 и ~570)
+
+- [ ] Заменить hardcoded `"csv_import"` на актуальное название кампании/листа
+- [ ] Запустить миграцию для существующих 22,797 leads (если требуется)
+
+### B7. Frontend: InboxPage.tsx (EXTEND)
+
+Файл: `client/src/pages/InboxPage.tsx`
+
+- [ ] Добавить опцию "AI Priority" в sort dropdown как **default**
+- [ ] Подписаться на Socket.io событие `hot-lead-detected` → показать HOTToast
+- [ ] Подписаться на `revenue_updated` → обновить signal chip на карточке
+- [ ] Reorder logic: при AI Priority сортировать по `aiLeadScore DESC`
+- [ ] **НЕ ЛОМАТЬ** существующие фильтры (All, Unread, Hot, Email, Interested, Follow-Up, In Pip)
+
+### B8. Frontend: AIBanner.tsx (NEW)
+
+Файл: `client/src/components/inbox/AIBanner.tsx`
+
+- [ ] Renders над message thread (после toolbar)
+- [ ] Скрыт если `aiClassification === null`
+- [ ] Classification badge (HOT=red, WARM=amber, NURTURE=blue)
+- [ ] Signal chips (revenue 💰, ask 🎯, urgency ⚡, product, industry)
+- [ ] Имя rep (`assignedRepId`)
+- [ ] Live countdown timer для HOT (count up since classification)
+- [ ] Цвета и стили **точно как в прототипе** (`.ai-banner.hot`, `.signal-chip` и т.д.)
+
+### B9. Frontend: InboxCardAI.tsx (NEW)
+
+Файл: `client/src/components/inbox/InboxCardAI.tsx`
+
+- [ ] Расширяет существующую inbox card
+- [ ] HOT badge (если classification=HOT)
+- [ ] Signal chips: revenue, ask, urgency
+- [ ] Score bar — тонкая полоса под карточкой:
+  - red >= 80
+  - amber 50-79
+  - grey < 50
+  - **число НЕ показывать!**
+- [ ] Revenue chip с `.rev-pop` анимацией при socket event
+
+### B10. Frontend: AISuggestions.tsx (NEW)
+
+Файл: `client/src/components/inbox/AISuggestions.tsx`
+
+- [ ] Renders под AI banner / над compose
+- [ ] Максимум 2 карточки (BEST + ALT, никогда 3)
+- [ ] BEST: gold accent border-left, gold badge "BEST"
+- [ ] ALT: hot/nurture accent
+- [ ] Click → `text` вставляется в compose box (не блокировать send)
+- [ ] CTA метка снизу (`→ SEND FUNDING LINK` etc.)
+
+### B11. Frontend: HOTToast.tsx (NEW)
+
+Файл: `client/src/components/inbox/HOTToast.tsx`
+
+- [ ] Красный toast в top-right
+- [ ] Срабатывает на Socket.io `hot-lead-detected`
+- [ ] 3-pulse Web Audio API звук: 600Hz → 800Hz → 1050Hz, интервал 170ms
+- [ ] Auto-dismiss через 8s + close button
+- [ ] Click → переход на conversation
+
+### B12. Frontend: CommandCenterPage.tsx (EXTEND)
+
+Файл: `client/src/pages/CommandCenterPage.tsx`
+
+- [ ] Добавить новую секцию "Campaign Metrics" внизу с метриками из удалённого Dashboard
+- [ ] SMS sent count / delivered / reply rate / failed
+
+### B13. Settings: AI Provider switcher + mobilePhone field ✅
+
+- [x] Settings → Integrations: переключатель `aiProvider` (Anthropic / OpenAI)
+- [x] Anthropic: API key (masked) + model select (claude-sonnet-4-5 / opus-4-1 / haiku-4-5)
+- [x] OpenAI: API key (masked) + model select (gpt-4.1-mini / 4.1 / nano / o3-mini / o4-mini)
+- [x] `hotAlertFromNumber` поле в том же блоке
+- [x] Backend: ALLOWED_KEYS добавлены `anthropicApiKey`, `anthropicModel`, `aiProvider`, `hotAlertFromNumber`; `anthropicApiKey` masked
+- [x] UsersTab: поля `mobilePhone` (E.164) + checkbox `hotAlertsEnabled` в форме создания/редактирования
+- [x] authController: register/updateUser принимают и сохраняют mobilePhone + hotAlertsEnabled; rep может править свои поля, ADMIN/MANAGER — любые
+- [x] Все настройки корректно сохраняются через PUT /settings/settings/:key и PUT /auth/users/:id
+- [ ] (Phone verification flow — DEFERRED)
+
+---
+
+## ✅ AI Acceptance Criteria — все 8 тестов на проде
+
+- [ ] **T1**: Test SMS с HOT signal → `aiClassification='HOT'` в БД за <5 сек
+- [ ] **T2**: Signal chips появляются на карточке inbox без refresh
+- [ ] **T3**: AI Banner показывает badge + signals + rep name + timer
+- [ ] **T4**: BEST + ALT карточки видимы, ссылаются на реальные signals
+- [ ] **T5**: Клик по BEST вставляет текст в compose, можно редактировать и отправить
+- [ ] **T6**: Lead отвечает "$90k a month" → revenue chip за <5с, `revenueMonthly=90000` в БД
+- [ ] **T7**: HOT alert SMS приходит на rep mobile <30 сек, с именем + 60 char preview
+- [ ] **T8**: Импорт CSV → новый lead показывает campaign name как Source (НЕ "csv_import")
+
+---
+
+## 🚀 Deployment
+
+- [ ] Backend build: `cd server && npm run build`
+- [ ] Backend deploy: `rsync -az --delete server/dist/ sclserver:/opt/sms-platform/server/dist/`
+- [ ] Frontend build: `cd client && npm run build`
+- [ ] Frontend deploy: `rsync -az --delete client/dist/ sclserver:/opt/sms-platform/client/dist/`
+- [ ] Migration на проде: `ssh sclserver "cd /opt/sms-platform/server && npx prisma migrate deploy"`
+- [ ] PM2 restart: `ssh sclserver "pm2 restart sms-api"`
+- [ ] Smoke test всех 11 тестов на app.sclcapital.io
+- [ ] Anthropic API key добавлен в Settings > Integrations
+
+---
+
+## ❌ Не входит в Phase 1 (deferred)
+
+- BullMQ HOT escalation ladder (2/10/30 min jobs, auto-reassign)
+- CA compliance bar UI
+- Right panel AI tabs (AI State, Mobile Alert tab)
+- Sound customization UI
+- Gmail / email integration
+- TEMPLATE_LOOP / DROPPED_BALL detection
+- Adaptive learning engine
+- Mobile number verification flow (only field input для Phase 1)

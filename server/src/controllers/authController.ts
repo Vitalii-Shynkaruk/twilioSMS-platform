@@ -77,7 +77,7 @@ export class AuthController {
   }
 
   static async register(req: AuthRequest, res: Response): Promise<void> {
-    const { email, password, firstName, lastName, role } = req.body;
+    const { email, password, firstName, lastName, role, mobilePhone, hotAlertsEnabled } = req.body;
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const requestId = req.requestId || '-';
 
@@ -126,6 +126,8 @@ export class AuthController {
         firstName,
         lastName,
         role: role || 'REP',
+        ...(mobilePhone !== undefined ? { mobilePhone: mobilePhone || null } : {}),
+        ...(hotAlertsEnabled !== undefined ? { hotAlertsEnabled: !!hotAlertsEnabled } : {}),
       },
     });
 
@@ -222,6 +224,8 @@ export class AuthController {
         lastName: true,
         role: true,
         isActive: true,
+        mobilePhone: true,
+        hotAlertsEnabled: true,
         lastLoginAt: true,
         createdAt: true,
       },
@@ -235,7 +239,7 @@ export class AuthController {
 
   static async updateUser(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const { firstName, lastName, role, isActive, password } = req.body;
+    const { firstName, lastName, role, isActive, password, mobilePhone, hotAlertsEnabled } = req.body;
     const requestId = req.requestId || '-';
 
     authLogger.info('User update attempt', {
@@ -251,6 +255,10 @@ export class AuthController {
     if (role && req.user?.role === 'ADMIN') data.role = role;
     if (isActive !== undefined && req.user?.role === 'ADMIN') data.isActive = isActive;
     if (password) data.passwordHash = await bcrypt.hash(password, 12);
+    // Поля для HOT-алертов: rep может править свои; ADMIN/MANAGER — любые
+    const canEditTarget = req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER' || req.user?.id === id;
+    if (mobilePhone !== undefined && canEditTarget) data.mobilePhone = mobilePhone || null;
+    if (hotAlertsEnabled !== undefined && canEditTarget) data.hotAlertsEnabled = !!hotAlertsEnabled;
 
     const user = await prisma.user.update({
       where: { id },
@@ -262,6 +270,8 @@ export class AuthController {
         lastName: true,
         role: true,
         isActive: true,
+        mobilePhone: true,
+        hotAlertsEnabled: true,
       },
     });
 

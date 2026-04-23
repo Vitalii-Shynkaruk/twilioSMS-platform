@@ -4,13 +4,12 @@ import { useWebSocketStore, useWebSocketQuerySync } from '../../stores/webSocket
 import { useQuery } from '@tanstack/react-query';
 import api from '../../services/api';
 import {
-  LayoutDashboard,
   Send,
   MessageSquare,
-  Kanban,
+  LayoutGrid,
   Users,
   Phone,
-  Bot,
+  Zap,
   Settings,
   LogOut,
   ChevronLeft,
@@ -34,8 +33,7 @@ const navGroups = [
     label: 'CORE',
     items: [
       { name: 'Command Center', href: '/command-center', icon: Target },
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { name: 'Pipeline', href: '/pipeline', icon: Kanban },
+      { name: 'Pipeline', href: '/pipeline', icon: LayoutGrid },
       { name: 'Leads', href: '/leads', icon: Users },
     ],
   },
@@ -44,7 +42,7 @@ const navGroups = [
     items: [
       { name: 'Campaigns', href: '/campaigns', icon: Send },
       { name: 'Inbox', href: '/inbox', icon: MessageSquare },
-      { name: 'Automation', href: '/automation', icon: Bot },
+      { name: 'Automation', href: '/automation', icon: Zap },
     ],
   },
   {
@@ -362,7 +360,10 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
         </NavLink>
 
         <div
-          className={clsx('relative flex items-center gap-3 px-3 py-2 rounded-lg', sidebarCollapsed && 'justify-center')}
+          className={clsx(
+            'relative flex items-center gap-3 px-3 py-2 rounded-lg',
+            sidebarCollapsed && 'justify-center',
+          )}
         >
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 cursor-pointer"
@@ -489,9 +490,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             <Search className="w-5 h-5" />
           </button>
         </div>
-        <div className="flex-1 min-h-0 overflow-auto">
-          {children || <Outlet />}
-        </div>
+        <div className="flex-1 min-h-0 overflow-auto">{children || <Outlet />}</div>
       </main>
 
       {/* Command Palette (Cmd+K) */}

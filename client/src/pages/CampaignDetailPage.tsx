@@ -46,7 +46,21 @@ interface CampaignDetail extends Campaign {
 }
 
 interface AnalyticsData {
-  campaign: Pick<Campaign, 'id' | 'name' | 'status' | 'totalLeads' | 'totalSent' | 'totalDelivered' | 'totalFailed' | 'totalBlocked' | 'totalReplied' | 'totalOptedOut' | 'startedAt' | 'completedAt'>;
+  campaign: Pick<
+    Campaign,
+    | 'id'
+    | 'name'
+    | 'status'
+    | 'totalLeads'
+    | 'totalSent'
+    | 'totalDelivered'
+    | 'totalFailed'
+    | 'totalBlocked'
+    | 'totalReplied'
+    | 'totalOptedOut'
+    | 'startedAt'
+    | 'completedAt'
+  >;
   leadStatuses: { status: string; count: number }[];
   deliveryRate: string;
   replyRate: string;
@@ -91,7 +105,8 @@ export default function CampaignDetailPage() {
     refetchInterval: 15000,
   });
   const outboundLocked = isRep && !!outboundGate?.blocked;
-  const outboundLockMsg = outboundGate?.message || `${outboundGate?.overdueTasks || 0} overdue tasks — clear to unlock SMS`;
+  const outboundLockMsg =
+    outboundGate?.message || `${outboundGate?.overdueTasks || 0} overdue tasks — clear to unlock SMS`;
 
   const startMutation = useMutation({
     mutationFn: () => api.post(`/campaigns/${id}/start`),
@@ -146,14 +161,16 @@ export default function CampaignDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-8 max-w-[1600px]">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px]">
         <div className="flex items-center gap-3 mb-8">
           <div className="h-6 w-24 bg-dark-700 rounded animate-pulse" />
           <div className="h-8 w-64 bg-dark-700 rounded animate-pulse" />
         </div>
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[...Array(8)].map((_, i) => (
-            <div key={i} className="card p-4"><div className="h-16 bg-dark-700 rounded animate-pulse" /></div>
+            <div key={i} className="card p-4">
+              <div className="h-16 bg-dark-700 rounded animate-pulse" />
+            </div>
           ))}
         </div>
       </div>
@@ -178,33 +195,25 @@ export default function CampaignDetailPage() {
   const progress = campaign.totalLeads > 0 ? (campaign.totalSent / campaign.totalLeads) * 100 : 0;
 
   return (
-    <div className="p-8 space-y-6 max-w-[1600px]">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-[1600px]">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/campaigns')}
-            className="btn-ghost p-2"
-          >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3 min-w-0">
+          <button onClick={() => navigate('/campaigns')} className="btn-ghost p-2" aria-label="Back to campaigns">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <div className="flex items-center gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold text-dark-50">{campaign.name}</h1>
               <CampaignStatusBadge status={campaign.status} />
             </div>
-            {campaign.description && (
-              <p className="text-sm text-dark-400 mt-1">{campaign.description}</p>
-            )}
+            {campaign.description && <p className="text-sm text-dark-400 mt-1">{campaign.description}</p>}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {['DRAFT', 'SCHEDULED'].includes(campaign.status) && (
-            <button
-              onClick={() => setShowEdit(true)}
-              className="btn-ghost flex items-center gap-2 text-sm"
-            >
+            <button onClick={() => setShowEdit(true)} className="btn-ghost flex items-center gap-2 text-sm">
               <Edit3 className="w-4 h-4" /> Edit
             </button>
           )}
@@ -235,7 +244,9 @@ export default function CampaignDetailPage() {
           )}
           {['SENDING', 'PAUSED', 'SCHEDULED'].includes(campaign.status) && (
             <button
-              onClick={() => { if (window.confirm('Cancel this campaign?')) cancelMutation.mutate(); }}
+              onClick={() => {
+                if (window.confirm('Cancel this campaign?')) cancelMutation.mutate();
+              }}
               className="btn-ghost text-red-400 hover:text-red-300 flex items-center gap-2 text-sm"
             >
               <XCircle className="w-4 h-4" /> Cancel
@@ -243,7 +254,9 @@ export default function CampaignDetailPage() {
           )}
           {['DRAFT', 'COMPLETED', 'CANCELLED'].includes(campaign.status) && (
             <button
-              onClick={() => { if (window.confirm('Delete this campaign permanently?')) deleteMutation.mutate(); }}
+              onClick={() => {
+                if (window.confirm('Delete this campaign permanently?')) deleteMutation.mutate();
+              }}
               className="btn-ghost text-red-400 hover:text-red-300 flex items-center gap-2 text-sm"
             >
               <Trash2 className="w-4 h-4" /> Delete
@@ -262,7 +275,9 @@ export default function CampaignDetailPage() {
         <div className="card p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-dark-300">Sending Progress</span>
-            <span className="text-sm font-mono text-dark-200">{campaign.totalSent} / {campaign.totalLeads}</span>
+            <span className="text-sm font-mono text-dark-200">
+              {campaign.totalSent} / {campaign.totalLeads}
+            </span>
           </div>
           <div className="w-full h-2 bg-dark-700 rounded-full overflow-hidden">
             <div
@@ -276,17 +291,53 @@ export default function CampaignDetailPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Total Leads" value={campaign.totalLeads.toLocaleString()} icon={<Users className="w-5 h-5" />} color="bg-scl-500/20 text-scl-400" />
-        <StatCard label="Sent" value={campaign.totalSent.toLocaleString()} icon={<Send className="w-5 h-5" />} color="bg-blue-500/20 text-blue-400" />
-        <StatCard label="Delivered" value={campaign.totalDelivered.toLocaleString()} icon={<CheckCircle className="w-5 h-5" />} color="bg-emerald-500/20 text-emerald-400" />
-        <StatCard label="Failed" value={campaign.totalFailed.toLocaleString()} icon={<AlertTriangle className="w-5 h-5" />} color="bg-red-500/20 text-red-400" />
-        <StatCard label="Blocked" value={campaign.totalBlocked.toLocaleString()} icon={<Ban className="w-5 h-5" />} color="bg-yellow-500/20 text-yellow-400" />
-        <StatCard label="Replied" value={campaign.totalReplied.toLocaleString()} icon={<MessageSquare className="w-5 h-5" />} color="bg-purple-500/20 text-purple-400" />
+        <StatCard
+          label="Total Leads"
+          value={campaign.totalLeads.toLocaleString()}
+          icon={<Users className="w-5 h-5" />}
+          color="bg-scl-500/20 text-scl-400"
+        />
+        <StatCard
+          label="Sent"
+          value={campaign.totalSent.toLocaleString()}
+          icon={<Send className="w-5 h-5" />}
+          color="bg-blue-500/20 text-blue-400"
+        />
+        <StatCard
+          label="Delivered"
+          value={campaign.totalDelivered.toLocaleString()}
+          icon={<CheckCircle className="w-5 h-5" />}
+          color="bg-emerald-500/20 text-emerald-400"
+        />
+        <StatCard
+          label="Failed"
+          value={campaign.totalFailed.toLocaleString()}
+          icon={<AlertTriangle className="w-5 h-5" />}
+          color="bg-red-500/20 text-red-400"
+        />
+        <StatCard
+          label="Blocked"
+          value={campaign.totalBlocked.toLocaleString()}
+          icon={<Ban className="w-5 h-5" />}
+          color="bg-yellow-500/20 text-yellow-400"
+        />
+        <StatCard
+          label="Replied"
+          value={campaign.totalReplied.toLocaleString()}
+          icon={<MessageSquare className="w-5 h-5" />}
+          color="bg-purple-500/20 text-purple-400"
+        />
         <StatCard
           label="Delivery Rate"
           value={`${deliveryRate}%`}
           icon={<TrendingUp className="w-5 h-5" />}
-          color={deliveryRate >= 80 ? 'bg-emerald-500/20 text-emerald-400' : deliveryRate >= 50 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'}
+          color={
+            deliveryRate >= 80
+              ? 'bg-emerald-500/20 text-emerald-400'
+              : deliveryRate >= 50
+                ? 'bg-yellow-500/20 text-yellow-400'
+                : 'bg-red-500/20 text-red-400'
+          }
         />
         <StatCard
           label="Reply Rate"
@@ -303,9 +354,15 @@ export default function CampaignDetailPage() {
           <h3 className="text-sm font-semibold text-dark-300 uppercase tracking-wider mb-4">Campaign Info</h3>
           <div className="space-y-3">
             <InfoRow label="Created" value={format(new Date(campaign.createdAt), 'MMM d, yyyy HH:mm')} />
-            {campaign.startedAt && <InfoRow label="Started" value={format(new Date(campaign.startedAt), 'MMM d, yyyy HH:mm')} />}
-            {campaign.completedAt && <InfoRow label="Completed" value={format(new Date(campaign.completedAt), 'MMM d, yyyy HH:mm')} />}
-            {campaign.scheduledAt && <InfoRow label="Scheduled" value={format(new Date(campaign.scheduledAt), 'MMM d, yyyy HH:mm')} />}
+            {campaign.startedAt && (
+              <InfoRow label="Started" value={format(new Date(campaign.startedAt), 'MMM d, yyyy HH:mm')} />
+            )}
+            {campaign.completedAt && (
+              <InfoRow label="Completed" value={format(new Date(campaign.completedAt), 'MMM d, yyyy HH:mm')} />
+            )}
+            {campaign.scheduledAt && (
+              <InfoRow label="Scheduled" value={format(new Date(campaign.scheduledAt), 'MMM d, yyyy HH:mm')} />
+            )}
             <InfoRow label="Sending Speed" value={`${campaign.sendingSpeed} / min`} />
             {campaign.numberPool && <InfoRow label="Number Pool" value={campaign.numberPool.name} />}
           </div>
@@ -328,7 +385,10 @@ export default function CampaignDetailPage() {
           <h3 className="text-sm font-semibold text-dark-300 uppercase tracking-wider mb-4">Lead Status Breakdown</h3>
           <div className="flex flex-wrap gap-3">
             {stats.leadStatuses.map((s) => (
-              <div key={s.status} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-800/50 border border-dark-700/50">
+              <div
+                key={s.status}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-800/50 border border-dark-700/50"
+              >
                 <LeadStatusDot status={s.status} />
                 <span className="text-sm text-dark-300">{s.status}</span>
                 <span className="text-sm font-bold text-dark-100">{s.count}</span>
@@ -342,51 +402,93 @@ export default function CampaignDetailPage() {
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-dark-800/50 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-dark-300 uppercase tracking-wider">
-            Campaign Leads ({campaign.leads?.length || 0}{campaign.totalLeads > 100 ? ` of ${campaign.totalLeads}` : ''})
+            Campaign Leads ({campaign.leads?.length || 0}
+            {campaign.totalLeads > 100 ? ` of ${campaign.totalLeads}` : ''})
           </h3>
         </div>
-        <table className="w-full">
-          <thead>
-            <tr>
-              <th className="table-header">Lead</th>
-              <th className="table-header">Phone</th>
-              <th className="table-header">Lead Status</th>
-              <th className="table-header">Send Status</th>
-              <th className="table-header">Sent At</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(!campaign.leads || campaign.leads.length === 0) && (
+        <div className="md:hidden divide-y divide-dark-800/30">
+          {(!campaign.leads || campaign.leads.length === 0) && (
+            <div className="p-8 text-center text-dark-500">
+              <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No leads attached to this campaign</p>
+            </div>
+          )}
+          {campaign.leads?.map((cl) => (
+            <div key={cl.id} className="p-4 space-y-3">
+              <div>
+                <p className="text-sm font-medium text-dark-200">
+                  {cl.lead.firstName} {cl.lead.lastName || ''}
+                </p>
+                <p className="mt-1 text-xs font-mono text-dark-400 break-all">{cl.lead.phone}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-dark-700/50 bg-dark-800/40 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wider text-dark-500">Lead Status</p>
+                  <div className="mt-1">
+                    <span className="badge bg-dark-700 text-dark-400 text-[10px]">{cl.lead.status}</span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-dark-700/50 bg-dark-800/40 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wider text-dark-500">Send Status</p>
+                  <div className="mt-1">
+                    <CampaignLeadStatusBadge status={cl.status} />
+                  </div>
+                </div>
+                <div className="rounded-lg border border-dark-700/50 bg-dark-800/40 px-3 py-2 col-span-2">
+                  <p className="text-[11px] uppercase tracking-wider text-dark-500">Sent At</p>
+                  <p className="mt-1 text-xs text-dark-400">
+                    {cl.sentAt ? format(new Date(cl.sentAt), 'MMM d, HH:mm') : '—'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full min-w-[680px]">
+            <thead>
               <tr>
-                <td colSpan={5} className="p-8 text-center text-dark-500">
-                  <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No leads attached to this campaign</p>
-                </td>
+                <th className="table-header">Lead</th>
+                <th className="table-header">Phone</th>
+                <th className="table-header">Lead Status</th>
+                <th className="table-header">Send Status</th>
+                <th className="table-header">Sent At</th>
               </tr>
-            )}
-            {campaign.leads?.map((cl) => (
-              <tr key={cl.id} className="border-b border-dark-800/30 hover:bg-dark-800/20 transition-colors">
-                <td className="table-td">
-                  <span className="text-sm text-dark-200">
-                    {cl.lead.firstName} {cl.lead.lastName || ''}
-                  </span>
-                </td>
-                <td className="table-td">
-                  <span className="text-sm text-dark-400 font-mono">{cl.lead.phone}</span>
-                </td>
-                <td className="table-td">
-                  <span className="badge bg-dark-700 text-dark-400 text-[10px]">{cl.lead.status}</span>
-                </td>
-                <td className="table-td">
-                  <CampaignLeadStatusBadge status={cl.status} />
-                </td>
-                <td className="table-td text-xs text-dark-500">
-                  {cl.sentAt ? format(new Date(cl.sentAt), 'MMM d, HH:mm') : '—'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {(!campaign.leads || campaign.leads.length === 0) && (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-dark-500">
+                    <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No leads attached to this campaign</p>
+                  </td>
+                </tr>
+              )}
+              {campaign.leads?.map((cl) => (
+                <tr key={cl.id} className="border-b border-dark-800/30 hover:bg-dark-800/20 transition-colors">
+                  <td className="table-td">
+                    <span className="text-sm text-dark-200">
+                      {cl.lead.firstName} {cl.lead.lastName || ''}
+                    </span>
+                  </td>
+                  <td className="table-td">
+                    <span className="text-sm text-dark-400 font-mono">{cl.lead.phone}</span>
+                  </td>
+                  <td className="table-td">
+                    <span className="badge bg-dark-700 text-dark-400 text-[10px]">{cl.lead.status}</span>
+                  </td>
+                  <td className="table-td">
+                    <CampaignLeadStatusBadge status={cl.status} />
+                  </td>
+                  <td className="table-td text-xs text-dark-500">
+                    {cl.sentAt ? format(new Date(cl.sentAt), 'MMM d, HH:mm') : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Edit Modal */}
@@ -404,12 +506,20 @@ export default function CampaignDetailPage() {
 
 /* ── Helper Components ─────────────────────────────────── */
 
-function StatCard({ label, value, icon, color }: { label: string; value: string; icon: React.ReactNode; color: string }) {
+function StatCard({
+  label,
+  value,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  color: string;
+}) {
   return (
     <div className="card p-4 flex items-center gap-3">
-      <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center', color)}>
-        {icon}
-      </div>
+      <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center', color)}>{icon}</div>
       <div>
         <p className="text-lg font-bold text-dark-100">{value}</p>
         <p className="text-[11px] text-dark-500 uppercase tracking-wider">{label}</p>
@@ -503,11 +613,22 @@ function EditCampaignModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">Name</label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input w-full" required />
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input w-full"
+              required
+            />
           </div>
           <div>
             <label className="label">Description</label>
-            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} className="input w-full" />
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="input w-full"
+            />
           </div>
           <div>
             <label className="label">Message Template</label>
@@ -520,7 +641,11 @@ function EditCampaignModal({
           </div>
           <div>
             <label className="label">Sending Speed</label>
-            <select value={sendingSpeed} onChange={(e) => setSendingSpeed(Number(e.target.value))} className="input w-full">
+            <select
+              value={sendingSpeed}
+              onChange={(e) => setSendingSpeed(Number(e.target.value))}
+              className="input w-full"
+            >
               <option value="30">30 / min (Slow)</option>
               <option value="60">60 / min (Normal)</option>
               <option value="120">120 / min (Fast)</option>
@@ -528,7 +653,9 @@ function EditCampaignModal({
             </select>
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
+            <button type="button" onClick={onClose} className="btn-ghost">
+              Cancel
+            </button>
             <button type="submit" disabled={isPending} className="btn-primary flex items-center gap-2">
               {isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Edit3 className="w-4 h-4" />}
               Save Changes

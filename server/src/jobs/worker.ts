@@ -242,6 +242,8 @@ async function processCampaignStart(campaignId: string, options: any): Promise<v
       // Prisma client type may lag behind schema in some environments.
       // Treat missing field as false to preserve default blast behavior.
       isRetarget: Boolean((campaign as any).isRetarget),
+      // Admins and managers can send to leads regardless of conversation ownership.
+      bypassOwnershipCheck: creator?.role === 'ADMIN' || creator?.role === 'MANAGER',
     });
 
     // If no messages were queued in this run, keep campaign state consistent.

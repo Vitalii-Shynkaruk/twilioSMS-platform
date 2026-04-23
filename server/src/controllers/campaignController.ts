@@ -132,9 +132,7 @@ export class CampaignController {
     );
 
     const repliedByCampaignStatusLeadIds = new Set(
-      sourceCampaignLeads
-        .filter((row) => row.status === 'REPLIED')
-        .map((row) => row.leadId),
+      sourceCampaignLeads.filter((row) => row.status === 'REPLIED').map((row) => row.leadId),
     );
 
     const outboundByLead = new Map<
@@ -725,9 +723,14 @@ export class CampaignController {
     let pendingCount = await prisma.campaignLead.count({
       where: { campaignId: id, status: 'PENDING' },
     });
-    if (pendingCount === 0 && ['PAUSED', 'COMPLETED'].includes(campaign.status)) {
+    const isRetargetCampaign = Boolean((campaign as any).isRetarget);
+
+    // Recovery logic: if no pending leads, try to recover SKIPPED leads back to PENDING.
+    // For DRAFT retarget campaigns: all leads may have been SKIPPED by the auto-start
+    // due to ownership guard — allow recovery regardless of prior message history.
+    if (pendingCount === 0 && ['DRAFT', 'PAUSED', 'COMPLETED'].includes(campaign.status)) {
       const hasUnsentGap = (campaign.totalSent || 0) < campaign._count.leads;
-      if (hasUnsentGap) {
+      if (hasUnsentGap || campaign.status === 'DRAFT') {
         const skippedCandidates = await prisma.campaignLead.findMany({
           where: {
             campaignId: id,
@@ -752,13 +755,21 @@ export class CampaignController {
           const leadIds = skippedCandidates.map((row) => row.leadId);
           const phones = skippedCandidates.map((row) => row.lead.phone);
 
+          // Also fetch the campaign creator role for admin bypass
+          const campaignCreator = await prisma.user.findUnique({
+            where: { id: campaign.createdById },
+            select: { role: true },
+          });
+          const isAdminOrManager = campaignCreator?.role === 'ADMIN' || campaignCreator?.role === 'MANAGER';
+
           const [existingConvos, suppressedEntries] = await Promise.all([
             prisma.conversation.findMany({
               where: { leadId: { in: leadIds } },
               select: {
                 leadId: true,
                 assignedRepId: true,
-                _count: { select: { messages: true } },
+                // Count only INBOUND (replies) to match sendingEngine logic.
+                _count: { select: { messages: { where: { direction: 'INBOUND' } } } },
               },
             }),
             prisma.suppressionEntry.findMany({
@@ -772,11 +783,27 @@ export class CampaignController {
           const recoverableIds = skippedCandidates
             .filter((row) => {
               const conversation = convoByLead.get(row.leadId);
-              const hasExistingThread = (conversation?._count?.messages || 0) > 0;
-              if (hasExistingThread) return false;
 
-              const effectiveOwnerId = conversation?.assignedRepId || row.lead.assignedRepId || null;
-              if (effectiveOwnerId && effectiveOwnerId !== campaign.createdById) return false;
+              // For regular campaigns: skip leads who have replied (have inbound messages).
+              // Leads that were only sent outbound messages (no reply) are recoverable.
+              // For retarget campaigns: these leads always have prior threads by design — allow recovery.
+              // Admins/managers can also bypass this check.
+              if (!isRetargetCampaign && !isAdminOrManager) {
+                const hasReplied = (conversation?._count?.messages || 0) > 0;
+                if (hasReplied) return false;
+              }
+
+              // Ownership check: only enforce if the lead has actually replied (has inbound messages).
+              // If a lead was only sent outbound messages and never replied, they are not "claimed"
+              // by any rep — any campaign can contact them again.
+              // Admins and managers bypass this entirely.
+              if (!isAdminOrManager) {
+                const hasReplied = (conversation?._count?.messages || 0) > 0; // _count is INBOUND-only
+                if (hasReplied) {
+                  const effectiveOwnerId = conversation?.assignedRepId || row.lead.assignedRepId || null;
+                  if (effectiveOwnerId && effectiveOwnerId !== campaign.createdById) return false;
+                }
+              }
 
               if (row.lead.optedOut || row.lead.isSuppressed || blockedPhones.has(row.lead.phone)) return false;
 
@@ -811,7 +838,12 @@ export class CampaignController {
       }
     }
     if (pendingCount === 0) {
-      throw new AppError('Campaign has no pending leads. All leads were already processed or filtered out.', 400);
+      throw new AppError(
+        'Campaign has no sendable leads. All leads were skipped — they may have already replied ' +
+          '(use Retarget to follow up with non-responders from the original campaign), ' +
+          'belong to another rep, or failed a compliance check.',
+        400,
+      );
     }
 
     let restrictToPhoneNumberIds: string[] | undefined;

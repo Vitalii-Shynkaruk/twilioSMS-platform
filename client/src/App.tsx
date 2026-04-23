@@ -9,7 +9,6 @@ import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 
 // Lazy-loaded pages for better initial bundle size
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage'));
 const CampaignDetailPage = lazy(() => import('./pages/CampaignDetailPage'));
 const InboxPage = lazy(() => import('./pages/InboxPageV2'));
@@ -89,7 +88,8 @@ export default function App() {
                       <Routes>
                         <Route path="/" element={<Navigate to="command-center" replace />} />
                         <Route path="command-center" element={<CommandCenterPage />} />
-                        <Route path="dashboard" element={<DashboardPage />} />
+                        {/* /dashboard route removed in Phase 1 — metrics merged into Command Center */}
+                        <Route path="dashboard" element={<Navigate to="/command-center" replace />} />
                         <Route path="campaigns" element={<CampaignsPage />} />
                         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
                         <Route path="inbox" element={<InboxPage />} />

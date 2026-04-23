@@ -89,6 +89,7 @@ export default function IntegrationsTab() {
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showTestToken, setShowTestToken] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
 
   const { data } = useQuery({
     queryKey: ['systemSettings'],
@@ -213,51 +214,145 @@ export default function IntegrationsTab() {
         </div>
       </div>
 
-      {/* OpenAI */}
+      {/* AI Provider (Anthropic / OpenAI) */}
       <div className="card p-6 space-y-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
             <Brain className="w-5 h-5 text-green-400" />
           </div>
           <div>
-            <h3 className="text-base font-semibold text-dark-100">OpenAI</h3>
-            <p className="text-xs text-dark-400">AI-powered replies, lead classification, scoring</p>
+            <h3 className="text-base font-semibold text-dark-100">AI Provider</h3>
+            <p className="text-xs text-dark-400">
+              Классификация лидов, AI-подсказки, скоринг. Активный провайдер используется для всех AI-запросов.
+            </p>
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-4">
-          <IntegrationField
-            {...fieldProps}
-            label="API Key"
-            settingKey="openaiApiKey"
-            isSecret
-            showSecret={showOpenAIKey}
-            onToggle={() => setShowOpenAIKey(!showOpenAIKey)}
-          />
-          <div>
-            <label className="label">Model</label>
-            <div className="flex items-center gap-2">
-              <select
-                className="input flex-1"
-                value={getVal('openaiModel', 'gpt-4.1-mini')}
-                onChange={(e) => handleChange('openaiModel', e.target.value)}
+
+        {/* Переключатель провайдера */}
+        <div>
+          <label className="label">Провайдер</label>
+          <div className="flex items-center gap-2">
+            <select
+              className="input flex-1"
+              value={getVal('aiProvider', 'anthropic')}
+              onChange={(e) => handleChange('aiProvider', e.target.value)}
+            >
+              <option value="anthropic">Anthropic (Claude) — рекомендуется</option>
+              <option value="openai">OpenAI (GPT)</option>
+            </select>
+            {dirty.has('aiProvider') && (
+              <button
+                onClick={() => handleSave('aiProvider')}
+                disabled={saveMutation.isPending}
+                className="btn-primary py-2 px-3 text-xs"
               >
-                <option value="gpt-4.1-mini">GPT-4.1 Mini (fast, cheap)</option>
-                <option value="gpt-4.1">GPT-4.1 (balanced)</option>
-                <option value="gpt-4.1-nano">GPT-4.1 Nano (fastest, cheapest)</option>
-                <option value="o3-mini">o3-mini (reasoning, compact)</option>
-                <option value="o4-mini">o4-mini (reasoning, latest)</option>
-              </select>
-              {dirty.has('openaiModel') && (
-                <button
-                  onClick={() => handleSave('openaiModel')}
-                  disabled={saveMutation.isPending}
-                  className="btn-primary py-2 px-3 text-xs"
+                <Save className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-dark-400 mt-1">
+            Текущий: <span className="text-dark-200 font-mono">{getVal('aiProvider', 'anthropic')}</span>
+          </p>
+        </div>
+
+        {/* Anthropic блок */}
+        {getVal('aiProvider', 'anthropic') === 'anthropic' && (
+          <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-orange-300">Anthropic Claude</span>
+              <span className="badge bg-orange-500/20 text-orange-400 text-[10px] uppercase tracking-wider">
+                Active
+              </span>
+            </div>
+            <IntegrationField
+              {...fieldProps}
+              label="Anthropic API Key"
+              settingKey="anthropicApiKey"
+              isSecret
+              showSecret={showAnthropicKey}
+              onToggle={() => setShowAnthropicKey(!showAnthropicKey)}
+            />
+            <div>
+              <label className="label">Модель Claude</label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="input flex-1"
+                  value={getVal('anthropicModel', 'claude-sonnet-4-5')}
+                  onChange={(e) => handleChange('anthropicModel', e.target.value)}
                 >
-                  <Save className="w-3 h-3" />
-                </button>
-              )}
+                  <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (рекомендуется)</option>
+                  <option value="claude-opus-4-1">Claude Opus 4.1 (максимум качества)</option>
+                  <option value="claude-haiku-4-5">Claude Haiku 4.5 (быстрый, дешёвый)</option>
+                </select>
+                {dirty.has('anthropicModel') && (
+                  <button
+                    onClick={() => handleSave('anthropicModel')}
+                    disabled={saveMutation.isPending}
+                    className="btn-primary py-2 px-3 text-xs"
+                  >
+                    <Save className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
+        )}
+
+        {/* OpenAI блок */}
+        {getVal('aiProvider', 'anthropic') === 'openai' && (
+          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-green-300">OpenAI GPT</span>
+              <span className="badge bg-green-500/20 text-green-400 text-[10px] uppercase tracking-wider">Active</span>
+            </div>
+            <IntegrationField
+              {...fieldProps}
+              label="OpenAI API Key"
+              settingKey="openaiApiKey"
+              isSecret
+              showSecret={showOpenAIKey}
+              onToggle={() => setShowOpenAIKey(!showOpenAIKey)}
+            />
+            <div>
+              <label className="label">Модель OpenAI</label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="input flex-1"
+                  value={getVal('openaiModel', 'gpt-4.1-mini')}
+                  onChange={(e) => handleChange('openaiModel', e.target.value)}
+                >
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini (рекомендуется)</option>
+                  <option value="gpt-4.1">GPT-4.1 (баланс)</option>
+                  <option value="gpt-4.1-nano">GPT-4.1 Nano (самый быстрый)</option>
+                  <option value="o3-mini">o3-mini (reasoning)</option>
+                  <option value="o4-mini">o4-mini (reasoning, latest)</option>
+                </select>
+                {dirty.has('openaiModel') && (
+                  <button
+                    onClick={() => handleSave('openaiModel')}
+                    disabled={saveMutation.isPending}
+                    className="btn-primary py-2 px-3 text-xs"
+                  >
+                    <Save className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Hot Alert From Number — общий для AI workflow */}
+        <div className="rounded-lg border border-dark-700/50 bg-dark-800/30 p-4 space-y-3">
+          <p className="text-xs font-semibold text-dark-200">HOT-алерты (мобильные SMS-уведомления)</p>
+          <p className="text-[11px] text-dark-400">
+            Номер, с которого менеджерам приходят уведомления о горячих лидах. Если пусто — берётся первый активный
+            номер платформы.
+          </p>
+          <IntegrationField
+            {...fieldProps}
+            label="Hot Alert From Number (E.164, например +13105551234)"
+            settingKey="hotAlertFromNumber"
+          />
         </div>
       </div>
 

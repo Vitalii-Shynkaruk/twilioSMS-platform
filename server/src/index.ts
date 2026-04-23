@@ -21,6 +21,7 @@ import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { setSocketIO } from './realtime/socket';
 
 // Import workers so they start with the server
 import './jobs/worker';
@@ -106,6 +107,7 @@ io.on('connection', (socket) => {
 
 // Make io accessible to routes
 app.set('io', io);
+setSocketIO(io);
 
 // Production safety checks
 function validateProductionConfig() {

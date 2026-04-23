@@ -72,6 +72,7 @@ interface BulkSendOptions {
   restrictToPhoneNumberIds?: string[];
   sendingSpeed?: number; // messages per minute
   isRetarget?: boolean;
+  bypassOwnershipCheck?: boolean;
 }
 
 export class SendingEngine {
@@ -248,13 +249,22 @@ export class SendingEngine {
     const [existingConvos, leadOwners] = await Promise.all([
       prisma.conversation.findMany({
         where: { leadId: { in: leadIds } },
-        select: { id: true, leadId: true, assignedRepId: true, _count: { select: { messages: true } } },
+        select: {
+          id: true,
+          leadId: true,
+          assignedRepId: true,
+          // Count only INBOUND (replies) — leads with only outbound messages
+          // (contacted but no reply) are still eligible for new campaign blasts.
+          _count: { select: { messages: { where: { direction: 'INBOUND' } } } },
+        },
       }),
       prisma.lead.findMany({
         where: { id: { in: leadIds } },
         select: { id: true, assignedRepId: true },
       }),
     ]);
+    // Only block leads who have actually replied (have at least one inbound message).
+    // Leads that were sent a message but never replied can be contacted again in a new campaign.
     const preExistingThreadLeadIds = new Set(
       existingConvos.filter((c) => (c._count?.messages || 0) > 0).map((c) => c.leadId),
     );
@@ -262,16 +272,46 @@ export class SendingEngine {
     const convoMap = new Map(existingConvos.map((c) => [c.leadId, c.id]));
     const leadOwnerById = new Map(leadOwners.map((lead) => [lead.id, lead.assignedRepId]));
 
-    // ── UPDATE existing conversations: assign rep if unassigned ──
-    if (options.sentByUserId && existingConvos.length > 0) {
-      const existingLeadIds = existingConvos.map((c) => c.leadId).filter(Boolean) as string[];
-      await prisma.conversation.updateMany({
-        where: {
-          leadId: { in: existingLeadIds },
-          assignedRepId: null,
-        },
-        data: { assignedRepId: options.sentByUserId },
-      });
+    // ── REASSIGN existing conversations to the sending rep ──
+    // When a REP sends a campaign to leads that were previously contacted by another rep
+    // (but never replied), the conversation and lead ownership transfers to the new sender.
+    // Leads that have already replied stay with their current owner (not touched here).
+    // ADMIN/MANAGER (bypassOwnershipCheck) sending on behalf of the team must NOT
+    // hijack conversations to themselves — leave existing ownership intact.
+    if (options.sentByUserId && options.campaignId && !options.bypassOwnershipCheck && existingConvos.length > 0) {
+      // Only reassign conversations where the lead never replied (inbound count = 0)
+      const nonRepliedLeadIds = existingConvos
+        .filter((c) => (c._count?.messages || 0) === 0)
+        .map((c) => c.leadId)
+        .filter(Boolean) as string[];
+
+      if (nonRepliedLeadIds.length > 0) {
+        await Promise.all([
+          // Reassign conversation to new sender
+          prisma.conversation.updateMany({
+            where: { leadId: { in: nonRepliedLeadIds } },
+            data: { assignedRepId: options.sentByUserId },
+          }),
+          // Reassign lead record to new sender
+          prisma.lead.updateMany({
+            where: { id: { in: nonRepliedLeadIds } },
+            data: { assignedRepId: options.sentByUserId },
+          }),
+        ]);
+      }
+
+      // For conversations with no assigned rep yet — assign regardless of reply status
+      const unassignedLeadIds = existingConvos
+        .filter((c) => !c.assignedRepId)
+        .map((c) => c.leadId)
+        .filter((id) => !nonRepliedLeadIds.includes(id as string)) as string[];
+
+      if (unassignedLeadIds.length > 0) {
+        await prisma.conversation.updateMany({
+          where: { leadId: { in: unassignedLeadIds } },
+          data: { assignedRepId: options.sentByUserId },
+        });
+      }
     }
 
     // ── PROCESS LEADS ──
@@ -331,15 +371,22 @@ export class SendingEngine {
         continue;
       }
 
-      // Ownership guard: do not let another rep text a lead already owned/engaged by someone else.
-      if (options.sentByUserId) {
-        const conversationOwnerId = convoMetaByLead.get(lead.leadId)?.assignedRepId || null;
-        const leadOwnerId = leadOwnerById.get(lead.leadId) || null;
-        const effectiveOwnerId = conversationOwnerId || leadOwnerId;
-        if (effectiveOwnerId && effectiveOwnerId !== options.sentByUserId) {
-          skipped++;
-          skippedLeadIds.push(lead.leadId);
-          continue;
+      // Ownership guard: do not text a lead that has actively engaged (replied) with another rep.
+      // A lead that was only sent outbound messages but never replied is not "claimed" —
+      // any rep can reach out to them in a campaign.
+      // Bypass entirely for admins/managers.
+      if (options.sentByUserId && !options.bypassOwnershipCheck) {
+        const convoMeta = convoMetaByLead.get(lead.leadId);
+        const hasReplied = (convoMeta?._count?.messages || 0) > 0; // _count already filtered to INBOUND
+        if (hasReplied) {
+          const conversationOwnerId = convoMeta?.assignedRepId || null;
+          const leadOwnerId = leadOwnerById.get(lead.leadId) || null;
+          const effectiveOwnerId = conversationOwnerId || leadOwnerId;
+          if (effectiveOwnerId && effectiveOwnerId !== options.sentByUserId) {
+            skipped++;
+            skippedLeadIds.push(lead.leadId);
+            continue;
+          }
         }
       }
 

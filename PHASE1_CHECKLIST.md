@@ -20,7 +20,7 @@
 - [ ] Использовать только `SCL-HandOff/classifier_prompt_v4_LOCKED.md` (prompt не редактировать)
 - [ ] Использовать схему строго по `SCL-HandOff/classification_schema.json` (без произвольных полей)
 - [ ] Классификатор работает по правилу full-thread peak (вся история, oldest -> newest)
-- [ ] Классификация только async через queue/worker; Twilio webhook не блокировать
+- [x] Классификация только async через queue/worker; Twilio webhook не блокировать
 - [ ] В классификацию не отправлять opted-out / outbound-only / zero-inbound треды
 - [ ] Версионирование prompt в settings + запись версии в результаты классификации
 - [ ] Backfill 642 запускать отдельным job off-hours + сохранить отчёт валидации
@@ -46,7 +46,7 @@
 
 ### M2 — Backend extensions
 
-- [ ] classifyInbound в Twilio webhook (async, non-blocking, после persistence)
+- [x] classifyInbound в Twilio webhook (async, non-blocking, после persistence)
 - [ ] Реклассификация по owner actions: Interested/Not Interested/DNC/Email Rcv/+Pipeline/Note
 - [ ] Universal note ingestion (admin/rep notes одинаково feed AI)
 - [ ] Новые данные в Conversation: `industry`, `heloc_fit_flag`, `extracted_revenue`, `extracted_ask`
@@ -108,6 +108,7 @@
 - [x] Added operational docs: `docs/RELEASE_ROLLBACK_SMOKE_CHECKLIST.md` and `docs/GITHUB_AS_TRUTH_POLICY.md`; linked to M1 requirements for rollback/smoke + GitHub-as-truth
 - [x] Production verification evidence captured from `https://app.sclcapital.io`: `GET /api/health` returned `Access-Control-Allow-Origin: https://app.sclcapital.io`, `Strict-Transport-Security` present, and cross-origin `OPTIONS /api/auth/login` did not allow untrusted origin
 - [x] Feature-wise commit created for M1 completion package: `11c5aa0` (`feat(m1): complete security hygiene and regression coverage`); post-commit validation: `server npm run build` + expanded regression suite (39/39 pass, 10 DB-dependent skipped)
+- [x] Refactored inbound AI pipeline to strict BullMQ flow: webhook only enqueues `inbound-ai-classification` after message persistence, processing moved to dedicated worker (non-blocking Twilio response); verified with `server npm run build` + expanded suite (39/39 pass, 10 DB-dependent skipped)
 >
 > **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >

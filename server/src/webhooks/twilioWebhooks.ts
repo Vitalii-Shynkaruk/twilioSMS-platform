@@ -20,8 +20,105 @@ import {
   shouldSkipTwilioSignatureValidation,
 } from './twilioSignatureValidation';
 import { phoneLookupVariants, splitContactName } from './inboundParsing';
+import { getSocketIO } from '../realtime/socket';
 
 const router = Router();
+
+interface InboundAiClassificationJob {
+  conversationId: string;
+  repId: string | null;
+  inboundBody: string;
+  fromNumber: string;
+}
+
+async function processInboundAiClassification(jobData: InboundAiClassificationJob): Promise<void> {
+  const { conversationId, repId, inboundBody, fromNumber } = jobData;
+
+  const convForLead = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { lead: { select: { firstName: true, lastName: true } } },
+  });
+  const leadFirst = convForLead?.lead?.firstName || '';
+  const leadLast = convForLead?.lead?.lastName || '';
+  const leadName = `${leadFirst} ${leadLast}`.trim() || 'Lead';
+
+  const ai = await AIService.classifyInbound(conversationId);
+  if (!ai) return;
+
+  const phase1Lean = (process.env.PHASE1_LEAN ?? 'true').toLowerCase() !== 'false';
+  let alertSent = false;
+  if (ai.classification === 'HOT' && repId) {
+    const guardKey = `hot-alert:${conversationId}`;
+    const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
+    if (guard === 'OK') {
+      alertSent = await MobileAlertService.sendHotAlert(repId, leadName, inboundBody);
+    } else {
+      logger.info('HOT-alert: rate-limited (3 min window)', { conversationId });
+    }
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: {
+      aiClassification: ai.classification,
+      aiSignals: ai.signals as object,
+      aiSuggestions: ai.suggestions as object,
+      isCaliforniaNumber: ai.isCaliforniaNumber,
+      aiLeadScore: ai.leadScore,
+      aiClassifiedAt: new Date(),
+    },
+  });
+
+  const io = getSocketIO();
+  if (!io) return;
+
+  const aiPayload = {
+    conversationId,
+    classification: ai.classification,
+    leadScore: ai.leadScore,
+    signals: ai.signals,
+    suggestions: ai.suggestions,
+    isCaliforniaNumber: ai.isCaliforniaNumber,
+    alertSent,
+  };
+
+  if (repId) {
+    io.to(`inbox:${repId}`).emit('ai-classified', aiPayload);
+    if (!phase1Lean && ai.classification === 'HOT') {
+      io.to(`inbox:${repId}`).emit('hot-lead-detected', {
+        ...aiPayload,
+        leadName,
+        preview: (inboundBody || '').slice(0, 120),
+      });
+    }
+  }
+  io.to(`conversation:${conversationId}`).emit('ai-classified', aiPayload);
+
+  const sig = ai.signals as Record<string, unknown> | null;
+  if (sig && typeof sig === 'object' && sig.revenueMonthly != null) {
+    io.to(`conversation:${conversationId}`).emit('revenue_updated', {
+      conversationId,
+      revenue: sig.revenue,
+      revenueMonthly: sig.revenueMonthly,
+      revenueAnnual: sig.revenueAnnual,
+      revenueConfidence: sig.revenueConfidence,
+    });
+    if (repId) {
+      io.to(`inbox:${repId}`).emit('revenue_updated', {
+        conversationId,
+        revenueMonthly: sig.revenueMonthly,
+      });
+    }
+  }
+
+  logger.info('AI classification processed via queue worker', {
+    conversationId,
+    repId,
+    fromNumber,
+    classification: ai.classification,
+    leadScore: ai.leadScore,
+  });
+}
 
 /**
  * Twilio webhook signature validation middleware
@@ -280,118 +377,30 @@ router.post('/inbound', async (req: Request, res: Response) => {
         });
       }
 
-      // ────────────────────────────────────────────────────────────────
-      //  Phase 1 AI Inbox — fire-and-forget classification (DO NOT BLOCK)
-      //  Никогда не бросаем, никогда не await'им в основном potoke —
-      //  весь webhook уже сделал core work (сохранил месседж, эмитнул socket).
-      // ────────────────────────────────────────────────────────────────
       if (!config.ai.classificationEnabled) {
         logger.info('AI classification skipped: AI_CLASSIFICATION_ENABLED is OFF', {
           conversationId: conversation.id,
         });
+      } else if (suppressRepOrTestNumber) {
+        logger.info('AI classification skipped for rep/test inbound number', {
+          from: From,
+          conversationId: conversation.id,
+        });
+      } else {
+        void inboundAiClassificationQueue
+          .add('classify-inbound', {
+            conversationId: conversation.id,
+            repId: conversation.assignedRepId || null,
+            inboundBody: Body,
+            fromNumber: From,
+          })
+          .catch((err) =>
+            logger.error('Failed to enqueue inbound AI classification', {
+              conversationId: conversation.id,
+              error: err.message,
+            }),
+          );
       }
-
-      const convId = conversation.id;
-      const repId = conversation.assignedRepId;
-      const inboundBody = Body;
-
-      if (config.ai.classificationEnabled)
-        void (async () => {
-        try {
-          if (suppressRepOrTestNumber) {
-            logger.info('AI classification skipped for rep/test inbound number', { from: From, conversationId: convId });
-            return;
-          }
-
-          // Подгружаем имя лида прямо тут (в основном scope нет include lead)
-          const convForLead = await prisma.conversation.findUnique({
-            where: { id: convId },
-            select: { lead: { select: { firstName: true, lastName: true } } },
-          });
-          const leadFirst = convForLead?.lead?.firstName || '';
-          const leadLast = convForLead?.lead?.lastName || '';
-          const leadName = `${leadFirst} ${leadLast}`.trim() || 'Lead';
-
-          const ai = await AIService.classifyInbound(convId);
-          if (!ai) return;
-
-          // Phase 1 LEAN mode (default true): «Lean» по решению клиента 23.04.
-          // В LEAN режиме остаётся one-time HOT SMS alert (без escalation/retry/scheduling),
-          // но отключается socket emit `hot-lead-detected` (HOTToast deferred в Phase 2).
-          const phase1Lean = (process.env.PHASE1_LEAN ?? 'true').toLowerCase() !== 'false';
-
-          // Rate limit HOT alerts: один в 3 минуты на conversation (дедуп, не retry)
-          let alertSent = false;
-          if (ai.classification === 'HOT' && repId) {
-            const guardKey = `hot-alert:${convId}`;
-            const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
-            if (guard === 'OK') {
-              alertSent = await MobileAlertService.sendHotAlert(repId, leadName, inboundBody);
-            } else {
-              logger.info('HOT-alert: rate-limited (3 min window)', { convId });
-            }
-          }
-
-          // Persist AI fields — update conversation row
-          await prisma.conversation.update({
-            where: { id: convId },
-            data: {
-              aiClassification: ai.classification,
-              aiSignals: ai.signals as object,
-              aiSuggestions: ai.suggestions as object,
-              isCaliforniaNumber: ai.isCaliforniaNumber,
-              aiLeadScore: ai.leadScore,
-              aiClassifiedAt: new Date(),
-            },
-          });
-
-          // Socket.io events for live UI (рядом с existing emit'ами)
-          if (io) {
-            const aiPayload = {
-              conversationId: convId,
-              classification: ai.classification,
-              leadScore: ai.leadScore,
-              signals: ai.signals,
-              suggestions: ai.suggestions,
-              isCaliforniaNumber: ai.isCaliforniaNumber,
-              alertSent,
-            };
-            if (repId) {
-              io.to(`inbox:${repId}`).emit('ai-classified', aiPayload);
-              if (!phase1Lean && ai.classification === 'HOT') {
-                io.to(`inbox:${repId}`).emit('hot-lead-detected', {
-                  ...aiPayload,
-                  leadName,
-                  preview: (inboundBody || '').slice(0, 120),
-                });
-              }
-            }
-            io.to(`conversation:${convId}`).emit('ai-classified', aiPayload);
-
-            const sig = ai.signals as Record<string, unknown> | null;
-            if (sig && typeof sig === 'object' && sig.revenueMonthly != null) {
-              io.to(`conversation:${convId}`).emit('revenue_updated', {
-                conversationId: convId,
-                revenue: sig.revenue,
-                revenueMonthly: sig.revenueMonthly,
-                revenueAnnual: sig.revenueAnnual,
-                revenueConfidence: sig.revenueConfidence,
-              });
-              if (repId) {
-                io.to(`inbox:${repId}`).emit('revenue_updated', {
-                  conversationId: convId,
-                  revenueMonthly: sig.revenueMonthly,
-                });
-              }
-            }
-          }
-        } catch (err) {
-          logger.error('AI classification pipeline failed', {
-            convId,
-            error: (err as Error).message,
-          });
-        }
-        })();
     } else {
       if (suppressRepOrTestNumber) {
         logger.warn('Inbound from rep/test number suppressed from lead creation', { from: From, to: To });
@@ -498,6 +507,16 @@ router.post('/inbound', async (req: Request, res: Response) => {
  * Status Callback Queue — process webhook asynchronously for instant Twilio response
  */
 const statusQueue = new Queue('webhook-status', {
+  connection: redis,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: { age: 3600, count: 5000 },
+    removeOnFail: { age: 86400 },
+  },
+});
+
+const inboundAiClassificationQueue = new Queue('inbound-ai-classification', {
   connection: redis,
   defaultJobOptions: {
     attempts: 3,
@@ -651,6 +670,23 @@ const statusWorker = new Worker(
 
 statusWorker.on('failed', (job, err) => {
   logger.error(`Status webhook processing failed: ${job?.id}`, { error: err.message });
+});
+
+const inboundAiClassificationWorker = new Worker(
+  'inbound-ai-classification',
+  async (job) => {
+    await processInboundAiClassification(job.data as InboundAiClassificationJob);
+  },
+  {
+    connection: redis,
+    concurrency: 5,
+  },
+);
+
+inboundAiClassificationWorker.on('failed', (job, err) => {
+  logger.error(`Inbound AI classification failed: ${job?.id}`, {
+    error: err.message,
+  });
 });
 
 export default router;

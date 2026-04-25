@@ -265,15 +265,14 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const cfg = await this.getConfig();
     if (!cfg) return null;
 
-    // Подгружаем контекст: лид + последние ~20 сообщений + sticky number area code
+    // Подгружаем контекст: лид + полный тред сообщений (oldest -> newest) + sticky number area code
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
         lead: true,
         stickyNumber: true,
         messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 20,
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
@@ -282,7 +281,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       return null;
     }
 
-    const messagesAsc = [...conv.messages].reverse();
+    const messagesAsc = conv.messages;
     const inboundMessages = messagesAsc.filter((m) => m.direction === 'INBOUND');
     const lastInbound = inboundMessages[inboundMessages.length - 1] || null;
 

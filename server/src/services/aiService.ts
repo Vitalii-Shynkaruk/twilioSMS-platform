@@ -31,6 +31,11 @@ interface ClassificationEligibilityInput {
   inboundMessagesCount: number;
 }
 
+export function resolveClassifierPromptVersion(rawValue: string | null | undefined): string {
+  const normalized = String(rawValue || '').trim();
+  return normalized || 'v4_locked';
+}
+
 export function getClassificationSkipReason(input: ClassificationEligibilityInput): string | null {
   const status = String(input.leadStatus || '').toUpperCase();
   if (input.leadOptedOut || status === 'DNC') {
@@ -71,6 +76,14 @@ export class AIService {
     const model = String(map[modelKey] || DEFAULT_MODELS[provider]);
 
     return { provider, apiKey, model };
+  }
+
+  private static async getClassifierPromptVersion(): Promise<string> {
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'classifierPromptVersion' },
+      select: { value: true },
+    });
+    return resolveClassifierPromptVersion(typeof setting?.value === 'string' ? setting.value : null);
   }
 
   /**
@@ -259,11 +272,13 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     conversationState: string | null;
     isCaliforniaNumber: boolean;
     leadScore: number;
+    promptVersion: string;
     signals: Record<string, unknown>;
     suggestions: { type: string; text: string; cta: string }[];
   } | null> {
     const cfg = await this.getConfig();
     if (!cfg) return null;
+    const promptVersion = await this.getClassifierPromptVersion();
 
     // Подгружаем контекст: лид + полный тред сообщений (oldest -> newest) + sticky number area code
     const conv = await prisma.conversation.findUnique({
@@ -444,6 +459,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       conversationId,
       provider: cfg.provider,
       model: cfg.model,
+      promptVersion,
       classification,
       leadScore,
       isCA,
@@ -457,6 +473,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
           : null,
       isCaliforniaNumber: isCA,
       leadScore,
+      promptVersion,
       signals,
       suggestions,
     };

@@ -45,6 +45,11 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
   const ai = await AIService.classifyInbound(conversationId);
   if (!ai) return;
 
+  const persistedSignals = {
+    ...(ai.signals as Record<string, unknown>),
+    classifierPromptVersion: ai.promptVersion,
+  };
+
   const phase1Lean = (process.env.PHASE1_LEAN ?? 'true').toLowerCase() !== 'false';
   let alertSent = false;
   if (ai.classification === 'HOT' && repId) {
@@ -61,7 +66,7 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
     where: { id: conversationId },
     data: {
       aiClassification: ai.classification,
-      aiSignals: ai.signals as object,
+      aiSignals: persistedSignals as object,
       aiSuggestions: ai.suggestions as object,
       isCaliforniaNumber: ai.isCaliforniaNumber,
       aiLeadScore: ai.leadScore,
@@ -78,6 +83,7 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
     leadScore: ai.leadScore,
     signals: ai.signals,
     suggestions: ai.suggestions,
+    promptVersion: ai.promptVersion,
     isCaliforniaNumber: ai.isCaliforniaNumber,
     alertSent,
   };

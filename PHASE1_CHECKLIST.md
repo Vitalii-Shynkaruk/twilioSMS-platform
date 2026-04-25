@@ -39,7 +39,7 @@
 
 - [x] `NODE_ENV=production` подтверждён на проде
 - [x] Очистить `/server` от debug scripts, `.bak`, `.new`
-- [ ] Все прод-изменения закоммитить в GitHub (feature-wise)
+- [x] Все прод-изменения закоммитить в GitHub (feature-wise)
 - [x] Добавить 5-10 регрессионных тестов: webhook auth, inbound persist, SMS send, CA compliance blocks
 - [x] Политика GitHub-as-truth: без прямых прод-правок
 - [x] Добавить тесты на guard-правила M1 (anti-`{{...}}`, anti-`test`, rep-number suppression)
@@ -107,6 +107,7 @@
 - [x] M1 cleanup: removed debug scripts from `server/scripts` (`check-twilio.js`, `enrich-demo-data.js`), leaving migration/maintenance scripts only
 - [x] Added operational docs: `docs/RELEASE_ROLLBACK_SMOKE_CHECKLIST.md` and `docs/GITHUB_AS_TRUTH_POLICY.md`; linked to M1 requirements for rollback/smoke + GitHub-as-truth
 - [x] Production verification evidence captured from `https://app.sclcapital.io`: `GET /api/health` returned `Access-Control-Allow-Origin: https://app.sclcapital.io`, `Strict-Transport-Security` present, and cross-origin `OPTIONS /api/auth/login` did not allow untrusted origin
+- [x] Feature-wise commit created for M1 completion package: `11c5aa0` (`feat(m1): complete security hygiene and regression coverage`); post-commit validation: `server npm run build` + expanded regression suite (39/39 pass, 10 DB-dependent skipped)
 >
 > **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >

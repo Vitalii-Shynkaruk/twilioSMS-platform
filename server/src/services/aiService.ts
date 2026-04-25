@@ -286,6 +286,18 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       include: {
         lead: true,
         stickyNumber: true,
+        notes: {
+          orderBy: { createdAt: 'asc' },
+        },
+        deals: {
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+          select: {
+            stage: true,
+            stageLabel: true,
+            createdAt: true,
+          },
+        },
         messages: {
           orderBy: { createdAt: 'asc' },
         },
@@ -363,13 +375,21 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
 
     const systemPrompt = this.getSystemPrompt(isCA);
 
+    const dealContext = conv.deals
+      .map((deal) => `${deal.stageLabel || deal.stage} (${new Date(deal.createdAt).toISOString()})`)
+      .join(' | ');
+    const notesContext = conv.notes.map((note) => `[NOTE] ${note.body}`);
+
     const userBlock = [
       `Lead: ${conv.lead?.firstName || ''} ${conv.lead?.lastName || ''}`.trim() || 'Unknown',
       conv.lead?.company ? `Business: ${conv.lead.company}` : null,
       conv.lead?.phone ? `Phone: ${conv.lead.phone} (area ${areaCode || 'n/a'})` : null,
+      `Owner state: leadStatus=${conv.leadStatus || 'none'}, emailReceived=${conv.emailReceived ? 'yes' : 'no'}, hotLead=${conv.hotLead ? 'yes' : 'no'}, nextFollowupAt=${conv.nextFollowupAt ? conv.nextFollowupAt.toISOString() : 'none'}`,
+      dealContext ? `Pipeline context: ${dealContext}` : null,
       '',
       'Conversation history (oldest → newest):',
       ...messagesAsc.map((m) => `[${m.direction}] ${m.body}`),
+      ...(notesContext.length > 0 ? ['', 'Owner notes (oldest → newest):', ...notesContext] : []),
       '',
       'Classify the lead based on the entire conversation. Generate exactly two reply suggestions.',
     ]

@@ -47,8 +47,8 @@
 ### M2 — Backend extensions
 
 - [x] classifyInbound в Twilio webhook (async, non-blocking, после persistence)
-- [ ] Реклассификация по owner actions: Interested/Not Interested/DNC/Email Rcv/+Pipeline/Note
-- [ ] Universal note ingestion (admin/rep notes одинаково feed AI)
+- [x] Реклассификация по owner actions: Interested/Not Interested/DNC/Email Rcv/+Pipeline/Note
+- [x] Universal note ingestion (admin/rep notes одинаково feed AI)
 - [ ] Новые данные в Conversation: `industry`, `heloc_fit_flag`, `extracted_revenue`, `extracted_ask`
 - [ ] Таблица `classification_feedback` (override/skip tracking)
 - [ ] Per-rep outbound tracking (foundation для Phase 2)
@@ -112,6 +112,8 @@
 - [x] Added AI classification eligibility guard in `AIService.classifyInbound`: skip DNC/optedOut leads and zero-inbound threads (`no_inbound_messages`), preventing opted-out/outbound-only contexts from classification; verified by `tests/aiClassificationEligibility.test.ts` + expanded suite (43/43 pass, 10 DB-dependent skipped) and `server npm run build`
 - [x] Enforced full-thread peak input in `AIService.classifyInbound`: removed message window limit (`take: 20`) and switched context to full conversation ordered oldest -> newest before LLM classification
 - [x] Added prompt versioning: `classifierPromptVersion` is read from `SystemSetting` (fallback `v4_locked`) and persisted into classification results (`conversation.aiSignals.classifierPromptVersion`) + emitted in `ai-classified` payload; verified with `tests/promptVersion.test.ts` and expanded suite
+- [x] Added owner-action reclassification flow in Inbox backend: non-blocking AI reclassification now triggers after status updates (`Interested`/`Not Interested`/`DNC`/`Email Rcv`/follow-up), note creation, and add-to-pipeline action; results persisted back to conversation AI fields and emitted via socket
+- [x] Implemented universal note ingestion for AI context: `AIService.classifyInbound` now includes full `conversation.notes` timeline (`Owner notes`) plus owner state and pipeline context during classification
 >
 > **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >

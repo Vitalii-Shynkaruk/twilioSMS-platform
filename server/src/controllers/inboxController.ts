@@ -1,11 +1,14 @@
 import { Response } from 'express';
 import prisma from '../config/database';
+import logger from '../config/logger';
+import { config } from '../config';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 import { OutboundGateService } from '../services/outboundGateService';
+import { AIService } from '../services/aiService';
 
 type InboxFilter =
   | 'all'
@@ -55,6 +58,67 @@ export class InboxController {
     'optout',
   ];
   private static readonly GENERIC_SOURCE_TOKENS = new Set(['csvimport', 'import', 'inbox', 'sms', 'smsinbox']);
+
+  private static triggerOwnerActionReclassification(
+    req: AuthRequest,
+    conversationId: string,
+    reason: 'status_update' | 'note_added' | 'pipeline_added',
+    repId: string | null,
+  ): void {
+    if (!config.ai.classificationEnabled) return;
+
+    void (async () => {
+      try {
+        const ai = await AIService.classifyInbound(conversationId);
+        if (!ai) return;
+
+        const persistedSignals = {
+          ...(ai.signals as Record<string, unknown>),
+          classifierPromptVersion: ai.promptVersion,
+          reclassificationReason: reason,
+          reclassifiedAt: new Date().toISOString(),
+          reclassifiedByUserId: req.user?.id || null,
+        };
+
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            aiClassification: ai.classification,
+            aiSignals: persistedSignals as object,
+            aiSuggestions: ai.suggestions as object,
+            isCaliforniaNumber: ai.isCaliforniaNumber,
+            aiLeadScore: ai.leadScore,
+            aiClassifiedAt: new Date(),
+          },
+        });
+
+        const io = (req.app as any).io;
+        if (io) {
+          const payload = {
+            conversationId,
+            classification: ai.classification,
+            leadScore: ai.leadScore,
+            signals: persistedSignals,
+            suggestions: ai.suggestions,
+            promptVersion: ai.promptVersion,
+            isCaliforniaNumber: ai.isCaliforniaNumber,
+            source: 'owner_action',
+            reason,
+          };
+          if (repId) {
+            io.to(`inbox:${repId}`).emit('ai-classified', payload);
+          }
+          io.to(`conversation:${conversationId}`).emit('ai-classified', payload);
+        }
+      } catch (error) {
+        logger.error('Owner-action AI reclassification failed', {
+          conversationId,
+          reason,
+          error: (error as Error).message,
+        });
+      }
+    })();
+  }
 
   private static resolveFilter(raw: unknown): InboxFilter {
     const normalized = String(raw || 'all').toLowerCase() as InboxFilter;
@@ -1477,6 +1541,13 @@ export class InboxController {
       }
     }
 
+    InboxController.triggerOwnerActionReclassification(
+      req,
+      id,
+      'status_update',
+      updated.assignedRepId || conversation.assignedRepId || null,
+    );
+
     res.json({ conversation: updated });
   }
 
@@ -1566,6 +1637,13 @@ export class InboxController {
     }
 
     const [note] = await prisma.$transaction(txOps);
+
+    InboxController.triggerOwnerActionReclassification(
+      req,
+      id,
+      'note_added',
+      conversation.assignedRepId || null,
+    );
 
     res.status(201).json({ note });
   }
@@ -2003,6 +2081,13 @@ export class InboxController {
         stageId: resolvedStageId,
       },
     });
+
+    InboxController.triggerOwnerActionReclassification(
+      req,
+      id,
+      'pipeline_added',
+      conversation.assignedRepId || null,
+    );
 
     res.status(201).json({ deal });
   }

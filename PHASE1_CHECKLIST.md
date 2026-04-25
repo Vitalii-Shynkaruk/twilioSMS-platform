@@ -21,7 +21,7 @@
 - [ ] Использовать схему строго по `SCL-HandOff/classification_schema.json` (без произвольных полей)
 - [ ] Классификатор работает по правилу full-thread peak (вся история, oldest -> newest)
 - [x] Классификация только async через queue/worker; Twilio webhook не блокировать
-- [ ] В классификацию не отправлять opted-out / outbound-only / zero-inbound треды
+- [x] В классификацию не отправлять opted-out / outbound-only / zero-inbound треды
 - [ ] Версионирование prompt в settings + запись версии в результаты классификации
 - [ ] Backfill 642 запускать отдельным job off-hours + сохранить отчёт валидации
 
@@ -109,6 +109,7 @@
 - [x] Production verification evidence captured from `https://app.sclcapital.io`: `GET /api/health` returned `Access-Control-Allow-Origin: https://app.sclcapital.io`, `Strict-Transport-Security` present, and cross-origin `OPTIONS /api/auth/login` did not allow untrusted origin
 - [x] Feature-wise commit created for M1 completion package: `11c5aa0` (`feat(m1): complete security hygiene and regression coverage`); post-commit validation: `server npm run build` + expanded regression suite (39/39 pass, 10 DB-dependent skipped)
 - [x] Refactored inbound AI pipeline to strict BullMQ flow: webhook only enqueues `inbound-ai-classification` after message persistence, processing moved to dedicated worker (non-blocking Twilio response); verified with `server npm run build` + expanded suite (39/39 pass, 10 DB-dependent skipped)
+- [x] Added AI classification eligibility guard in `AIService.classifyInbound`: skip DNC/optedOut leads and zero-inbound threads (`no_inbound_messages`), preventing opted-out/outbound-only contexts from classification; verified by `tests/aiClassificationEligibility.test.ts` + expanded suite (43/43 pass, 10 DB-dependent skipped) and `server npm run build`
 >
 > **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >

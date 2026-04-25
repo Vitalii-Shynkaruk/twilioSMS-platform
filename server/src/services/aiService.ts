@@ -25,6 +25,23 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
   openai: 'gpt-4.1-mini',
 };
 
+interface ClassificationEligibilityInput {
+  leadStatus?: string | null;
+  leadOptedOut?: boolean | null;
+  inboundMessagesCount: number;
+}
+
+export function getClassificationSkipReason(input: ClassificationEligibilityInput): string | null {
+  const status = String(input.leadStatus || '').toUpperCase();
+  if (input.leadOptedOut || status === 'DNC') {
+    return 'lead_opted_out_or_dnc';
+  }
+  if (input.inboundMessagesCount <= 0) {
+    return 'no_inbound_messages';
+  }
+  return null;
+}
+
 export class AIService {
   /**
    * Загружает активную AI-конфигурацию из SystemSetting.
@@ -266,7 +283,24 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     }
 
     const messagesAsc = [...conv.messages].reverse();
-    const lastInbound = messagesAsc.filter((m) => m.direction === 'INBOUND').pop();
+    const inboundMessages = messagesAsc.filter((m) => m.direction === 'INBOUND');
+    const lastInbound = inboundMessages[inboundMessages.length - 1] || null;
+
+    const skipReason = getClassificationSkipReason({
+      leadStatus: conv.lead?.status,
+      leadOptedOut: conv.lead?.optedOut,
+      inboundMessagesCount: inboundMessages.length,
+    });
+    if (skipReason) {
+      logger.info('AI: classifyInbound skipped by eligibility guard', {
+        conversationId,
+        skipReason,
+        leadStatus: conv.lead?.status,
+        leadOptedOut: conv.lead?.optedOut,
+        inboundMessagesCount: inboundMessages.length,
+      });
+      return null;
+    }
 
     // CA detection по area code lead.phone (best effort)
     const caAreaCodes = new Set([

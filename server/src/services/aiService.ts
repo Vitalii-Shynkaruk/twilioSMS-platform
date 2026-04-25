@@ -133,7 +133,14 @@ TONE: Direct, confident, Patrick Bet-David energy. Never soft, never overly form
 TERMINOLOGY: Never say "application" — always say "Funding Link."
 PRODUCTS: MCA, LOC (Line of Credit), SBA, Equipment financing, CRE, Bridge, HELOC, Invoice Factoring. Match the product to what the lead actually describes.
 REVENUE NORMALIZATION: annual ÷ 12 = monthly. Range → midpoint. Always store both monthly and annual as integers (no $ or commas).
-BEST SUGGESTION LOGIC: HOT + urgency = aggressive close. WARM + evaluating = consultative. Always exactly 2 suggestions: one BEST, one ALT. Never 3.${caBlock}
+BEST SUGGESTION LOGIC: HOT + urgency = aggressive close. WARM + evaluating = consultative. Always exactly 2 suggestions: one BEST, one ALT. Never 3.
+
+CLASSIFICATION RULES (apply strictly to the LATEST inbound message):
+- HOT — lead shares contact info (email address, alternate phone), explicitly says yes / interested / ready / send it / let's do it, asks for terms/Funding Link/docs/rate/amount, requests a call back, gives revenue numbers, names urgency (today / this week / ASAP / now / 30 days). ANY ONE of these = HOT. Sharing an email is the #1 buy-signal — always HOT.
+- WARM — engaged but exploring: "how does it work", "tell me more", asks general questions without committing, gives partial info.
+- NURTURE — polite but non-committal: "maybe later", "send info", "not right now but keep in touch".
+- DEAD — clear refusal: "no", "not interested", "stop contacting", swearing, hostile.
+- WRONG_NUMBER — "wrong number", "who is this", "don't know who you are", "I'm not [name]".${caBlock}
 
 Respond with ONLY a single valid JSON object matching this exact schema (no markdown, no commentary):
 {
@@ -344,9 +351,41 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     }
 
     const signals = parsed.signals || {};
-    const classification: string = ['HOT', 'WARM', 'NURTURE', 'DEAD', 'WRONG_NUMBER'].includes(parsed.classification)
+    let classification: string = ['HOT', 'WARM', 'NURTURE', 'DEAD', 'WRONG_NUMBER'].includes(parsed.classification)
       ? parsed.classification
       : 'NURTURE';
+
+    // Детерминированный override: явные buy-signals в последнем входящем → HOT.
+    // Защита от случаев, когда LLM недооценивает "контактный" ответ (email, телефон,
+    // короткое "yes / send it"). Email-share — самый сильный сигнал интента.
+    const lastInboundBody = (lastInbound?.body || '').trim();
+    if (lastInboundBody && classification !== 'DEAD' && classification !== 'WRONG_NUMBER') {
+      const lower = lastInboundBody.toLowerCase();
+      const hasEmail = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(lastInboundBody);
+      // "yes" / "yeah" / "yep" / "sure" / "ok" / "send it" / "sounds good" / "i'm in" / "lets do it"
+      const strongYes =
+        /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
+          lower,
+        );
+      const asksForTerms = /\b(rate|terms|amount|how much|funding link|application|details|info|paperwork|docs?)\b/.test(
+        lower,
+      );
+      const givesUrgency = /\b(today|asap|right now|this week|tomorrow|by (monday|tuesday|wednesday|thursday|friday)|need (it )?(now|soon))\b/.test(
+        lower,
+      );
+      const sharesAltPhone = /(?:^|\D)(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?:\D|$)/.test(
+        lastInboundBody,
+      );
+
+      if ((hasEmail || strongYes || asksForTerms || givesUrgency || sharesAltPhone) && classification !== 'HOT') {
+        logger.info('AI: classification upgraded to HOT by deterministic override', {
+          conversationId,
+          original: classification,
+          triggers: { hasEmail, strongYes, asksForTerms, givesUrgency, sharesAltPhone },
+        });
+        classification = 'HOT';
+      }
+    }
 
     // Локальный пересчёт scoring (стабильнее чем доверять LLM)
     const leadScore = this.computeLeadScore({

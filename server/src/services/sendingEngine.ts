@@ -4,6 +4,9 @@ import { config } from '../config';
 import logger from '../config/logger';
 import { NumberService } from './numberService';
 import { ComplianceService } from './complianceService';
+import { validateOutboundMessageBody } from './outboundMessageGuard';
+import { shouldSuppressRetargetForRecentInbound } from './retargetSuppression';
+import { buildTwilioStatusCallbackUrl } from './sendingUrlBuilder';
 import { Queue } from 'bullmq';
 import redis from '../config/redis';
 
@@ -115,6 +118,15 @@ export class SendingEngine {
    * Queue a single message for sending
    */
   static async queueMessage(options: SendMessageOptions): Promise<string> {
+    const guardCheck = validateOutboundMessageBody(options.body);
+    if (!guardCheck.allowed) {
+      logger.warn('Message blocked by outbound guard', {
+        toNumber: options.toNumber,
+        reason: guardCheck.reason,
+      });
+      throw new Error(`Cannot send: ${guardCheck.reason}`);
+    }
+
     // Compliance checks
     const complianceCheck = await ComplianceService.canSendTo(options.toNumber);
     if (!complianceCheck.allowed) {
@@ -260,7 +272,7 @@ export class SendingEngine {
       }),
       prisma.lead.findMany({
         where: { id: { in: leadIds } },
-        select: { id: true, assignedRepId: true },
+        select: { id: true, assignedRepId: true, lastRepliedAt: true },
       }),
     ]);
     // Only block leads who have actually replied (have at least one inbound message).
@@ -271,6 +283,7 @@ export class SendingEngine {
     const convoMetaByLead = new Map(existingConvos.map((c) => [c.leadId, c]));
     const convoMap = new Map(existingConvos.map((c) => [c.leadId, c.id]));
     const leadOwnerById = new Map(leadOwners.map((lead) => [lead.id, lead.assignedRepId]));
+    const leadLastReplyAtById = new Map(leadOwners.map((lead) => [lead.id, lead.lastRepliedAt]));
 
     // ── REASSIGN existing conversations to the sending rep ──
     // When a REP sends a campaign to leads that were previously contacted by another rep
@@ -371,6 +384,16 @@ export class SendingEngine {
         continue;
       }
 
+      if (options.campaignId && options.isRetarget) {
+        const lastRepliedAt = leadLastReplyAtById.get(lead.leadId);
+        if (shouldSuppressRetargetForRecentInbound(lastRepliedAt, new Date(), 7)) {
+          skipped++;
+          skippedLeadIds.push(lead.leadId);
+          errors.push(`Lead ${lead.leadId}: Retarget suppressed (inbound within last 7 days)`);
+          continue;
+        }
+      }
+
       // Ownership guard: do not text a lead that has actively engaged (replied) with another rep.
       // A lead that was only sent outbound messages but never replied is not "claimed" —
       // any rep can reach out to them in a campaign.
@@ -403,6 +426,14 @@ export class SendingEngine {
         company: lead.company || '',
         ...lead.customFields,
       });
+
+      const guardCheck = validateOutboundMessageBody(body);
+      if (!guardCheck.allowed) {
+        errors.push(`Lead ${lead.leadId}: ${guardCheck.reason}`);
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
+        continue;
+      }
 
       const fromNumber = await NumberService.getBestAvailableNumber(
         [],
@@ -607,7 +638,7 @@ export class SendingEngine {
         body,
         ...(messagingServiceSid ? { messagingServiceSid, from: fromNumber } : { from: fromNumber }),
         to: toNumber,
-        statusCallback: `${config.webhookBaseUrl}/api/webhooks/twilio/status`,
+        statusCallback: buildTwilioStatusCallbackUrl(config.webhookBaseUrl),
       });
 
       // Update with Twilio SID

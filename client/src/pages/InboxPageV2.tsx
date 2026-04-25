@@ -136,6 +136,8 @@ function MsgStatusText({ status }: { status: string }) {
 }
 
 export default function InboxPage() {
+  const { user } = useAuthStore();
+  const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
@@ -151,6 +153,7 @@ export default function InboxPage() {
 
   // Инициализируем campaign filter прямо из URL (ленивый initializer, без useEffect)
   const [campaignFilter, setCampaignFilter] = useState<string | null>(() => searchParams.get('campaign'));
+  const [inboxScope, setInboxScope] = useState<'admin' | 'mine'>(() => (isAdminOrManager ? 'admin' : 'mine'));
 
   // Обработка ?campaign=ID и ?lead=ID — очищаем URL после считывания
   useEffect(() => {
@@ -173,6 +176,12 @@ export default function InboxPage() {
         .catch(() => {});
     }
   }, [queryClient, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!isAdminOrManager && inboxScope !== 'mine') {
+      setInboxScope('mine');
+    }
+  }, [isAdminOrManager, inboxScope]);
 
   useEffect(() => {
     if (!socket || !selectedId) return;
@@ -211,7 +220,7 @@ export default function InboxPage() {
   const selectedSort = SORT_OPTIONS.find((option) => option.id === sort) || SORT_OPTIONS[0];
 
   const { data: convData, isLoading } = useQuery({
-    queryKey: ['inbox-conversations', debouncedSearch, filter, sort, page, campaignFilter],
+    queryKey: ['inbox-conversations', debouncedSearch, filter, sort, page, campaignFilter, inboxScope, isAdminOrManager],
     queryFn: async () => {
       const params: Record<string, string> = {
         page: String(page),
@@ -222,6 +231,7 @@ export default function InboxPage() {
       };
       if (debouncedSearch) params.search = debouncedSearch;
       if (campaignFilter) params.campaignId = campaignFilter;
+      if (isAdminOrManager) params.scope = inboxScope;
       const { data } = await inboxApi.listConversations(params);
       return data;
     },
@@ -242,6 +252,19 @@ export default function InboxPage() {
     });
   }, [conversations, sort]);
   const filterCounts = (convData?.filterCounts || {}) as Record<string, number>;
+  const summaryCounts = (convData?.summaryCounts || {
+    overdueFollowups: 0,
+    hotAiFlagged: 0,
+    newToday: 0,
+    unread: 0,
+    inPipelineQualified: 0,
+  }) as {
+    overdueFollowups: number;
+    hotAiFlagged: number;
+    newToday: number;
+    unread: number;
+    inPipelineQualified: number;
+  };
   const totalPages = convData?.pagination?.pages || 1;
 
   return (
@@ -252,7 +275,7 @@ export default function InboxPage() {
         {/* Campaign filter banner */}
         {campaignFilter && (
           <div className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 border-b border-purple-500/20 text-xs text-purple-300">
-            <span className="font-medium">📬 Showing replies from campaign</span>
+            <span className="font-medium">📬 All replies from this campaign (opt-outs included)</span>
             <button
               onClick={() => setCampaignFilter(null)}
               className="ml-auto text-purple-400 hover:text-purple-200 font-medium"
@@ -262,6 +285,60 @@ export default function InboxPage() {
           </div>
         )}
         <div className="inbox-left-header">
+          {isAdminOrManager && (
+            <div className="mb-2 flex items-center gap-2 px-2">
+              <span className="text-[11px] uppercase tracking-wide text-slate-400">View</span>
+              <button
+                className={clsx(
+                  'rounded-md border px-2 py-1 text-[11px] font-medium',
+                  inboxScope === 'admin'
+                    ? 'border-blue-400/40 bg-blue-500/15 text-blue-200'
+                    : 'border-slate-600 bg-slate-800 text-slate-300',
+                )}
+                onClick={() => {
+                  setInboxScope('admin');
+                  setPage(1);
+                }}
+              >
+                👁 Admin View
+              </button>
+              <button
+                className={clsx(
+                  'rounded-md border px-2 py-1 text-[11px] font-medium',
+                  inboxScope === 'mine'
+                    ? 'border-blue-400/40 bg-blue-500/15 text-blue-200'
+                    : 'border-slate-600 bg-slate-800 text-slate-300',
+                )}
+                onClick={() => {
+                  setInboxScope('mine');
+                  setPage(1);
+                }}
+              >
+                👤 My Convs
+              </button>
+            </div>
+          )}
+
+          {isAdminOrManager && (
+            <div className="mb-2 grid grid-cols-2 gap-1 px-2 text-[11px] md:grid-cols-5">
+              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
+                ⏰ Overdue <span className="font-semibold">{summaryCounts.overdueFollowups}</span>
+              </div>
+              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
+                🔥 HOT <span className="font-semibold">{summaryCounts.hotAiFlagged}</span>
+              </div>
+              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
+                💬 New today <span className="font-semibold">{summaryCounts.newToday}</span>
+              </div>
+              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
+                ✉ Unread <span className="font-semibold">{summaryCounts.unread}</span>
+              </div>
+              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
+                → In Pipeline <span className="font-semibold">{summaryCounts.inPipelineQualified}</span>
+              </div>
+            </div>
+          )}
+
           <div className="inbox-search">
             <Search className="inbox-search-icon" />
             <input
@@ -1193,7 +1270,7 @@ function RightSidebar({
   conversation: Conversation;
   activity: ConversationActivity[];
 }) {
-  const [tab, setTab] = useState<'contact' | 'activity'>('contact');
+  const [tab, setTab] = useState<'contact' | 'activity' | 'ai_state' | 'alerts'>('contact');
 
   return (
     <div className="inbox-right phase1">
@@ -1204,6 +1281,12 @@ function RightSidebar({
         <button className={clsx(tab === 'activity' && 'active')} onClick={() => setTab('activity')}>
           Activity
         </button>
+        <button className={clsx(tab === 'ai_state' && 'active')} onClick={() => setTab('ai_state')}>
+          AI State
+        </button>
+        <button className={clsx(tab === 'alerts' && 'active')} onClick={() => setTab('alerts')}>
+          Alerts
+        </button>
       </div>
 
       {tab === 'contact' && (
@@ -1213,6 +1296,65 @@ function RightSidebar({
         </>
       )}
       {tab === 'activity' && <ActivitySection activity={activity} />}
+      {tab === 'ai_state' && <AIStateSection conversation={conversation} />}
+      {tab === 'alerts' && <AlertsSection conversation={conversation} />}
+    </div>
+  );
+}
+
+function AIStateSection({ conversation }: { conversation: Conversation }) {
+  const signals = (conversation as any)?.aiSignals || {};
+  const rows: Array<{ key: string; value?: string | number | null }> = [
+    { key: 'Classification', value: conversation.aiClassification || '—' },
+    { key: 'Lead Score', value: conversation.aiLeadScore ?? '—' },
+    { key: 'Product', value: signals.product || '—' },
+    { key: 'Industry', value: signals.industry || '—' },
+    { key: 'Revenue', value: signals.revenue || '—' },
+    { key: 'Urgency', value: signals.urgency || '—' },
+    { key: 'Ask', value: signals.ask || '—' },
+    { key: 'Last Classified', value: conversation.aiClassifiedAt ? format(new Date(conversation.aiClassifiedAt), 'MMM d, h:mm a') : '—' },
+  ];
+
+  return (
+    <div className="inbox-sidebar-section contact-grid">
+      {rows.map((row) => (
+        <div key={row.key} className="inbox-contact-row">
+          <div className="inbox-contact-key">{row.key}</div>
+          <div className="inbox-contact-value">{String(row.value ?? '—')}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AlertsSection({ conversation }: { conversation: Conversation }) {
+  const nextFollow = conversation.nextFollowupAt ? new Date(conversation.nextFollowupAt) : null;
+  const isOverdue = !!nextFollow && nextFollow.getTime() < Date.now();
+
+  return (
+    <div className="inbox-sidebar-section">
+      <div className="inbox-activity-list">
+        <div className={clsx('inbox-activity-item', isOverdue && 'tone-warning')}>
+          <div className="inbox-activity-text">
+            {nextFollow
+              ? isOverdue
+                ? 'Follow-up overdue. Prioritize this conversation now.'
+                : 'Follow-up scheduled.'
+              : 'No follow-up alert set.'}
+          </div>
+          <div className="inbox-activity-time">
+            {nextFollow ? format(nextFollow, 'MMM d, h:mm a') : '—'}
+          </div>
+        </div>
+        <div className="inbox-activity-item">
+          <div className="inbox-activity-text">
+            {conversation.aiClassification === 'HOT'
+              ? 'HOT lead detected. Keep response time tight.'
+              : 'No HOT alert active for this thread.'}
+          </div>
+          <div className="inbox-activity-time">{conversation.aiClassification || '—'}</div>
+        </div>
+      </div>
     </div>
   );
 }

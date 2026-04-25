@@ -524,6 +524,7 @@ export class InboxController {
       sort,
       withFilterCounts = 'false',
       campaignId,
+      scope,
     } = req.query;
     const parsedPage = Math.max(parseInt(page as string, 10) || 1, 1);
     const parsedLimit = Math.min(Math.max(parseInt(limit as string, 10) || 50, 1), 100);
@@ -535,25 +536,40 @@ export class InboxController {
     // Rep can only see their conversations
     if (req.user?.role === 'REP') {
       baseWhere.assignedRepId = req.user.id;
+    } else if ((req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER') && String(scope || '') === 'mine') {
+      // Admin/Manager "My Convs" scope
+      baseWhere.assignedRepId = req.user.id;
     }
 
     const normalizedFilter = InboxController.resolveFilter(filter);
     const normalizedSort = InboxController.resolveSort(sort);
     const includeFilterCounts = withFilterCounts === 'true';
 
+    const hasCampaignFilter = !!(campaignId && String(campaignId).trim());
+
     const listConditions: any[] = [];
     if (unreadOnly === 'true') listConditions.push({ unreadCount: { gt: 0 } });
-    if (normalizedFilter !== 'dnc') {
-      listConditions.push(InboxController.excludeDncCondition());
+    // При deep-link по кампании — показываем ВСЕ replies, включая opt-out/DNC
+    // (user click'нул именно за этой кампанией, ожидает увидеть полный список ответов).
+    // DNC-метка показывается на UI как badge, но конверсация не скрывается.
+    if (!hasCampaignFilter) {
+      if (normalizedFilter !== 'dnc') {
+        listConditions.push(InboxController.excludeDncCondition());
+      }
+      listConditions.push(
+        normalizedFilter === 'dnc'
+          ? InboxController.inboundAnyCondition()
+          : InboxController.inboundNonOptOutCondition(),
+      );
+    } else {
+      // В режиме фильтра по кампании учитываем все входящие, без отсечения opt-out
+      listConditions.push(InboxController.inboundAnyCondition());
     }
-    listConditions.push(
-      normalizedFilter === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition(),
-    );
     const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter, req);
     if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
 
     // Фильтр по кампании — показать треды лидов, которые replied в конкретной кампании
-    if (campaignId && String(campaignId).trim()) {
+    if (hasCampaignFilter) {
       const campaignLeads = await prisma.campaignLead.findMany({
         where: {
           campaignId: String(campaignId),
@@ -596,7 +612,7 @@ export class InboxController {
       listConditions,
     );
 
-    const [conversations, total, filterCounts] = await Promise.all([
+    const [conversations, total, filterCounts, summaryCounts] = await Promise.all([
       prisma.conversation.findMany({
         where,
         skip,
@@ -702,6 +718,60 @@ export class InboxController {
             return Object.fromEntries(counts);
           })()
         : Promise.resolve(null),
+      includeFilterCounts
+        ? (async () => {
+            const now = new Date();
+            const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+            const baseWithSearch = {
+              ...baseWhere,
+              ...(baseAndFilters.length > 0 ? { AND: baseAndFilters } : {}),
+            };
+
+            const visibleWhere = InboxController.withConditions(baseWithSearch, [
+              InboxController.excludeDncCondition(),
+              InboxController.inboundNonOptOutCondition(),
+            ]);
+
+            const [overdueFollowups, hotAiFlagged, newToday, unread, inPipelineQualified] = await Promise.all([
+              prisma.conversation.count({
+                where: InboxController.withConditions(visibleWhere, [{ nextFollowupAt: { lt: now } }]),
+              }),
+              prisma.conversation.count({
+                where: InboxController.withConditions(visibleWhere, [{ aiClassification: 'HOT' }]),
+              }),
+              prisma.conversation.count({
+                where: InboxController.withConditions(visibleWhere, [
+                  { unreadCount: { gt: 0 } },
+                  { lastDirection: 'inbound' },
+                  { lastMessageAt: { gte: dayAgo } },
+                ]),
+              }),
+              prisma.conversation.count({
+                where: InboxController.withConditions(visibleWhere, [{ unreadCount: { gt: 0 } }]),
+              }),
+              prisma.conversation.count({
+                where: InboxController.withConditions(visibleWhere, [
+                  {
+                    deals: {
+                      some: {
+                        stage: 'QUALIFIED',
+                      },
+                    },
+                  },
+                ]),
+              }),
+            ]);
+
+            return {
+              overdueFollowups,
+              hotAiFlagged,
+              newToday,
+              unread,
+              inPipelineQualified,
+            };
+          })()
+        : Promise.resolve(null),
     ]);
     const enriched = await InboxController.enrichFromNumberFields(conversations, req.user || null);
 
@@ -716,6 +786,7 @@ export class InboxController {
       sort: normalizedSort,
       filter: normalizedFilter,
       ...(filterCounts ? { filterCounts } : {}),
+      ...(summaryCounts ? { summaryCounts } : {}),
     });
   }
 

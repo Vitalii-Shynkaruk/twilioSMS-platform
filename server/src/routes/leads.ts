@@ -19,8 +19,8 @@ router.post('/preview', requireRole('ADMIN', 'MANAGER', 'REP'), upload.single('f
 router.post('/import-mapped', requireRole('ADMIN', 'MANAGER', 'REP'), upload.single('file'), asyncHandler(LeadController.importMappedCSV));
 router.post('/bulk', requireRole('ADMIN', 'MANAGER', 'REP'), validate(bulkActionSchema), asyncHandler(LeadController.bulkAction));
 router.get('/:id', asyncHandler(LeadController.get));
-router.put('/:id', asyncHandler(LeadController.update));
-router.delete('/:id', requireRole('ADMIN', 'MANAGER'), asyncHandler(LeadController.delete));
+router.put('/:id', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(LeadController.update));
+router.delete('/:id', requireRole('ADMIN'), asyncHandler(LeadController.delete));
 router.post('/:id/tags', asyncHandler(LeadController.addTag));
 router.delete('/:id/tags/:tagId', asyncHandler(LeadController.removeTag));
 

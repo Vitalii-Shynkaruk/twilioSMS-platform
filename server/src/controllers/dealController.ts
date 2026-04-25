@@ -179,6 +179,36 @@ function repFilter(user: AuthRequest['user'], options?: { primaryOnly?: boolean 
   return repScopeFilter(user.id, !options?.primaryOnly);
 }
 
+function emitDealUpdatedScoped(
+  io: any,
+  payload: {
+    dealId: string;
+    stage: DealStage | string;
+    repId?: string | null;
+    assistingRepIds?: string[] | null;
+    actorUserId?: string | null;
+  },
+) {
+  if (!io) return;
+
+  const rooms = new Set<string>();
+  if (payload.repId) rooms.add(`inbox:${payload.repId}`);
+  if (Array.isArray(payload.assistingRepIds)) {
+    for (const repId of payload.assistingRepIds) {
+      if (repId) rooms.add(`inbox:${repId}`);
+    }
+  }
+  if (payload.actorUserId) rooms.add(`inbox:${payload.actorUserId}`);
+
+  for (const room of rooms) {
+    io.to(room).emit('deal:updated', {
+      dealId: payload.dealId,
+      stage: payload.stage,
+      repId: payload.repId || null,
+    });
+  }
+}
+
 // Helper: compute HOT status (never stored)
 function computeIsHot(deal: {
   lastReplyAt: Date | null;
@@ -563,7 +593,13 @@ export class DealController {
 
     // Emit real-time update
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: deal.id, stage: deal.stage });
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.status(201).json(deal);
   }
@@ -950,7 +986,13 @@ export class DealController {
     }
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: deal.id, stage: deal.stage, repId: deal.assignedRepId });
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.json({ ...deal, isHot: computeIsHot(deal), stageLabel: STAGE_LABELS[deal.stage] });
   }
@@ -1126,7 +1168,13 @@ export class DealController {
     }
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: deal.id, stage: deal.stage, repId: deal.assignedRepId });
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.json({ ...deal, isHot: computeIsHot(deal), stageLabel: STAGE_LABELS[deal.stage] });
   }
@@ -1244,7 +1292,13 @@ export class DealController {
     await prisma.deal.update({ where: { id }, data: updateData });
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: id, stage: updateData.stage || deal.stage, repId: deal.assignedRepId });
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: updateData.stage || deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.status(201).json(offer);
   }
@@ -1307,7 +1361,13 @@ export class DealController {
     });
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: id, stage: deal.stage, repId: deal.assignedRepId });
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.json({ deleted: true, offerId, remainingOffers: remainingCount });
   }
@@ -1423,7 +1483,13 @@ export class DealController {
     });
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: id, stage: DealStage.FUNDED, repId: deal.assignedRepId });
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: DealStage.FUNDED,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.json({ fundingEvent, message: 'Deal marked as funded, 3 renewal tasks created' });
   }
@@ -1469,7 +1535,13 @@ export class DealController {
     });
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: id, stage: deal.stage, repId: deal.assignedRepId });
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.json(updated);
   }
@@ -1567,7 +1639,13 @@ export class DealController {
     });
 
     const io = (req.app as any).io;
-    if (io) io.emit('deal:updated', { dealId: id, stage: deal.stage });
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
 
     res.json(updated);
   }

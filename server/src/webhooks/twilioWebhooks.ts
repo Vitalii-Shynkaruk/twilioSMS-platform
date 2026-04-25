@@ -7,47 +7,21 @@ import { AutoTagService } from '../services/autoTagService';
 import { WebhookService } from '../services/webhookService';
 import { AIService } from '../services/aiService';
 import { MobileAlertService } from '../services/mobileAlertService';
+import { isRepOrTestPhoneNumber, parseRepTestPhoneAllowlist } from '../services/inboundPhoneSuppression';
 import '../config/twilio';
 import { getLiveCredentials } from '../config/twilio';
 import { config } from '../config';
-import { validateRequest } from 'twilio';
 import { Queue, Worker } from 'bullmq';
 import redis from '../config/redis';
+import {
+  buildTwilioValidationUrl,
+  getTwilioSignatureHeader,
+  isTwilioSignatureValid,
+  shouldSkipTwilioSignatureValidation,
+} from './twilioSignatureValidation';
+import { phoneLookupVariants, splitContactName } from './inboundParsing';
 
 const router = Router();
-
-function phoneDigits(raw?: string | null): string {
-  return String(raw || '').replace(/\D/g, '');
-}
-
-function phoneLookupVariants(raw?: string | null): string[] {
-  const digits = phoneDigits(raw);
-  if (!digits) return [];
-
-  const variants = new Set<string>();
-  variants.add(digits);
-  variants.add(`+${digits}`);
-
-  if (digits.length === 10) {
-    variants.add(`1${digits}`);
-    variants.add(`+1${digits}`);
-  }
-
-  if (digits.length === 11 && digits.startsWith('1')) {
-    const local = digits.slice(1);
-    variants.add(local);
-    variants.add(`+1${local}`);
-  }
-
-  return Array.from(variants);
-}
-
-function splitContactName(fullName?: string | null): { firstName: string; lastName: string } {
-  const normalized = String(fullName || '').trim();
-  if (!normalized) return { firstName: '', lastName: '' };
-  const [firstName, ...rest] = normalized.split(/\s+/);
-  return { firstName: firstName || '', lastName: rest.join(' ').trim() };
-}
 
 /**
  * Twilio webhook signature validation middleware
@@ -57,11 +31,11 @@ function splitContactName(fullName?: string | null): { firstName: string; lastNa
  */
 async function validateTwilioSignature(req: Request, res: Response, next: () => void): Promise<void> {
   // Skip validation in development if no auth token configured
-  if (config.env === 'development' && !config.twilio.authToken) {
+  if (shouldSkipTwilioSignatureValidation(config.env, config.twilio.authToken)) {
     return next();
   }
 
-  const twilioSignature = req.headers['x-twilio-signature'] as string;
+  const twilioSignature = getTwilioSignatureHeader(req.headers['x-twilio-signature']);
   if (!twilioSignature) {
     logger.warn('Missing Twilio signature header');
     res.status(403).json({ error: 'Missing signature' });
@@ -72,8 +46,8 @@ async function validateTwilioSignature(req: Request, res: Response, next: () => 
   const creds = await getLiveCredentials();
   const authToken = creds?.token || config.twilio.authToken;
 
-  const url = `${config.webhookBaseUrl}${req.originalUrl}`;
-  const isValid = validateRequest(authToken, twilioSignature, url, req.body);
+  const url = buildTwilioValidationUrl(config.webhookBaseUrl, req.originalUrl);
+  const isValid = isTwilioSignatureValid(authToken, twilioSignature, url, req.body);
 
   if (!isValid) {
     logger.warn('Invalid Twilio signature', { url, signature: twilioSignature });
@@ -122,6 +96,19 @@ router.post('/inbound', async (req: Request, res: Response) => {
     });
 
     const leadPhoneVariants = phoneLookupVariants(From);
+    const repMobiles = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        mobilePhone: { not: null },
+      },
+      select: { mobilePhone: true },
+    });
+    const envSuppressed = parseRepTestPhoneAllowlist(process.env.REP_TEST_PHONE_ALLOWLIST);
+    const suppressedNumbers = [
+      ...repMobiles.map((u) => String(u.mobilePhone || '')),
+      ...envSuppressed,
+    ];
+    const suppressRepOrTestNumber = isRepOrTestPhoneNumber(From, suppressedNumbers);
 
     // Find the lead by phone number (exact + normalized variants)
     const lead = await prisma.lead.findFirst({
@@ -298,12 +285,24 @@ router.post('/inbound', async (req: Request, res: Response) => {
       //  Никогда не бросаем, никогда не await'им в основном potoke —
       //  весь webhook уже сделал core work (сохранил месседж, эмитнул socket).
       // ────────────────────────────────────────────────────────────────
+      if (!config.ai.classificationEnabled) {
+        logger.info('AI classification skipped: AI_CLASSIFICATION_ENABLED is OFF', {
+          conversationId: conversation.id,
+        });
+      }
+
       const convId = conversation.id;
       const repId = conversation.assignedRepId;
       const inboundBody = Body;
 
-      void (async () => {
+      if (config.ai.classificationEnabled)
+        void (async () => {
         try {
+          if (suppressRepOrTestNumber) {
+            logger.info('AI classification skipped for rep/test inbound number', { from: From, conversationId: convId });
+            return;
+          }
+
           // Подгружаем имя лида прямо тут (в основном scope нет include lead)
           const convForLead = await prisma.conversation.findUnique({
             where: { id: convId },
@@ -392,8 +391,15 @@ router.post('/inbound', async (req: Request, res: Response) => {
             error: (err as Error).message,
           });
         }
-      })();
+        })();
     } else {
+      if (suppressRepOrTestNumber) {
+        logger.warn('Inbound from rep/test number suppressed from lead creation', { from: From, to: To });
+        res.type('text/xml');
+        res.send(twimlResponse);
+        return;
+      }
+
       // Unknown number - try to infer lead metadata from existing client/deal by phone
       const matchedClient = await prisma.client.findFirst({
         where: {

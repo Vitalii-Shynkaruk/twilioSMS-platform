@@ -1,6 +1,112 @@
 # Phase 1 — AI SMS Inbox Build · Checklist
 
 > Источник: `AI-SMSRevised.pdf` · Прототип: `scl-inbox-v5.html`
+
+> **⚠ Scope update 25.04.2026 (active):** `SCL Dev_JB.pdf` + `scl-inbox-v11.html`
+>
+> Этот чеклист обновлён под новый бриф клиента (M1/M2/M3).
+> Предыдущий lean-scope остаётся как база, но приоритет и критерии приёмки ниже.
+
+## 🔒 Priority 0 — Trust & Data Safety (must-pass before feature rollout)
+
+- [ ] Включить audit trail для unread/follow-up/AI-state изменений (кто, когда, откуда, старое→новое)
+- [ ] Добавить инварианты: inbound всегда сохраняется; unread не теряется от чужого просмотра
+- [ ] Добавить reconciliation job + алерт на расхождения (кампания replied vs inbox visible)
+- [x] Ввести feature flag `AI_CLASSIFICATION_ENABLED` (default OFF до полного QA)
+- [x] Зафиксировать rollback-план и smoke-checklist перед каждым релизом
+
+## 📦 SCL-HandOff alignment (обязательно)
+
+- [ ] Использовать только `SCL-HandOff/classifier_prompt_v4_LOCKED.md` (prompt не редактировать)
+- [ ] Использовать схему строго по `SCL-HandOff/classification_schema.json` (без произвольных полей)
+- [ ] Классификатор работает по правилу full-thread peak (вся история, oldest -> newest)
+- [ ] Классификация только async через queue/worker; Twilio webhook не блокировать
+- [ ] В классификацию не отправлять opted-out / outbound-only / zero-inbound треды
+- [ ] Версионирование prompt в settings + запись версии в результаты классификации
+- [ ] Backfill 642 запускать отдельным job off-hours + сохранить отчёт валидации
+
+## 🧨 M1 blockers из handoff (закрыть до M2)
+
+- [x] Запрет отправки сообщений с неразрешёнными шаблонными токенами (`{{...}}`) перед Twilio send
+- [x] Запрет отправки тестовых сообщений в прод (`test`-pattern guard)
+- [x] Фильтр rep/test phone numbers (не создавать лидов и не классифицировать их)
+- [x] Suppression: не отправлять campaign retarget, если у лида был inbound за последние 7 дней
+- [x] Security sweep из `production_bugs_found.md`: NODE_ENV/CORS/auth gates/socket broadcasts
+
+## 🆕 Scope delta — SCL Dev_JB (M1/M2/M3)
+
+### M1 — Cleanup / Production hygiene
+
+- [x] `NODE_ENV=production` подтверждён на проде
+- [x] Очистить `/server` от debug scripts, `.bak`, `.new`
+- [ ] Все прод-изменения закоммитить в GitHub (feature-wise)
+- [x] Добавить 5-10 регрессионных тестов: webhook auth, inbound persist, SMS send, CA compliance blocks
+- [x] Политика GitHub-as-truth: без прямых прод-правок
+- [x] Добавить тесты на guard-правила M1 (anti-`{{...}}`, anti-`test`, rep-number suppression)
+
+### M2 — Backend extensions
+
+- [ ] classifyInbound в Twilio webhook (async, non-blocking, после persistence)
+- [ ] Реклассификация по owner actions: Interested/Not Interested/DNC/Email Rcv/+Pipeline/Note
+- [ ] Universal note ingestion (admin/rep notes одинаково feed AI)
+- [ ] Новые данные в Conversation: `industry`, `heloc_fit_flag`, `extracted_revenue`, `extracted_ask`
+- [ ] Таблица `classification_feedback` (override/skip tracking)
+- [ ] Per-rep outbound tracking (foundation для Phase 2)
+- [ ] Follow-up state fields + minute job `scheduled -> due_now`
+- [ ] При `due_now` запускать reclassification с overdue context
+- [ ] Backfill 642 historical conversations + validation report
+- [ ] Поля из schema v4 маппятся 1:1: classification, leadScore, staleState, suggestedReply, suggestedReengageMessage, repBehavior
+- [ ] HOT rule enforcement: для HOT всегда non-null `suggestedFollowupTime` + `suggestedFollowupReason`
+- [ ] Re-engage rule enforcement: non-null `suggestedReengageMessage` при stale/ghosted или 7+ дней тишины
+
+### M3 — UI refinement (not rebuild)
+
+- [ ] Сохранить текущую 3-column inbox структуру и существующие элементы
+- [ ] Добавить one-line AI Intelligence bar над тредом
+- [ ] Добавить single Suggested Reply panel (Use / Edit / Skip)
+- [ ] Skip писать в `classification_feedback`
+- [ ] CTA открывает Gmail compose с prefilled lead email; disabled если email нет
+- [x] Admin/My Convs toggle (только admin видит toggle)
+- [x] Admin totals bar: Overdue, HOT, New today, Unread, In Pipeline (только counts, без $)
+- [ ] Follow-Up popover: AI suggested time+reason, 3 quick options, custom datetime, optional reason
+- [ ] Overdue follow-ups: red pulse + resurfacing наверх inbox
+- [ ] Карточки: добавить chips `industry`, `heloc fit`, `follow-up`
+- [x] Right panel: добавить tabs `AI STATE` и `ALERTS`
+- [ ] Звуки: только HOT alert + New reply + Mute
+- [ ] AI fields `reasoning` и внутренние диагностики не показывать репам (manager/debug only)
+
+## ✅ New acceptance gates (short)
+
+- [ ] Inbound -> classification persisted < 10s
+- [ ] Owner action / note add -> reclassification < 5s
+- [ ] Webhook latency overhead < 50ms
+- [ ] Industry/revenue extraction >= 90% на validation set
+- [ ] Backfill 642 завершён без ошибок
+- [ ] Все UI-counts сходятся с DB проверкой
+- [ ] 0 случаев: lost unread replies / unrendered template variables / accidental test SMS
+
+## 🧪 Step-by-step verification log
+
+- [x] Added outbound hard guards: block unresolved `{{...}}` + block accidental `test` SMS
+- [x] Added and passed DB-free tests for keyword parser edge cases (`END` vs `Send` substring regressions)
+- [x] Added Admin/My scope toggle + admin totals bar + right-panel tabs (`AI State`, `Alerts`) in inbox; verified with `client npm run build`, `server npm run build`, and targeted backend tests (8/8 pass)
+- [x] Added inbound rep/test phone suppression in Twilio webhook: skip lead auto-create and skip AI classification for suppressed numbers (active rep mobiles + `REP_TEST_PHONE_ALLOWLIST`), verified with unit tests `tests/inboundPhoneSuppression.test.ts` and guard suite (12/12 pass)
+- [x] Added retarget suppression rule in sending engine: skip retarget when `lead.lastRepliedAt` is within 7 days, with explicit skip reason; verified by `tests/retargetSuppression.test.ts` + guard suite (16/16 pass) and `server npm run build`
+- [x] Security sweep sub-step: added explicit role gate on `PUT /api/leads/:id` (`ADMIN|MANAGER|REP`) in route layer; verified with `server npm run build`
+- [x] Security sweep sub-step: replaced global `io.emit('deal:updated')` with scoped room broadcast (`inbox:<assigned/assisting/actor>`) in deal controller to prevent cross-rep socket leaks; verified with `server npm run build` and focused guard tests (16/16 pass)
+- [x] Security sweep sub-step: hardened production env validation in `server/src/config/env.ts` (fail-fast if `NODE_ENV=production` with localhost `CLIENT_URL` / `WEBHOOK_BASE_URL`), verified with `server npm run build`
+- [x] Security sweep sub-step: tightened lead deletion to admin-only (`DELETE /api/leads/:id` route + controller guard) to remove manager cross-team deletion risk; verified with `server npm run build`
+- [x] Stabilized local M1 regression run: `tests/compliance.test.ts` is now auto-skipped without valid MySQL `DATABASE_URL` (instead of failing test process), while DB-free guard tests continue to run in all environments
+- [x] Added DB-free regression tests for production env guard (`tests/envValidation.test.ts`) covering localhost URL rejection in production for `CLIENT_URL` and `WEBHOOK_BASE_URL`; verified with expanded suite (19/19 pass, 10 DB-dependent skipped) and `server npm run build`
+- [x] Added DB-free webhook auth regression coverage via extracted Twilio signature helpers (`src/webhooks/twilioSignatureValidation.ts`, `tests/twilioSignatureValidation.test.ts`) and wired middleware to use them; verified in expanded suite
+- [x] Added DB-free quiet-hours compliance window regression coverage (`src/services/quietHoursWindow.ts`, `tests/quietHoursWindow.test.ts`) and integrated helper back into ComplianceService; verified in expanded suite (26/26 pass, 10 DB-dependent skipped) + `server npm run build`
+- [x] Added DB-free SMS send regression coverage for Twilio status callback URL normalization (`src/services/sendingUrlBuilder.ts`, `tests/sendingUrlBuilder.test.ts`) and wired SendingEngine to helper
+- [x] Added DB-free CA compliance/scoring regression tests for AI prompt guardrail + score behavior (`tests/aiServiceComplianceScoring.test.ts`), including CA prompt block assertion; verified with expanded suite (32/32 pass, 10 DB-dependent skipped) + `server npm run build`
+- [x] Added DB-free inbound persist helper coverage by extracting inbound phone/name parsing (`src/webhooks/inboundParsing.ts`, `tests/inboundParsing.test.ts`) and wiring Twilio webhook to shared helpers; verified with expanded suite (36/36 pass, 10 DB-dependent skipped) + `server npm run build`
+- [x] Added feature flag parser + config wiring for `AI_CLASSIFICATION_ENABLED` (default OFF) and gated Twilio inbound AI classification pipeline by flag; verified with `tests/featureFlags.test.ts` + expanded suite (39/39 pass, 10 DB-dependent skipped) + `server npm run build`
+- [x] M1 cleanup: removed debug scripts from `server/scripts` (`check-twilio.js`, `enrich-demo-data.js`), leaving migration/maintenance scripts only
+- [x] Added operational docs: `docs/RELEASE_ROLLBACK_SMOKE_CHECKLIST.md` and `docs/GITHUB_AS_TRUTH_POLICY.md`; linked to M1 requirements for rollback/smoke + GitHub-as-truth
+- [x] Production verification evidence captured from `https://app.sclcapital.io`: `GET /api/health` returned `Access-Control-Allow-Origin: https://app.sclcapital.io`, `Strict-Transport-Security` present, and cross-origin `OPTIONS /api/auth/login` did not allow untrusted origin
 >
 > **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >

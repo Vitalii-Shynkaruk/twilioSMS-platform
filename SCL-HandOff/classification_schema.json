@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SCL classifyInbound — Output Schema (v4)",
+  "description": "Output of the locked v4 classifier. Returned via Anthropic structured outputs (output_config.format = json_schema). The TypeScript Zod definition lives in .sandbox/classify.mjs lines 33-83. Field-by-field meanings and integration guidance are in README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "classification",
+    "leadScore",
+    "revenueMonthly",
+    "revenueAnnual",
+    "revenueConfidence",
+    "amountRequested",
+    "useOfFunds",
+    "product",
+    "urgency",
+    "objections",
+    "suggestedReply",
+    "suggestedFollowupTime",
+    "suggestedFollowupReason",
+    "staleState",
+    "hadMeaningfulEngagement",
+    "suggestedReengageMessage",
+    "repBehavior",
+    "coachingNote",
+    "reasoning"
+  ],
+  "properties": {
+    "classification": {
+      "type": "string",
+      "enum": ["HOT", "WARM", "NURTURE", "DEAD", "WRONG_NUMBER"],
+      "description": "Overall bucket. NURTURE is the default for any non-HOT, non-DEAD, non-WRONG_NUMBER lead. Auto-flips to NURTURE when staleState='ghosted' (was HOT, 7+ days silent)."
+    },
+    "leadScore": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "0-100 composite reflecting peak intent across the full thread, NOT current momentum. Locked in once HOT is reached. Can only decrease if the lead later expresses disqualifying signals."
+    },
+    "revenueMonthly": {
+      "type": ["integer", "null"],
+      "description": "USD monthly revenue if explicitly stated by the lead. null if not stated. NEVER inferred from annual."
+    },
+    "revenueAnnual": {
+      "type": ["integer", "null"],
+      "description": "USD annual revenue if explicitly stated. null if not stated. NEVER inferred from monthly."
+    },
+    "revenueConfidence": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "none"],
+      "description": "high=explicit number; medium=range/approximate; low=vague (e.g. 'decent'); none=no signal."
+    },
+    "amountRequested": {
+      "type": ["integer", "null"],
+      "description": "USD dollar amount the lead explicitly named ('200-250k' → midpoint 225000). null if not stated."
+    },
+    "useOfFunds": {
+      "type": ["string", "null"],
+      "description": "Short phrase if lead said what the money is for ('consolidate MCAs', 'tradeshow expenses', 'expansion'). null if not stated."
+    },
+    "product": {
+      "type": "string",
+      "enum": ["MCA", "SBA", "Equipment", "HELOC", "CRE", "Bridge", "LOC", "Unknown"],
+      "description": "Best-fit product based on what the rep offered AND what the lead said. HELOC and 10/30-yr LOC dominate current data."
+    },
+    "urgency": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Time-sensitivity of the buying signal. 'high' for same-day urgency words, 'low' for stale/quiet, 'medium' otherwise."
+    },
+    "objections": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 5,
+      "description": "Up to 5 short phrases capturing what's blocking the deal ('behind on taxes', 'low FICO 500', 'stacked MCAs'). Empty array if none."
+    },
+    "suggestedReply": {
+      "type": "string",
+      "description": "ONE SMS the rep can send AS-IS to advance the lead. Under 300 chars. Tone-matched. Never promises approval/rates/amounts."
+    },
+    "suggestedFollowupTime": {
+      "type": ["string", "null"],
+      "description": "REQUIRED when classification='HOT'. Natural phrase ('in 2 hours', 'tomorrow 9am') or ISO timestamp. null for non-HOT."
+    },
+    "suggestedFollowupReason": {
+      "type": ["string", "null"],
+      "description": "REQUIRED when classification='HOT'. One short sentence explaining the timing choice. null for non-HOT."
+    },
+    "staleState": {
+      "type": ["string", "null"],
+      "enum": ["fresh", "stale", "ghosted", null],
+      "description": "Measured by days since the LEAD's last inbound (NOT since rep's last outbound). null=not HOT and never was. fresh=HOT, lead-last-inbound ≤2 days. stale=HOT, 2-7 days. ghosted=was HOT, 7+ days silent (auto-flips classification to NURTURE)."
+    },
+    "hadMeaningfulEngagement": {
+      "type": "boolean",
+      "description": "True if the lead replied to outbound at any point with substantive content (acknowledgment, email, yes, real text). Marker that the lead is reactivatable. False only for never-replied, auto-bounces, gibberish, or pure opt-outs. Used as the trigger gate for re-engage messages."
+    },
+    "suggestedReengageMessage": {
+      "type": ["string", "null"],
+      "description": "REQUIRED (string) when staleState='stale' OR staleState='ghosted' OR (hadMeaningfulEngagement=true AND lead's last inbound ≥7 days ago). References the prior conversation explicitly. null otherwise. Different from suggestedReply — this is the message to send AFTER a silence gap, not the next inline reply."
+    },
+    "repBehavior": {
+      "type": "string",
+      "enum": ["good", "concerning", "poor"],
+      "description": "good=professional/on-script. concerning=typos/mild pushiness/missed signal/awkward phrasing. poor=rude/abrasive/wrong-name/promised approval/profanity. Does NOT pull down the lead score."
+    },
+    "coachingNote": {
+      "type": "string",
+      "description": "Empty string when repBehavior='good'. Otherwise ONE sentence on what the rep should change. Manager-facing, not customer-facing."
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "ONE sentence explaining the classification. Diagnostic only — for prompt debugging. NEVER surface to reps or customers."
+    }
+  },
+  "$comment": "Conditional requirements (not expressed as JSON Schema dependencies — enforced by the prompt and validated client-side): (1) suggestedFollowupTime + suggestedFollowupReason MUST be non-null when classification='HOT' and SHOULD be null otherwise. (2) suggestedReengageMessage MUST be non-null when staleState IN ('stale','ghosted') OR (hadMeaningfulEngagement=true AND lead's last inbound ≥7 days ago). (3) staleState='ghosted' MUST coexist with classification='NURTURE' (auto-flip). (4) WRONG_NUMBER + DEAD typically have hadMeaningfulEngagement=false."
+}

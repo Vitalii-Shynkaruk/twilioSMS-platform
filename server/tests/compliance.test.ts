@@ -8,8 +8,10 @@ import { ComplianceService } from '../src/services/complianceService';
 
 const TEST_PHONE = '+10005550001';
 const TEST_PHONE_2 = '+10005550002';
+const hasMysqlDatabaseUrl = (process.env.DATABASE_URL || '').startsWith('mysql://');
+const describeWithDb = hasMysqlDatabaseUrl ? describe : describe.skip;
 
-describe('ComplianceService', () => {
+describeWithDb('ComplianceService', () => {
   beforeAll(async () => {
     // Mock isQuietHours so tests don't depend on current time
     vi.spyOn(ComplianceService, 'isQuietHours').mockResolvedValue(false);
@@ -73,6 +75,27 @@ describe('ComplianceService', () => {
     it('regular message — not a keyword', async () => {
       const result = await ComplianceService.processInboundKeywords('+10005550099', 'Hello, I am interested');
 
+      expect(result.isKeyword).toBe(false);
+    });
+
+    it('END with punctuation — still treated as opt-out', async () => {
+      const phone = '+10005550111';
+      await prisma.lead.create({
+        data: { firstName: 'EndCase', phone, source: 'test' },
+      });
+
+      const result = await ComplianceService.processInboundKeywords(phone, 'End!!!');
+      expect(result.isKeyword).toBe(true);
+      expect(result.action).toBe('opt_out');
+    });
+
+    it('Send it — must NOT trigger opt-out via END substring', async () => {
+      const result = await ComplianceService.processInboundKeywords('+10005550112', 'Send it');
+      expect(result.isKeyword).toBe(false);
+    });
+
+    it('Weekend works for me — must NOT trigger opt-out via END substring', async () => {
+      const result = await ComplianceService.processInboundKeywords('+10005550113', 'Weekend works for me');
       expect(result.isKeyword).toBe(false);
     });
   });

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config({ override: true });
 
 import { env } from './env';
+import { isFeatureFlagEnabled } from './featureFlags';
 
 export const config = {
   env: env.NODE_ENV,
@@ -32,6 +33,10 @@ export const config = {
     accountSid: env.TWILIO_ACCOUNT_SID,
     authToken: env.TWILIO_AUTH_TOKEN,
     messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
+  },
+
+  ai: {
+    classificationEnabled: isFeatureFlagEnabled(env.AI_CLASSIFICATION_ENABLED, false),
   },
 
   webhookBaseUrl: env.WEBHOOK_BASE_URL,

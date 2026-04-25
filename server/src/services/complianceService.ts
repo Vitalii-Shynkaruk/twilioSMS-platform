@@ -4,6 +4,7 @@ import logger from '../config/logger';
 import { config } from '../config';
 import { AutoTagService } from './autoTagService';
 import { WebhookService } from './webhookService';
+import { isWithinQuietHoursWindow } from './quietHoursWindow';
 
 /**
  * ComplianceService - STOP/HELP handling, suppression, quiet hours
@@ -53,6 +54,14 @@ export class ComplianceService {
   private static isOptInKeyword(body: string): boolean {
     const { compact, firstToken } = this.normalizeKeywordBody(body);
     return this.OPT_IN_KEYWORDS.includes(compact) || this.OPT_IN_KEYWORDS.includes(firstToken);
+  }
+
+  static classifyInboundKeyword(body: string): 'opt_out' | 'help' | 'opt_in' | null {
+    if (this.isOptOutKeyword(body)) return 'opt_out';
+    if (this.isHelpKeyword(body)) return 'help';
+    // Only explicit opt-in keywords, never conversational "yes"
+    if (this.isOptInKeyword(body)) return 'opt_in';
+    return null;
   }
 
   /**
@@ -119,8 +128,9 @@ export class ComplianceService {
     fromNumber: string,
     body: string,
   ): Promise<{ isKeyword: boolean; action?: string; response?: string }> {
-    // Check STOP
-    if (this.isOptOutKeyword(body)) {
+    const action = this.classifyInboundKeyword(body);
+
+    if (action === 'opt_out') {
       await this.handleOptOut(fromNumber);
       return {
         isKeyword: true,
@@ -129,8 +139,7 @@ export class ComplianceService {
       };
     }
 
-    // Check HELP
-    if (this.isHelpKeyword(body)) {
+    if (action === 'help') {
       return {
         isKeyword: true,
         action: 'help',
@@ -138,8 +147,7 @@ export class ComplianceService {
       };
     }
 
-    // Check START (re-subscribe) — only explicit opt-in keywords, NOT "YES" (common conversational reply)
-    if (this.isOptInKeyword(body)) {
+    if (action === 'opt_in') {
       await this.handleOptIn(fromNumber);
       return {
         isKeyword: true,
@@ -281,12 +289,7 @@ export class ComplianceService {
     });
     const currentHour = parseInt(timeStr, 10);
 
-    // Handle overnight quiet hours (e.g., 20:00 - 09:00)
-    if (quietHoursStart > quietHoursEnd) {
-      return currentHour >= quietHoursStart || currentHour < quietHoursEnd;
-    }
-
-    return currentHour >= quietHoursStart && currentHour < quietHoursEnd;
+    return isWithinQuietHoursWindow(currentHour, quietHoursStart, quietHoursEnd);
   }
 
   /**

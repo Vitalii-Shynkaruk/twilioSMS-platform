@@ -85,7 +85,9 @@ export class MobileAlertService {
       }
 
       const preview = (messageBody || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-      const body = `HOT lead reply from ${leadName}: '${preview}' — check SCL now`;
+      // Префикс [SCL HOT] помогает rep'у узнавать алерт в потоке SMS и снижает риск
+      // что iPhone "Filter Unknown Senders" положит сообщение в Junk без уведомления.
+      const body = `[SCL HOT] Lead reply from ${leadName}: '${preview}' — open SCL Inbox now`;
 
       const to = rep.mobilePhone.startsWith('+') ? rep.mobilePhone : `+${rep.mobilePhone.replace(/\D/g, '')}`;
 

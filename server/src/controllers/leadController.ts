@@ -973,10 +973,9 @@ export class LeadController {
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) throw new AppError('Lead not found', 404);
 
-    // Проверка скоупа: REP не может удалять (уже на уровне роута), MANAGER может удалять только свои назначения
-    if (req.user?.role === 'MANAGER' && lead.assignedRepId && lead.assignedRepId !== req.user.id) {
-      // MANAGER может удалять неназначенные лиды и свои лиды
-      throw new AppError('Access denied: you can only delete leads assigned to you', 403);
+      // Defense-in-depth: route is admin-only, but keep an explicit guard here.
+      if (req.user?.role !== 'ADMIN') {
+        throw new AppError('Access denied', 403);
     }
 
     // Soft-delete: mark as deleted instead of destroying data

@@ -1472,6 +1472,11 @@ export class InboxController {
   static async markRead(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
+    if (req.user?.role !== 'REP') {
+      res.json({ message: 'Unread preserved for assigned rep' });
+      return;
+    }
+
     const conversation = await prisma.conversation.findUnique({ where: { id }, include: { lead: true } });
     if (!conversation) throw new AppError('Conversation not found', 404);
     if (!(await InboxController.canAccessConversation(conversation, req.user))) {
@@ -1498,6 +1503,11 @@ export class InboxController {
 
   static async markUnread(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
+
+    if (req.user?.role !== 'REP') {
+      res.json({ message: 'Unread preserved for assigned rep' });
+      return;
+    }
 
     const conversation = await prisma.conversation.findUnique({ where: { id }, include: { lead: true } });
     if (!conversation) throw new AppError('Conversation not found', 404);

@@ -809,11 +809,16 @@ function MessageThread({
   }, [messages]);
 
   useEffect(() => {
-    if (conversation?.unreadCount && conversation.unreadCount > 0 && !markReadMutation.isPending) {
+    if (
+      !isAdmin &&
+      conversation?.unreadCount &&
+      conversation.unreadCount > 0 &&
+      !markReadMutation.isPending
+    ) {
       markReadMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation?.unreadCount, conversationId]);
+  }, [conversation?.unreadCount, conversationId, isAdmin]);
 
   useEffect(() => {
     if (!conversation) return;

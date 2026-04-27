@@ -8,6 +8,9 @@ interface AISuggestionsProps {
   onUseSuggestion: (text: string) => void;
   onEditSuggestion: (text: string) => void;
   onSkipSuggestion: (text: string) => void;
+  onOpenSuggestionCta?: () => void;
+  canOpenSuggestionCta?: boolean;
+  suggestionCtaDisabledTitle?: string;
 }
 
 function renderText(text: string) {
@@ -46,6 +49,9 @@ export default function AISuggestions({
   onUseSuggestion,
   onEditSuggestion,
   onSkipSuggestion,
+  onOpenSuggestionCta,
+  canOpenSuggestionCta = false,
+  suggestionCtaDisabledTitle = "No email on file yet",
 }: AISuggestionsProps) {
   const shown = (suggestions || []).slice(0, 1);
   if (shown.length === 0) return null;
@@ -57,21 +63,46 @@ export default function AISuggestions({
     const blocked = !!s.blocked;
     const variant = classForType(s.type, isBest);
     const label = s.lbl || (isBest ? '⚡ BEST APPROACH' : 'ALT');
+    const ctaText = s.cta?.trim();
+    const shouldRenderCtaButton = !!ctaText && !!onOpenSuggestionCta;
+    const ctaDisabled = blocked || !canOpenSuggestionCta;
+    const ctaTitle = blocked ? 'Blocked by compliance' : ctaDisabled ? suggestionCtaDisabledTitle : 'Open PMF Gmail compose';
+    const ctaLabel = !blocked && ctaDisabled ? `${ctaText} · (no email on file)` : ctaText;
+
     return (
-      <button
-        type="button"
-        disabled={blocked}
-        onClick={() => !blocked && onUseSuggestion(s.text)}
-        className={clsx('sug-card', variant)}
-        title={blocked ? 'Blocked by compliance' : 'Click to insert into compose'}
-      >
-        <div className="sug-type">
-          <span>{label}</span>
-          {isBest && <span className="sug-best-badge">BEST</span>}
-        </div>
-        <div className="sug-text">{renderText(s.text)}</div>
-        {s.cta && <div className="sug-cta">{s.cta}</div>}
-      </button>
+      <div className={clsx('sug-card', variant)}>
+        <button
+          type="button"
+          disabled={blocked}
+          onClick={() => !blocked && onUseSuggestion(s.text)}
+          className="sug-card-main"
+          title={blocked ? 'Blocked by compliance' : 'Click to insert into compose'}
+        >
+          <div className="sug-type">
+            <span>{label}</span>
+            {isBest && <span className="sug-best-badge">BEST</span>}
+          </div>
+          <div className="sug-text">{renderText(s.text)}</div>
+        </button>
+        {ctaText &&
+          (shouldRenderCtaButton ? (
+            <button
+              type="button"
+              className="suggest-cta-btn"
+              disabled={ctaDisabled}
+              title={ctaTitle}
+              onClick={() => {
+                if (!ctaDisabled) {
+                  onOpenSuggestionCta();
+                }
+              }}
+            >
+              {ctaLabel}
+            </button>
+          ) : (
+            <div className="sug-cta">{ctaText}</div>
+          ))}
+      </div>
     );
   };
 

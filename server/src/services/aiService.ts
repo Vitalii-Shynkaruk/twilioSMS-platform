@@ -556,9 +556,15 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
         /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
           lower,
         );
-      const asksForTerms = /\b(rate|terms|amount|how much|funding link|application|details|info|paperwork|docs?)\b/.test(
+      const asksForTerms = /\b(rate|rates|term|terms|amount|how much|funding link|application|details|info|paperwork|docs?|requirements?|qualif(y|ication)|credit score|bank statements|collateral|cost)\b/.test(
         lower,
       );
+      // Объектный вопрос после первичного контакта — сильный сигнал коммерческого интента.
+      // Примеры: "what's the catch?", "what do you need?", "how does it work?"
+      const engagedObjectionQuestion =
+        /(what('?s| is) the catch|what do you need|what do i need|how does it work|how would that work|what are the terms|what are the rates|what's the rate|what is the rate|what docs do you need|what paperwork do you need|what are the requirements)/.test(
+          lower,
+        );
       const givesUrgency = /\b(today|asap|right now|this week|tomorrow|by (monday|tuesday|wednesday|thursday|friday)|need (it )?(now|soon))\b/.test(
         lower,
       );
@@ -566,11 +572,11 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
         lastInboundBody,
       );
 
-      if ((hasEmail || strongYes || asksForTerms || givesUrgency || sharesAltPhone) && classification !== 'HOT') {
+      if ((hasEmail || strongYes || asksForTerms || engagedObjectionQuestion || givesUrgency || sharesAltPhone) && classification !== 'HOT') {
         logger.info('AI: classification upgraded to HOT by deterministic override', {
           conversationId,
           original: classification,
-          triggers: { hasEmail, strongYes, asksForTerms, givesUrgency, sharesAltPhone },
+          triggers: { hasEmail, strongYes, asksForTerms, engagedObjectionQuestion, givesUrgency, sharesAltPhone },
         });
         classification = 'HOT';
       }

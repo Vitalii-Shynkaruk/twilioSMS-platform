@@ -4,6 +4,7 @@ import { getActiveMessagingServiceSid } from '../config/twilio';
 import { config } from '../config';
 import logger from '../config/logger';
 import { PhoneNumber } from '@prisma/client';
+import { AppError } from '../middleware/errorHandler';
 
 /**
  * NumberService - Manages phone number pool, rotation, reputation & ramp-up
@@ -436,6 +437,28 @@ export class NumberService {
    */
   static async assignNumbersToRep(repId: string, phoneNumberIds: string[]): Promise<void> {
     const now = new Date();
+    const activeMessagingServiceSid = await getActiveMessagingServiceSid();
+
+    if (activeMessagingServiceSid) {
+      const selectedNumbers = await prisma.phoneNumber.findMany({
+        where: { id: { in: phoneNumberIds } },
+        select: {
+          id: true,
+          phoneNumber: true,
+          messagingServiceSid: true,
+        },
+      });
+
+      const invalidNumbers = selectedNumbers.filter((number) => number.messagingServiceSid !== activeMessagingServiceSid);
+      if (invalidNumbers.length > 0) {
+        throw new AppError(
+          `Cannot assign numbers that are not linked to the active Messaging Service: ${invalidNumbers
+            .map((number) => number.phoneNumber)
+            .join(', ')}`,
+          400,
+        );
+      }
+    }
 
     // Deactivate old assignments for this rep
     await prisma.numberAssignment.updateMany({

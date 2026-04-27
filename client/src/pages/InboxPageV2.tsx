@@ -650,9 +650,14 @@ function MessageThread({
 
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedRepId, setSelectedRepId] = useState('');
+  const [dismissedSuggestionSignature, setDismissedSuggestionSignature] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    setDismissedSuggestionSignature(null);
+  }, [conversationId]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['conversation', conversationId],
@@ -675,6 +680,7 @@ function MessageThread({
   const markReadMutation = useMutation({
     mutationFn: () => inboxApi.markRead(conversationId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
       queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
       queryClient.invalidateQueries({ queryKey: ['inbox-unread-summary'] });
     },
@@ -778,11 +784,32 @@ function MessageThread({
   const suggestionFeedbackMutation = useMutation({
     mutationFn: (payload: { action: 'skip' | 'use' | 'override'; suggestionText?: string; reason?: string }) =>
       inboxApi.createClassificationFeedback(conversationId, payload),
+    onSuccess: (_data, variables) => {
+      if (variables.action === 'skip' && currentSuggestionSignature) {
+        setDismissedSuggestionSignature(currentSuggestionSignature);
+        toast.success('Suggestion skipped');
+      }
+    },
     onError: () => toast.error('Failed to save AI feedback'),
   });
 
   const conversation: Conversation | undefined = data?.conversation;
   const messages: Message[] = data?.messages || [];
+  const canAutoMarkRead = !!user?.id && !!conversation && (conversation.assignedRepId === user.id || conversation.lead?.assignedRepId === user.id);
+  const currentSuggestionSignature = useMemo(() => {
+    const suggestions = ((conversation as any)?.aiSuggestions || []) as Array<{ text?: string }>;
+    const firstSuggestion = suggestions[0]?.text?.trim();
+    if (!firstSuggestion) return null;
+    return JSON.stringify({
+      conversationId,
+      aiClassifiedAt: conversation?.aiClassifiedAt || null,
+      firstSuggestion,
+    });
+  }, [conversation, conversationId]);
+  const visibleSuggestions =
+    currentSuggestionSignature && dismissedSuggestionSignature === currentSuggestionSignature
+      ? []
+      : ((conversation as any)?.aiSuggestions as Conversation['aiSuggestions']);
   const statusStrip = conversation?.statusStrip;
   const leadFirstName = toDisplayName(conversation?.lead?.firstName);
   const leadLastName = toDisplayName(conversation?.lead?.lastName);
@@ -810,7 +837,7 @@ function MessageThread({
 
   useEffect(() => {
     if (
-      !isAdmin &&
+      canAutoMarkRead &&
       conversation?.unreadCount &&
       conversation.unreadCount > 0 &&
       !markReadMutation.isPending
@@ -818,7 +845,7 @@ function MessageThread({
       markReadMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation?.unreadCount, conversationId, isAdmin]);
+  }, [canAutoMarkRead, conversation?.unreadCount, conversationId]);
 
   useEffect(() => {
     if (!conversation) return;
@@ -914,6 +941,7 @@ function MessageThread({
   const fromFriendly = statusStrip?.fromNumberFriendlyName || conversation.fromNumberFriendlyName || '';
   const inPipeline = conversation.isInPipeline || statusStrip?.pipelineState === 'in_pipeline';
   const leadEmail = (conversation.lead?.email || '').trim();
+  const hasLeadEmail = leadEmail.length > 0;
   const aiSignals = (conversation.aiSignals || {}) as Record<string, unknown>;
   const aiSuggestedFollowupTime =
     typeof aiSignals.suggestedFollowupTime === 'string' ? aiSignals.suggestedFollowupTime : '';
@@ -923,11 +951,9 @@ function MessageThread({
   const nextFollowupOverdue = !!nextFollowupDate && nextFollowupDate.getTime() < Date.now();
 
   const openGmailCompose = () => {
-    if (!leadEmail) return;
-    const subject = encodeURIComponent(`Re: ${conversation.lead?.company || 'Funding options'}`);
-    const body = encodeURIComponent(replyText || '');
+    if (!hasLeadEmail) return;
     const to = encodeURIComponent(leadEmail);
-    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`;
+    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}`;
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
@@ -1133,8 +1159,11 @@ function MessageThread({
 
         {!conversation?.lead?.optedOut && (
           <AISuggestions
-            suggestions={(conversation as any)?.aiSuggestions}
+            suggestions={visibleSuggestions}
             signals={(conversation as any)?.aiSignals}
+            onOpenSuggestionCta={openGmailCompose}
+            canOpenSuggestionCta={hasLeadEmail}
+            suggestionCtaDisabledTitle="No email on file yet"
             onUseSuggestion={(text) => {
               setReplyText(text);
               composeTextareaRef.current?.focus();
@@ -1146,7 +1175,6 @@ function MessageThread({
             }}
             onSkipSuggestion={(text) => {
               suggestionFeedbackMutation.mutate({ action: 'skip', suggestionText: text });
-              toast.success('Suggestion skipped');
             }}
           />
         )}

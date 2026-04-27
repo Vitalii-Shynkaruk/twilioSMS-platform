@@ -92,12 +92,16 @@ io.on('connection', (socket) => {
         where: { id: authenticatedUserId },
         select: { role: true },
       });
-      // ADMIN/MANAGER can join any conversation; REP can join if assigned, lead-owned, or if they sent outbound.
+      // ADMIN/MANAGER can join any conversation; REP can join if assigned,
+      // lead-owned, or if they sent outbound on a conversation that is still unassigned.
       if (user?.role === 'REP') {
         const ownsByAssignment =
           conversation.assignedRepId === authenticatedUserId || conversation.lead?.assignedRepId === authenticatedUserId;
+        const hasAssignedOwner = !!(conversation.assignedRepId || conversation.lead?.assignedRepId);
         const ownsByOutbound = ownsByAssignment
           ? true
+          : hasAssignedOwner
+          ? false
           : (await prisma.message.count({
               where: {
                 conversationId,

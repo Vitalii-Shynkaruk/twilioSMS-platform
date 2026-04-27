@@ -286,12 +286,18 @@ export class InboxController {
         { assignedRepId: userId },
         { lead: { assignedRepId: userId } },
         {
-          messages: {
-            some: {
-              direction: 'OUTBOUND',
-              sentByUserId: userId,
+          AND: [
+            { assignedRepId: null },
+            { lead: { assignedRepId: null } },
+            {
+              messages: {
+                some: {
+                  direction: 'OUTBOUND',
+                  sentByUserId: userId,
+                },
+              },
             },
-          },
+          ],
         },
       ],
     };
@@ -305,6 +311,26 @@ export class InboxController {
     if (user.role === 'ADMIN' || user.role === 'MANAGER') return true;
     if (user.role !== 'REP') return false;
     if (conversation.assignedRepId === user.id || conversation.lead?.assignedRepId === user.id) return true;
+    if (conversation.assignedRepId || conversation.lead?.assignedRepId) return false;
+
+    const outboundCount = await prisma.message.count({
+      where: {
+        conversationId: conversation.id,
+        direction: 'OUTBOUND',
+        sentByUserId: user.id,
+      },
+    });
+
+    return outboundCount > 0;
+  }
+
+  private static async canUserClearUnread(
+    conversation: { id: string; assignedRepId: string | null; lead?: { assignedRepId?: string | null } | null },
+    user: AuthRequest['user'],
+  ): Promise<boolean> {
+    if (!user) return false;
+    if (conversation.assignedRepId === user.id || conversation.lead?.assignedRepId === user.id) return true;
+    if (conversation.assignedRepId || conversation.lead?.assignedRepId) return false;
 
     const outboundCount = await prisma.message.count({
       where: {
@@ -816,6 +842,7 @@ export class InboxController {
     if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
 
     // Фильтр по кампании — показать треды лидов, которые replied в конкретной кампании
+    let campaignScopeCondition: any | null = null;
     if (hasCampaignFilter) {
       const campaignLeads = await prisma.campaignLead.findMany({
         where: {
@@ -825,7 +852,8 @@ export class InboxController {
         select: { leadId: true },
       });
       const repliedLeadIds = campaignLeads.map((cl) => cl.leadId);
-      listConditions.push({ lead: { id: { in: repliedLeadIds.length > 0 ? repliedLeadIds : ['__none__'] } } });
+      campaignScopeCondition = { lead: { id: { in: repliedLeadIds.length > 0 ? repliedLeadIds : ['__none__'] } } };
+      listConditions.push(campaignScopeCondition);
     }
 
     if (search && String(search).trim()) {
@@ -942,17 +970,22 @@ export class InboxController {
       prisma.conversation.count({ where }),
       includeFilterCounts
         ? (async () => {
-            const baseWithSearch = {
-              ...baseWhere,
-              ...(baseAndFilters.length > 0 ? { AND: baseAndFilters } : {}),
-            };
+            const baseWithSearch = InboxController.withConditions(baseWhere, [
+              ...baseAndFilters,
+              ...(campaignScopeCondition ? [campaignScopeCondition] : []),
+            ]);
             const counts = await Promise.all(
               InboxController.FILTER_KEYS.map(async (key) => {
                 const condition = InboxController.buildFilterCondition(key, req);
                 const visibilityCondition =
-                  key === 'dnc' ? InboxController.inboundAnyCondition() : InboxController.inboundNonOptOutCondition();
-                const baseVisibility =
-                  key === 'dnc' ? [visibilityCondition] : [InboxController.excludeDncCondition(), visibilityCondition];
+                  hasCampaignFilter || key === 'dnc'
+                    ? InboxController.inboundAnyCondition()
+                    : InboxController.inboundNonOptOutCondition();
+                const baseVisibility = hasCampaignFilter
+                  ? [visibilityCondition]
+                  : key === 'dnc'
+                  ? [visibilityCondition]
+                  : [InboxController.excludeDncCondition(), visibilityCondition];
                 const scopedWhere = InboxController.withConditions(
                   baseWithSearch,
                   condition ? [...baseVisibility, condition] : baseVisibility,
@@ -970,15 +1003,17 @@ export class InboxController {
             const now = new Date();
             const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-            const baseWithSearch = {
-              ...baseWhere,
-              ...(baseAndFilters.length > 0 ? { AND: baseAndFilters } : {}),
-            };
-
-            const visibleWhere = InboxController.withConditions(baseWithSearch, [
-              InboxController.excludeDncCondition(),
-              InboxController.inboundNonOptOutCondition(),
+            const baseWithSearch = InboxController.withConditions(baseWhere, [
+              ...baseAndFilters,
+              ...(campaignScopeCondition ? [campaignScopeCondition] : []),
             ]);
+
+            const visibleWhere = InboxController.withConditions(
+              baseWithSearch,
+              hasCampaignFilter
+                ? [InboxController.inboundAnyCondition()]
+                : [InboxController.excludeDncCondition(), InboxController.inboundNonOptOutCondition()],
+            );
 
             const [overdueFollowups, hotAiFlagged, newToday, unread, inPipelineQualified] = await Promise.all([
               prisma.conversation.count({
@@ -1375,7 +1410,7 @@ export class InboxController {
     // assigned rep терял unread навсегда, не зная что пришёл ответ.
     // Теперь: ADMIN/MANAGER могут просматривать треды, не «съедая» unread у rep'а.
     // Для явного сброса есть отдельный endpoint markRead.
-    const canClearUnread = req.user?.role === 'REP' && canAccessConversation;
+    const canClearUnread = (await InboxController.canUserClearUnread(conversation, req.user)) && canAccessConversation;
     if (conversation.unreadCount > 0 && canClearUnread) {
       await prisma.conversation.update({
         where: { id },
@@ -1472,15 +1507,14 @@ export class InboxController {
   static async markRead(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
-    if (req.user?.role !== 'REP') {
-      res.json({ message: 'Unread preserved for assigned rep' });
-      return;
-    }
-
     const conversation = await prisma.conversation.findUnique({ where: { id }, include: { lead: true } });
     if (!conversation) throw new AppError('Conversation not found', 404);
     if (!(await InboxController.canAccessConversation(conversation, req.user))) {
       throw new AppError('Not authorized to mark read for this conversation', 403);
+    }
+    if (!(await InboxController.canUserClearUnread(conversation, req.user))) {
+      res.json({ message: 'Unread preserved for assigned rep' });
+      return;
     }
 
     if (conversation.unreadCount > 0) {

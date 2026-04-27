@@ -70,11 +70,13 @@ This is not a typical feature where bugs are just UX problems. If the cooldown s
 **I understand the carrier compliance constraints.** The 7-day and 30-day cooldown rules, the rolling 24h window, the number pool capacity calculations — these come from the A2P 10DLC guidelines I've already worked through for this account. Another developer would need to learn these rules, validate their implementation against them, and likely go through at least one cycle of revisions after a compliance review.
 
 **Estimated delivery:**
-- Phase 1 (bug fixes): 2–3 days
-- Phase 2 (filter dropdowns): 1–2 days (runs in parallel with Phase 3 backend)
-- Phase 3 (full AI campaign engine): 8–10 working days from Phase 1 sign-off
+- Phase 1 (bug fixes): 1–2 days
+- Phase 2 (filter dropdowns): 1 day, runs in parallel with Phase 3 backend
+- Phase 3 — implementation: 2–4 days from Phase 1 sign-off
+- Phase 3 — QA + compliance validation: 3–5 days (carrier cooldown verification, cap edge cases, per-rep isolation tests)
+- **Total Phase 3 calendar time: 5–9 days**
 
-A developer starting from scratch on this codebase would need 3–5 weeks for Phase 3 alone, and would likely produce a system that lacks the carrier compliance depth this phase requires.
+This timeline is only achievable because of deep existing context. A developer starting from scratch on this codebase would need 3–5 weeks for Phase 3 alone — and would likely still miss the carrier compliance edge cases on the first pass.
 
 ---
 

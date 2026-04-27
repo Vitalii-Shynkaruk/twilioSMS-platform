@@ -166,7 +166,7 @@ export default function InboxPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
   const [filter, setFilter] = useState<InboxFilter>('all');
-  const [sort, setSort] = useState<InboxSort>('ai_priority');
+  const [sort, setSort] = useState<InboxSort>('newest_activity');
   const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const sortRef = useRef<HTMLDivElement | null>(null);

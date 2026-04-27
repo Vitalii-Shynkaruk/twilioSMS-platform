@@ -80,9 +80,10 @@ io.on('connection', (socket) => {
   socket.on('join:conversation', async (conversationId: string) => {
     // Authorization: verify the user has access to this conversation
     try {
+      if (!authenticatedUserId) return;
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
-        select: { assignedRepId: true },
+        select: { id: true, assignedRepId: true, lead: { select: { assignedRepId: true } } },
       });
       if (!conversation) return;
 
@@ -91,10 +92,24 @@ io.on('connection', (socket) => {
         where: { id: authenticatedUserId },
         select: { role: true },
       });
-      // ADMIN/MANAGER can join any conversation; REP only their own
-      if (user?.role === 'REP' && conversation.assignedRepId !== authenticatedUserId) {
-        logger.warn(`Socket: REP ${authenticatedUserId} denied access to conversation ${conversationId}`);
-        return;
+      // ADMIN/MANAGER can join any conversation; REP can join if assigned, lead-owned, or if they sent outbound.
+      if (user?.role === 'REP') {
+        const ownsByAssignment =
+          conversation.assignedRepId === authenticatedUserId || conversation.lead?.assignedRepId === authenticatedUserId;
+        const ownsByOutbound = ownsByAssignment
+          ? true
+          : (await prisma.message.count({
+              where: {
+                conversationId,
+                direction: 'OUTBOUND',
+                sentByUserId: authenticatedUserId,
+              },
+            })) > 0;
+
+        if (!ownsByOutbound) {
+          logger.warn(`Socket: REP ${authenticatedUserId} denied access to conversation ${conversationId}`);
+          return;
+        }
       }
       socket.join(`conversation:${conversationId}`);
     } catch (err) {

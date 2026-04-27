@@ -20,7 +20,7 @@ type InboxFilter =
   | 'followup'
   | 'in_pipeline'
   | 'dnc';
-type InboxSort = 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
+type InboxSort = 'ai_priority' | 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
 const DEAL_STAGE_LABELS: Record<string, string> = {
   NEW_LEAD: 'New Lead',
@@ -46,7 +46,13 @@ export class InboxController {
     'in_pipeline',
     'dnc',
   ];
-  private static readonly SORT_KEYS: InboxSort[] = ['newest_activity', 'oldest_untouched', 'unread_first', 'hot_first'];
+  private static readonly SORT_KEYS: InboxSort[] = [
+    'ai_priority',
+    'newest_activity',
+    'oldest_untouched',
+    'unread_first',
+    'hot_first',
+  ];
   private static readonly OPT_OUT_KEYWORDS = [
     'stop',
     'stopall',
@@ -259,12 +265,64 @@ export class InboxController {
     return InboxController.SORT_KEYS.includes(normalized) ? normalized : 'newest_activity';
   }
 
+  private static hotConversationCondition(): any {
+    return {
+      OR: [{ aiClassification: 'HOT' }, { hotLead: true }],
+    };
+  }
+
+  private static inPipelineCondition(): any {
+    return {
+      OR: [
+        { deals: { some: {} } },
+        { lead: { deal: { isNot: null } } },
+      ],
+    };
+  }
+
+  private static inboxOwnershipCondition(userId: string): any {
+    return {
+      OR: [
+        { assignedRepId: userId },
+        { lead: { assignedRepId: userId } },
+        {
+          messages: {
+            some: {
+              direction: 'OUTBOUND',
+              sentByUserId: userId,
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  private static async canAccessConversation(
+    conversation: { id: string; assignedRepId: string | null; lead?: { assignedRepId?: string | null } | null },
+    user: AuthRequest['user'],
+  ): Promise<boolean> {
+    if (!user) return false;
+    if (user.role === 'ADMIN' || user.role === 'MANAGER') return true;
+    if (user.role !== 'REP') return false;
+    if (conversation.assignedRepId === user.id || conversation.lead?.assignedRepId === user.id) return true;
+
+    const outboundCount = await prisma.message.count({
+      where: {
+        conversationId: conversation.id,
+        direction: 'OUTBOUND',
+        sentByUserId: user.id,
+      },
+    });
+
+    return outboundCount > 0;
+  }
+
   private static buildFilterCondition(filter: InboxFilter, req: AuthRequest): any | null {
     switch (filter) {
       case 'unread':
         return { unreadCount: { gt: 0 } };
       case 'hot':
-        return { hotLead: true };
+        return InboxController.hotConversationCondition();
       case 'email_rcv':
         return { emailReceived: true };
       case 'my_campaigns':
@@ -287,20 +345,7 @@ export class InboxController {
       case 'followup':
         return { nextFollowupAt: { gte: new Date() } };
       case 'in_pipeline':
-        return {
-          OR: [
-            {
-              deals: {
-                some: {
-                  ...(req.user?.role === 'REP' ? { assignedRepId: req.user.id } : {}),
-                },
-              },
-            },
-            req.user?.role === 'REP'
-              ? { lead: { deal: { is: { assignedRepId: req.user.id } } } }
-              : { lead: { deal: { isNot: null } } },
-          ],
-        };
+        return InboxController.inPipelineCondition();
       case 'dnc':
         return {
           OR: [
@@ -318,12 +363,20 @@ export class InboxController {
 
   private static buildOrderBy(sort: InboxSort): any {
     switch (sort) {
+      case 'ai_priority':
+        return [
+          { aiClassification: 'desc' },
+          { aiLeadScore: 'desc' },
+          { unreadCount: 'desc' },
+          { lastMessageAt: 'desc' },
+          { updatedAt: 'desc' },
+        ];
       case 'oldest_untouched':
         return [{ lastMessageAt: 'asc' }, { updatedAt: 'asc' }];
       case 'unread_first':
         return [{ unreadCount: 'desc' }, { lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
       case 'hot_first':
-        return [{ hotLead: 'desc' }, { lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
+        return [{ aiClassification: 'desc' }, { hotLead: 'desc' }, { aiLeadScore: 'desc' }, { lastMessageAt: 'desc' }];
       case 'newest_activity':
       default:
         return [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
@@ -726,12 +779,13 @@ export class InboxController {
     const baseWhere: any = { isActive: true };
     const baseAndFilters: any[] = [];
 
-    // Rep can only see their conversations
+    // Rep visibility must follow the real SMS ownership chain:
+    // conversation assignment, lead assignment, or any outbound sent by this rep.
     if (req.user?.role === 'REP') {
-      baseWhere.assignedRepId = req.user.id;
+      baseAndFilters.push(InboxController.inboxOwnershipCondition(req.user.id));
     } else if ((req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER') && String(scope || '') === 'mine') {
       // Admin/Manager "My Convs" scope
-      baseWhere.assignedRepId = req.user.id;
+      baseAndFilters.push(InboxController.inboxOwnershipCondition(req.user.id));
     }
 
     const normalizedFilter = InboxController.resolveFilter(filter);
@@ -931,7 +985,7 @@ export class InboxController {
                 where: InboxController.withConditions(visibleWhere, [{ nextFollowupAt: { lt: now } }]),
               }),
               prisma.conversation.count({
-                where: InboxController.withConditions(visibleWhere, [{ aiClassification: 'HOT' }]),
+                where: InboxController.withConditions(visibleWhere, [InboxController.hotConversationCondition()]),
               }),
               prisma.conversation.count({
                 where: InboxController.withConditions(visibleWhere, [
@@ -944,15 +998,7 @@ export class InboxController {
                 where: InboxController.withConditions(visibleWhere, [{ unreadCount: { gt: 0 } }]),
               }),
               prisma.conversation.count({
-                where: InboxController.withConditions(visibleWhere, [
-                  {
-                    deals: {
-                      some: {
-                        stage: 'QUALIFIED',
-                      },
-                    },
-                  },
-                ]),
+                where: InboxController.withConditions(visibleWhere, [InboxController.inPipelineCondition()]),
               }),
             ]);
 
@@ -1049,7 +1095,8 @@ export class InboxController {
     });
 
     if (!conversation) throw new AppError('Conversation not found', 404);
-    if (req.user?.role === 'REP' && conversation.assignedRepId !== req.user.id) {
+    const canAccessConversation = await InboxController.canAccessConversation(conversation, req.user);
+    if (!canAccessConversation) {
       throw new AppError('Conversation not found', 404);
     }
 
@@ -1328,8 +1375,8 @@ export class InboxController {
     // assigned rep терял unread навсегда, не зная что пришёл ответ.
     // Теперь: ADMIN/MANAGER могут просматривать треды, не «съедая» unread у rep'а.
     // Для явного сброса есть отдельный endpoint markRead.
-    const isAssignedRep = !!req.user?.id && conversation.assignedRepId === req.user.id;
-    if (conversation.unreadCount > 0 && isAssignedRep) {
+    const canClearUnread = req.user?.role === 'REP' && canAccessConversation;
+    if (conversation.unreadCount > 0 && canClearUnread) {
       await prisma.conversation.update({
         where: { id },
         data: { unreadCount: 0 },
@@ -1425,9 +1472,9 @@ export class InboxController {
   static async markRead(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findUnique({ where: { id }, include: { lead: true } });
     if (!conversation) throw new AppError('Conversation not found', 404);
-    if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
+    if (!(await InboxController.canAccessConversation(conversation, req.user))) {
       throw new AppError('Not authorized to mark read for this conversation', 403);
     }
 
@@ -1452,9 +1499,9 @@ export class InboxController {
   static async markUnread(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
-    const conversation = await prisma.conversation.findUnique({ where: { id } });
+    const conversation = await prisma.conversation.findUnique({ where: { id }, include: { lead: true } });
     if (!conversation) throw new AppError('Conversation not found', 404);
-    if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
+    if (!(await InboxController.canAccessConversation(conversation, req.user))) {
       throw new AppError('Not authorized to mark unread for this conversation', 403);
     }
 
@@ -1491,7 +1538,7 @@ export class InboxController {
     });
 
     if (!conversation) throw new AppError('Conversation not found', 404);
-    if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
+    if (!(await InboxController.canAccessConversation(conversation, req.user))) {
       throw new AppError('Not authorized to message this conversation', 403);
     }
 
@@ -1526,11 +1573,19 @@ export class InboxController {
     await prisma.conversation.update({
       where: { id },
       data: {
+        ...(req.user?.role === 'REP' && !conversation.assignedRepId ? { assignedRepId: req.user.id } : {}),
         lastMessageAt: new Date(),
         lastDirection: 'outbound',
         nextFollowupAt: null,
       },
     });
+
+    if (req.user?.role === 'REP' && !conversation.lead.assignedRepId) {
+      await prisma.lead.update({
+        where: { id: conversation.lead.id },
+        data: { assignedRepId: req.user.id },
+      });
+    }
 
     // Update lead status to CONTACTED if currently NEW, and sync pipeline card
     if (conversation.lead.status === 'NEW') {
@@ -1916,12 +1971,11 @@ export class InboxController {
 
     const conversation = await prisma.conversation.findUnique({
       where: { id },
-      select: { id: true, assignedRepId: true, aiClassification: true },
+      select: { id: true, assignedRepId: true, aiClassification: true, lead: { select: { assignedRepId: true } } },
     });
     if (!conversation) throw new AppError('Conversation not found', 404);
 
-    const isAdminLike = req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER';
-    if (!isAdminLike && conversation.assignedRepId && conversation.assignedRepId !== req.user?.id) {
+    if (!(await InboxController.canAccessConversation(conversation, req.user))) {
       throw new AppError('Forbidden', 403);
     }
 

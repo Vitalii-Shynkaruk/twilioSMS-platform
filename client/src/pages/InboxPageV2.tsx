@@ -15,6 +15,7 @@ import {
   Mail,
   X,
   ChevronLeft,
+  ChevronDown,
   Plus,
   Check,
 } from 'lucide-react';
@@ -51,6 +52,7 @@ const FILTER_ALL: Array<{ id: InboxFilter; label: string; tone?: 'hot' }> = [
   { id: 'unread', label: 'Unread' },
   { id: 'hot', label: '🔥 Hot', tone: 'hot' },
   { id: 'email_rcv', label: '✉ Email Rcv' },
+  { id: 'interested', label: '✓ Interested' },
   { id: 'followup', label: '⏰ Follow-Up' },
   { id: 'in_pipeline', label: '→ In Pipeline' },
   { id: 'dnc', label: '⛔ DNC' },
@@ -387,7 +389,7 @@ export default function InboxPage() {
                 <span className="inbox-master-value">{summaryCounts.unread}</span>
               </div>
               <div className="inbox-master-row">
-                <span className="inbox-master-label">→ In Pipeline (qualified)</span>
+                <span className="inbox-master-label">→ In Pipeline</span>
                 <span className="inbox-master-value">{summaryCounts.inPipelineQualified}</span>
               </div>
             </div>
@@ -406,8 +408,38 @@ export default function InboxPage() {
               }}
             />
           </div>
-          {/* SORT-row намеренно скрыт — прототип использует AI Priority по умолчанию.
-              Меню сортировки доступно через клавиатурный shortcut/админ-настройку, а UI убран ради pixel-pass. */}
+          <div className="inbox-sort-row">
+            <span className="inbox-sort-label">Sort</span>
+            <div className="inbox-sort" ref={sortRef}>
+              <button
+                type="button"
+                className="inbox-sort-select"
+                onClick={() => setSortOpen((open) => !open)}
+              >
+                <span>{selectedSort.label}</span>
+                <ChevronDown size={13} />
+              </button>
+              {sortOpen && (
+                <div className="inbox-sort-menu">
+                  {SORT_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={clsx('inbox-sort-option', sort === option.id && 'active')}
+                      onClick={() => {
+                        setSort(option.id);
+                        setSortOpen(false);
+                        setPage(1);
+                      }}
+                    >
+                      <span>{option.label}</span>
+                      {sort === option.id && <Check size={12} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="inbox-filters one-row">

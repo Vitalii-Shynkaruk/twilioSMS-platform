@@ -1,4 +1,5 @@
 /* © BuyReadySite.com — Phase 1: SMS Inbox Rebuild */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
 /* ─── 3-Panel Layout ─── */
 .inbox-root {
@@ -8,19 +9,242 @@
   background: var(--bg-primary);
 }
 
-/* ─── Левая панель: список разговоров ─── */
-.inbox-left {
-  width: 300px;
-  min-width: 300px;
+.inbox-rail {
+  width: 48px;
+  min-width: 48px;
+  border-right: 1px solid var(--inbox-border, rgba(255, 255, 255, 0.06));
+  background: var(--inbox-bg, #0a0a0f);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
+  align-items: center;
+  padding: 12px 0;
+  gap: 6px;
+}
+
+.inbox-rail-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--inbox-gold, #b8963e);
+  color: #0a0a0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.inbox-rail-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--inbox-text3, #606078);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.inbox-rail-icon:hover {
+  background: var(--inbox-bg3, #16161f);
+  color: var(--inbox-text2, #a0a0b8);
+}
+
+.inbox-rail-spacer {
+  flex: 1;
+}
+
+.inbox-rail-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--inbox-gold, #b8963e);
+  color: #0a0a0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inbox-root.phase1 {
+  --inbox-bg: #0a0a0f;
+  --inbox-bg2: #111118;
+  --inbox-bg3: #16161f;
+  --inbox-bg4: #1c1c26;
+  --inbox-text1: #e8e8f0;
+  --inbox-text2: #a0a0b8;
+  --inbox-text3: #606078;
+  --inbox-border: rgba(255, 255, 255, 0.06);
+  --inbox-border-strong: rgba(255, 255, 255, 0.1);
+  --inbox-gold: #b8963e;
+  --inbox-gold-bg: rgba(184, 150, 62, 0.12);
+  --inbox-hot: #ff4444;
+  --inbox-hot-bg: rgba(255, 68, 68, 0.12);
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #0a0a0f;
+  --bg-tertiary: #111118;
+  --bg-card: #16161f;
+  --bg-input: #16161f;
+  --bg-hover: #1c1c26;
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --text-primary: #e8e8f0;
+  --text-secondary: #a0a0b8;
+  --text-muted: #606078;
+  --text-faint: #404058;
+  --accent-primary: #b8963e;
+  --accent-hover: #d1a949;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  background: var(--inbox-bg);
+}
+
+/* ─── Левая панель: список разговоров ─── */
+.inbox-left {
+  width: 308px;
+  min-width: 308px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--inbox-border, var(--border-subtle));
+  background: var(--inbox-bg, var(--bg-secondary));
 }
 
 .inbox-left-header {
-  padding: 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--inbox-border, var(--border-subtle));
+}
+
+.inbox-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.inbox-title {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+  color: #d2ab48;
+}
+
+.inbox-title-count {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 12px;
+  color: #71819d;
+}
+
+.inbox-view-row {
+  min-height: 26px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inbox-view-label {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.inbox-view-btn {
+  min-height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(90, 102, 122, 0.55);
+  background: rgba(14, 20, 34, 0.92);
+  color: #9ba8bf;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+.inbox-master-row:nth-child(2) .inbox-master-value {
+  color: #e75a62;
+}
+
+.inbox-master-row:nth-child(3) .inbox-master-value {
+  color: #ff4d57;
+}
+
+.inbox-master-row:nth-child(4) .inbox-master-value {
+  color: #e7e8ec;
+}
+
+.inbox-master-row:nth-child(5) .inbox-master-value {
+  color: #d2d6de;
+}
+
+.inbox-master-row:nth-child(6) .inbox-master-value {
+  color: #3fdf80;
+}
+
+.inbox-summary-grid {
+  margin-bottom: 8px;
+  gap: 4px;
+}
+
+.inbox-master-card {
+  margin: 0 8px 8px;
+  border: 1px solid rgba(184, 150, 62, 0.34);
+  border-radius: 8px;
+  background: rgba(184, 150, 62, 0.06);
+  padding: 8px 10px;
+}
+
+.inbox-master-title {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #c5a24f;
+  margin-bottom: 6px;
+}
+
+.inbox-master-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+  padding: 1px 0;
+}
+
+.inbox-master-label {
+  font-size: 12px;
+  color: #b4bfce;
+}
+
+.inbox-master-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f4f6fb;
+}
+
+.inbox-summary-item {
+  min-height: 24px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.15;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-color: rgba(51, 65, 85, 0.95);
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
+.inbox-summary-item .font-semibold {
+  color: #f1f5f9;
+  margin-left: 2px;
 }
 
 .inbox-search {
@@ -39,11 +263,12 @@
 
 .inbox-search-input {
   width: 100%;
-  padding: 8px 10px 8px 32px;
+  height: 36px;
+  padding: 0 12px 0 30px;
   border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-input);
-  color: var(--text-primary);
+  border: 1px solid var(--inbox-border, var(--border-color));
+  background: var(--inbox-bg3, var(--bg-input));
+  color: var(--inbox-text1, var(--text-primary));
   font-size: 13px;
   outline: none;
   transition: border-color 0.15s;
@@ -60,10 +285,10 @@
 /* Фильтры-табы */
 .inbox-filters {
   display: flex;
-  gap: 2px;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 8px 10px 8px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 0;
   scrollbar-width: none;
 }
 
@@ -73,13 +298,15 @@
 
 .inbox-filter-btn {
   flex-shrink: 0;
-  padding: 4px 10px;
+  min-height: 23px;
+  padding: 2px 8px;
   border-radius: 6px;
-  font-size: 11px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10.5px;
   font-weight: 500;
-  color: var(--text-muted);
+  color: var(--inbox-text2, var(--text-muted));
   background: transparent;
-  border: none;
+  border: 1px solid var(--inbox-border, var(--border-color));
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
@@ -91,69 +318,79 @@
 }
 
 .inbox-filter-btn.active {
-  color: var(--accent-primary);
-  background: rgba(43, 127, 232, 0.1);
+  color: var(--inbox-text1, var(--text-primary));
+  background: var(--inbox-bg4, rgba(43, 127, 232, 0.1));
+  border-color: var(--inbox-border-strong, rgba(255, 255, 255, 0.1));
 }
 
 .inbox-filter-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 15px;
+  min-width: 14px;
+  height: 14px;
   padding: 0 4px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 9px;
   font-weight: 600;
-  margin-left: 4px;
-  background: rgba(43, 127, 232, 0.15);
-  color: var(--accent-primary);
+  margin-left: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--inbox-text2, var(--accent-primary));
 }
 
 /* Список разговоров */
 .inbox-conv-list {
   flex: 1;
   overflow-y: auto;
+  padding: 4px 8px 8px;
 }
 
 .inbox-conv-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px;
   cursor: pointer;
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background 0.1s;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  transition: background 0.12s;
   position: relative;
+  background: rgba(14, 20, 34, 0.72);
 }
 
 .inbox-conv-item:hover {
-  background: var(--bg-hover);
+  background: rgba(25, 33, 52, 0.8);
 }
 
 .inbox-conv-item.selected {
-  background: rgba(43, 127, 232, 0.08);
-  border-left: 2px solid var(--accent-primary);
+  background: rgba(49, 20, 30, 0.44);
+  border-color: rgba(122, 62, 74, 0.55);
+  box-shadow: inset 2px 0 0 rgba(239, 68, 68, 0.82);
 }
 
 .inbox-conv-item.unread {
-  background: rgba(43, 127, 232, 0.04);
+  background: rgba(24, 34, 56, 0.74);
 }
 
 /* Аватар */
 .inbox-avatar {
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  background: rgba(43, 127, 232, 0.15);
-  color: var(--accent-primary);
+  background: rgba(51, 82, 142, 0.28);
+  color: #9fc2ff;
   position: relative;
+}
+
+.inbox-conv-item > .inbox-avatar {
+  display: none;
 }
 
 .inbox-avatar-badge {
@@ -179,8 +416,8 @@
 }
 
 .inbox-conv-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -188,12 +425,12 @@
 }
 
 .inbox-conv-preview {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .inbox-conv-meta {
@@ -205,12 +442,12 @@
 }
 
 .inbox-conv-time {
-  font-size: 10px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 9.5px;
   color: var(--text-faint);
   white-space: nowrap;
-  position: absolute;
-  top: 10px;
-  right: 12px;
+  position: static;
+  margin-left: auto;
 }
 
 /* Бейджи */
@@ -219,7 +456,7 @@
   align-items: center;
   gap: 3px;
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: 3px;
   font-size: 9px;
   font-weight: 600;
   text-transform: uppercase;
@@ -227,13 +464,13 @@
 }
 
 .inbox-badge-hot {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: rgba(255, 68, 68, 0.12);
+  color: #ff4444;
 }
 
 .inbox-badge-interested {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
 }
 
 .inbox-badge-dnc {
@@ -242,13 +479,13 @@
 }
 
 .inbox-badge-email {
-  background: rgba(20, 184, 166, 0.15);
-  color: #14b8a6;
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
 }
 
 .inbox-badge-followup {
-  background: rgba(201, 168, 76, 0.15);
-  color: #c9a84c;
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
 }
 
 /* ─── Центральная панель: тред сообщений ─── */
@@ -365,11 +602,11 @@
   min-height: 40px;
   max-height: 120px;
   padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-size: 14px;
+  border-radius: 6px;
+  border: 1px solid var(--inbox-border, var(--border-color));
+  background: var(--inbox-bg3, var(--bg-input));
+  color: var(--inbox-text1, var(--text-primary));
+  font-size: 13px;
   resize: none;
   outline: none;
   transition: border-color 0.15s;
@@ -385,14 +622,14 @@
 }
 
 .inbox-compose-btn {
-  width: 40px;
+  min-width: 56px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-primary);
-  color: white;
+  background: var(--inbox-gold, #d1a949);
+  color: #0a0a0f;
   border: none;
   cursor: pointer;
   transition: background 0.15s;
@@ -400,7 +637,7 @@
 }
 
 .inbox-compose-btn:hover {
-  background: var(--accent-hover);
+  background: #d1a949;
 }
 
 .inbox-compose-btn:disabled {
@@ -435,26 +672,27 @@
 
 /* ─── Правая панель: сайдбар ─── */
 .inbox-right {
-  width: 280px;
-  min-width: 280px;
+  width: 300px;
+  min-width: 300px;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
+  border-left: 1px solid var(--inbox-border, var(--border-subtle));
+  background: var(--inbox-bg, var(--bg-secondary));
   overflow-y: auto;
 }
 
 .inbox-sidebar-section {
   padding: 14px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--inbox-border, var(--border-subtle));
 }
 
 .inbox-sidebar-title {
-  font-size: 10px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 9px;
   font-weight: 700;
   color: var(--text-faint);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
   margin-bottom: 10px;
 }
 
@@ -846,8 +1084,8 @@
   }
 
   .inbox-left {
-    width: 240px;
-    min-width: 240px;
+    width: 280px;
+    min-width: 280px;
   }
 }
 
@@ -895,22 +1133,22 @@
 
 .inbox-sort {
   position: relative;
-  min-width: 170px;
+  min-width: 172px;
 }
 
 .inbox-sort-select {
   width: 100%;
   border: 1px solid var(--border-color);
-  background: var(--bg-input);
+  background: rgba(14, 20, 34, 0.88);
   color: var(--text-secondary);
-  border-radius: 8px;
-  height: 30px;
+  border-radius: 7px;
+  height: 31px;
   padding: 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11.5px;
   cursor: pointer;
 }
 
@@ -957,13 +1195,13 @@
 
 .inbox-filters.two-rows {
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   overflow: visible;
 }
 
 .inbox-filter-row {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -974,9 +1212,10 @@
 
 .inbox-conv-head-row {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  padding-right: 56px;
+  padding-right: 0;
 }
 
 .inbox-conv-number-pill {
@@ -986,12 +1225,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid rgba(43, 127, 232, 0.35);
+  border: 1px solid rgba(61, 131, 231, 0.42);
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 10px;
-  color: #7db7ff;
-  background: rgba(43, 127, 232, 0.12);
+  color: #7bb3ff;
+  background: rgba(43, 127, 232, 0.1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -999,21 +1238,32 @@
 
 .inbox-unread-dot {
   position: absolute;
-  top: 12px;
-  right: 14px;
-  width: 7px;
-  height: 7px;
+  top: 10px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
-  background: #4ea4ff;
-  box-shadow: 0 0 0 2px rgba(78, 164, 255, 0.2);
+  background: #f35252;
+  box-shadow: 0 0 0 2px rgba(243, 82, 82, 0.18);
 }
 
 .inbox-kbd-row {
-  font-size: 10px;
+  font-size: 9.5px;
   color: var(--text-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: 2px;
+}
+
+.inbox-compose-meta {
+  margin-top: 6px;
+}
+
+.inbox-sound-row {
+  font-size: 9px;
+  color: #7f8ea6;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .inbox-thread-header {
@@ -1021,8 +1271,9 @@
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
-  padding: 10px 14px;
+  padding: 14px 20px 8px;
   position: relative;
+  background: var(--inbox-bg, var(--bg-secondary));
 }
 
 .inbox-thread-row {
@@ -1035,17 +1286,21 @@
 
 .inbox-thread-row.row1 {
   align-items: flex-start;
+  min-height: 30px;
 }
 
 .inbox-thread-row.row2.status-strip {
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 6px 8px;
-  background: rgba(11, 16, 31, 0.45);
+  border: 0;
+  border-top: 1px solid var(--inbox-border, var(--border-subtle));
+  border-bottom: 1px solid var(--inbox-border, var(--border-subtle));
+  border-radius: 0;
+  padding: 8px 0;
+  background: var(--inbox-bg2, rgba(11, 16, 31, 0.45));
 }
 
 .inbox-thread-row.row3.quick-actions {
   padding-top: 2px;
+  gap: 6px;
 }
 
 .inbox-back-btn {
@@ -1065,27 +1320,44 @@
   background: var(--bg-hover);
 }
 
+@media (min-width: 1025px) {
+  .inbox-back-btn {
+    display: none;
+  }
+}
+
 .inbox-thread-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 
+.inbox-thread-info > .inbox-avatar {
+  display: none;
+}
+
 .inbox-thread-name {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 700;
+  line-height: 1.2;
 }
 
 .inbox-thread-phone {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 10px;
+  color: var(--inbox-text3, var(--text-muted));
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  margin-top: 2px;
 }
 
 .inbox-action-chip {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--inbox-border, var(--border-color));
   background: transparent;
-  border-radius: 7px;
-  padding: 5px 8px;
+  border-radius: 5px;
+  padding: 5px 11px;
   font-size: 11px;
-  color: var(--text-secondary);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--inbox-text2, var(--text-secondary));
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1093,20 +1365,54 @@
 }
 
 .inbox-action-chip.gold {
-  background: rgba(201, 149, 42, 0.12);
-  color: #e6bd5a;
-  border-color: rgba(201, 149, 42, 0.35);
+  background: var(--inbox-gold-bg, rgba(201, 149, 42, 0.12));
+  color: var(--inbox-gold, #e6bd5a);
+  border-color: rgba(184, 150, 62, 0.3);
 }
 
 .inbox-strip-badge {
-  border-radius: 999px;
-  border: 1px solid var(--border-color);
-  padding: 2px 8px;
-  font-size: 10px;
-  color: var(--text-muted);
+  border-radius: 4px;
+  border: 1px solid var(--inbox-border, var(--border-color));
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--inbox-text2, var(--text-muted));
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.inbox-thread-row.row3.quick-actions .inbox-action-btn {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10.5px;
+  border-radius: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--inbox-border, var(--border-color));
+  color: var(--inbox-text2, var(--text-secondary));
+  background: transparent;
+  min-height: 30px;
+}
+
+.inbox-thread-row.row3.quick-actions .inbox-action-btn:hover {
+  background: var(--inbox-bg3, var(--bg-hover));
+  border-color: var(--inbox-border-strong, rgba(255, 255, 255, 0.1));
+  color: var(--inbox-text1, var(--text-primary));
+}
+
+.inbox-thread-row.row3.quick-actions .inbox-action-btn.pipeline {
+  color: var(--inbox-gold, #e7c77a);
+  border-color: rgba(184, 150, 62, 0.32);
+  background: var(--inbox-gold-bg, rgba(201, 149, 42, 0.1));
+}
+
+.inbox-thread-row.row3.quick-actions .inbox-action-btn.timer-pill {
+  pointer-events: none;
+}
+
+.inbox-thread-row.row3.quick-actions .inbox-action-btn.timer-pill.overdue {
+  color: var(--inbox-hot, #ff8f88);
+  border-color: rgba(255, 68, 68, 0.35);
+  background: var(--inbox-hot-bg, rgba(239, 68, 68, 0.12));
 }
 
 .inbox-strip-badge.hot {
@@ -1176,6 +1482,7 @@
 .inbox-badge-overdue {
   background: rgba(239, 68, 68, 0.16);
   color: #ff8f88;
+  animation: inbox-pulse 1.5s ease-in-out infinite;
 }
 
 .inbox-popover {
@@ -1198,6 +1505,12 @@
 .inbox-popover.followup-popover {
   display: grid;
   gap: 6px;
+}
+
+.inbox-popover-helper {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 2px 2px;
 }
 
 .inbox-popover.followup-popover > button,
@@ -1266,7 +1579,7 @@
 }
 
 .inbox-messages {
-  padding-top: 12px;
+  padding: 20px;
 }
 
 .inbox-date-separator {
@@ -1292,6 +1605,21 @@
 
 .inbox-msg {
   border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  padding: 8px 12px;
+  max-width: 74%;
+}
+
+.inbox-msg.outbound {
+  background: #274874;
+  border-radius: 12px 12px 4px 12px;
+}
+
+.inbox-msg.inbound {
+  background: #171d2d;
+  border: 1px solid rgba(64, 78, 104, 0.55);
+  border-radius: 12px 12px 12px 4px;
 }
 
 .inbox-msg-status {
@@ -1313,10 +1641,14 @@
 
 .inbox-compose {
   position: relative;
+  padding: 8px 20px 14px;
+  background: var(--inbox-bg, var(--bg-secondary));
+  border-top: 1px solid var(--inbox-border, var(--border-subtle));
 }
 
 .inbox-sending-from {
   margin-bottom: 8px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 10px;
   color: var(--text-faint);
   letter-spacing: 0.06em;
@@ -1354,26 +1686,30 @@
 .inbox-sidebar-tabs {
   display: flex;
   gap: 4px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 14px;
+  border-bottom: 1px solid var(--inbox-border, var(--border-subtle));
 }
 
 .inbox-sidebar-tabs button {
   flex: 1;
-  border: 1px solid var(--border-color);
+  border: 0;
   background: transparent;
-  color: var(--text-muted);
-  border-radius: 7px;
-  padding: 5px 8px;
-  font-size: 11px;
-  font-weight: 600;
+  color: var(--inbox-text3, var(--text-muted));
+  border-radius: 0;
+  padding: 12px 6px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 9.5px;
+  font-weight: 500;
   cursor: pointer;
+  border-bottom: 2px solid transparent;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .inbox-sidebar-tabs button.active {
-  color: var(--accent-primary);
-  border-color: rgba(43, 127, 232, 0.35);
-  background: rgba(43, 127, 232, 0.1);
+  color: var(--inbox-text1, var(--text-primary));
+  border-bottom-color: var(--inbox-gold, #b8963e);
+  background: transparent;
 }
 
 .inbox-sidebar-section.contact-grid {
@@ -1382,23 +1718,106 @@
 
 .inbox-contact-row {
   display: grid;
-  grid-template-columns: 96px 1fr;
+  grid-template-columns: 94px 1fr;
   gap: 8px;
-  border-bottom: 1px dashed var(--border-subtle);
-  padding: 8px 0;
+  border-bottom: 1px solid var(--inbox-border, var(--border-subtle));
+  padding: 6px 0;
 }
 
 .inbox-contact-key {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 10px;
-  color: var(--text-faint);
+  color: #6e7991;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 
 .inbox-contact-value {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: #e3e8f2;
   word-break: break-word;
+}
+
+/* M2: золотой ASSIGNED REP в правой панели — 1:1 с прототипом scl-inbox-v11.html */
+.inbox-contact-value.value-gold {
+  color: var(--inbox-gold, #b8963e);
+  font-weight: 600;
+}
+
+/* M2: горячая подсветка AI Status в Deal Info */
+.inbox-contact-value.value-hot {
+  color: #ff7066;
+  font-weight: 600;
+}
+
+.inbox-add-note-btn {
+  width: 100%;
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid rgba(184, 150, 62, 0.35);
+  background: var(--inbox-gold-bg, rgba(184, 150, 62, 0.12));
+  color: var(--inbox-gold, #b8963e);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.inbox-add-note-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inbox-add-note-btn:hover:not(:disabled) {
+  background: rgba(184, 150, 62, 0.2);
+}
+
+.inbox-notes-helper {
+  margin-top: 8px;
+  border: 1px solid rgba(66, 74, 92, 0.7);
+  background: rgba(20, 25, 38, 0.82);
+  color: #a8b1c4;
+  border-radius: 6px;
+  padding: 8px 9px;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+/* Inbox-only visual adjustments for shared AppLayout menu */
+.inbox-layout {
+  --scl-sidebar: #0a0a0f;
+  --scl-border: rgba(255, 255, 255, 0.06);
+}
+
+.inbox-layout .sidebar-link {
+  color: #6a7184;
+}
+
+.inbox-layout .sidebar-link:hover {
+  color: #aab2c6;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.inbox-layout .sidebar-link.active {
+  color: #e1c16a;
+  background: rgba(184, 150, 62, 0.14);
+  border-left-color: #b8963e;
+}
+
+.inbox-layout [data-nav-version="2"] > div > div:first-child {
+  color: #8b7a4a !important;
+}
+
+.inbox-layout .sidebar-link svg {
+  opacity: 0.85;
+}
+
+.inbox-layout .sidebar-link.active svg {
+  opacity: 1;
 }
 
 .inbox-activity-list {
@@ -1753,4 +2172,336 @@
     border-right: 0;
     border-bottom: 1px solid var(--border-subtle);
   }
+}
+
+/* ──────────────────────────────────────────────────────────
+   PIXEL-PERFECT pass · 27 апреля 2026
+   1:1 с прототипом scl-inbox-v11.html
+   ────────────────────────────────────────────────────────── */
+
+/* Conv card: золотой selected accent (был оранжевый) */
+.inbox-conv-item.selected {
+  background: rgba(184, 150, 62, 0.10);
+  border-color: rgba(184, 150, 62, 0.55);
+  box-shadow: inset 3px 0 0 #b8963e;
+}
+
+/* Conv card: компактнее padding */
+.inbox-conv-item {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+}
+
+/* Мини-бейдж rep в правом верхнем углу карточки */
+.inbox-conv-rep-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(184, 150, 62, 0.18);
+  color: #b8963e;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  letter-spacing: 0.3px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+/* Filter chips: чуть тоньше padding чтобы Email Rcv помещался */
+.inbox-filter-btn {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+.inbox-filter-count {
+  font-size: 8.5px;
+  margin-left: 4px;
+}
+
+/* Compose: emoji иконки */
+.inbox-tool-btn.icon-emoji {
+  font-size: 16px;
+  padding: 4px 6px;
+  line-height: 1;
+  filter: saturate(0.85);
+}
+
+/* Hint row uppercase для совпадения с прототипом */
+.inbox-kbd-row {
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* Source inline в header — приглушаем */
+.inbox-thread-phone .thread-source {
+  opacity: 0.7;
+}
+
+/* REP PERFORMANCE секция в правой панели */
+.rep-perf-section .rep-perf-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.rep-perf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10.5px;
+}
+.rep-perf-label {
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.rep-perf-value {
+  color: #34d399;
+  font-weight: 600;
+}
+.rep-perf-value.muted {
+  color: var(--text-faint);
+}
+
+
+/* === Pixel-pass #3: header reshuffle + notes meta === */
+
+/* Header row1: имя слева, action chips справа */
+.inbox-thread-row.row1 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.inbox-thread-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  max-width: 60%;
+}
+.inbox-thread-actions-bar .inbox-action-btn {
+  font-size: 10.5px;
+  padding: 3px 7px;
+  height: 22px;
+  border-radius: 4px;
+}
+.inbox-thread-actions-bar .followup-btn {
+  background: rgba(212, 175, 55, 0.12);
+  border-color: rgba(212, 175, 55, 0.4);
+  color: #d4af37;
+}
+
+/* Status strip (row2): уже OVERDUE подкраска */
+.inbox-strip-badge.follow.overdue {
+  background: rgba(220, 38, 38, 0.18);
+  color: #fca5a5;
+  border-color: rgba(220, 38, 38, 0.4);
+}
+
+/* Notes: автор + время как в прототипе */
+.inbox-note-meta-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 9.5px;
+  margin-bottom: 3px;
+  color: var(--text-muted);
+}
+.inbox-note-author {
+  color: #d4af37;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.inbox-note-time {
+  flex: 1;
+  color: var(--text-faint);
+}
+.inbox-note-meta-top .inbox-tool-btn {
+  padding: 2px 4px;
+  opacity: 0.5;
+}
+.inbox-note-meta-top .inbox-tool-btn:hover {
+  opacity: 1;
+}
+.inbox-note-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+.inbox-note-body {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary, #d4d4d8);
+}
+
+/* === Pixel-pass #4: view-toggle tabs + message bubbles 1:1 prototype === */
+
+/* View toggle (Admin / My Convs) — tabs внутри pill */
+.inbox-view-toggle {
+  display: flex;
+  background: #16161f;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 2px;
+  margin: 0 12px 10px;
+}
+.inbox-view-toggle-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-faint, #71717a);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.inbox-view-toggle-btn:hover {
+  color: var(--text-secondary, #d4d4d8);
+}
+.inbox-view-toggle-btn.active {
+  background: #0a0a0f;
+  color: #b8963e;
+  box-shadow: 0 0 0 1px rgba(184, 150, 62, 0.35);
+}
+
+/* Message bubbles 1:1 с прототипом scl-inbox-v11.html */
+.inbox-msg {
+  max-width: 70%;
+  padding: 0;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+.inbox-msg.outbound {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.inbox-msg.inbound {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.inbox-msg-bubble {
+  padding: 9px 13px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.inbox-msg.outbound .inbox-msg-bubble {
+  background: #1e3a5f;
+  color: #e8e8f0;
+  border-radius: 14px 14px 4px 14px;
+}
+.inbox-msg.inbound .inbox-msg-bubble {
+  background: #16161f;
+  color: var(--text-primary, #e4e4e7);
+  border-radius: 14px 14px 14px 4px;
+}
+.inbox-msg.inbound.hot .inbox-msg-bubble {
+  border-left: 2px solid #ff4444;
+  border-top-left-radius: 4px;
+}
+.inbox-msg-meta {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 9px;
+  color: var(--text-faint, #71717a);
+  margin-top: 3px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.inbox-msg-hot-tag {
+  background: rgba(255, 68, 68, 0.12);
+  color: #ff4444;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.inbox-msg-status {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 9px;
+}
+.inbox-msg-status.delivered { color: #22c55e; }
+.inbox-msg-status.sent { color: var(--text-faint, #71717a); }
+.inbox-msg-status.failed { color: #ff4444; }
+
+/* System event строка (HOT classification — admin notified) */
+.inbox-system-event {
+  align-self: center;
+  background: rgba(184, 150, 62, 0.12);
+  border: 1px dashed rgba(184, 150, 62, 0.3);
+  color: #b8963e;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin: 6px 0;
+  letter-spacing: 0.3px;
+}
+
+/* === Pixel-pass #5: фильтры в одну строку, messages flex column восстановлен === */
+
+/* Filter pills 1:1 с прототипом scl-inbox-v11.html */
+.inbox-filters.one-row {
+  padding: 0 12px 8px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.inbox-filters.one-row .inbox-filter-btn {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #16161f;
+  color: var(--text-secondary, #d4d4d8);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.inbox-filters.one-row .inbox-filter-btn:hover {
+  background: #1c1c26;
+  color: #fff;
+}
+.inbox-filters.one-row .inbox-filter-btn.active {
+  background: #1c1c26;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.inbox-filters.one-row .inbox-filter-btn.tone-hot {
+  background: rgba(255, 68, 68, 0.12);
+  color: #ff4444;
+  border-color: rgba(255, 68, 68, 0.25);
+}
+.inbox-filters.one-row .inbox-filter-btn .inbox-filter-count {
+  font-size: 9.5px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+/* Восстанавливаем flex column для messages — иначе align-self у .inbox-msg не работает */
+.inbox-messages {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1;
+  overflow-y: auto;
+  gap: 8px;
 }

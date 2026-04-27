@@ -296,12 +296,17 @@ model Conversation {
   hotLead         Boolean   @default(false)   // Вручную помечается как горячий лид (Phase 1)
   leadStatus      String?   // "Interested" / "Not Interested" / "DNC"
   nextFollowupAt  DateTime? // Дата follow-up
+  followupState   String?   @default("none") // "none" | "scheduled" | "due_now"
   emailReceived   Boolean   @default(false)   // Помечен как "Email Rcv"
 
   // Phase 1 AI Inbox: Anthropic classifyInbound() output — written on every inbound
   aiClassification    String?   // "HOT" | "WARM" | "NURTURE" | "DEAD" | "WRONG_NUMBER"
   aiSignals           Json?     // { revenue, revenueMonthly, revenueAnnual, revenueConfidence, ask, product, industry, urgency, objections }
   aiSuggestions       Json?     // [{ type: "BEST"|"ALT", text, cta }]
+  extractedIndustry   String?
+  helocFitFlag        Boolean?
+  extractedRevenue    Int?
+  extractedAsk        String?
   isCaliforniaNumber  Boolean   @default(false)
   aiLeadScore         Int       @default(0)   // 0-100, drives "AI Priority" sort
   aiClassifiedAt      DateTime? // Timestamp last classification ran (for HOT timer)
@@ -315,6 +320,8 @@ model Conversation {
   assignedRep     User?        @relation(fields: [assignedRepId], references: [id], onDelete: SetNull)
   messages        Message[]
   notes           ConversationNote[]
+  classificationFeedback ClassificationFeedback[]
+  auditEvents     ConversationAudit[]
   deals           Deal[]       @relation("ConversationDeals")
   scheduledMessages ScheduledMessage[]
 
@@ -329,6 +336,8 @@ model Conversation {
   @@index([nextFollowupAt])
   @@index([aiClassification])
   @@index([aiLeadScore])
+  @@index([extractedIndustry])
+  @@index([extractedRevenue])
   @@map("conversations")
 }
 
@@ -1076,4 +1085,53 @@ model ConversationNote {
   @@index([conversationId])
   @@index([dealId])
   @@map("conversation_notes")
+}
+
+model ClassificationFeedback {
+  id                 String   @id @default(cuid())
+  conversationId     String
+  createdById        String
+  action             String   // "skip" | "use" | "override"
+  suggestionText     String?  @db.Text
+  reason             String?  @db.Text
+  aiClassification   String?
+  createdAt          DateTime @default(now())
+
+  conversation       Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([createdById, createdAt])
+  @@map("classification_feedback")
+}
+
+model ConversationAudit {
+  id             String   @id @default(cuid())
+  conversationId String
+  actorId        String?
+  eventType      String
+  source         String?
+  oldValue       Json?
+  newValue       Json?
+  createdAt      DateTime @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("conversation_audit")
+}
+
+model RepOutboundDaily {
+  id            String   @id @default(cuid())
+  repId         String
+  day           DateTime
+  totalMessages Int      @default(0)
+  manualMessages Int     @default(0)
+  campaignMessages Int   @default(0)
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@unique([repId, day])
+  @@index([repId, day])
+  @@map("rep_outbound_daily")
 }

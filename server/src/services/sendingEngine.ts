@@ -79,6 +79,39 @@ interface BulkSendOptions {
 }
 
 export class SendingEngine {
+  private static startOfDayUtc(input: Date = new Date()): Date {
+    return new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate()));
+  }
+
+  private static async trackRepOutbound(
+    repId: string | undefined,
+    count: number,
+    mode: 'manual' | 'campaign',
+  ): Promise<void> {
+    if (!repId || count <= 0) return;
+    const day = this.startOfDayUtc();
+    await prisma.repOutboundDaily.upsert({
+      where: {
+        repId_day: {
+          repId,
+          day,
+        },
+      },
+      create: {
+        repId,
+        day,
+        totalMessages: count,
+        manualMessages: mode === 'manual' ? count : 0,
+        campaignMessages: mode === 'campaign' ? count : 0,
+      },
+      update: {
+        totalMessages: { increment: count },
+        manualMessages: mode === 'manual' ? { increment: count } : undefined,
+        campaignMessages: mode === 'campaign' ? { increment: count } : undefined,
+      },
+    });
+  }
+
   /**
    * Move a lead's pipeline card to the stage matching the given status
    */
@@ -200,6 +233,8 @@ export class SendingEngine {
         phoneNumberId: fromNumber.id,
       },
     });
+
+    await this.trackRepOutbound(options.sentByUserId, 1, options.campaignId ? 'campaign' : 'manual');
 
     // Add to queue
     await smsQueue.add(
@@ -482,6 +517,8 @@ export class SendingEngine {
       const messages = await prisma.$transaction(
         messageDataToCreate.map(({ leadId, ...data }) => prisma.message.create({ data })),
       );
+
+      await this.trackRepOutbound(options.sentByUserId, messages.length, options.campaignId ? 'campaign' : 'manual');
 
       // Build jobs from created messages
       for (let i = 0; i < messages.length; i++) {

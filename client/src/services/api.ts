@@ -183,6 +183,10 @@ export const inboxApi = {
   listNotes: (id: string) => api.get(`/inbox/${id}/notes`),
   createNote: (id: string, body: string, dealId?: string) => api.post(`/inbox/${id}/notes`, { body, dealId }),
   deleteNote: (id: string, noteId: string) => api.delete(`/inbox/${id}/notes/${noteId}`),
+  createClassificationFeedback: (
+    id: string,
+    payload: { action: 'skip' | 'use' | 'override'; suggestionText?: string; reason?: string },
+  ) => api.post(`/inbox/${id}/classification-feedback`, payload),
 
   // Phase 1: Шаблоны
   listTemplates: (params?: Record<string, string>) => api.get('/inbox/templates/list', { params }),

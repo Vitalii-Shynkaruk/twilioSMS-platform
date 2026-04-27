@@ -17,6 +17,7 @@ const SIGNAL_DEFS: Array<{ key: keyof AISignals; icon: string; suffix?: string; 
   { key: 'product', icon: '🏦' },
   { key: 'industry', icon: '🏗' },
   { key: 'objections', icon: '⚠' },
+  { key: 'helocFitFlag', icon: '🟣' },
 ];
 
 const formatElapsed = (s: number) => {
@@ -43,6 +44,9 @@ export default function AIBanner({ conversation }: AIBannerProps) {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [isHot, conversation.aiClassifiedAt]);
+
+  // FIX (M1): прятать таймер если HOT-классификация старее 60 мин — иначе он растёт до тысяч минут (4783:58)
+  const showTimer = isHot && elapsed > 0 && elapsed <= 60 * 60;
 
   if (!cls) return null;
 
@@ -73,7 +77,10 @@ export default function AIBanner({ conversation }: AIBannerProps) {
   const chips = SIGNAL_DEFS.map((def) => {
     const v = signals[def.key];
     if (!v) return null;
-    const display = def.quote ? `"${v}"` : `${v}${def.suffix || ''}`;
+    // helocFitFlag = boolean: показываем в виде фиксированной подписи "HELOC fit"
+    const display = def.key === 'helocFitFlag'
+      ? 'HELOC fit'
+      : def.quote ? `"${v}"` : `${v}${def.suffix || ''}`;
     return (
       <span key={def.key} className="signal-chip">
         <span className="sig-icon">{def.icon}</span>
@@ -89,7 +96,7 @@ export default function AIBanner({ conversation }: AIBannerProps) {
         <div className="banner-status">
           <span className={clsx('status-badge', statusVariant)}>{stateLabel}</span>
         </div>
-        {isHot && conversation.aiClassifiedAt && <div className={timerCls}>{formatElapsed(elapsed)}</div>}
+        {showTimer && conversation.aiClassifiedAt && <div className={timerCls}>{formatElapsed(elapsed)}</div>}
       </div>
       <div className="banner-bottom">
         <div className="signal-chips">{chips.length > 0 ? chips : null}</div>

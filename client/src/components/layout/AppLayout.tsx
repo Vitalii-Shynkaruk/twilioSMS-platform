@@ -22,7 +22,6 @@ import {
   Command,
   X,
   Target,
-  LayoutDashboard,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
@@ -34,7 +33,6 @@ const navGroups = [
     label: 'CORE',
     items: [
       { name: 'Command Center', href: '/command-center', icon: Target },
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
       { name: 'Pipeline', href: '/pipeline', icon: LayoutGrid },
       { name: 'Leads', href: '/leads', icon: Users },
     ],
@@ -84,10 +82,11 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const commandInputRef = useRef<HTMLInputElement>(null);
+  const isInboxRoute = location.pathname.startsWith('/inbox');
 
   // Auto-collapse sidebar on Pipeline / Command Center for maximum content visibility
   useEffect(() => {
-    if (location.pathname === '/pipeline' || location.pathname === '/command-center') {
+    if (location.pathname === '/pipeline' || location.pathname === '/command-center' || location.pathname === '/inbox') {
       setCollapsed(true);
     }
   }, [location.pathname]);
@@ -199,10 +198,12 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
             width: 28,
             height: 28,
             borderRadius: 6,
-            background: 'linear-gradient(135deg, #1A5FC8, #2B7FE8)',
+            background: isInboxRoute
+              ? 'linear-gradient(135deg, rgba(184,150,62,0.92), rgba(217,178,78,0.98))'
+              : 'linear-gradient(135deg, #1A5FC8, #2B7FE8)',
             fontSize: 12,
             fontWeight: 700,
-            color: '#FFFFFF',
+            color: isInboxRoute ? '#1c1710' : '#FFFFFF',
           }}
         >
           S
@@ -432,7 +433,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   );
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--bg-primary)' }}>
+    <div className={clsx('flex h-screen overflow-hidden', isInboxRoute && 'inbox-layout')} style={{ backgroundColor: 'var(--bg-primary)' }}>
       {/* Mobile overlay */}
       {mobileOpen && (
         <div

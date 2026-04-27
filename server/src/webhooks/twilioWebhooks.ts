@@ -45,12 +45,21 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
   const ai = await AIService.classifyInbound(conversationId);
   if (!ai) return;
 
-  const persistedSignals = {
+  const persistedSignals: Record<string, unknown> = {
     ...(ai.signals as Record<string, unknown>),
     classifierPromptVersion: ai.promptVersion,
   };
+  const extractedIndustry =
+    typeof persistedSignals.industry === 'string' && persistedSignals.industry.trim()
+      ? persistedSignals.industry.trim()
+      : null;
+  const helocFitFlag = typeof persistedSignals.helocFitFlag === 'boolean' ? persistedSignals.helocFitFlag : null;
+  const extractedRevenue =
+    typeof persistedSignals.revenueMonthly === 'number' ? Math.round(persistedSignals.revenueMonthly) : null;
+  const extractedAsk =
+    typeof persistedSignals.ask === 'string' && persistedSignals.ask.trim() ? persistedSignals.ask.trim() : null;
 
-  const phase1Lean = (process.env.PHASE1_LEAN ?? 'true').toLowerCase() !== 'false';
+  const phase1Lean = (process.env.PHASE1_LEAN ?? 'false').toLowerCase() !== 'false';
   let alertSent = false;
   if (ai.classification === 'HOT' && repId) {
     const guardKey = `hot-alert:${conversationId}`;
@@ -68,9 +77,27 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
       aiClassification: ai.classification,
       aiSignals: persistedSignals as object,
       aiSuggestions: ai.suggestions as object,
+      extractedIndustry,
+      helocFitFlag,
+      extractedRevenue,
+      extractedAsk,
       isCaliforniaNumber: ai.isCaliforniaNumber,
       aiLeadScore: ai.leadScore,
       aiClassifiedAt: new Date(),
+    },
+  });
+
+  await prisma.conversationAudit.create({
+    data: {
+      conversationId,
+      actorId: repId,
+      eventType: 'ai_state_changed',
+      source: 'twilio_inbound_worker',
+      newValue: {
+        aiClassification: ai.classification,
+        aiLeadScore: ai.leadScore,
+        promptVersion: ai.promptVersion,
+      },
     },
   });
 

@@ -9,16 +9,16 @@
 
 ## 🔒 Priority 0 — Trust & Data Safety (must-pass before feature rollout)
 
-- [ ] Включить audit trail для unread/follow-up/AI-state изменений (кто, когда, откуда, старое→новое)
-- [ ] Добавить инварианты: inbound всегда сохраняется; unread не теряется от чужого просмотра
-- [ ] Добавить reconciliation job + алерт на расхождения (кампания replied vs inbox visible)
+- [x] Включить audit trail для unread/follow-up/AI-state изменений (кто, когда, откуда, старое→новое)
+- [x] Добавить инварианты: inbound всегда сохраняется; unread не теряется от чужого просмотра
+- [x] Добавить reconciliation job + алерт на расхождения (кампания replied vs inbox visible)
 - [x] Ввести feature flag `AI_CLASSIFICATION_ENABLED` (default OFF до полного QA)
 - [x] Зафиксировать rollback-план и smoke-checklist перед каждым релизом
 
 ## 📦 SCL-HandOff alignment (обязательно)
 
-- [ ] Использовать только `SCL-HandOff/classifier_prompt_v4_LOCKED.md` (prompt не редактировать)
-- [ ] Использовать схему строго по `SCL-HandOff/classification_schema.json` (без произвольных полей)
+- [x] Использовать только `SCL-HandOff/classifier_prompt_v4_LOCKED.md` (prompt не редактировать)
+- [x] Использовать схему строго по `SCL-HandOff/classification_schema.json` (без произвольных полей)
 - [x] Классификатор работает по правилу full-thread peak (вся история, oldest -> newest)
 - [x] Классификация только async через queue/worker; Twilio webhook не блокировать
 - [x] В классификацию не отправлять opted-out / outbound-only / zero-inbound треды
@@ -49,31 +49,31 @@
 - [x] classifyInbound в Twilio webhook (async, non-blocking, после persistence)
 - [x] Реклассификация по owner actions: Interested/Not Interested/DNC/Email Rcv/+Pipeline/Note
 - [x] Universal note ingestion (admin/rep notes одинаково feed AI)
-- [ ] Новые данные в Conversation: `industry`, `heloc_fit_flag`, `extracted_revenue`, `extracted_ask`
-- [ ] Таблица `classification_feedback` (override/skip tracking)
-- [ ] Per-rep outbound tracking (foundation для Phase 2)
-- [ ] Follow-up state fields + minute job `scheduled -> due_now`
-- [ ] При `due_now` запускать reclassification с overdue context
+- [x] Новые данные в Conversation: `industry`, `heloc_fit_flag`, `extracted_revenue`, `extracted_ask`
+- [x] Таблица `classification_feedback` (override/skip tracking)
+- [x] Per-rep outbound tracking (foundation для Phase 2)
+- [x] Follow-up state fields + minute job `scheduled -> due_now`
+- [x] При `due_now` запускать reclassification с overdue context
 - [ ] Backfill 642 historical conversations + validation report
-- [ ] Поля из schema v4 маппятся 1:1: classification, leadScore, staleState, suggestedReply, suggestedReengageMessage, repBehavior
-- [ ] HOT rule enforcement: для HOT всегда non-null `suggestedFollowupTime` + `suggestedFollowupReason`
-- [ ] Re-engage rule enforcement: non-null `suggestedReengageMessage` при stale/ghosted или 7+ дней тишины
+- [x] Поля из schema v4 маппятся 1:1: classification, leadScore, staleState, suggestedReply, suggestedReengageMessage, repBehavior
+- [x] HOT rule enforcement: для HOT всегда non-null `suggestedFollowupTime` + `suggestedFollowupReason`
+- [x] Re-engage rule enforcement: non-null `suggestedReengageMessage` при stale/ghosted или 7+ дней тишины
 
 ### M3 — UI refinement (not rebuild)
 
-- [ ] Сохранить текущую 3-column inbox структуру и существующие элементы
-- [ ] Добавить one-line AI Intelligence bar над тредом
-- [ ] Добавить single Suggested Reply panel (Use / Edit / Skip)
-- [ ] Skip писать в `classification_feedback`
-- [ ] CTA открывает Gmail compose с prefilled lead email; disabled если email нет
+- [x] Сохранить текущую 3-column inbox структуру и существующие элементы
+- [x] Добавить one-line AI Intelligence bar над тредом
+- [x] Добавить single Suggested Reply panel (Use / Edit / Skip)
+- [x] Skip писать в `classification_feedback`
+- [x] CTA открывает Gmail compose с prefilled lead email; disabled если email нет
 - [x] Admin/My Convs toggle (только admin видит toggle)
 - [x] Admin totals bar: Overdue, HOT, New today, Unread, In Pipeline (только counts, без $)
-- [ ] Follow-Up popover: AI suggested time+reason, 3 quick options, custom datetime, optional reason
-- [ ] Overdue follow-ups: red pulse + resurfacing наверх inbox
-- [ ] Карточки: добавить chips `industry`, `heloc fit`, `follow-up`
+- [x] Follow-Up popover: AI suggested time+reason, 3 quick options, custom datetime, optional reason
+- [x] Overdue follow-ups: red pulse + resurfacing наверх inbox
+- [x] Карточки: добавить chips `industry`, `heloc fit`, `follow-up`
 - [x] Right panel: добавить tabs `AI STATE` и `ALERTS`
-- [ ] Звуки: только HOT alert + New reply + Mute
-- [ ] AI fields `reasoning` и внутренние диагностики не показывать репам (manager/debug only)
+- [x] Звуки: только HOT alert + New reply + Mute
+- [x] AI fields `reasoning` и внутренние диагностики не показывать репам (manager/debug only)
 
 ## ✅ New acceptance gates (short)
 
@@ -114,6 +114,13 @@
 - [x] Added prompt versioning: `classifierPromptVersion` is read from `SystemSetting` (fallback `v4_locked`) and persisted into classification results (`conversation.aiSignals.classifierPromptVersion`) + emitted in `ai-classified` payload; verified with `tests/promptVersion.test.ts` and expanded suite
 - [x] Added owner-action reclassification flow in Inbox backend: non-blocking AI reclassification now triggers after status updates (`Interested`/`Not Interested`/`DNC`/`Email Rcv`/follow-up), note creation, and add-to-pipeline action; results persisted back to conversation AI fields and emitted via socket
 - [x] Implemented universal note ingestion for AI context: `AIService.classifyInbound` now includes full `conversation.notes` timeline (`Owner notes`) plus owner state and pipeline context during classification
+- [x] Added M2/M3 completion package: persisted `classification_feedback` table + new Conversation extraction fields (`extractedIndustry`, `helocFitFlag`, `extractedRevenue`, `extractedAsk`), enabled AI Intelligence banner + Suggested Reply actions (`Use/Edit/Skip`) with `Skip` API tracking, added Gmail compose CTA and card chips (`industry`, `heloc fit`, `follow-up`); verified with `server npm run build`, `client npm run build`, and targeted tests (`outboundMessageGuard`, `promptVersion`, `aiClassificationEligibility`)
+- [x] Added follow-up lifecycle backend: new `followupState` field (`none`/`scheduled`/`due_now`), status-update transition logic, and minute cron (`server/src/jobs/followupStateCron.ts`) that promotes overdue follow-ups to `due_now` and triggers non-blocking AI reclassification with socket refresh payloads
+- [x] Added inbox audio policy implementation: HOT toast sound + New inbound reply ping + persistent mute toggle (`scl_inbox_sound_muted`); AI right panel keeps rep-safe fields only (reasoning/diagnostics not rendered for reps)
+- [x] Enforced SCL-HandOff lock in AI pipeline: classifier now loads prompt from `SCL-HandOff/classifier_prompt_v4_LOCKED.md`, validates model output shape against `SCL-HandOff/classification_schema.json` (required + no unexpected top-level fields), and normalizes locked-schema fields into persisted `aiSignals`
+- [x] Added conversation audit trail (`conversation_audit`) and hooked unread/follow-up/AI-state transitions: `markRead`, `markUnread`, `PATCH /inbox/:id/status`, owner-action reclassification, and webhook worker AI updates now persist actor/source/old→new snapshots; also blocked REP from marking чужие threads as read/unread
+- [x] Added reconciliation watchdog cron (`server/src/jobs/reconciliationCron.ts`): every 5 minutes checks `campaign_leads.status=REPLIED` against inbox conversation visibility/state and emits warning alerts on mismatches
+- [x] Added per-rep outbound foundation (`rep_outbound_daily` + SendingEngine upsert counters) for manual/campaign outbound volume aggregation by day
 >
 > **🔄 Scope revision 23.04.2026 вечер** (финал после уточнений):
 >

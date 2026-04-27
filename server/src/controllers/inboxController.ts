@@ -59,6 +59,120 @@ export class InboxController {
   ];
   private static readonly GENERIC_SOURCE_TOKENS = new Set(['csvimport', 'import', 'inbox', 'sms', 'smsinbox']);
 
+  // Pixel-perfect (M3): кэш rep stats для секции REP PERFORMANCE в правой панели
+  // Кеш на 5 минут — агрегации по сообщениям не критичны к real-time, но дорогие.
+  private static readonly REP_STATS_CACHE_MS = 5 * 60 * 1000;
+  private static readonly repStatsCache = new Map<
+    string,
+    { ts: number; data: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number } }
+  >();
+
+  /**
+   * Считает performance-метрики rep'а для отображения в правой панели Inbox:
+   * - avgFirstResponseSec: avg(время от первого INBOUND до следующего OUTBOUND) по последним 30 inbound'ам.
+   * - aiUsageRatePct: доля conversations с aiClassifiedAt из всех assigned rep'у (proxy для AI usage).
+   * - aiConversionsCount: count(assigned conversations со статусом 'Interested' и aiClassifiedAt IS NOT NULL).
+   *
+   * Кешируется на 5 минут per-rep чтобы не нагружать DB на каждом открытии треда.
+   */
+  private static async computeRepStats(repId: string): Promise<{
+    avgFirstResponseSec: number | null;
+    aiUsageRatePct: number | null;
+    aiConversionsCount: number;
+  }> {
+    const cached = InboxController.repStatsCache.get(repId);
+    if (cached && Date.now() - cached.ts < InboxController.REP_STATS_CACHE_MS) {
+      return cached.data;
+    }
+
+    const [totalConv, classifiedConv, interestedConv, recentInbounds] = await Promise.all([
+      prisma.conversation.count({ where: { assignedRepId: repId } }),
+      prisma.conversation.count({ where: { assignedRepId: repId, aiClassifiedAt: { not: null } } }),
+      prisma.conversation.count({
+        where: { assignedRepId: repId, leadStatus: 'Interested', aiClassifiedAt: { not: null } },
+      }),
+      prisma.message.findMany({
+        where: {
+          direction: 'INBOUND',
+          conversation: { assignedRepId: repId },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: { id: true, createdAt: true, conversationId: true },
+      }),
+    ]);
+
+    let totalDeltaSec = 0;
+    let count = 0;
+    for (const inb of recentInbounds) {
+      const nextOut = await prisma.message.findFirst({
+        where: {
+          conversationId: inb.conversationId,
+          direction: 'OUTBOUND',
+          createdAt: { gt: inb.createdAt },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      });
+      if (!nextOut) continue;
+      const delta = Math.floor((nextOut.createdAt.getTime() - inb.createdAt.getTime()) / 1000);
+      // Skip outliers (>7d значит rep не отвечал и это спорно для AVG response)
+      if (delta > 0 && delta < 7 * 24 * 3600) {
+        totalDeltaSec += delta;
+        count += 1;
+      }
+    }
+
+    const data = {
+      avgFirstResponseSec: count > 0 ? Math.floor(totalDeltaSec / count) : null,
+      aiUsageRatePct: totalConv > 0 ? Math.round((classifiedConv / totalConv) * 100) : null,
+      aiConversionsCount: interestedConv,
+    };
+    InboxController.repStatsCache.set(repId, { ts: Date.now(), data });
+    return data;
+  }
+
+  private static buildAiPersistenceFields(
+    signals: Record<string, unknown>,
+  ): {
+    extractedIndustry: string | null;
+    helocFitFlag: boolean | null;
+    extractedRevenue: number | null;
+    extractedAsk: string | null;
+  } {
+    const extractedIndustry = typeof signals.industry === 'string' && signals.industry.trim() ? signals.industry.trim() : null;
+    const helocFitFlag = typeof signals.helocFitFlag === 'boolean' ? signals.helocFitFlag : null;
+    const extractedRevenue = typeof signals.revenueMonthly === 'number' ? Math.round(signals.revenueMonthly) : null;
+    const extractedAsk = typeof signals.ask === 'string' && signals.ask.trim() ? signals.ask.trim() : null;
+
+    return {
+      extractedIndustry,
+      helocFitFlag,
+      extractedRevenue,
+      extractedAsk,
+    };
+  }
+
+  private static async logAuditEvent(input: {
+    conversationId: string;
+    actorId?: string | null;
+    eventType: string;
+    source?: string;
+    oldValue?: Record<string, unknown>;
+    newValue?: Record<string, unknown>;
+  }): Promise<void> {
+    await prisma.conversationAudit.create({
+      data: {
+        conversationId: input.conversationId,
+        actorId: input.actorId || null,
+        eventType: input.eventType,
+        source: input.source || null,
+        oldValue: input.oldValue as object | undefined,
+        newValue: input.newValue as object | undefined,
+      },
+    });
+  }
+
   private static triggerOwnerActionReclassification(
     req: AuthRequest,
     conversationId: string,
@@ -79,6 +193,7 @@ export class InboxController {
           reclassifiedAt: new Date().toISOString(),
           reclassifiedByUserId: req.user?.id || null,
         };
+        const aiPersistence = InboxController.buildAiPersistenceFields(persistedSignals);
 
         await prisma.conversation.update({
           where: { id: conversationId },
@@ -86,9 +201,23 @@ export class InboxController {
             aiClassification: ai.classification,
             aiSignals: persistedSignals as object,
             aiSuggestions: ai.suggestions as object,
+            ...aiPersistence,
             isCaliforniaNumber: ai.isCaliforniaNumber,
             aiLeadScore: ai.leadScore,
             aiClassifiedAt: new Date(),
+          },
+        });
+
+        await InboxController.logAuditEvent({
+          conversationId,
+          actorId: req.user?.id,
+          eventType: 'ai_state_changed',
+          source: `owner_action_${reason}`,
+          oldValue: { reason },
+          newValue: {
+            aiClassification: ai.classification,
+            aiLeadScore: ai.leadScore,
+            promptVersion: ai.promptVersion,
           },
         });
 
@@ -1207,6 +1336,23 @@ export class InboxController {
       });
     }
 
+    // Pixel-perfect M3: REP PERFORMANCE для правой панели — реальные числа, не placeholders.
+    const repStats = conversation.assignedRepId
+      ? await InboxController.computeRepStats(conversation.assignedRepId).catch((err) => {
+          logger.warn('computeRepStats failed', { repId: conversation.assignedRepId, err: (err as Error).message });
+          return { avgFirstResponseSec: null, aiUsageRatePct: null, aiConversionsCount: 0 };
+        })
+      : null;
+
+    // Pixel-perfect M3: NOTES — отдельный массив с авторами для рендера в правой панели над input.
+    const notesWithAuthor = notes.map((n) => ({
+      id: n.id,
+      body: n.body,
+      createdAt: n.createdAt,
+      authorName: noteAuthorMap.get(n.createdById) || 'Rep',
+      authorId: n.createdById,
+    }));
+
     res.json({
       conversation: {
         ...conversation,
@@ -1215,6 +1361,8 @@ export class InboxController {
         fromNumberFriendlyName,
         isInPipeline: !!latestSmsDeal,
         contactInfo,
+        repStats,
+        notesList: notesWithAuthor,
       },
       messages: messages.reverse(), // Chronological order
       statusStrip,
@@ -1279,11 +1427,22 @@ export class InboxController {
 
     const conversation = await prisma.conversation.findUnique({ where: { id } });
     if (!conversation) throw new AppError('Conversation not found', 404);
+    if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
+      throw new AppError('Not authorized to mark read for this conversation', 403);
+    }
 
     if (conversation.unreadCount > 0) {
       await prisma.conversation.update({
         where: { id },
         data: { unreadCount: 0 },
+      });
+      await InboxController.logAuditEvent({
+        conversationId: id,
+        actorId: req.user?.id,
+        eventType: 'unread_changed',
+        source: 'inbox_mark_read',
+        oldValue: { unreadCount: conversation.unreadCount },
+        newValue: { unreadCount: 0 },
       });
     }
 
@@ -1295,10 +1454,24 @@ export class InboxController {
 
     const conversation = await prisma.conversation.findUnique({ where: { id } });
     if (!conversation) throw new AppError('Conversation not found', 404);
+    if (req.user?.role === 'REP' && conversation.assignedRepId && conversation.assignedRepId !== req.user.id) {
+      throw new AppError('Not authorized to mark unread for this conversation', 403);
+    }
+
+    const nextUnread = Math.max(1, conversation.unreadCount || 0);
 
     await prisma.conversation.update({
       where: { id },
-      data: { unreadCount: Math.max(1, conversation.unreadCount || 0) },
+      data: { unreadCount: nextUnread },
+    });
+
+    await InboxController.logAuditEvent({
+      conversationId: id,
+      actorId: req.user?.id,
+      eventType: 'unread_changed',
+      source: 'inbox_mark_unread',
+      oldValue: { unreadCount: conversation.unreadCount },
+      newValue: { unreadCount: nextUnread },
     });
 
     res.json({ message: 'Marked as unread' });
@@ -1470,12 +1643,27 @@ export class InboxController {
 
     const conversation = await prisma.conversation.findUnique({ where: { id } });
     if (!conversation) throw new AppError('Conversation not found', 404);
+    const beforeState = {
+      hotLead: conversation.hotLead,
+      leadStatus: conversation.leadStatus,
+      emailReceived: conversation.emailReceived,
+      nextFollowupAt: conversation.nextFollowupAt ? conversation.nextFollowupAt.toISOString() : null,
+      followupState: conversation.followupState || null,
+    };
 
     const data: any = {};
     if (hotLead !== undefined) data.hotLead = hotLead;
     if (leadStatus !== undefined) data.leadStatus = leadStatus || null;
     if (emailReceived !== undefined) data.emailReceived = emailReceived;
-    if (nextFollowupAt !== undefined) data.nextFollowupAt = nextFollowupAt ? new Date(nextFollowupAt) : null;
+    if (nextFollowupAt !== undefined) {
+      const normalizedFollowup = nextFollowupAt ? new Date(nextFollowupAt) : null;
+      data.nextFollowupAt = normalizedFollowup;
+      if (!normalizedFollowup) {
+        data.followupState = 'none';
+      } else {
+        data.followupState = normalizedFollowup.getTime() <= Date.now() ? 'due_now' : 'scheduled';
+      }
+    }
 
     const updated = await prisma.conversation.update({
       where: { id },
@@ -1486,6 +1674,28 @@ export class InboxController {
         },
       },
     });
+
+    const afterState = {
+      hotLead: updated.hotLead,
+      leadStatus: updated.leadStatus,
+      emailReceived: updated.emailReceived,
+      nextFollowupAt: updated.nextFollowupAt ? updated.nextFollowupAt.toISOString() : null,
+      followupState: updated.followupState || null,
+    };
+
+    const changedStatusFields = Object.keys(afterState).filter(
+      (key) => JSON.stringify((beforeState as any)[key]) !== JSON.stringify((afterState as any)[key]),
+    );
+    if (changedStatusFields.length > 0) {
+      await InboxController.logAuditEvent({
+        conversationId: id,
+        actorId: req.user?.id,
+        eventType: 'status_changed',
+        source: 'inbox_status_patch',
+        oldValue: beforeState,
+        newValue: afterState,
+      });
+    }
 
     // Lead status + compliance side-effects
     if (leadStatus === 'DNC') {
@@ -1564,7 +1774,34 @@ export class InboxController {
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json({ notes });
+    // Pixel-perfect M3: подгружаем имена авторов для отображения "JB (admin) · 2hrs ago"
+    const authorIds = Array.from(new Set(notes.map((n) => n.createdById).filter(Boolean)));
+    const authors =
+      authorIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: authorIds } },
+            select: { id: true, firstName: true, lastName: true, role: true },
+          })
+        : [];
+    const authorMap = new Map(
+      authors.map((u) => [
+        u.id,
+        {
+          name: [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.firstName || 'Rep',
+          initials: `${(u.firstName || '?')[0] || ''}${(u.lastName || '')[0] || ''}`.toUpperCase(),
+          role: u.role,
+        },
+      ]),
+    );
+
+    const enriched = notes.map((n) => ({
+      ...n,
+      authorName: authorMap.get(n.createdById)?.name || 'Rep',
+      authorInitials: authorMap.get(n.createdById)?.initials || '??',
+      authorRole: authorMap.get(n.createdById)?.role || 'REP',
+    }));
+
+    res.json({ notes: enriched });
   }
 
   /**
@@ -1664,6 +1901,42 @@ export class InboxController {
 
     await prisma.conversationNote.delete({ where: { id: noteId } });
     res.json({ message: 'Note deleted' });
+  }
+
+  /**
+   * POST /:id/classification-feedback — сохранить feedback по AI (skip/use/override)
+   */
+  static async createClassificationFeedback(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const { action, suggestionText, reason } = req.body as {
+      action?: 'skip' | 'use' | 'override';
+      suggestionText?: string;
+      reason?: string;
+    };
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id },
+      select: { id: true, assignedRepId: true, aiClassification: true },
+    });
+    if (!conversation) throw new AppError('Conversation not found', 404);
+
+    const isAdminLike = req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER';
+    if (!isAdminLike && conversation.assignedRepId && conversation.assignedRepId !== req.user?.id) {
+      throw new AppError('Forbidden', 403);
+    }
+
+    const feedback = await prisma.classificationFeedback.create({
+      data: {
+        conversationId: id,
+        createdById: req.user!.id,
+        action: action || 'skip',
+        suggestionText: suggestionText?.trim() || null,
+        reason: reason?.trim() || null,
+        aiClassification: conversation.aiClassification || null,
+      },
+    });
+
+    res.status(201).json({ feedback });
   }
 
   // ─── Шаблоны (Templates) ───

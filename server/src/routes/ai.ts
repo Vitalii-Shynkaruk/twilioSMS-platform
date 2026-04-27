@@ -177,6 +177,12 @@ router.post(
       return;
     }
 
+    const signals = (result.signals || {}) as Record<string, unknown>;
+    const extractedIndustry = typeof signals.industry === 'string' && signals.industry.trim() ? signals.industry.trim() : null;
+    const helocFitFlag = typeof signals.helocFitFlag === 'boolean' ? signals.helocFitFlag : null;
+    const extractedRevenue = typeof signals.revenueMonthly === 'number' ? Math.round(signals.revenueMonthly) : null;
+    const extractedAsk = typeof signals.ask === 'string' && signals.ask.trim() ? signals.ask.trim() : null;
+
     // Сохраняем результат на Conversation для последующих refresh'ей UI
     await prisma.conversation.update({
       where: { id: conversationId },
@@ -184,6 +190,10 @@ router.post(
         aiClassification: result.classification,
         aiSignals: result.signals as object,
         aiSuggestions: result.suggestions as object,
+        extractedIndustry,
+        helocFitFlag,
+        extractedRevenue,
+        extractedAsk,
         isCaliforniaNumber: result.isCaliforniaNumber,
         aiLeadScore: result.leadScore,
         aiClassifiedAt: new Date(),

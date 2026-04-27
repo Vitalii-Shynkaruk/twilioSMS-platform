@@ -118,6 +118,10 @@ export interface Conversation {
   aiClassification?: 'HOT' | 'WARM' | 'NURTURE' | null;
   aiSignals?: AISignals | null;
   aiSuggestions?: AISuggestion[] | null;
+  extractedIndustry?: string | null;
+  helocFitFlag?: boolean | null;
+  extractedRevenue?: number | null;
+  extractedAsk?: string | null;
   isCaliforniaNumber?: boolean;
   aiLeadScore?: number;
   aiClassifiedAt?: string | null;
@@ -130,6 +134,16 @@ export interface AISignals {
   product?: string | null;
   industry?: string | null;
   objections?: string | null;
+  revenueMonthly?: number | null;
+  revenueAnnual?: number | null;
+  revenueConfidence?: 'stated' | 'inferred' | null;
+  helocFitFlag?: boolean | null;
+  staleState?: 'active' | 'stale' | 'ghosted' | null;
+  suggestedReply?: string | null;
+  suggestedFollowupTime?: string | null;
+  suggestedFollowupReason?: string | null;
+  suggestedReengageMessage?: string | null;
+  repBehavior?: string | null;
 }
 
 export interface AISuggestion {
@@ -197,6 +211,9 @@ export interface ConversationNote {
   body: string;
   createdById: string;
   createdAt: string;
+  authorName?: string;
+  authorInitials?: string;
+  authorRole?: string;
 }
 
 // Phase 1: Отложенные сообщения

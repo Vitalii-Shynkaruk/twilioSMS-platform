@@ -8,6 +8,7 @@ import {
   assignRepSchema,
   updateConversationStatusSchema,
   createNoteSchema,
+  createClassificationFeedbackSchema,
   createTemplateSchema,
   updateTemplateSchema,
   createScheduledMessageSchema,
@@ -44,6 +45,11 @@ router.patch(
 router.get('/:id/notes', asyncHandler(InboxController.listNotes));
 router.post('/:id/notes', validate(createNoteSchema), asyncHandler(InboxController.createNote));
 router.delete('/:id/notes/:noteId', asyncHandler(InboxController.deleteNote));
+router.post(
+  '/:id/classification-feedback',
+  validate(createClassificationFeedbackSchema),
+  asyncHandler(InboxController.createClassificationFeedback),
+);
 
 // Phase 1: Шаблоны
 router.get('/templates/list', asyncHandler(InboxController.listTemplates));

@@ -173,6 +173,12 @@ export const createNoteSchema = z.object({
   dealId: z.string().optional(),
 });
 
+export const createClassificationFeedbackSchema = z.object({
+  action: z.enum(['skip', 'use', 'override']).default('skip'),
+  suggestionText: z.string().max(1600).trim().optional(),
+  reason: z.string().max(5000).trim().optional(),
+});
+
 // Phase 1: SMS-шаблоны
 export const createTemplateSchema = z.object({
   name: z.string().min(1).max(200).trim(),

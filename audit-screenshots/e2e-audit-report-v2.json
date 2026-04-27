@@ -1,0 +1,19 @@
+{
+  "ts": "2026-04-25T19:14:06.619Z",
+  "checks": [
+    {
+      "name": "Dashboard route redirects to Command Center",
+      "ok": false,
+      "details": "https://app.sclcapital.io/dashboard"
+    },
+    {
+      "name": "Inbox shows conversations in all scope",
+      "ok": false,
+      "details": "count=0"
+    }
+  ],
+  "issues": [
+    "Route /dashboard does not redirect to /command-center",
+    "Inbox list empty in UI while API has data; possible scope/filter rendering issue."
+  ]
+}

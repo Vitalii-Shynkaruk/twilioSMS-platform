@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../config/database';
 import logger from '../config/logger';
+import { readFile } from 'fs/promises';
+import path from 'path';
 
 /**
  * AIService — Multi-provider LLM integration (Anthropic + OpenAI).
@@ -24,6 +26,70 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
   anthropic: 'claude-sonnet-4-5',
   openai: 'gpt-4.1-mini',
 };
+
+const HANDOFF_BASE_DIR = path.resolve(process.cwd(), '..', 'SCL-HandOff');
+const LOCKED_PROMPT_PATH = path.join(HANDOFF_BASE_DIR, 'classifier_prompt_v4_LOCKED.md');
+const LOCKED_SCHEMA_PATH = path.join(HANDOFF_BASE_DIR, 'classification_schema.json');
+
+type LockedSchemaMeta = {
+  required: Set<string>;
+  allowed: Set<string>;
+};
+
+let lockedPromptCache: string | null = null;
+let lockedSchemaMetaCache: LockedSchemaMeta | null = null;
+
+async function loadLockedPrompt(): Promise<string | null> {
+  if (lockedPromptCache) return lockedPromptCache;
+  try {
+    const file = await readFile(LOCKED_PROMPT_PATH, 'utf-8');
+    const normalized = file.trim();
+    lockedPromptCache = normalized || null;
+    return lockedPromptCache;
+  } catch (error) {
+    logger.warn('AI: locked prompt not found, fallback to built-in prompt', {
+      path: LOCKED_PROMPT_PATH,
+      error: (error as Error).message,
+    });
+    return null;
+  }
+}
+
+async function loadLockedSchemaMeta(): Promise<LockedSchemaMeta | null> {
+  if (lockedSchemaMetaCache) return lockedSchemaMetaCache;
+  try {
+    const raw = await readFile(LOCKED_SCHEMA_PATH, 'utf-8');
+    const parsed = JSON.parse(raw) as { required?: string[]; properties?: Record<string, unknown> };
+    const required = new Set(Array.isArray(parsed.required) ? parsed.required : []);
+    const allowed = new Set(Object.keys(parsed.properties || {}));
+    lockedSchemaMetaCache = { required, allowed };
+    return lockedSchemaMetaCache;
+  } catch (error) {
+    logger.warn('AI: locked schema not found, strict validation disabled', {
+      path: LOCKED_SCHEMA_PATH,
+      error: (error as Error).message,
+    });
+    return null;
+  }
+}
+
+async function validateLockedSchemaShape(payload: unknown): Promise<{ ok: boolean; errors: string[] }> {
+  const schemaMeta = await loadLockedSchemaMeta();
+  if (!schemaMeta) return { ok: true, errors: [] };
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { ok: false, errors: ['payload is not an object'] };
+  }
+
+  const obj = payload as Record<string, unknown>;
+  const missing = [...schemaMeta.required].filter((key) => !(key in obj));
+  const extra = Object.keys(obj).filter((key) => !schemaMeta.allowed.has(key));
+
+  const errors: string[] = [];
+  if (missing.length > 0) errors.push(`missing required fields: ${missing.join(', ')}`);
+  if (extra.length > 0) errors.push(`unexpected fields: ${extra.join(', ')}`);
+
+  return { ok: errors.length === 0, errors };
+}
 
 interface ClassificationEligibilityInput {
   leadStatus?: string | null;
@@ -151,7 +217,15 @@ export class AIService {
   /**
    * Системный промпт для classifyInbound. Принимает флаг CA compliance.
    */
-  private static getSystemPrompt(isCA: boolean): string {
+  private static async getSystemPrompt(isCA: boolean): Promise<string> {
+    const lockedPrompt = await loadLockedPrompt();
+    if (lockedPrompt) {
+      if (isCA) {
+        return `${lockedPrompt}\n\nCA NOTE: Apply California-safe phrasing and do not include APR/rate promises in suggested reply.`;
+      }
+      return lockedPrompt;
+    }
+
     const caBlock = isCA
       ? `\n\nCA COMPLIANCE MODE: California consumer detected. Do NOT propose discussing APR, interest rates, factor rates, or specific cost-of-capital numbers in suggestions. Redirect any rate question to disclosure docs or licensed advisor only.`
       : '';
@@ -187,7 +261,14 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     "product": "MCA" | "LOC" | "SBA" | "CRE" | "EQUIPMENT" | "HELOC" | "BRIDGE" | "FACTORING" | null,
     "industry": "construction" | "trucking" | "restaurant" | "medical" | "retail" | <other lowercase> | null,
     "urgency": "today" | "this week" | "30 days" | "no urgency" | null,
-    "objections": "rate sensitive" | "has other offers" | <other short label> | null
+    "objections": "rate sensitive" | "has other offers" | <other short label> | null,
+    "helocFitFlag": boolean | null,
+    "staleState": "active" | "stale" | "ghosted" | null,
+    "suggestedReply": "<single-line best reply>" | null,
+    "suggestedFollowupTime": "<ISO timestamp or null>",
+    "suggestedFollowupReason": "<short reason or null>",
+    "suggestedReengageMessage": "<message or null>",
+    "repBehavior": "fast_follow_up" | "standard" | "slow_follow_up" | null
   },
   "suggestions": [
     { "type": "BEST", "text": "<draft reply>", "cta": "<short CTA caption e.g. → SEND FUNDING LINK>" },
@@ -373,7 +454,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const areaCode = phoneDigits.length >= 10 ? phoneDigits.slice(-10, -7) : '';
     const isCA = caAreaCodes.has(areaCode);
 
-    const systemPrompt = this.getSystemPrompt(isCA);
+    const systemPrompt = await this.getSystemPrompt(isCA);
 
     const dealContext = conv.deals
       .map((deal) => `${deal.stageLabel || deal.stage} (${new Date(deal.createdAt).toISOString()})`)
@@ -418,7 +499,47 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       return null;
     }
 
-    const signals = parsed.signals || {};
+    const hasLockedShape =
+      parsed &&
+      typeof parsed === 'object' &&
+      'classification' in parsed &&
+      'leadScore' in parsed &&
+      'suggestedReply' in parsed;
+
+    if (hasLockedShape) {
+      const validation = await validateLockedSchemaShape(parsed);
+      if (!validation.ok) {
+        logger.error('AI: locked schema validation failed', {
+          conversationId,
+          errors: validation.errors,
+        });
+        return null;
+      }
+    }
+
+    const rawSignals: Record<string, unknown> =
+      hasLockedShape
+        ? {
+            revenueMonthly: parsed.revenueMonthly,
+            revenueAnnual: parsed.revenueAnnual,
+            revenueConfidence: parsed.revenueConfidence,
+            ask: typeof parsed.amountRequested === 'number' ? `$${parsed.amountRequested}` : null,
+            amountRequested: parsed.amountRequested,
+            useOfFunds: parsed.useOfFunds,
+            product: parsed.product,
+            urgency: parsed.urgency,
+            objections: Array.isArray(parsed.objections) ? parsed.objections.join(', ') : parsed.objections,
+            staleState: parsed.staleState,
+            hadMeaningfulEngagement: parsed.hadMeaningfulEngagement,
+            suggestedReply: parsed.suggestedReply,
+            suggestedFollowupTime: parsed.suggestedFollowupTime,
+            suggestedFollowupReason: parsed.suggestedFollowupReason,
+            suggestedReengageMessage: parsed.suggestedReengageMessage,
+            repBehavior: parsed.repBehavior,
+            coachingNote: parsed.coachingNote,
+            reasoning: parsed.reasoning,
+          }
+        : (((parsed && typeof parsed === 'object' && parsed.signals) || {}) as Record<string, unknown>);
     let classification: string = ['HOT', 'WARM', 'NURTURE', 'DEAD', 'WRONG_NUMBER'].includes(parsed.classification)
       ? parsed.classification
       : 'NURTURE';
@@ -456,15 +577,33 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     }
 
     // Локальный пересчёт scoring (стабильнее чем доверять LLM)
-    const leadScore = this.computeLeadScore({
+    const deterministicScore = this.computeLeadScore({
       classification,
-      revenueMonthly: typeof signals.revenueMonthly === 'number' ? signals.revenueMonthly : null,
-      askLabel: typeof signals.ask === 'string' ? signals.ask : null,
-      urgency: typeof signals.urgency === 'string' ? signals.urgency : null,
+      revenueMonthly: typeof rawSignals.revenueMonthly === 'number' ? rawSignals.revenueMonthly : null,
+      askLabel: typeof rawSignals.ask === 'string' ? rawSignals.ask : null,
+      urgency: typeof rawSignals.urgency === 'string' ? rawSignals.urgency : null,
       lastInboundAt: lastInbound?.createdAt || null,
     });
+    const leadScore = hasLockedShape && typeof parsed.leadScore === 'number' ? parsed.leadScore : deterministicScore;
 
-    const suggestions = Array.isArray(parsed.suggestions)
+    const suggestions = hasLockedShape
+      ? [
+          {
+            type: 'BEST',
+            text: typeof parsed.suggestedReply === 'string' ? parsed.suggestedReply : '',
+            cta: '→ SEND',
+          },
+          ...(typeof parsed.suggestedReengageMessage === 'string' && parsed.suggestedReengageMessage.trim()
+            ? [
+                {
+                  type: 'ALT',
+                  text: parsed.suggestedReengageMessage.trim(),
+                  cta: '→ RE-ENGAGE',
+                },
+              ]
+            : []),
+        ].filter((item) => item.text.trim().length > 0)
+      : Array.isArray(parsed.suggestions)
       ? parsed.suggestions
           .filter((s: any) => s && typeof s.text === 'string')
           .slice(0, 2)
@@ -474,6 +613,54 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
             cta: String(s.cta || ''),
           }))
       : [];
+
+    const now = Date.now();
+    const lastInboundAtTs = lastInbound?.createdAt ? new Date(lastInbound.createdAt).getTime() : null;
+    const silenceDays = lastInboundAtTs ? (now - lastInboundAtTs) / 86_400_000 : 0;
+    const staleState =
+      silenceDays >= 7 ? 'ghosted' : silenceDays >= 3 ? 'stale' : (rawSignals.staleState as string) || 'active';
+
+    const suggestedReply = typeof rawSignals.suggestedReply === 'string' && rawSignals.suggestedReply.trim()
+      ? rawSignals.suggestedReply.trim()
+      : suggestions[0]?.text || null;
+
+    const suggestedFollowupTime =
+      typeof rawSignals.suggestedFollowupTime === 'string' && rawSignals.suggestedFollowupTime.trim()
+        ? rawSignals.suggestedFollowupTime.trim()
+        : classification === 'HOT'
+          ? new Date(now + 30 * 60 * 1000).toISOString()
+          : null;
+
+    const suggestedFollowupReason =
+      typeof rawSignals.suggestedFollowupReason === 'string' && rawSignals.suggestedFollowupReason.trim()
+        ? rawSignals.suggestedFollowupReason.trim()
+        : classification === 'HOT'
+          ? 'HOT lead requires response within 30 minutes'
+          : null;
+
+    const suggestedReengageMessage =
+      typeof rawSignals.suggestedReengageMessage === 'string' && rawSignals.suggestedReengageMessage.trim()
+        ? rawSignals.suggestedReengageMessage.trim()
+        : staleState === 'stale' || staleState === 'ghosted'
+          ? "Quick check-in: should I send your Funding Link or circle back next week?"
+          : null;
+
+    const signals: Record<string, unknown> = {
+      ...rawSignals,
+      helocFitFlag:
+        typeof rawSignals.helocFitFlag === 'boolean'
+          ? rawSignals.helocFitFlag
+          : String(rawSignals.product || '').toUpperCase() === 'HELOC',
+      staleState,
+      suggestedReply,
+      suggestedFollowupTime,
+      suggestedFollowupReason,
+      suggestedReengageMessage,
+      repBehavior:
+        typeof rawSignals.repBehavior === 'string' && rawSignals.repBehavior.trim()
+          ? rawSignals.repBehavior.trim()
+          : 'standard',
+    };
 
     logger.info('AI: classifyInbound complete', {
       conversationId,

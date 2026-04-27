@@ -14,7 +14,6 @@ const CampaignDetailPage = lazy(() => import('./pages/CampaignDetailPage'));
 const InboxPage = lazy(() => import('./pages/InboxPageV2'));
 const PipelinePage = lazy(() => import('./pages/PipelinePageV2'));
 const CommandCenterPage = lazy(() => import('./pages/CommandCenterPage'));
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LeadsPage = lazy(() => import('./pages/LeadsPage'));
 const NumbersPage = lazy(() => import('./pages/NumbersPage'));
 const AutomationPage = lazy(() => import('./pages/AutomationPage'));
@@ -89,8 +88,7 @@ export default function App() {
                       <Routes>
                         <Route path="/" element={<Navigate to="command-center" replace />} />
                         <Route path="command-center" element={<CommandCenterPage />} />
-                        {/* Dashboard restored 23.04.2026 — full legacy view kept while Command Center expands. */}
-                        <Route path="dashboard" element={<DashboardPage />} />
+                        <Route path="dashboard" element={<Navigate to="/command-center" replace />} />
                         <Route path="campaigns" element={<CampaignsPage />} />
                         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
                         <Route path="inbox" element={<InboxPage />} />
@@ -111,22 +109,29 @@ export default function App() {
           </Routes>
         </BrowserRouter>
         <Toaster
-          position="top-right"
+          position="bottom-right"
           toastOptions={{
             duration: 3000,
             style: {
-              background: isDark ? '#1c1c27' : '#ffffff',
+              background: isDark ? '#1c1c26' : '#ffffff',
               color: isDark ? '#e2e2ea' : '#1e293b',
-              border: isDark ? '1px solid rgba(56, 56, 76, 0.5)' : '1px solid rgba(226, 232, 240, 0.8)',
-              borderRadius: '12px',
-              fontSize: '14px',
-              boxShadow: isDark ? undefined : '0 4px 12px rgba(0, 0, 0, 0.08)',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(226, 232, 240, 0.8)',
+              borderLeft: '3px solid #b8963e',
+              borderRadius: '6px',
+              fontSize: '13px',
+              padding: '10px 14px',
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+              boxShadow: isDark
+                ? '0 6px 20px rgba(0, 0, 0, 0.4)'
+                : '0 4px 12px rgba(0, 0, 0, 0.08)',
             },
             success: {
-              iconTheme: { primary: '#6366f1', secondary: '#fff' },
+              style: { borderLeft: '3px solid #22c55e' },
+              iconTheme: { primary: '#22c55e', secondary: '#fff' },
             },
             error: {
-              iconTheme: { primary: '#ef4444', secondary: '#fff' },
+              style: { borderLeft: '3px solid #ff4444' },
+              iconTheme: { primary: '#ff4444', secondary: '#fff' },
             },
           }}
         />

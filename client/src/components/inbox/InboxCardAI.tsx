@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import type { AISignals, Conversation } from '../../types';
 import { PHASE1_LEAN } from '../../config/featureFlags';
 
-type ConvSlice = Pick<Conversation, 'aiClassification' | 'aiSignals' | 'aiLeadScore'>;
+type ConvSlice = Pick<Conversation, 'aiClassification' | 'aiSignals' | 'aiLeadScore' | 'nextFollowupAt'>;
 
 interface AICardProps {
   conversation: ConvSlice;
@@ -21,6 +21,11 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
   const hasRevenue = !!signals.revenue;
   const hasAsk = !!signals.ask;
   const hasUrgency = !!signals.urgency;
+  const hasIndustry = !!signals.industry;
+  const hasHelocFit = !!signals.helocFitFlag;
+  const followupLabel =
+    (typeof signals.suggestedFollowupReason === 'string' && signals.suggestedFollowupReason.trim()) ||
+    (conversation.nextFollowupAt ? 'scheduled' : '');
 
   if (PHASE1_LEAN) {
     if (!hasRevenue) return null;
@@ -33,7 +38,7 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
     );
   }
 
-  if (!isHot && !hasRevenue && !hasAsk && !hasUrgency) return null;
+  if (!isHot && !hasRevenue && !hasAsk && !hasUrgency && !hasIndustry && !hasHelocFit && !followupLabel) return null;
 
   return (
     <div className="ai-card-chips" aria-label="AI signals">
@@ -51,6 +56,21 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
       {hasUrgency && (
         <span className="chip" title="Urgency cue">
           ⚡{signals.urgency}
+        </span>
+      )}
+      {hasIndustry && (
+        <span className="chip" title="Industry">
+          🏗{signals.industry}
+        </span>
+      )}
+      {hasHelocFit && (
+        <span className="chip" title="HELOC fit">
+          🏦HELOC fit
+        </span>
+      )}
+      {followupLabel && (
+        <span className="chip" title="Follow-up">
+          ⏱{followupLabel}
         </span>
       )}
     </div>

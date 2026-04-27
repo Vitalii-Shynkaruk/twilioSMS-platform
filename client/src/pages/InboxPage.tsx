@@ -735,6 +735,8 @@ function MessageThread({ conversationId, wsConnected }: { conversationId: string
           suggestions={conversation.aiSuggestions}
           signals={conversation.aiSignals}
           onUseSuggestion={(text) => setReplyText(text)}
+          onEditSuggestion={(text) => setReplyText(text)}
+          onSkipSuggestion={() => {}}
         />
       )}
 

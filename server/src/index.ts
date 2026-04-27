@@ -27,6 +27,8 @@ import { setSocketIO } from './realtime/socket';
 import './jobs/worker';
 import { stopAutomationWorker } from './jobs/automationWorker';
 import { startDealCron, stopDealCron } from './jobs/dealCron';
+import { startFollowupStateCron, stopFollowupStateCron } from './jobs/followupStateCron';
+import { startReconciliationCron, stopReconciliationCron } from './jobs/reconciliationCron';
 import { ensureDefaultTeamUsers } from './bootstrap/defaultUsers';
 
 const httpServer = createServer(app);
@@ -144,6 +146,8 @@ async function start() {
 
     // Start Phase 2 deal maintenance cron
     startDealCron();
+    startFollowupStateCron();
+    startReconciliationCron();
 
     httpServer.listen(config.port, () => {
       logger.info(`🚀 Server running on port ${config.port}`);
@@ -204,6 +208,8 @@ async function gracefulShutdown(signal: string) {
   // Stop automation intervals
   stopAutomationWorker();
   stopDealCron();
+  stopFollowupStateCron();
+  stopReconciliationCron();
 
   // Stop accepting new connections
   httpServer.close(() => {

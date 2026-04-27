@@ -6,6 +6,8 @@ interface AISuggestionsProps {
   suggestions?: AISuggestion[] | null;
   signals?: AISignals | null;
   onUseSuggestion: (text: string) => void;
+  onEditSuggestion: (text: string) => void;
+  onSkipSuggestion: (text: string) => void;
 }
 
 function renderText(text: string) {
@@ -38,9 +40,16 @@ function classForType(type: string | undefined, isBest: boolean): string {
   }
 }
 
-export default function AISuggestions({ suggestions, signals, onUseSuggestion }: AISuggestionsProps) {
-  const shown = (suggestions || []).slice(0, 2);
+export default function AISuggestions({
+  suggestions,
+  signals,
+  onUseSuggestion,
+  onEditSuggestion,
+  onSkipSuggestion,
+}: AISuggestionsProps) {
+  const shown = (suggestions || []).slice(0, 1);
   if (shown.length === 0) return null;
+  const best = shown[0];
 
   const sigStr = signals ? Object.values(signals).filter(Boolean).slice(0, 4).join(' · ') : '';
 
@@ -69,13 +78,25 @@ export default function AISuggestions({ suggestions, signals, onUseSuggestion }:
   return (
     <div className="suggestions-area">
       <div className="sug-header">
-        <span className="sug-label">✦ AI SUGGESTIONS</span>
+        <span className="sug-label">✦ AI SUGGESTION</span>
         {sigStr && <span className="sug-context">{sigStr}</span>}
       </div>
       <div className="sug-cards">
-        {renderCard(shown[0], true)}
-        {shown[1] && renderCard(shown[1], false)}
+        {renderCard(best, true)}
       </div>
+      {!best.blocked && (
+        <div className="sug-actions" role="group" aria-label="Suggested reply actions">
+          <button type="button" className="sug-action primary" onClick={() => onUseSuggestion(best.text)}>
+            Use
+          </button>
+          <button type="button" className="sug-action" onClick={() => onEditSuggestion(best.text)}>
+            Edit
+          </button>
+          <button type="button" className="sug-action danger" onClick={() => onSkipSuggestion(best.text)}>
+            Skip
+          </button>
+        </div>
+      )}
     </div>
   );
 }

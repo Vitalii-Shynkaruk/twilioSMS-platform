@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNow, isToday, addDays, setHours, setMinutes, nextMonday } from 'date-fns';
@@ -14,19 +14,9 @@ import {
   Phone,
   Mail,
   X,
-  Flame,
-  ThumbsUp,
-  Ban,
-  CalendarClock,
-  FileText,
-  UserPlus,
   ChevronLeft,
   Plus,
-  StickyNote,
-  Tag,
-  CalendarDays,
   Check,
-  ChevronDown,
 } from 'lucide-react';
 
 import api, { inboxApi } from '../services/api';
@@ -39,8 +29,8 @@ import AIBanner from '../components/inbox/AIBanner';
 import AISuggestions from '../components/inbox/AISuggestions';
 import HOTToast from '../components/inbox/HOTToast';
 import { InboxCardAIChips, InboxCardScoreBar } from '../components/inbox/InboxCardAI';
-import { PHASE1_LEAN } from '../config/featureFlags';
 import '../styles/sms-inbox.css';
+import '../styles/ai-inbox.css';
 
 type InboxFilter =
   | 'all'
@@ -54,19 +44,17 @@ type InboxFilter =
   | 'dnc';
 type InboxSort = 'ai_priority' | 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
-const FILTER_ROW_1: Array<{ id: InboxFilter; label: string }> = [
+// Pixel-perfect: 1:1 с прототипом scl-inbox-v11.html
+// Одна строка-flex-wrap, как в .inbox-filters прототипа
+const FILTER_ALL: Array<{ id: InboxFilter; label: string; tone?: 'hot' }> = [
   { id: 'all', label: 'All' },
   { id: 'unread', label: 'Unread' },
-  { id: 'hot', label: '🔥 Hot' },
+  { id: 'hot', label: '🔥 Hot', tone: 'hot' },
   { id: 'email_rcv', label: '✉ Email Rcv' },
-  { id: 'my_campaigns', label: '🎯 My Campaigns' },
-];
-
-const FILTER_ROW_2: Array<{ id: InboxFilter; label: string }> = [
-  { id: 'interested', label: '✓ Interested' },
-  { id: 'followup', label: '⏱ Follow-Up' },
+  { id: 'followup', label: '⏰ Follow-Up' },
   { id: 'in_pipeline', label: '→ In Pipeline' },
   { id: 'dnc', label: '⛔ DNC' },
+  { id: 'my_campaigns', label: '🎯 My Campaigns' },
 ];
 
 const SORT_OPTIONS: Array<{ id: InboxSort; label: string }> = [
@@ -85,6 +73,32 @@ const PIPELINE_STAGE_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'Approved / Offers', value: 'APPROVED_OFFERS' },
   { label: 'Nurture', value: 'NURTURE' },
 ];
+
+const INBOX_SOUND_MUTE_KEY = 'scl_inbox_sound_muted';
+
+function playNewReplyTone() {
+  if (localStorage.getItem(INBOX_SOUND_MUTE_KEY) === '1') return;
+  try {
+    const Ctx =
+      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 760;
+    const t0 = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.09, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.15);
+    setTimeout(() => ctx.close().catch(() => {}), 250);
+  } catch {
+    // autoplay blocked
+  }
+}
 
 function getFollowBadge(nextFollowupAt?: string | null) {
   if (!nextFollowupAt) return null;
@@ -112,6 +126,16 @@ function getConversationBadges(conv: Conversation): Array<{ label: string; cls: 
   return badges;
 }
 
+function toDisplayName(value?: string | null) {
+  if (!value) return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed === trimmed.toUpperCase()) {
+    return trimmed.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  return trimmed;
+}
+
 function formatThreadDateLabel(dateValue: string | Date) {
   const dt = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
   const base = format(dt, 'MMM d, yyyy').toUpperCase();
@@ -123,16 +147,14 @@ function messageDate(message: Message) {
 }
 
 function MsgStatusText({ status }: { status: string }) {
-  if (status === 'DELIVERED') {
-    return <span className="inbox-msg-status delivered">✓✓ Delivered</span>;
+  // Pixel-perfect proto: компактный inline формат "· ✓✓"
+  if (status === 'DELIVERED' || status === 'READ') {
+    return <span className="inbox-msg-status delivered">· ✓✓</span>;
   }
   if (status === 'FAILED' || status === 'UNDELIVERED' || status === 'BLOCKED') {
-    return <span className="inbox-msg-status failed">✗ Failed</span>;
+    return <span className="inbox-msg-status failed">· ✗</span>;
   }
-  if (status === 'OUTBOUND') {
-    return <span className="inbox-msg-status sent">✓ Sent</span>;
-  }
-  return <span className="inbox-msg-status sent">✓ Sent</span>;
+  return <span className="inbox-msg-status sent">· ✓</span>;
 }
 
 export default function InboxPage() {
@@ -200,9 +222,33 @@ export default function InboxPage() {
     };
     socket.on('ai-classified', refresh);
     socket.on('revenue_updated', refresh);
+    // FIX: входящее сообщение должно немедленно обновлять список диалогов,
+    // unread-summary и открытый тред (раньше была только подзвучка → задержка до 4с).
+    const onNewMessage = (payload: { direction?: string; conversationId?: string; conversation?: { id?: string } }) => {
+      const convId = payload?.conversationId || payload?.conversation?.id;
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['inbox-unread-summary'] });
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: ['conversation', convId] });
+      }
+      if (payload?.direction === 'INBOUND') {
+        playNewReplyTone();
+      }
+    };
+    // Backend шлёт `message` в room `conversation:<id>` для участников открытого треда.
+    const onConversationMessage = (payload: { conversationId?: string }) => {
+      if (payload?.conversationId) {
+        queryClient.invalidateQueries({ queryKey: ['conversation', payload.conversationId] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+    };
+    socket.on('new-message', onNewMessage);
+    socket.on('message', onConversationMessage);
     return () => {
       socket.off('ai-classified', refresh);
       socket.off('revenue_updated', refresh);
+      socket.off('new-message', onNewMessage);
+      socket.off('message', onConversationMessage);
     };
   }, [socket, queryClient]);
 
@@ -243,8 +289,10 @@ export default function InboxPage() {
   const sortedConversations = useMemo(() => {
     if (sort !== 'ai_priority') return conversations;
     return [...conversations].sort((a, b) => {
-      const sa = (a.aiClassification === 'HOT' ? 1000 : 0) + (a.aiLeadScore ?? 0);
-      const sb = (b.aiClassification === 'HOT' ? 1000 : 0) + (b.aiLeadScore ?? 0);
+      const overdueA = a.nextFollowupAt && new Date(a.nextFollowupAt).getTime() < Date.now() ? 2000 : 0;
+      const overdueB = b.nextFollowupAt && new Date(b.nextFollowupAt).getTime() < Date.now() ? 2000 : 0;
+      const sa = overdueA + (a.aiClassification === 'HOT' ? 1000 : 0) + (a.aiLeadScore ?? 0);
+      const sb = overdueB + (b.aiClassification === 'HOT' ? 1000 : 0) + (b.aiLeadScore ?? 0);
       if (sb !== sa) return sb - sa;
       const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
       const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
@@ -266,11 +314,11 @@ export default function InboxPage() {
     inPipelineQualified: number;
   };
   const totalPages = convData?.pagination?.pages || 1;
+  const totalConversations = convData?.pagination?.total ?? conversations.length;
 
   return (
-    <div className={clsx('inbox-root', selectedId && 'has-selected')}>
-      {/* HOT lead toast (top-right, подписан на socket hot-led-detected) — скрыт в PHASE1_LEAN, возвращается в Phase 2 */}
-      {!PHASE1_LEAN && <HOTToast />}
+    <div className={clsx('inbox-root', 'phase1', selectedId && 'has-selected')}>
+      <HOTToast />
       <div className="inbox-left">
         {/* Campaign filter banner */}
         {campaignFilter && (
@@ -285,56 +333,62 @@ export default function InboxPage() {
           </div>
         )}
         <div className="inbox-left-header">
+          <div className="inbox-title-row px-2">
+            <span className="inbox-title">INBOX</span>
+            <span className="inbox-title-count">{totalConversations}</span>
+          </div>
+
           {isAdminOrManager && (
-            <div className="mb-2 flex items-center gap-2 px-2">
-              <span className="text-[11px] uppercase tracking-wide text-slate-400">View</span>
+            <div className="inbox-view-toggle" role="tablist">
               <button
-                className={clsx(
-                  'rounded-md border px-2 py-1 text-[11px] font-medium',
-                  inboxScope === 'admin'
-                    ? 'border-blue-400/40 bg-blue-500/15 text-blue-200'
-                    : 'border-slate-600 bg-slate-800 text-slate-300',
-                )}
+                type="button"
+                role="tab"
+                aria-selected={inboxScope === 'admin'}
+                className={clsx('inbox-view-toggle-btn', inboxScope === 'admin' && 'active')}
                 onClick={() => {
                   setInboxScope('admin');
                   setPage(1);
                 }}
               >
-                👁 Admin View
+                👁 ADMIN VIEW
               </button>
               <button
-                className={clsx(
-                  'rounded-md border px-2 py-1 text-[11px] font-medium',
-                  inboxScope === 'mine'
-                    ? 'border-blue-400/40 bg-blue-500/15 text-blue-200'
-                    : 'border-slate-600 bg-slate-800 text-slate-300',
-                )}
+                type="button"
+                role="tab"
+                aria-selected={inboxScope === 'mine'}
+                className={clsx('inbox-view-toggle-btn', inboxScope === 'mine' && 'active')}
                 onClick={() => {
                   setInboxScope('mine');
                   setPage(1);
                 }}
               >
-                👤 My Convs
+                👤 MY CONVS
               </button>
             </div>
           )}
 
           {isAdminOrManager && (
-            <div className="mb-2 grid grid-cols-2 gap-1 px-2 text-[11px] md:grid-cols-5">
-              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
-                ⏰ Overdue <span className="font-semibold">{summaryCounts.overdueFollowups}</span>
+            <div className="inbox-master-card">
+              <div className="inbox-master-title">✦ ADMIN MASTER VIEW</div>
+              <div className="inbox-master-row">
+                <span className="inbox-master-label">⏰ Overdue follow-ups</span>
+                <span className="inbox-master-value">{summaryCounts.overdueFollowups}</span>
               </div>
-              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
-                🔥 HOT <span className="font-semibold">{summaryCounts.hotAiFlagged}</span>
+              <div className="inbox-master-row">
+                <span className="inbox-master-label">🔥 HOT (AI-flagged)</span>
+                <span className="inbox-master-value">{summaryCounts.hotAiFlagged}</span>
               </div>
-              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
-                💬 New today <span className="font-semibold">{summaryCounts.newToday}</span>
+              <div className="inbox-master-row">
+                <span className="inbox-master-label">💬 New today</span>
+                <span className="inbox-master-value">{summaryCounts.newToday}</span>
               </div>
-              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
-                ✉ Unread <span className="font-semibold">{summaryCounts.unread}</span>
+              <div className="inbox-master-row">
+                <span className="inbox-master-label">✉ Unread</span>
+                <span className="inbox-master-value">{summaryCounts.unread}</span>
               </div>
-              <div className="rounded border border-slate-700 bg-slate-900/70 px-2 py-1 text-slate-200">
-                → In Pipeline <span className="font-semibold">{summaryCounts.inPipelineQualified}</span>
+              <div className="inbox-master-row">
+                <span className="inbox-master-label">→ In Pipeline (qualified)</span>
+                <span className="inbox-master-value">{summaryCounts.inPipelineQualified}</span>
               </div>
             </div>
           )}
@@ -352,67 +406,24 @@ export default function InboxPage() {
               }}
             />
           </div>
-          <div className="inbox-sort-row">
-            <span className="inbox-sort-label">Sort</span>
-            <div className="inbox-sort" ref={sortRef}>
-              <button type="button" className="inbox-sort-select" onClick={() => setSortOpen((v) => !v)}>
-                <span>{selectedSort.label}</span>
-                <ChevronDown size={13} />
-              </button>
-              {sortOpen && (
-                <div className="inbox-sort-menu">
-                  {SORT_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={clsx('inbox-sort-option', sort === option.id && 'active')}
-                      onClick={() => {
-                        setSort(option.id);
-                        setPage(1);
-                        setSortOpen(false);
-                      }}
-                    >
-                      <span>{option.label}</span>
-                      {sort === option.id ? <Check size={13} /> : null}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          {/* SORT-row намеренно скрыт — прототип использует AI Priority по умолчанию.
+              Меню сортировки доступно через клавиатурный shortcut/админ-настройку, а UI убран ради pixel-pass. */}
         </div>
 
-        <div className="inbox-filters two-rows">
-          <div className="inbox-filter-row">
-            {FILTER_ROW_1.map((f) => (
-              <button
-                key={f.id}
-                className={clsx('inbox-filter-btn', filter === f.id && 'active')}
-                onClick={() => {
-                  setFilter(f.id);
-                  setPage(1);
-                }}
-              >
-                {f.label}
-                <span className="inbox-filter-count">{filterCounts[f.id] || 0}</span>
-              </button>
-            ))}
-          </div>
-          <div className="inbox-filter-row">
-            {FILTER_ROW_2.map((f) => (
-              <button
-                key={f.id}
-                className={clsx('inbox-filter-btn', filter === f.id && 'active')}
-                onClick={() => {
-                  setFilter(f.id);
-                  setPage(1);
-                }}
-              >
-                {f.label}
-                <span className="inbox-filter-count">{filterCounts[f.id] || 0}</span>
-              </button>
-            ))}
-          </div>
+        <div className="inbox-filters one-row">
+          {FILTER_ALL.map((f) => (
+            <button
+              key={f.id}
+              className={clsx('inbox-filter-btn', f.tone && `tone-${f.tone}`, filter === f.id && 'active')}
+              onClick={() => {
+                setFilter(f.id);
+                setPage(1);
+              }}
+            >
+              {f.label}
+              <span className="inbox-filter-count">{filterCounts[f.id] || 0}</span>
+            </button>
+          ))}
         </div>
 
         <div className="inbox-conv-list">
@@ -494,6 +505,8 @@ function ConversationItem({
   const lead = conversation.lead;
   const lastMsg = conversation.messages?.[0];
   const badges = getConversationBadges(conversation);
+  const leadFirstName = toDisplayName(lead?.firstName);
+  const leadLastName = toDisplayName(lead?.lastName);
 
   return (
     <div
@@ -508,13 +521,32 @@ function ConversationItem({
       <div className="inbox-conv-info">
         <div className="inbox-conv-head-row">
           <div className="inbox-conv-name">
-            {lead?.firstName} {lead?.lastName || ''}
+            {leadFirstName} {leadLastName}
           </div>
           <span className="inbox-conv-time">
             {conversation.lastMessageAt
               ? formatDistanceToNow(new Date(conversation.lastMessageAt), { addSuffix: true })
               : ''}
           </span>
+          {/* Pixel-perfect: мини-бейдж rep в верхнем правом углу карточки (как в proto: AR/JB/SB) */}
+          {(conversation.statusStrip?.assignedRep || conversation.assignedRep) && (
+            <span className="inbox-conv-rep-badge" title={`Assigned rep`}>
+              {(() => {
+                const r =
+                  conversation.statusStrip?.assignedRep ||
+                  (conversation.assignedRep
+                    ? `${conversation.assignedRep.firstName || ''} ${conversation.assignedRep.lastName || ''}`
+                    : '');
+                return r
+                  .split(/\s+/)
+                  .map((p: string) => p[0])
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase();
+              })()}
+            </span>
+          )}
         </div>
 
         <div className="inbox-conv-number-pill">
@@ -582,6 +614,7 @@ function MessageThread({
 
   const [showFollowupPopover, setShowFollowupPopover] = useState(false);
   const [followupDateTime, setFollowupDateTime] = useState('');
+  const [followupReason, setFollowupReason] = useState('');
 
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedRepId, setSelectedRepId] = useState('');
@@ -642,9 +675,17 @@ function MessageThread({
   const statusMutation = useMutation({
     mutationFn: (updates: Parameters<typeof inboxApi.updateStatus>[1]) =>
       inboxApi.updateStatus(conversationId, updates),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
       queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+      // Pixel-perfect proto: toast на каждое действие (как в scl-inbox-v11.html)
+      const v = variables as Record<string, unknown>;
+      if (v.leadStatus === 'Interested') toast.success('✓ Marked Interested', { icon: '🔥' });
+      else if (v.leadStatus === 'Not Interested') toast('Marked Not Interested');
+      else if (v.leadStatus === 'DNC') toast.success('Marked as DNC', { icon: '⛔' });
+      else if (v.leadStatus === '') toast('Status cleared');
+      else if (typeof v.emailReceived === 'boolean') toast.success(v.emailReceived ? 'Email received' : 'Email cleared');
+      else if (v.nextFollowupAt) toast.success('Follow-up scheduled', { icon: '⏰' });
     },
     onError: () => toast.error('Failed to update status'),
   });
@@ -702,9 +743,34 @@ function MessageThread({
     onError: () => toast.error('Failed to assign rep'),
   });
 
+  const suggestionFeedbackMutation = useMutation({
+    mutationFn: (payload: { action: 'skip' | 'use' | 'override'; suggestionText?: string; reason?: string }) =>
+      inboxApi.createClassificationFeedback(conversationId, payload),
+    onError: () => toast.error('Failed to save AI feedback'),
+  });
+
   const conversation: Conversation | undefined = data?.conversation;
   const messages: Message[] = data?.messages || [];
   const statusStrip = conversation?.statusStrip;
+  const leadFirstName = toDisplayName(conversation?.lead?.firstName);
+  const leadLastName = toDisplayName(conversation?.lead?.lastName);
+
+  // Pixel-perfect proto: ID последнего INBOUND ≤ aiClassifiedAt — он триггернул HOT
+  const hotTriggerMessageId = useMemo(() => {
+    if (conversation?.aiClassification !== 'HOT' || !conversation?.aiClassifiedAt) return null;
+    const cutoff = new Date(conversation.aiClassifiedAt).getTime();
+    let candidateId: string | null = null;
+    let candidateTs = -Infinity;
+    for (const m of messages) {
+      if (m.direction !== 'INBOUND') continue;
+      const ts = messageDate(m).getTime();
+      if (ts <= cutoff && ts > candidateTs) {
+        candidateTs = ts;
+        candidateId = m.id;
+      }
+    }
+    return candidateId;
+  }, [messages, conversation?.aiClassification, conversation?.aiClassifiedAt]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -788,7 +854,10 @@ function MessageThread({
   };
 
   const deliveryLegend = (
-    <div className="inbox-kbd-row">/ templates · ⌘↵ send · n note · s schedule · f follow-up · t tags</div>
+    <div className="inbox-compose-meta">
+      <div className="inbox-kbd-row">/ TEMPLATES · ⌘↵ SEND · N NOTE · S SCHEDULE · F FOLLOW-UP</div>
+      <div className="inbox-sound-row">SOUND TEST: 🔥 Hot lead · 💬 New reply · 🔇 Mute</div>
+    </div>
   );
 
   if (!conversation) {
@@ -807,6 +876,23 @@ function MessageThread({
   const fromNumber = statusStrip?.fromNumber || conversation.fromNumber || conversation.lead?.phone || '';
   const fromFriendly = statusStrip?.fromNumberFriendlyName || conversation.fromNumberFriendlyName || '';
   const inPipeline = conversation.isInPipeline || statusStrip?.pipelineState === 'in_pipeline';
+  const leadEmail = (conversation.lead?.email || '').trim();
+  const aiSignals = (conversation.aiSignals || {}) as Record<string, unknown>;
+  const aiSuggestedFollowupTime =
+    typeof aiSignals.suggestedFollowupTime === 'string' ? aiSignals.suggestedFollowupTime : '';
+  const aiSuggestedFollowupReason =
+    typeof aiSignals.suggestedFollowupReason === 'string' ? aiSignals.suggestedFollowupReason : '';
+  const nextFollowupDate = conversation.nextFollowupAt ? new Date(conversation.nextFollowupAt) : null;
+  const nextFollowupOverdue = !!nextFollowupDate && nextFollowupDate.getTime() < Date.now();
+
+  const openGmailCompose = () => {
+    if (!leadEmail) return;
+    const subject = encodeURIComponent(`Re: ${conversation.lead?.company || 'Funding options'}`);
+    const body = encodeURIComponent(replyText || '');
+    const to = encodeURIComponent(leadEmail);
+    const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <>
@@ -817,28 +903,59 @@ function MessageThread({
               <button onClick={onBack} className="inbox-tool-btn inbox-back-btn" aria-label="Back">
                 <ChevronLeft size={18} />
               </button>
-              <div className="inbox-avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
-                {conversation.lead?.firstName?.[0]}
-                {conversation.lead?.lastName?.[0] || ''}
-              </div>
               <div>
                 <div className="inbox-thread-name">
-                  {conversation.lead?.firstName} {conversation.lead?.lastName || ''}
+                  {leadFirstName} {leadLastName}
                 </div>
                 <div className="inbox-thread-phone">
                   <Phone size={10} />
                   {conversation.lead?.phone}
                   {conversation.lead?.company ? ` · ${conversation.lead.company}` : ''}
+                  {conversation.lead?.source ? <span className="thread-source"> · Source: {conversation.lead.source}</span> : null}
                 </div>
               </div>
             </div>
 
-            <div className="inbox-thread-actions">
-              <button className="inbox-action-chip gold" onClick={() => setShowTemplates(true)}>
-                <FileText size={13} /> Templates
+            {/* Pixel-perfect: action-chips в правом верхнем углу как в proto */}
+            <div className="inbox-thread-actions-bar">
+              <button
+                className={clsx('inbox-action-btn', conversation.leadStatus === 'Interested' && 'active-interested')}
+                onClick={() =>
+                  statusMutation.mutate({ leadStatus: conversation.leadStatus === 'Interested' ? '' : 'Interested' })
+                }
+              >
+                <Check size={12} /> Mark Interested
               </button>
-              <button className="inbox-action-chip" onClick={() => setShowFollowupPopover((p) => !p)}>
-                <CalendarClock size={13} /> Follow-Up
+              <button
+                className="inbox-action-btn"
+                onClick={() => statusMutation.mutate({ leadStatus: 'Not Interested' })}
+              >
+                <X size={12} /> Not Interested
+              </button>
+              <button
+                className={clsx('inbox-action-btn', conversation.leadStatus === 'DNC' && 'active-dnc')}
+                onClick={() => statusMutation.mutate({ leadStatus: conversation.leadStatus === 'DNC' ? '' : 'DNC' })}
+              >
+                DNC
+              </button>
+              <button
+                className={clsx('inbox-action-btn', conversation.emailReceived && 'active-email')}
+                onClick={() => statusMutation.mutate({ emailReceived: !conversation.emailReceived })}
+              >
+                <Mail size={12} /> Email Rcv
+              </button>
+              <button
+                className="inbox-action-btn pipeline"
+                onClick={() => (inPipeline ? navigate('/pipeline') : setShowPipelinePicker(true))}
+              >
+                <Plus size={12} /> {inPipeline ? 'In Pipeline' : 'Pipeline'}
+              </button>
+              <button
+                className="inbox-action-btn followup-btn"
+                onClick={() => setShowFollowupPopover((p) => !p)}
+                title="Schedule follow-up"
+              >
+                <Clock size={12} /> Follow-Up
               </button>
             </div>
           </div>
@@ -860,67 +977,12 @@ function MessageThread({
               </span>
             ) : null}
             {conversation.hotLead ? <span className="inbox-strip-badge hot">🔥 Hot Lead</span> : null}
-            <span className={clsx('inbox-strip-badge', inPipeline ? 'pipe' : 'dim')}>
-              {inPipeline ? '→ In Pipeline' : 'Not in pipeline'}
-            </span>
-            <span className="inbox-strip-badge from">
-              From: {fromNumber}
-              {fromFriendly ? ` ${fromFriendly}` : ''}
-            </span>
-            {statusStrip?.assignedRep ? <span className="inbox-strip-badge">👤 {statusStrip.assignedRep}</span> : null}
-            {conversation.nextFollowupAt ? (
-              <span className="inbox-strip-badge follow">
-                ⏱ {format(new Date(conversation.nextFollowupAt), 'MMM d, h:mm a')}
+            {nextFollowupDate && (
+              <span className={clsx('inbox-strip-badge follow', nextFollowupOverdue && 'overdue')}>
+                <Clock size={11} style={{ marginRight: 3 }} />
+                {formatDistanceToNow(nextFollowupDate, { addSuffix: true })}
+                {nextFollowupOverdue ? ' · OVERDUE' : ''}
               </span>
-            ) : null}
-          </div>
-
-          <div className="inbox-thread-row row3 quick-actions">
-            <button
-              className={clsx('inbox-action-btn', conversation.leadStatus === 'Interested' && 'active-interested')}
-              onClick={() =>
-                statusMutation.mutate({ leadStatus: conversation.leadStatus === 'Interested' ? '' : 'Interested' })
-              }
-            >
-              <Check size={13} /> Mark Interested
-            </button>
-            <button
-              className="inbox-action-btn"
-              onClick={() => statusMutation.mutate({ leadStatus: 'Not Interested' })}
-            >
-              <X size={13} /> Not Interested
-            </button>
-            <button
-              className={clsx('inbox-action-btn', conversation.leadStatus === 'DNC' && 'active-dnc')}
-              onClick={() => statusMutation.mutate({ leadStatus: conversation.leadStatus === 'DNC' ? '' : 'DNC' })}
-            >
-              <Ban size={13} /> DNC
-            </button>
-            <button
-              className={clsx('inbox-action-btn', conversation.emailReceived && 'active-email')}
-              onClick={() => statusMutation.mutate({ emailReceived: !conversation.emailReceived })}
-            >
-              <Mail size={13} /> Email Rcv
-            </button>
-            <button
-              className="inbox-action-btn pipeline"
-              onClick={() => (inPipeline ? navigate('/pipeline') : setShowPipelinePicker(true))}
-            >
-              <Plus size={13} /> {inPipeline ? '→ In Pipeline' : '→ Add to Pipeline'}
-            </button>
-            <button className="inbox-action-btn" onClick={() => setShowFollowupPopover((p) => !p)}>
-              <CalendarClock size={13} /> Follow-Up
-            </button>
-            <button className="inbox-action-btn" onClick={() => markUnreadMutation.mutate()}>
-              <CheckCheck size={13} /> Mark Unread
-            </button>
-            <button className="inbox-action-btn" onClick={() => setShowNotePopover((p) => !p)}>
-              <StickyNote size={13} /> Note
-            </button>
-            {isAdmin && (
-              <button className="inbox-action-btn assign" onClick={() => setShowAssignModal(true)}>
-                <UserPlus size={13} /> Assign Rep
-              </button>
             )}
           </div>
 
@@ -929,17 +991,48 @@ function MessageThread({
               <button onClick={() => applyQuickFollowup('tomorrow_9')}>Tomorrow 9:00 AM</button>
               <button onClick={() => applyQuickFollowup('tomorrow_14')}>Tomorrow 2:00 PM</button>
               <button onClick={() => applyQuickFollowup('next_monday')}>Next Monday</button>
+              {aiSuggestedFollowupTime && (
+                <button
+                  onClick={() => {
+                    const parsedDate = new Date(aiSuggestedFollowupTime);
+                    if (Number.isNaN(parsedDate.getTime())) {
+                      toast.error('Invalid AI follow-up suggestion');
+                      return;
+                    }
+                    statusMutation.mutate({ nextFollowupAt: parsedDate.toISOString() });
+                    if (aiSuggestedFollowupReason) {
+                      noteMutation.mutate(`[AI Follow-up] ${aiSuggestedFollowupReason}`);
+                    }
+                    setShowFollowupPopover(false);
+                    toast.success('AI follow-up applied');
+                  }}
+                >
+                  AI Suggested: {format(new Date(aiSuggestedFollowupTime), 'MMM d, h:mm a')}
+                </button>
+              )}
+              {aiSuggestedFollowupReason && <div className="inbox-popover-helper">Reason: {aiSuggestedFollowupReason}</div>}
               <input
                 type="datetime-local"
                 value={followupDateTime}
                 onChange={(e) => setFollowupDateTime(e.target.value)}
                 className="inbox-followup-input"
               />
+              <input
+                type="text"
+                value={followupReason}
+                onChange={(e) => setFollowupReason(e.target.value)}
+                className="inbox-followup-input"
+                placeholder="Optional reason"
+              />
               <div className="inbox-popover-actions">
                 <button
                   onClick={() => {
                     if (!followupDateTime) return;
                     statusMutation.mutate({ nextFollowupAt: new Date(followupDateTime).toISOString() });
+                    if (followupReason.trim()) {
+                      noteMutation.mutate(`[Follow-up reason] ${followupReason.trim()}`);
+                    }
+                    setFollowupReason('');
                     setShowFollowupPopover(false);
                   }}
                 >
@@ -948,6 +1041,7 @@ function MessageThread({
                 <button
                   onClick={() => {
                     statusMutation.mutate({ nextFollowupAt: null });
+                    setFollowupReason('');
                     setShowFollowupPopover(false);
                   }}
                 >
@@ -958,8 +1052,7 @@ function MessageThread({
           )}
         </div>
 
-        {/* Phase 1 AI: Intelligence banner — скрыт в lean-режиме (флаг PHASE1_LEAN), возвращается в Phase 2 */}
-        {!PHASE1_LEAN && <AIBanner conversation={conversation as any} />}
+        <AIBanner conversation={conversation as any} />
 
         <div className="inbox-messages phase1">
           {isLoading && (
@@ -974,8 +1067,16 @@ function MessageThread({
             const showSeparator =
               !prev || format(messageDate(prev), 'yyyy-MM-dd') !== format(currentDate, 'yyyy-MM-dd');
 
+            // Pixel-perfect proto: помечаем последнее INBOUND перед AI HOT classification + system-event после
+            const isHotTrigger =
+              conversation?.aiClassification === 'HOT' &&
+              conversation?.aiClassifiedAt &&
+              msg.direction === 'INBOUND' &&
+              hotTriggerMessageId === msg.id;
+
+            // Fragment вместо <div> — иначе align-self на .inbox-msg не срабатывает
             return (
-              <div key={msg.id}>
+              <Fragment key={msg.id}>
                 {showSeparator && (
                   <div className="inbox-date-separator">
                     <span className="line" />
@@ -983,21 +1084,32 @@ function MessageThread({
                     <span className="line" />
                   </div>
                 )}
-                <MessageBubble message={msg} />
-              </div>
+                <MessageBubble message={{ ...(msg as any), hot: isHotTrigger } as Message} />
+                {isHotTrigger && (
+                  <div className="inbox-system-event">🔥 HOT classification — admin notified via mobile SMS</div>
+                )}
+              </Fragment>
             );
           })}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Phase 1 AI: BEST + ALT suggestions — скрыты в lean-режиме (флаг PHASE1_LEAN), возвращаются в Phase 2 */}
-        {!PHASE1_LEAN && !conversation?.lead?.optedOut && (
+        {!conversation?.lead?.optedOut && (
           <AISuggestions
             suggestions={(conversation as any)?.aiSuggestions}
             signals={(conversation as any)?.aiSignals}
             onUseSuggestion={(text) => {
               setReplyText(text);
               composeTextareaRef.current?.focus();
+              suggestionFeedbackMutation.mutate({ action: 'use', suggestionText: text });
+            }}
+            onEditSuggestion={(text) => {
+              setReplyText(text);
+              composeTextareaRef.current?.focus();
+            }}
+            onSkipSuggestion={(text) => {
+              suggestionFeedbackMutation.mutate({ action: 'skip', suggestionText: text });
+              toast.success('Suggestion skipped');
             }}
           />
         )}
@@ -1008,18 +1120,19 @@ function MessageThread({
             {fromFriendly ? ` — ${fromFriendly}` : ''}
           </div>
 
+          {/* Pixel-perfect: emoji-иконки 1:1 с прототипом (proto использует 📄 📅 🔗 🏷) */}
           <div className="inbox-compose-tools phase1">
-            <button className="inbox-tool-btn" title="Templates" onClick={() => setShowTemplates(true)}>
-              <FileText size={15} />
+            <button className="inbox-tool-btn icon-emoji" title="Templates" onClick={() => setShowTemplates(true)}>
+              📄
             </button>
-            <button className="inbox-tool-btn" title="Note (internal)" onClick={() => setShowNotePopover((p) => !p)}>
-              <StickyNote size={15} />
+            <button className="inbox-tool-btn icon-emoji" title="Schedule" onClick={() => setShowSchedulePopover((p) => !p)}>
+              📅
             </button>
-            <button className="inbox-tool-btn" title="Schedule" onClick={() => setShowSchedulePopover((p) => !p)}>
-              <CalendarDays size={15} />
+            <button className="inbox-tool-btn icon-emoji" title="Note (internal)" onClick={() => setShowNotePopover((p) => !p)}>
+              🔗
             </button>
-            <button className="inbox-tool-btn" title="Tag" onClick={() => setShowTagPopover((p) => !p)}>
-              <Tag size={15} />
+            <button className="inbox-tool-btn icon-emoji" title="Tag" onClick={() => setShowTagPopover((p) => !p)}>
+              🏷
             </button>
             {replyText && <SmsCounter text={replyText} />}
           </div>
@@ -1249,13 +1362,16 @@ function MessageThread({
 function MessageBubble({ message }: { message: Message }) {
   const outbound = message.direction === 'OUTBOUND';
   const dt = messageDate(message);
+  const isHot = !outbound && (message as unknown as { hot?: boolean }).hot === true;
 
+  // Pixel-perfect proto: время и статус инлайн через ·
   return (
-    <div className={clsx('inbox-msg', outbound ? 'outbound' : 'inbound')}>
-      <p>{message.body}</p>
-      <div className="inbox-msg-time">
+    <div className={clsx('inbox-msg', outbound ? 'outbound' : 'inbound', isHot && 'hot')}>
+      <div className="inbox-msg-bubble">{message.body}</div>
+      <div className="inbox-msg-meta">
         <span>{format(dt, 'h:mm a')}</span>
         {outbound && <MsgStatusText status={message.status} />}
+        {isHot && <span className="inbox-msg-hot-tag">🔥 HOT</span>}
       </div>
     </div>
   );
@@ -1270,16 +1386,13 @@ function RightSidebar({
   conversation: Conversation;
   activity: ConversationActivity[];
 }) {
-  const [tab, setTab] = useState<'contact' | 'activity' | 'ai_state' | 'alerts'>('contact');
+  const [tab, setTab] = useState<'contact' | 'ai_state' | 'alerts'>('contact');
 
   return (
     <div className="inbox-right phase1">
       <div className="inbox-sidebar-tabs">
         <button className={clsx(tab === 'contact' && 'active')} onClick={() => setTab('contact')}>
-          Contact / Notes
-        </button>
-        <button className={clsx(tab === 'activity' && 'active')} onClick={() => setTab('activity')}>
-          Activity
+          Contact
         </button>
         <button className={clsx(tab === 'ai_state' && 'active')} onClick={() => setTab('ai_state')}>
           AI State
@@ -1291,11 +1404,10 @@ function RightSidebar({
 
       {tab === 'contact' && (
         <>
-          <ContactInfoSection conversation={conversation} />
+          <ContactInfoSection conversation={conversation} title="Contact Info" />
           <NotesSection conversationId={conversationId} title="Notes" />
         </>
       )}
-      {tab === 'activity' && <ActivitySection activity={activity} />}
       {tab === 'ai_state' && <AIStateSection conversation={conversation} />}
       {tab === 'alerts' && <AlertsSection conversation={conversation} />}
     </div>
@@ -1359,33 +1471,138 @@ function AlertsSection({ conversation }: { conversation: Conversation }) {
   );
 }
 
-function ContactInfoSection({ conversation }: { conversation: Conversation }) {
+function ContactInfoSection({ conversation, title: _title }: { conversation: Conversation; title?: string }) {
+  // Структура 1:1 с прототипом scl-inbox-v11.html: 3 раздела (CONTACT INFO / DEAL INFO / REP PERFORMANCE)
   const info = conversation.contactInfo || {};
-  const createdAtValue = info.createdAt || conversation.createdAt;
-  const rows: Array<{ key: string; value?: string | null }> = [
+  const signals = (conversation.aiSignals || {}) as Record<string, unknown>;
+  const extractedRevenue = (conversation as unknown as { extractedRevenue?: number | null }).extractedRevenue;
+  const extractedAsk = (conversation as unknown as { extractedAsk?: string | null }).extractedAsk;
+  const extractedIndustry = (conversation as unknown as { extractedIndustry?: string | null }).extractedIndustry;
+  const helocFit = (conversation as unknown as { helocFitFlag?: boolean | null }).helocFitFlag;
+  const repStats = (conversation as unknown as {
+    repStats?: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number };
+  }).repStats;
+
+  const formatRevenue = (val: number | null | undefined): string => {
+    if (val == null) return '—';
+    if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(val % 1_000_000 === 0 ? 0 : 2)}M`;
+    if (val >= 1_000) return `$${Math.round(val / 1_000)}k`;
+    return `$${val}`;
+  };
+
+  // M/SS если <1ч; H:MM если меньше суток; иначе Xd
+  const formatResponseTime = (sec: number): string => {
+    if (sec < 3600) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${String(s).padStart(2, '0')}`;
+    }
+    if (sec < 24 * 3600) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      return `${h}h ${m}m`;
+    }
+    return `${Math.floor(sec / 86400)}d`;
+  };
+
+  const contactRows: Array<{ key: string; value?: string | null; gold?: boolean }> = [
     { key: 'Email', value: info.email || conversation.lead?.email || '' },
     { key: 'Phone', value: info.phone || conversation.lead?.phone || '' },
     { key: 'Company', value: info.company || conversation.lead?.company || '' },
     { key: 'Source', value: info.source || conversation.lead?.source || '' },
-    { key: 'Product', value: info.product || '' },
-    { key: 'Assigned Rep', value: info.assignedRep || conversation.statusStrip?.assignedRep || '' },
-    { key: 'Convo #', value: info.conversationNumber || conversation.id },
-    {
-      key: 'Created',
-      value: createdAtValue ? format(new Date(createdAtValue), 'MMM d, yyyy h:mm a') : '',
-    },
-    { key: 'Last Template Used', value: info.lastTemplateUsed || '' },
+    { key: 'Assigned Rep', value: info.assignedRep || conversation.statusStrip?.assignedRep || '', gold: true },
   ];
 
+  // ROUTING — показываем если есть assignedRep, format "⚡ Auto → INITIALS"
+  const repName = (info.assignedRep || conversation.statusStrip?.assignedRep || '').trim();
+  const repInitials = repName
+    ? repName
+        .split(/\s+/)
+        .map((p) => p[0])
+        .filter(Boolean)
+        .slice(0, 2)
+        .join('')
+        .toUpperCase()
+    : '';
+  const routingValue = repInitials ? `⚡ Auto → ${repInitials}` : '';
+
+  const dealRows: Array<{ key: string; value?: string | null; tone?: 'hot' | 'gold' }> = [
+    { key: 'Product', value: (signals.product as string) || info.product || '' },
+    { key: 'Ask', value: extractedAsk || (signals.ask as string) || '' },
+    { key: 'Revenue', value: extractedRevenue != null ? formatRevenue(extractedRevenue) : ((signals.revenue as string) || '') },
+    { key: 'Industry', value: extractedIndustry || (signals.industry as string) || '' },
+    { key: 'HELOC Fit', value: helocFit == null ? '' : helocFit ? '✓ Yes' : '— No' },
+    {
+      key: 'AI Status',
+      value: conversation.aiClassification
+        ? conversation.aiClassification === 'HOT'
+          ? '🔥 HOT'
+          : conversation.aiClassification === 'WARM'
+            ? '🌡 WARM'
+            : '🌱 NURTURE'
+        : '',
+      tone: conversation.aiClassification === 'HOT' ? 'hot' : undefined,
+    },
+  ];
+
+  const hasDealData = dealRows.some((r) => r.value);
+
   return (
-    <div className="inbox-sidebar-section contact-grid">
-      {rows.map((row) => (
-        <div key={row.key} className="inbox-contact-row">
-          <div className="inbox-contact-key">{row.key}</div>
-          <div className="inbox-contact-value">{row.value || '—'}</div>
+    <>
+      <div className="inbox-sidebar-section contact-grid">
+        <div className="inbox-sidebar-title">Contact Info</div>
+        {contactRows.map((row) => (
+          <div key={row.key} className="inbox-contact-row">
+            <div className="inbox-contact-key">{row.key}</div>
+            <div className={clsx('inbox-contact-value', row.gold && 'value-gold')}>{row.value || '—'}</div>
+          </div>
+        ))}
+      </div>
+
+      {hasDealData ? (
+        <div className="inbox-sidebar-section contact-grid">
+          <div className="inbox-sidebar-title">Deal Info</div>
+          {dealRows.map((row) => (
+            <div key={row.key} className="inbox-contact-row">
+              <div className="inbox-contact-key">{row.key}</div>
+              <div className={clsx('inbox-contact-value', row.tone === 'hot' && 'value-hot')}>{row.value || '—'}</div>
+            </div>
+          ))}
+          {routingValue ? (
+            <div className="inbox-contact-row">
+              <div className="inbox-contact-key">Routing</div>
+              <div className="inbox-contact-value value-gold">{routingValue}</div>
+            </div>
+          ) : null}
         </div>
-      ))}
-    </div>
+      ) : null}
+
+      {repName ? (
+        <div className="inbox-sidebar-section rep-perf-section">
+          <div className="inbox-sidebar-title">REP PERFORMANCE · {repInitials}</div>
+          <div className="rep-perf-grid">
+            <div className="rep-perf-row">
+              <span className="rep-perf-label">AVG 1ST RESPONSE</span>
+              <span className={clsx('rep-perf-value', repStats?.avgFirstResponseSec == null && 'muted')}>
+                {repStats?.avgFirstResponseSec != null ? formatResponseTime(repStats.avgFirstResponseSec) : '—'}
+              </span>
+            </div>
+            <div className="rep-perf-row">
+              <span className="rep-perf-label">AI USAGE RATE</span>
+              <span className={clsx('rep-perf-value', repStats?.aiUsageRatePct == null && 'muted')}>
+                {repStats?.aiUsageRatePct != null ? `${repStats.aiUsageRatePct}%` : '—'}
+              </span>
+            </div>
+            <div className="rep-perf-row">
+              <span className="rep-perf-label">AI CONVERSIONS</span>
+              <span className={clsx('rep-perf-value', !repStats?.aiConversionsCount && 'muted')}>
+                {repStats?.aiConversionsCount ? `${repStats.aiConversionsCount} pipeline adds` : '—'}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -1449,13 +1666,23 @@ function NotesSection({ conversationId, title }: { conversationId: string; title
       {title ? <div className="inbox-sidebar-title">{title}</div> : null}
       {notes.map((note) => (
         <div key={note.id} className="inbox-note-item">
-          <div className="inbox-note-body">{note.body}</div>
-          <div className="inbox-note-meta">
-            <span>{format(new Date(note.createdAt), 'MMM d, h:mm a')}</span>
-            <button className="inbox-tool-btn" onClick={() => deleteMutation.mutate(note.id)}>
+          <div className="inbox-note-meta-top">
+            <span className="inbox-note-author">
+              {note.authorInitials || '??'}
+              {note.authorRole === 'ADMIN' ? ' (admin)' : ''}
+            </span>
+            <span className="inbox-note-time">
+              {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+            </span>
+            <button
+              className="inbox-tool-btn"
+              onClick={() => deleteMutation.mutate(note.id)}
+              title="Delete note"
+            >
               <X size={11} />
             </button>
           </div>
+          <div className="inbox-note-body">{note.body}</div>
         </div>
       ))}
       <textarea
@@ -1465,13 +1692,17 @@ function NotesSection({ conversationId, title }: { conversationId: string; title
         onChange={(e) => setNoteText(e.target.value)}
       />
       <button
-        className="inbox-action-btn"
+        className="inbox-add-note-btn"
         style={{ width: '100%', marginTop: 6, justifyContent: 'center' }}
         disabled={!noteText.trim()}
         onClick={() => createMutation.mutate(noteText.trim())}
       >
         <Plus size={12} /> Add Note
       </button>
+      <div className="inbox-notes-helper">
+        AI reads all notes for context extraction (revenue, industry, objections). Notes are universal — admin and rep
+        notes both feed the model.
+      </div>
     </div>
   );
 }

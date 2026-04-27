@@ -20,8 +20,10 @@ interface HotPayload {
 const AUDIO_PULSES = [600, 800, 1050];
 const PULSE_INTERVAL_MS = 170;
 const TOAST_TTL_MS = 8000;
+const INBOX_SOUND_MUTE_KEY = 'scl_inbox_sound_muted';
 
 function playHotPulse() {
+  if (localStorage.getItem(INBOX_SOUND_MUTE_KEY) === '1') return;
   try {
     const Ctx =
       window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -50,6 +52,17 @@ export default function HOTToast() {
   const socket = useWebSocketStore((s) => s.socket);
   const navigate = useNavigate();
   const [items, setItems] = useState<HotEvent[]>([]);
+  const [isMuted, setIsMuted] = useState(() => localStorage.getItem(INBOX_SOUND_MUTE_KEY) === '1');
+
+  const toggleMute = () => {
+    const next = !isMuted;
+    setIsMuted(next);
+    if (next) {
+      localStorage.setItem(INBOX_SOUND_MUTE_KEY, '1');
+    } else {
+      localStorage.removeItem(INBOX_SOUND_MUTE_KEY);
+    }
+  };
 
   useEffect(() => {
     if (!socket) return;
@@ -89,6 +102,17 @@ export default function HOTToast() {
           }}
         >
           <div className="ht-head">🔥 HOT Lead Reply</div>
+          <button
+            type="button"
+            className="ht-mute"
+            aria-label={isMuted ? 'Unmute inbox sounds' : 'Mute inbox sounds'}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMute();
+            }}
+          >
+            {isMuted ? '🔇 Mute' : '🔊 Sound'}
+          </button>
           <div className="ht-name">{ev.leadName}</div>
           {ev.preview && <div className="ht-preview">&ldquo;{ev.preview}&rdquo;</div>}
           <button

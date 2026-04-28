@@ -13,7 +13,7 @@
 - [x] Production должен деплоиться только из зафиксированного commit SHA.
 - [ ] Не использовать токены, вставленные в чат. Текущий GitHub token считать скомпрометированным: отозвать и выдать новый минимальный token перед работой с чужим repo.
 - [x] Не коммитить `.env`, токены, prod dumps, временные scripts, логи, screenshots с секретами.
-- [ ] Для repo `fawzi-barakat00728/Twilio-Project-For-Finanical-Company` не пушить историю с author/committer `ksanyok`; использовать sanitized export или rewritten mirror.
+- [x] Для repo `fawzi-barakat00728/Twilio-Project-For-Finanical-Company` не пушить историю с author/committer `ksanyok`; использовать sanitized export или rewritten mirror.
 - [x] Перед каждым push проверять `git status --short`, `git log -1 --format=fuller`, `git remote -v`.
 - [ ] После каждого deploy проверять app как пользователь: UI, API, logs, regression.
 
@@ -641,7 +641,7 @@ Evidence:
 - Target repo: `fawzi-barakat00728/Twilio-Project-For-Finanical-Company`, default branch `main`, public repo.
 - Previous target HEAD before rewrite: `8d66f4d` (`2026-03-16`, `fix readme`).
 - Clean export strategy used: new single-commit repo with no source `.git`, no `.env`, no logs/dumps, no CSV exports, no audit/checklist evidence, no screenshots/PDFs, and no `node_modules`/build output.
-- New target HEAD after force-push: `ae05848` with message `Update Twilio SMS platform`.
+- New target HEAD after force-push: `3f1224d` with message `Update Twilio SMS platform`.
 - Author and committer on the rewritten target `main`: `fawzi-barakat00728 <fawzi-barakat00728@outlook.com>`.
 - Public contributors endpoint after rewrite returned only `fawzi-barakat00728` with `1` contribution.
 - Included top-level content after rewrite: `.env.production.example`, `.github`, `.gitignore`, `.husky`, `.prettierignore`, `.prettierrc`, `DEPLOYMENT.md`, `Dockerfile`, `README.md`, `client`, `docker-compose.yml`, `docs`, `eslint.config.js`, `nginx.conf`, `package-lock.json`, `package.json`, `scripts`, `server`.
@@ -692,14 +692,16 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `15414cf` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: local branch bundled to server, fast-forwarded `e596d85..15414cf`, then `npm ci`, `prisma generate`, server build, client build, PM2 restart.
+- Latest production source: `b2572de` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de` with fresh `client` build on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
 - PM2: `sms-api` online after restart; restart count `10`.
 - Production runtime logs: `RECENT_ERRORS=0` for Prisma unknown field/uncaught/unhandled/fatal markers after smoke.
-- Latest CI proof: run `25065413359`, commit `15414cf`, jobs `lint-and-typecheck`, `test`, `build` all passed.
+- Latest CI proof: run `25068339405`, commit `b2572de`, jobs completed successfully.
 - Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
 - Public frontend smoke: `https://app.sclcapital.io/` returned `200 OK` and current index timestamp after deploy.
+- Current unread-badge fix: sidebar Inbox badge now uses unread conversation count, matching Inbox/Admin View and the User Guide contract.
+- Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
 
@@ -743,3 +745,6 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Production DB         | Applied additive follow-up migration after backup         | 15414cf    | Backup 20260428164910; columns=5; indexes=2; data preserved           | Done   |
 | 2026-04-28 | Production Deploy     | Deployed latest committed code and restarted PM2          | 15414cf    | Health ok/ok/ok; PM2 online; git clean; runtime errors 0              | Done   |
 | 2026-04-28 | Client Repo Mirror    | Rewrote target repo as sanitized single-commit mirror     | ae05848    | main updated; author/committer fawzi; contributors endpoint = fawzi   | Done   |
+| 2026-04-28 | Inbox Unread Badge    | Aligned sidebar badge with unread conversations           | b2572de    | No file errors; client build passed; docs contract matches            | Done   |
+| 2026-04-28 | Production Deploy     | Deployed unread badge fix to production frontend          | b2572de    | Production SHA b2572de; health ok; client build ok                    | Done   |
+| 2026-04-28 | Client Repo Mirror    | Synced sanitized client repo with unread badge fix        | 3f1224d    | target main updated; author/committer fawzi; contributors still fawzi | Done   |

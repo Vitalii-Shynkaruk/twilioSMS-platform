@@ -640,4 +640,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index                | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes    | Done   |
 | 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source     | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0     | Done   |
 | 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis            | Done   |
-| 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | Pending    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |
+| 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | 76d5a71    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |

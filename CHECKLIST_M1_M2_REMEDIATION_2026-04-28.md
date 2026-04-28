@@ -596,45 +596,56 @@ Important: GitHub contributors are derived from commit author/committer identity
 
 - [ ] Revoke token pasted in chat.
 - [ ] Generate new GitHub token with minimal required permissions.
-- [ ] Confirm target repo owner/branch/protection rules.
-- [ ] Confirm desired public author identity for commits: name/email.
-- [ ] Commit and push all final work to `ksanyok/twilio-sms-platform` first.
+- [x] Confirm target repo owner/branch/protection rules.
+- [x] Confirm desired public author identity for commits: name/email.
+- [x] Commit and push all final work to `ksanyok/twilio-sms-platform` first.
 
 ### 12.2 Sanitize export strategy
 
 Choose one:
 
-- [ ] Option A: clean export without history, new initial commit under neutral/client author.
+- [x] Option A: clean export without history, new initial commit under neutral/client author.
 - [ ] Option B: rewrite full history author/committer away from `ksanyok` before force-push.
 
 Recommended:
 
-- [ ] Use clean export/new initial commit unless client specifically needs full history.
+- [x] Use clean export/new initial commit unless client specifically needs full history.
 
 ### 12.3 Safety checks before pushing target repo
 
-- [ ] No `.git` from source copied.
-- [ ] No `.env`, logs, dumps, local evidence, temp files.
-- [ ] `git config user.name` is not `ksanyok`.
-- [ ] `git config user.email` is not ksanyok email.
-- [ ] `git log --format='%an <%ae> | %cn <%ce>' --all` contains no `ksanyok`.
-- [ ] README/package metadata contains no `ksanyok` unless explicitly allowed.
-- [ ] `git remote -v` points only to target repo before target push.
+- [x] No `.git` from source copied.
+- [x] No `.env`, logs, dumps, local evidence, temp files.
+- [x] `git config user.name` is not `ksanyok`.
+- [x] `git config user.email` is not ksanyok email.
+- [x] `git log --format='%an <%ae> | %cn <%ce>' --all` contains no `ksanyok`.
+- [x] README/package metadata contains no `ksanyok` unless explicitly allowed.
+- [x] `git remote -v` points only to target repo before target push.
 
 ### 12.4 Target repo cleanup and push
 
-- [ ] Backup current target repo state if needed.
-- [ ] Clean target repo contents safely.
-- [ ] Push sanitized code to target default branch.
-- [ ] Verify GitHub contributors page does not show `ksanyok`.
+- [x] Backup current target repo state if needed.
+- [x] Clean target repo contents safely.
+- [x] Push sanitized code to target default branch.
+- [x] Verify GitHub contributors page does not show `ksanyok`.
 - [ ] Verify target Actions/CI if configured.
 
 Acceptance:
 
-- [ ] Final code exists in `ksanyok` repo.
-- [ ] Target repo contains same final code.
-- [ ] Target repo commit authors do not reveal `ksanyok`.
-- [ ] Contributors page does not show `ksanyok`.
+- [x] Final code exists in `ksanyok` repo.
+- [x] Target repo contains same final code.
+- [x] Target repo commit authors do not reveal `ksanyok`.
+- [x] Contributors page does not show `ksanyok`.
+
+Evidence:
+
+- Target repo: `fawzi-barakat00728/Twilio-Project-For-Finanical-Company`, default branch `main`, public repo.
+- Previous target HEAD before rewrite: `8d66f4d` (`2026-03-16`, `fix readme`).
+- Clean export strategy used: new single-commit repo with no source `.git`, no `.env`, no logs/dumps, no CSV exports, no audit/checklist evidence, no screenshots/PDFs, and no `node_modules`/build output.
+- New target HEAD after force-push: `ae05848` with message `Update Twilio SMS platform`.
+- Author and committer on the rewritten target `main`: `fawzi-barakat00728 <fawzi-barakat00728@outlook.com>`.
+- Public contributors endpoint after rewrite returned only `fawzi-barakat00728` with `1` contribution.
+- Included top-level content after rewrite: `.env.production.example`, `.github`, `.gitignore`, `.husky`, `.prettierignore`, `.prettierrc`, `DEPLOYMENT.md`, `Dockerfile`, `README.md`, `client`, `docker-compose.yml`, `docs`, `eslint.config.js`, `nginx.conf`, `package-lock.json`, `package.json`, `scripts`, `server`.
+- Follow-up security action still pending: rotate/revoke the chat-pasted PAT after confirming the client repo is visible as expected.
 
 ---
 
@@ -731,3 +742,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M2 CI Proof           | Verified latest AI/pipeline changes in GitHub Actions     | 15414cf    | Run 25065413359 passed: lint/typecheck, test, build                   | Done   |
 | 2026-04-28 | Production DB         | Applied additive follow-up migration after backup         | 15414cf    | Backup 20260428164910; columns=5; indexes=2; data preserved           | Done   |
 | 2026-04-28 | Production Deploy     | Deployed latest committed code and restarted PM2          | 15414cf    | Health ok/ok/ok; PM2 online; git clean; runtime errors 0              | Done   |
+| 2026-04-28 | Client Repo Mirror    | Rewrote target repo as sanitized single-commit mirror     | ae05848    | main updated; author/committer fawzi; contributors endpoint = fawzi   | Done   |

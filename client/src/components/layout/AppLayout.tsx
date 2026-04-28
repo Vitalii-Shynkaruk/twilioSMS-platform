@@ -86,7 +86,11 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
 
   // Auto-collapse sidebar on Pipeline / Command Center for maximum content visibility
   useEffect(() => {
-    if (location.pathname === '/pipeline' || location.pathname === '/command-center' || location.pathname === '/inbox') {
+    if (
+      location.pathname === '/pipeline' ||
+      location.pathname === '/command-center' ||
+      location.pathname === '/inbox'
+    ) {
       setCollapsed(true);
     }
   }, [location.pathname]);
@@ -102,7 +106,8 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   // Auto-invalidate queries on WebSocket events (messages, campaigns, leads)
   useWebSocketQuerySync();
 
-  // Unread inbox count for badge — показываем число непрочитанных сообщений
+  // Unread inbox count for badge — показываем число непрочитанных conversations,
+  // чтобы sidebar совпадал с Inbox/Admin View и фильтром Unread.
   const { data: inboxData } = useQuery({
     queryKey: ['inbox-unread-summary'],
     queryFn: async () => {
@@ -111,7 +116,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
     },
     refetchInterval: 15000,
   });
-  const unreadCount = inboxData?.unreadMessages || 0;
+  const unreadCount = inboxData?.unreadConversations || 0;
 
   // SMS mode from diagnostics
   const { data: diagData } = useQuery({
@@ -433,7 +438,10 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   );
 
   return (
-    <div className={clsx('flex h-screen overflow-hidden', isInboxRoute && 'inbox-layout')} style={{ backgroundColor: 'var(--bg-primary)' }}>
+    <div
+      className={clsx('flex h-screen overflow-hidden', isInboxRoute && 'inbox-layout')}
+      style={{ backgroundColor: 'var(--bg-primary)' }}
+    >
       {/* Mobile overlay */}
       {mobileOpen && (
         <div

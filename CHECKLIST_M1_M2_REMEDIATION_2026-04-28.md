@@ -675,4 +675,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | 76d5a71    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |
 | 2026-04-28 | M2 Follow-up          | Added follow-up schema fields and deterministic timing    | 7e49d89    | 9 policy tests pass; builds pass; production DB migration pending     | Done   |
 | 2026-04-28 | M2 CI Proof           | Triggered CI for follow-up scheduling changes             | 56b16cd    | GitHub Actions run 25064083733 passed                                 | Done   |
-| 2026-04-28 | M2 Migration Plan     | Prepared production backup/migration/deploy plan          | dd9d51c    | Plan docs ready; no production DB/runtime changes applied             | Done   |
+| 2026-04-28 | M2 Migration Plan     | Prepared production backup/migration/deploy plan          | 94b079d    | Plan docs ready; no production DB/runtime changes applied             | Done   |

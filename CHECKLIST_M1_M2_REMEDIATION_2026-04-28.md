@@ -236,10 +236,16 @@ Evidence:
 
 ### 4.3 CI
 
-- [ ] Проверить наличие GitHub Actions workflow.
-- [ ] Если workflow нет — добавить минимальный CI: install, server build, client build, DB-free tests.
+- [x] Проверить наличие GitHub Actions workflow.
+- [x] Если workflow нет — добавить минимальный CI: install, server build, client build, DB-free tests.
 - [ ] Запустить CI в GitHub.
 - [ ] Сохранить link/status CI run.
+
+Evidence:
+
+- Existing workflow: `.github/workflows/ci.yml`.
+- Workflow now triggers on `deploy/mysql-hosting` push/PR, not only `main/develop`.
+- CI explicitly runs server/client TypeScript checks and server/client builds; test job runs full Vitest suite against MySQL/Redis services.
 
 Acceptance:
 
@@ -610,17 +616,18 @@ Do not send until all acceptance checks are complete.
 
 ## Progress log
 
-| Date       | Area                  | Change                                                   | Commit SHA | Verification                                                       | Status |
-| ---------- | --------------------- | -------------------------------------------------------- | ---------- | ------------------------------------------------------------------ | ------ |
-| 2026-04-28 | Checklist             | Created remediation checklist                            | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                            | Done   |
-| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | 45e56b9    | `get_errors` clean; `client npm run build` passed                  | Done   |
-| 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers             | Done   |
-| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3      | Done   |
-| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors            | Done   |
-| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers                  | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked                   | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match             | Done   |
-| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass     | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | f233db1    | Prevents production exports/config from appearing in git status    | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes | Done   |
-| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source    | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0  | Done   |
+| Date       | Area                  | Change                                                    | Commit SHA | Verification                                                       | Status |
+| ---------- | --------------------- | --------------------------------------------------------- | ---------- | ------------------------------------------------------------------ | ------ |
+| 2026-04-28 | Checklist             | Created remediation checklist                             | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                            | Done   |
+| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring   | 45e56b9    | `get_errors` clean; `client npm run build` passed                  | Done   |
+| 2026-04-28 | Production CTA        | Found production was serving old static bundle            | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers             | Done   |
+| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change  | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3      | Done   |
+| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script        | 49374b9    | Email/no-email production cases pass; no browser errors            | Done   |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence             | dbad889    | NODE_ENV production; health 200; no stack markers                  | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory           | dbad889    | 27 server root files; 32 modified + 55 untracked                   | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub               | 65a6171    | 25/32 modified match; key untracked source/tests match             | Done   |
+| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks             | b165190    | Server build pass; client build pass; 13 files / 45 tests pass     | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config              | f233db1    | Prevents production exports/config from appearing in git status    | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index                | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes | Done   |
+| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source     | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0  | Done   |
+| 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | Pending    | Workflow covers TS checks, builds, Vitest with MySQL/Redis         | Done   |

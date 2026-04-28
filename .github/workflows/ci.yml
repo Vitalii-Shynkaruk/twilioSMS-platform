@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, deploy/mysql-hosting]
   pull_request:
-    branches: [main]
+    branches: [main, develop, deploy/mysql-hosting]
 
 jobs:
   lint-and-typecheck:
@@ -28,6 +28,10 @@ jobs:
         run: cd server && npx tsc --noEmit
       - name: TypeScript check (client)
         run: cd client && npx tsc --noEmit
+      - name: Build server
+        run: cd server && npm run build
+      - name: Build client
+        run: cd client && npm run build
 
   test:
     runs-on: ubuntu-latest

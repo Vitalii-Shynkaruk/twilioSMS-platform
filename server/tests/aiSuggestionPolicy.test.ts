@@ -28,6 +28,18 @@ describe('AI suggestion policy', () => {
     expect(result.classification).toBe('WRONG_NUMBER');
   });
 
+  it('не должна повышать bare email до HOT по locked v4 handoff', () => {
+    const result = resolveDeterministicClassification({
+      classification: 'WARM',
+      latestInboundText: 'jay@seamoc.com',
+      previousOutboundText: 'Best email to send details?',
+    });
+
+    expect(result.classification).toBe('WARM');
+    expect(result.triggers.hasEmail).toBe(true);
+    expect(result.triggers.contactInfoWithContext).toBe(false);
+  });
+
   it('должна убирать Twilio-risky вопрос про владение property из suggested SMS', () => {
     const sanitized = sanitizeAiSuggestionText('HELOC = Home Equity Line of Credit. Do you own property with equity?');
 
@@ -69,7 +81,30 @@ describe('AI suggestion policy', () => {
     });
 
     expect(suggestions).toHaveLength(1);
-    expect(suggestions[0].text).toMatch(/what amount are you looking for/i);
+    expect(suggestions[0].text).toMatch(/main bottleneck|move the needle/i);
+  });
+
+  it('должна строить objection-aware fallback вместо generic sales ответа', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: null,
+      signals: {
+        staleState: 'active',
+        suggestedReply: null,
+        suggestedReengageMessage: null,
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: "Hey, it's Marcos from SecureCreditLines. Would longer term credit options help the business? Perhaps 10-25yrs? Best email to send details?",
+        },
+        { direction: 'INBOUND', body: "As long as it's not another predatory MCA" },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/daily-payback mca|short-term pressure|cash-flow problem/i);
+    expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
   });
 
   it('должна распознавать входящий email и не спрашивать email повторно', () => {
@@ -122,5 +157,32 @@ describe('AI suggestion policy', () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].text).toMatch(/i have your email/i);
     expect(suggestions[0].text).not.toMatch(/what is the best email/i);
+  });
+
+  it('должна чинить сохраненную generic suggestion, если inbound содержит objection по MCA', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Thanks for the update. What amount are you looking for, and what would you use the capital for?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: null,
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: "Hey, it's Marcos from SecureCreditLines. Would longer term credit options help the business? Perhaps 10-25yrs? Best email to send details?",
+        },
+        { direction: 'INBOUND', body: "As long as it's not another predatory MCA" },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/daily-payback mca|short-term pressure|cash-flow problem/i);
+    expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
   });
 });

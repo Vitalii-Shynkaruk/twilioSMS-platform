@@ -462,6 +462,31 @@ export class InboxController {
     };
   }
 
+  private static buildVisibilityConditions(input: {
+    filter: InboxFilter;
+    hasCampaignFilter: boolean;
+    unreadOnly?: boolean;
+  }): any[] {
+    if (input.hasCampaignFilter) {
+      return [InboxController.inboundAnyCondition()];
+    }
+
+    if (input.filter === 'dnc') {
+      return [InboxController.inboundAnyCondition()];
+    }
+
+    const includeUnreadDnc = input.unreadOnly || input.filter === 'all' || input.filter === 'unread';
+
+    return [
+      includeUnreadDnc
+        ? {
+            OR: [InboxController.excludeDncCondition(), { unreadCount: { gt: 0 } }],
+          }
+        : InboxController.excludeDncCondition(),
+      InboxController.inboundNonOptOutCondition(),
+    ];
+  }
+
   private static optOutOnlyCondition(): any {
     return {
       AND: [
@@ -766,10 +791,10 @@ export class InboxController {
     const baseWhere: any = {
       isActive: true,
       unreadCount: { gt: 0 },
-      AND: [InboxController.excludeDncCondition(), InboxController.inboundNonOptOutCondition()],
+      AND: [InboxController.inboundNonOptOutCondition()],
     };
     if (req.user?.role === 'REP') {
-      baseWhere.assignedRepId = req.user.id;
+      baseWhere.AND.push(InboxController.inboxOwnershipCondition(req.user.id));
     }
 
     const [unreadConversations, agg] = await Promise.all([
@@ -822,22 +847,13 @@ export class InboxController {
 
     const listConditions: any[] = [];
     if (unreadOnly === 'true') listConditions.push({ unreadCount: { gt: 0 } });
-    // При deep-link по кампании — показываем ВСЕ replies, включая opt-out/DNC
-    // (user click'нул именно за этой кампанией, ожидает увидеть полный список ответов).
-    // DNC-метка показывается на UI как badge, но конверсация не скрывается.
-    if (!hasCampaignFilter) {
-      if (normalizedFilter !== 'dnc') {
-        listConditions.push(InboxController.excludeDncCondition());
-      }
-      listConditions.push(
-        normalizedFilter === 'dnc'
-          ? InboxController.inboundAnyCondition()
-          : InboxController.inboundNonOptOutCondition(),
-      );
-    } else {
-      // В режиме фильтра по кампании учитываем все входящие, без отсечения opt-out
-      listConditions.push(InboxController.inboundAnyCondition());
-    }
+    listConditions.push(
+      ...InboxController.buildVisibilityConditions({
+        filter: normalizedFilter,
+        hasCampaignFilter,
+        unreadOnly: unreadOnly === 'true',
+      }),
+    );
     const selectedFilterCondition = InboxController.buildFilterCondition(normalizedFilter, req);
     if (selectedFilterCondition) listConditions.push(selectedFilterCondition);
 
@@ -977,15 +993,10 @@ export class InboxController {
             const counts = await Promise.all(
               InboxController.FILTER_KEYS.map(async (key) => {
                 const condition = InboxController.buildFilterCondition(key, req);
-                const visibilityCondition =
-                  hasCampaignFilter || key === 'dnc'
-                    ? InboxController.inboundAnyCondition()
-                    : InboxController.inboundNonOptOutCondition();
-                const baseVisibility = hasCampaignFilter
-                  ? [visibilityCondition]
-                  : key === 'dnc'
-                    ? [visibilityCondition]
-                    : [InboxController.excludeDncCondition(), visibilityCondition];
+                const baseVisibility = InboxController.buildVisibilityConditions({
+                  filter: key,
+                  hasCampaignFilter,
+                });
                 const scopedWhere = InboxController.withConditions(
                   baseWithSearch,
                   condition ? [...baseVisibility, condition] : baseVisibility,
@@ -1010,9 +1021,10 @@ export class InboxController {
 
             const visibleWhere = InboxController.withConditions(
               baseWithSearch,
-              hasCampaignFilter
-                ? [InboxController.inboundAnyCondition()]
-                : [InboxController.excludeDncCondition(), InboxController.inboundNonOptOutCondition()],
+              InboxController.buildVisibilityConditions({
+                filter: 'all',
+                hasCampaignFilter,
+              }),
             );
 
             const [overdueFollowups, hotAiFlagged, newToday, unread, inPipelineQualified] = await Promise.all([

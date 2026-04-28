@@ -149,14 +149,25 @@ export function resolveDeterministicClassification(input: DeterministicClassific
     /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
       lower,
     );
-  const asksForTerms =
-    /\b(rate|rates|term|terms|amount|how much|funding link|application|details|info|paperwork|docs?|requirements?|qualif(y|ication)|credit score|bank statements|collateral|cost)\b/.test(
+  const asksRealBuyingQuestion =
+    /(what are your rates|what('?s| is) the rate|what are the terms|what('?s| is) the term|how much can i get|how much would i qualify|how much would we qualify|how soon can you fund|when can i have it|how does this work|how would this work|what do you need|what do i need|what docs do you need|what paperwork do you need|what are the requirements|what is heloc|what is loc)/.test(
       lower,
     );
-  const engagedObjectionQuestion =
-    /(what('?s| is) the catch|what do you need|what do i need|how does it work|how would that work|what are the terms|what are the rates|what's the rate|what is the rate|what docs do you need|what paperwork do you need|what are the requirements)/.test(
+  const mentionsRevenue =
+    /(\$?\d[\d.,]*(?:\s?[kKmM])?(?:\s*(?:\/|per|a)\s*(?:mo|month|monthly|yr|year|annual|annually))|\b\d[\d.,]*\s*(?:a month|per month|monthly|a year|per year|annual|annually)\b)/.test(
       lower,
     );
+  const mentionsSpecificAmount =
+    /\$\s*\d[\d.,]*(?:\s?[kKmM])?\b/.test(latestInboundText) ||
+    (/\b\d{4,7}\b/.test(latestInboundText) &&
+      /\b(need|want|looking for|trying to get|around|about|for|access|fund|loan)\b/.test(lower));
+  const statesUseOfFunds =
+    /\b(consolidat|working capital|inventory|equipment|expansion|marketing|payroll|taxes|bridge|refi|renovat|purchase|project|jobs|debt|cash flow|catch up|hire|truck|real estate)\b/.test(
+      lower,
+    );
+  const providesQualificationData =
+    /\b(address|mortgage|balance|fico|credit score|dob|date of birth|property|equity|home value)\b/.test(lower) &&
+    /\d/.test(latestInboundText);
   const hasProductOutreachContext =
     /\b(funding|funding link|capital|mca|loc|line of credit|sba|equipment|cre|bridge|heloc|home equity|offer|approved|approval|terms?|lender|finance|financing)\b/.test(
       previousOutboundText,
@@ -169,18 +180,48 @@ export function resolveDeterministicClassification(input: DeterministicClassific
       lower,
     );
   const sharesAltPhone = /(?:^|\D)(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?:\D|$)/.test(latestInboundText);
+  const affirmativeWithContext =
+    strongYes &&
+    (asksRealBuyingQuestion ||
+      mentionsRevenue ||
+      mentionsSpecificAmount ||
+      statesUseOfFunds ||
+      providesQualificationData);
+  const contactInfoWithContext =
+    hasEmail &&
+    (asksRealBuyingQuestion ||
+      mentionsRevenue ||
+      mentionsSpecificAmount ||
+      statesUseOfFunds ||
+      providesQualificationData);
 
   const triggers = {
     hasEmail,
     strongYes,
-    asksForTerms,
-    engagedObjectionQuestion,
+    asksRealBuyingQuestion,
+    mentionsRevenue,
+    mentionsSpecificAmount,
+    statesUseOfFunds,
+    providesQualificationData,
     contextualClarifyingQuestion,
     givesUrgency,
     sharesAltPhone,
+    affirmativeWithContext,
+    contactInfoWithContext,
   };
 
-  return Object.values(triggers).some(Boolean) && originalClassification !== 'HOT'
+  const hasSubstantiveHotSignal =
+    asksRealBuyingQuestion ||
+    mentionsRevenue ||
+    mentionsSpecificAmount ||
+    statesUseOfFunds ||
+    providesQualificationData ||
+    contextualClarifyingQuestion ||
+    givesUrgency ||
+    affirmativeWithContext ||
+    contactInfoWithContext;
+
+  return hasSubstantiveHotSignal && originalClassification !== 'HOT'
     ? { classification: 'HOT', triggers }
     : { classification: originalClassification, triggers };
 }
@@ -312,35 +353,51 @@ function buildDeterministicFallbackSuggestionText(input: {
     return 'Got it - sorry about that. Is there a better contact for the business, or should I close this out?';
   }
 
+  if (
+    /wrong number|my personal cell|personal cell phone|did not give you this number|remove (me|this number|it) from (your )?(list|system)/i.test(
+      latestInboundLower,
+    )
+  ) {
+    return 'Understood - I will remove this number from our list. Thanks for clarifying.';
+  }
+
   if (/hard pull|credit pull|hard credit/i.test(latestInboundLower)) {
-    return 'No hard pull to review options. Send the statements and I can look them over first, then walk you through the next step.';
+    return 'No hard pull to review options. Send the statements and I will look them over first so we can see whether this relieves the pressure without adding the wrong payment.';
   }
 
   if (/what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain/i.test(latestInboundLower)) {
-    return 'It is a business funding option based on what you need and how the business is performing. What amount are you looking for, and what would you use it for?';
+    return 'It is a longer-term funding option meant to relieve short-term cash-flow pressure, not pile on the wrong payment. What are you trying to solve right now, and about how much would actually fix it?';
+  }
+
+  if (/predatory|another mca|stacked mca|daily pay|weekly pay/.test(latestInboundLower)) {
+    return 'Fair concern. The goal is not to stack another daily-payback MCA. It is to replace short-term pressure with a structure the business can actually carry. What balance or cash-flow problem are you trying to solve, and about how much would fix it?';
+  }
+
+  if (/rate|rates|term|terms|payment|cost/.test(latestInboundLower)) {
+    return 'Fair question. Rate depends on credit and collateral, but the bigger issue is what problem the capital needs to solve so we size the right option. Are you trying to clear expensive debt, cover working capital, or fund growth?';
   }
 
   if (/statement|bank statement/i.test(latestInboundLower) || /statement|bank statement/i.test(previousOutboundLower)) {
-    return 'Send the statements when you have them and I will review them right away so I can map out the best next step.';
+    return 'Send the statements when you have them and I will review them right away. I want to see where the cash-flow squeeze is coming from so we match the right structure instead of layering on the wrong payment.';
   }
 
   if (sharedEmail) {
-    return 'Perfect, I have your email. I will send the terms there now. While you review them, what amount are you looking for so I can line up the right option?';
+    return 'Perfect, I have your email. I will send the terms there now. While you review them, what problem are you trying to solve in the business, and about how much capital would actually fix it?';
   }
 
   if (/email/i.test(latestInboundLower) || /email/i.test(previousOutboundLower)) {
-    return 'Absolutely. What is the best email to send the terms to? Once I have it, I will send the next steps.';
+    return 'Absolutely. What is the best email to send the terms to? Once I have it, what problem are you trying to solve in the business, and about how much capital would fix it?';
   }
 
   switch (classification) {
     case 'HOT':
-      return 'Thanks for the update. You look like a strong fit. What is the best email for the terms, or send the statements and I will review them right away?';
+      return 'Thanks for the update. What is the main problem you are trying to solve in the business right now, and about how much capital would actually fix it?';
     case 'WARM':
-      return 'Got it. Quick question so I can point you to the right option: what amount are you looking for, and what would you use the capital for?';
+      return 'Fair question. Before I point you to terms, what is the main bottleneck you are trying to solve, and about how much capital would move the needle?';
     case 'NURTURE':
-      return 'No rush. When the timing is right, what amount would help most, and what would you use it for?';
+      return 'No pressure. When timing makes sense, what problem would you want capital to solve first, and about how much would it take?';
     default:
-      return 'Thanks for the update. What amount are you looking for, and what would you use the capital for?';
+      return 'Thanks for the update. What is the main problem you are trying to solve in the business, and about how much capital would fix it?';
   }
 }
 
@@ -353,6 +410,17 @@ function suggestionRequestsEmail(text: string): boolean {
   );
 }
 
+function suggestionLooksGenericFallback(text: string): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+
+  return /^(thanks for the update\.|got it\. quick question|no pressure\.|no rush\.|absolutely\. what is the best email|it is a longer-term funding option|it is a business funding option)/.test(
+    lower,
+  );
+}
+
 function repairSuggestionsForInboundContext(input: {
   suggestions: ResolvedAISuggestion[];
   classification?: string | null;
@@ -360,8 +428,14 @@ function repairSuggestionsForInboundContext(input: {
   previousOutboundText?: string;
   sharedEmail?: string | null;
 }): ResolvedAISuggestion[] {
+  const latestInboundLower = String(input.latestInboundText || '').toLowerCase();
   const sharedEmail = String(input.sharedEmail || '').trim();
-  if (!sharedEmail) return input.suggestions;
+  const needsContextualRepair =
+    !!sharedEmail ||
+    /predatory|another mca|stacked mca|daily pay|weekly pay|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work/.test(
+      latestInboundLower,
+    );
+  if (!needsContextualRepair) return input.suggestions;
 
   const repairedBestText = sanitizeAiSuggestionText(
     buildDeterministicFallbackSuggestionText({
@@ -375,7 +449,10 @@ function repairSuggestionsForInboundContext(input: {
 
   let changed = false;
   const repaired = input.suggestions.map((suggestion) => {
-    if (!suggestionRequestsEmail(suggestion.text)) return suggestion;
+    const shouldRepairSuggestion =
+      suggestionRequestsEmail(suggestion.text) ||
+      (needsContextualRepair && suggestionLooksGenericFallback(suggestion.text));
+    if (!shouldRepairSuggestion) return suggestion;
     changed = true;
     return {
       ...suggestion,

@@ -695,8 +695,8 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `a54c027` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9`, then stale-DNC-visibility / opt-in-normalization fast-forward `34e62a9..74f472f`, then sidebar-unread-summary alignment fast-forward `74f472f..a54c027` with fresh `server` and `client` builds on production.
+- Latest production source: `56f4a8b` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9`, then stale-DNC-visibility / opt-in-normalization fast-forward `34e62a9..74f472f`, then sidebar-unread-summary alignment fast-forward `74f472f..a54c027`, then fenced-JSON parser compatibility fast-forward `a54c027..cc50ca6`, then classifier schema-drift tolerance fast-forward `cc50ca6..56f4a8b` with fresh `server` and `client` builds on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
 - PM2: `sms-api` online after restart; restart count `17`.
 - Production runtime logs: PM2 `out`/`error` tails were empty immediately after deploy; no fresh runtime errors were emitted after restart.
@@ -715,6 +715,11 @@ Evidence:
 - Latest opt-in normalization fix: commit `74f472f` updates `ComplianceService.handleOptIn()` so `START/UNSTOP/SUBSCRIBE` clears DNC suppression state (`optedOut`, `isSuppressed`, `suppressionEntry`, `conversation.leadStatus`) instead of leaving a re-subscribed lead logically stuck in DNC.
 - Latest unread-summary alignment fix: commit `a54c027` makes `/inbox/unread-summary` reuse the same `buildVisibilityConditions()` logic as Inbox/Admin View, eliminating the server-side mismatch that previously showed sidebar `9+` while the visible inbox unread count was lower.
 - Production verification after unread-summary deploy: built backend helper `buildUnreadSummaryWhere()` and the Inbox list visibility path both now count the same `7` visible unread conversations (`10` unread messages) in Admin scope, confirming the badge/list logic is aligned even though live counts continue to change with new inbound traffic.
+- Latest AI parser compatibility fix: commit `cc50ca6` extracts the fenced JSON object from Anthropic responses even when the model appends prose like `Reply Option 1` after the JSON block; targeted regression `server/tests/aiSuggestionPolicy.test.ts` passed 11/11 and `server npm run build` passed before deploy.
+- Latest AI schema-drift tolerance fix: commit `56f4a8b` normalizes near-valid locked payloads instead of returning `null` when Anthropic emits `inferredProduct` rather than schema-required `product`; targeted regression `server/tests/aiSuggestionPolicy.test.ts` passed 12/12 and `server npm run build` passed before deploy.
+- Production direct-call verification after the final AI fix: `AIService.classifyInbound()` now returns structured non-null results for fresh non-DNC conversations `cmoabo8yd099wzopu72j9b11r` (HOT) and `cmoizm3xv02ztzo2sraq9v8x1` (WARM), proving the live classification path is healthy again for eligible inbound threads.
+- Production eligibility note: Gordon (`cmnes2ipl024ezopaelyfluui`) still returns `null` by design because the conversation is `leadStatus=DNC`, `optedOut=true`; `getClassificationSkipReason()` intentionally skips DNC/opt-out threads before any AI parsing.
+- Production AI recovery backfill: a safe one-off replay persisted AI state for 5 recent inbound conversations with `optedOut=false`, `status!=DNC`, and previously empty `aiClassification`; delayed HOT mobile alerts were intentionally not replayed during this backfill to avoid rep spam, and the post-check showed `0` remaining eligible recent conversations with empty AI state.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -774,3 +779,8 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Production Deploy     | Deployed stale-DNC visibility + opt-in normalization fix    | 74f472f    | Production SHA 74f472f; PM2 online; Twilio SIDs verified              | Done    |
 | 2026-04-28 | Sidebar Unread Fix    | Aligned sidebar unread-summary with Inbox visibility rules  | a54c027    | Visibility tests 2/2 + server build passed                            | Done    |
 | 2026-04-28 | Production Deploy     | Deployed sidebar unread-summary alignment fix               | a54c027    | Production SHA a54c027; PM2 online; helper/list counts both return 7  | Done    |
+| 2026-04-28 | AI Parser Fix         | Extracted fenced JSON before parsing Anthropic output       | cc50ca6    | AI tests 11/11 passed; `server npm run build` passed                  | Done    |
+| 2026-04-28 | Production Deploy     | Deployed fenced-JSON parser compatibility fix               | cc50ca6    | Production SHA cc50ca6; PM2 online; raw payload parse confirmed       | Done    |
+| 2026-04-28 | AI Schema Drift Fix   | Normalized near-valid locked payload instead of null return | 56f4a8b    | AI tests 12/12 passed; `server npm run build` passed                  | Done    |
+| 2026-04-28 | Production Deploy     | Deployed classifier schema-drift tolerance fix              | 56f4a8b    | Production SHA 56f4a8b; PM2 online; direct classifyInbound non-null   | Done    |
+| 2026-04-28 | Production Recovery   | Backfilled recent eligible conversations missing AI state   | N/A        | 5 conversations updated; remaining eligible recent null count = 0     | Done    |

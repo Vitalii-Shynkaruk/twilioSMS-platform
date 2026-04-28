@@ -238,20 +238,24 @@ Evidence:
 
 - [x] Проверить наличие GitHub Actions workflow.
 - [x] Если workflow нет — добавить минимальный CI: install, server build, client build, DB-free tests.
-- [ ] Запустить CI в GitHub.
-- [ ] Сохранить link/status CI run.
+- [x] Запустить CI в GitHub.
+- [x] Сохранить link/status CI run.
 
 Evidence:
 
 - Existing workflow: `.github/workflows/ci.yml`.
 - Workflow now triggers on `deploy/mysql-hosting` push/PR, not only `main/develop`.
 - CI explicitly runs server/client TypeScript checks and server/client builds; test job runs full Vitest suite against MySQL/Redis services.
+- GitHub Actions run `25061991344` for commit `2eecd0b`: success.
+- Run URL: `https://github.com/ksanyok/twilio-sms-platform/actions/runs/25061991344`.
+- Jobs passed: `lint-and-typecheck`, `test`, `build`.
+- Non-blocking annotation: GitHub warns Node.js 20 actions runtime will be deprecated in 2026.
 
 Acceptance:
 
-- [ ] Все нужные tests в GitHub.
-- [ ] Local regression pass.
-- [ ] CI run green или documented blocker.
+- [x] Все нужные tests в GitHub.
+- [x] Local regression pass.
+- [x] CI run green или documented blocker.
 - [ ] Клиенту можно показать CI evidence.
 
 ---

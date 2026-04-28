@@ -8,6 +8,7 @@ import { ComplianceService } from '../src/services/complianceService';
 
 const TEST_PHONE = '+10005550001';
 const TEST_PHONE_2 = '+10005550002';
+const TEST_PHONE_3 = '+10005550003';
 const hasMysqlDatabaseUrl = (process.env.DATABASE_URL || '').startsWith('mysql://');
 const describeWithDb = hasMysqlDatabaseUrl ? describe : describe.skip;
 
@@ -129,6 +130,70 @@ describeWithDb('ComplianceService', () => {
 
       // Now canSendTo should allow it
       const result = await ComplianceService.canSendTo(TEST_PHONE);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('START opt-in must clear DNC and suppression state', async () => {
+      const lead = await prisma.lead.create({
+        data: {
+          firstName: 'OptIn',
+          phone: TEST_PHONE_3,
+          source: 'test',
+          status: 'DNC',
+          optedOut: true,
+          optedOutAt: new Date(),
+          isSuppressed: true,
+          suppressedAt: new Date(),
+          suppressReason: 'DNC',
+        },
+      });
+
+      await prisma.conversation.create({
+        data: {
+          leadId: lead.id,
+          leadStatus: 'DNC',
+        },
+      });
+
+      await prisma.suppressionEntry.create({
+        data: {
+          phone: TEST_PHONE_3,
+          reason: 'DNC',
+          source: 'inbox_manual',
+        },
+      });
+
+      await ComplianceService.handleOptIn(TEST_PHONE_3);
+
+      const updatedLead = await prisma.lead.findUnique({
+        where: { id: lead.id },
+        select: {
+          status: true,
+          optedOut: true,
+          isSuppressed: true,
+          suppressReason: true,
+        },
+      });
+
+      const updatedConversation = await prisma.conversation.findUnique({
+        where: { leadId: lead.id },
+        select: { leadStatus: true },
+      });
+
+      const suppressionEntry = await prisma.suppressionEntry.findUnique({
+        where: { phone: TEST_PHONE_3 },
+      });
+
+      expect(updatedLead).toMatchObject({
+        status: 'REPLIED',
+        optedOut: false,
+        isSuppressed: false,
+        suppressReason: null,
+      });
+      expect(updatedConversation?.leadStatus).toBeNull();
+      expect(suppressionEntry).toBeNull();
+
+      const result = await ComplianceService.canSendTo(TEST_PHONE_3);
       expect(result.allowed).toBe(true);
     });
   });

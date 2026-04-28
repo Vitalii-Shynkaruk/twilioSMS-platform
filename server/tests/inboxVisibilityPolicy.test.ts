@@ -15,8 +15,27 @@ describe('Inbox visibility policy', () => {
     const unreadConditions = helper.buildVisibilityConditions({ filter: 'unread', hasCampaignFilter: false });
     const hotConditions = helper.buildVisibilityConditions({ filter: 'hot', hasCampaignFilter: false });
 
-    expect((allConditions[0] as { OR?: unknown[] }).OR).toContainEqual({ unreadCount: { gt: 0 } });
-    expect((unreadConditions[0] as { OR?: unknown[] }).OR).toContainEqual({ unreadCount: { gt: 0 } });
+    const hasUnreadBranch = (condition: Record<string, unknown>): boolean => {
+      if (!('AND' in condition) || !Array.isArray(condition.AND)) return false;
+
+      return condition.AND.some(
+        (entry) => typeof entry === 'object' && entry !== null && 'unreadCount' in (entry as Record<string, unknown>),
+      );
+    };
+
+    const allUnreadDncCondition = (allConditions[0] as { OR?: Array<Record<string, unknown>> }).OR?.find(
+      hasUnreadBranch,
+    ) as { AND?: unknown[] } | undefined;
+    const unreadDncCondition = (unreadConditions[0] as { OR?: Array<Record<string, unknown>> }).OR?.find(
+      hasUnreadBranch,
+    ) as { AND?: unknown[] } | undefined;
+
+    expect(allUnreadDncCondition).toMatchObject({
+      AND: [{ unreadCount: { gt: 0 } }, { lastMessageAt: { gte: expect.any(Date) } }],
+    });
+    expect(unreadDncCondition).toMatchObject({
+      AND: [{ unreadCount: { gt: 0 } }, { lastMessageAt: { gte: expect.any(Date) } }],
+    });
     expect(hotConditions[0]).not.toHaveProperty('OR');
   });
 });

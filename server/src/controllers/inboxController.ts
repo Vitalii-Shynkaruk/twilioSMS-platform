@@ -64,6 +64,7 @@ export class InboxController {
     'opt out',
     'optout',
   ];
+  private static readonly DNC_UNREAD_VISIBILITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
   private static readonly GENERIC_SOURCE_TOKENS = new Set(['csvimport', 'import', 'inbox', 'sms', 'smsinbox']);
 
   // Pixel-perfect (M3): кэш rep stats для секции REP PERFORMANCE в правой панели
@@ -462,6 +463,15 @@ export class InboxController {
     };
   }
 
+  private static recentUnreadDncCondition(): any {
+    return {
+      AND: [
+        { unreadCount: { gt: 0 } },
+        { lastMessageAt: { gte: new Date(Date.now() - InboxController.DNC_UNREAD_VISIBILITY_WINDOW_MS) } },
+      ],
+    };
+  }
+
   private static buildVisibilityConditions(input: {
     filter: InboxFilter;
     hasCampaignFilter: boolean;
@@ -480,7 +490,7 @@ export class InboxController {
     return [
       includeUnreadDnc
         ? {
-            OR: [InboxController.excludeDncCondition(), { unreadCount: { gt: 0 } }],
+            OR: [InboxController.excludeDncCondition(), InboxController.recentUnreadDncCondition()],
           }
         : InboxController.excludeDncCondition(),
       InboxController.inboundNonOptOutCondition(),

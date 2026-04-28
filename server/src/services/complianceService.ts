@@ -217,16 +217,45 @@ export class ComplianceService {
    * Handle opt-in (START)
    */
   static async handleOptIn(phone: string): Promise<void> {
-    await prisma.lead.updateMany({
+    const leads = await prisma.lead.findMany({
       where: { phone },
-      data: {
-        optedOut: false,
-        optedOutAt: null,
-      },
+      select: { id: true, status: true },
     });
 
+    for (const lead of leads) {
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          optedOut: false,
+          optedOutAt: null,
+          isSuppressed: false,
+          suppressedAt: null,
+          suppressReason: null,
+          ...(lead.status === 'DNC' ? { status: 'REPLIED' } : {}),
+        },
+      });
+    }
+
+    if (leads.length > 0) {
+      await prisma.conversation.updateMany({
+        where: {
+          leadId: { in: leads.map((lead) => lead.id) },
+          leadStatus: 'DNC',
+        },
+        data: {
+          leadStatus: null,
+        },
+      });
+    }
+
     await prisma.suppressionEntry.deleteMany({
-      where: { phone, reason: 'STOP' },
+      where: {
+        phone,
+        OR: [
+          { reason: { in: ['STOP', 'DNC', 'NOT_INTERESTED'] } },
+          { source: { in: ['sms_keyword', 'inbox_manual'] } },
+        ],
+      },
     });
 
     logger.info(`Opt-in processed: ${phone}`);

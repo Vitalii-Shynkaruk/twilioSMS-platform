@@ -40,7 +40,7 @@ Evidence:
 - Evidence path: this checklist + `scripts/check-funding-link-cta.mjs`.
 - Regression test inventory captured: local `server/tests` plus SHA-matching production DB-free regression tests.
 - `.gitignore` updated to keep runtime `exports/` and `ecosystem.config.js` out of Git tracking.
-- Tracked export CSV files removed from Git index with `git rm --cached`; files stay on disk and production exports must be preserved.
+- Tracked export CSV files removed from Git index with `git rm --cached`; production exports are preserved in place and excluded from deploy cleanup.
 
 ---
 
@@ -108,7 +108,7 @@ Additional files found in `/opt/sms-platform/server` root before cleanup:
 
 - [x] Для каждого файла определить: удалить, перенести в repo `server/scripts`, перенести в archive, оставить как required.
 - [x] Если файл содержит полезную логику/backfill — сначала перенести в GitHub с нормальным именем и документацией.
-- [ ] Если файл одноразовый/debug — удалить с production.
+- [x] Если файл одноразовый/debug — удалить с production.
 
 Decision notes:
 
@@ -119,16 +119,24 @@ Decision notes:
 
 ### 2.3 Cleanup
 
-- [ ] Удалить junk из `/opt/sms-platform/server` root.
-- [ ] Проверить, что production server root не содержит `.bak`, `.new`, debug/check/test scripts.
-- [ ] Проверить, что приложение после cleanup работает.
+- [x] Удалить junk из `/opt/sms-platform/server` root.
+- [x] Проверить, что production server root не содержит `.bak`, `.new`, debug/check/test scripts.
+- [x] Проверить, что приложение после cleanup работает.
+
+Evidence:
+
+- Production backup before cleanup/deploy: `/root/scl-prod-backups/20260428152107`.
+- Source cleanup deployed from committed SHA `d5127a7` using shallow clone + `rsync --delete` with explicit excludes for `.env`, `exports/`, `node_modules/`, logs, and current build outputs.
+- Post-cleanup root candidate count: `0` debug/check/backfill/root config files in `/opt/sms-platform/server`.
+- Production export files preserved: `exports_count=1` after cleanup.
+- PM2 `sms-api` online after restart; health endpoint returned `200` with database/redis ok.
 
 Acceptance:
 
-- [ ] `/opt/sms-platform/server` root clean.
-- [ ] Никаких debug/check/test scripts в server root.
-- [ ] Никаких `.bak`/`.new` files.
-- [ ] PM2/API после cleanup stable.
+- [x] `/opt/sms-platform/server` root clean.
+- [x] Никаких debug/check/test scripts в server root.
+- [x] Никаких `.bak`/`.new` files.
+- [x] PM2/API после cleanup stable.
 
 ---
 
@@ -158,7 +166,7 @@ Evidence:
 - SHA compare: 25/32 modified production files match local GitHub exactly.
 - SHA compare: key untracked source/test/realtime files match local GitHub exactly, including `server/src/realtime/socket.ts` and DB-free regression tests.
 - `exports/` is production data/export output; preserve in place and ignore via `.gitignore` rather than deleting.
-- Existing tracked `exports/**` files are being removed from source control without deleting local/production data.
+- Existing tracked `exports/**` files removed from source control; production export data preserved by deploy excludes.
 - Remaining 7 modified mismatches are production stale vs local GitHub: `client/src/pages/CampaignDetailPage.tsx`, `client/src/pages/CampaignsPage.tsx`, `client/src/services/api.ts`, `client/src/types/index.ts`, `server/src/controllers/inboxController.ts`, `server/src/index.ts`, `server/src/services/aiService.ts`.
 - Local GitHub contains newer fixes in those 7 files: responsive campaign UI/actions, AI types/feedback API, Inbox AI priority/rep stats/ownership/unread fixes, Socket.IO ownership guard, and HOT classification trigger expansion.
 
@@ -167,23 +175,31 @@ Evidence:
 - [x] Для каждого production source change проверить diff.
 - [x] Нужные изменения перенести локально.
 - [x] Нужные tests перенести локально.
-- [ ] Generated/temp/log/secrets не переносить.
-- [ ] Собрать feature-wise commits в локальном repo.
-- [ ] Push в `ksanyok/twilio-sms-platform`.
+- [x] Generated/temp/log/secrets не переносить.
+- [x] Собрать feature-wise commits в локальном repo.
+- [x] Push в `ksanyok/twilio-sms-platform`.
 
 ### 3.3 Clean production
 
-- [ ] После push/deploy production должен совпадать с GitHub SHA.
-- [ ] Удалить untracked junk с production.
-- [ ] Проверить `git status --short` на production: clean.
-- [ ] Зафиксировать deployed commit SHA.
+- [x] После push/deploy production должен совпадать с GitHub SHA.
+- [x] Удалить untracked junk с production.
+- [x] Проверить `git status --short` на production: clean.
+- [x] Зафиксировать deployed commit SHA.
+
+Evidence:
+
+- Production source HEAD after cleanup/deploy: `d5127a7` on `deploy/mysql-hosting`.
+- Production `git status --short` after cleanup: clean output.
+- Production remote updated to `https://github.com/ksanyok/twilio-sms-platform.git`.
+- Production build after deploy: `npm --prefix server run build` pass; `npm --prefix client run build` pass with known CSS warning `.light .bg-dark-800.border*`.
+- Production frontend bundle marker check: `assets/InboxPageV2-B8OVM6yR.js`, `suggest-cta-btn=yes`, Gmail URL marker yes, `subject/body` markers absent.
 
 Acceptance:
 
-- [ ] Все нужные prod-only changes есть в GitHub.
-- [ ] Production working tree clean.
-- [ ] Нет direct prod edits вне GitHub.
-- [ ] Есть release SHA и smoke evidence.
+- [x] Все нужные prod-only changes есть в GitHub.
+- [x] Production working tree clean.
+- [x] Нет direct prod edits вне GitHub.
+- [x] Есть release SHA и smoke evidence.
 
 ---
 
@@ -216,6 +232,7 @@ Evidence:
 - DB-free backend suite: 13 files passed, 45 tests passed.
 - DB-free command: `npm --prefix server run test -- --run tests/inboundPhoneSuppression.test.ts tests/aiClassificationEligibility.test.ts tests/retargetSuppression.test.ts tests/quietHoursWindow.test.ts tests/complianceKeywordParser.test.ts tests/inboundParsing.test.ts tests/aiServiceComplianceScoring.test.ts tests/promptVersion.test.ts tests/sendingUrlBuilder.test.ts tests/outboundMessageGuard.test.ts tests/twilioSignatureValidation.test.ts tests/envValidation.test.ts tests/featureFlags.test.ts`.
 - `client npm run build`: pass; existing CSS warning remains for `.light .bg-dark-800.border*`.
+- Production build after source deploy: server build pass, client build pass with the same known CSS warning.
 
 ### 4.3 CI
 
@@ -238,7 +255,6 @@ Acceptance:
 Клиент: unverifiable until commits happen.
 
 - [ ] Проверить committed files на secrets: `.env`, Twilio SID/token, Anthropic/OpenAI keys, DB URL, GitHub token.
-- [x] Проверить committed files на secrets: `.env`, Twilio SID/token, Anthropic/OpenAI keys, DB URL, GitHub token.
 - [ ] Проверить git history последних commits на случайное попадание secrets.
 - [x] Проверить production-only files перед переносом в repo.
 - [x] Добавить/обновить `.gitignore`, если надо.
@@ -256,6 +272,7 @@ Evidence:
 - Production-only `server/ecosystem.config.js` inspected and classified as secrets-bearing config; it must be archived/removed, not committed.
 - `.gitignore` now covers `exports/` and `ecosystem.config.js`.
 - Staged diffs contain ignore/checklist changes only, no secret values.
+- Known pending issue: existing audit/browser scripts still need a committed-files secrets pass for hardcoded login credentials.
 
 ---
 
@@ -593,16 +610,17 @@ Do not send until all acceptance checks are complete.
 
 ## Progress log
 
-| Date       | Area                  | Change                                                   | Commit SHA | Verification                                                    | Status |
-| ---------- | --------------------- | -------------------------------------------------------- | ---------- | --------------------------------------------------------------- | ------ |
-| 2026-04-28 | Checklist             | Created remediation checklist                            | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                         | Done   |
-| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | 45e56b9    | `get_errors` clean; `client npm run build` passed               | Done   |
-| 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers          | Done   |
-| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3   | Done   |
-| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors         | Done   |
-| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers               | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked                | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match          | Done   |
-| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass  | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | f233db1    | Prevents production exports/config from appearing in git status | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | 2dbf400    | `git rm --cached`; source control only, files preserved on disk | Done   |
+| Date       | Area                  | Change                                                   | Commit SHA | Verification                                                       | Status |
+| ---------- | --------------------- | -------------------------------------------------------- | ---------- | ------------------------------------------------------------------ | ------ |
+| 2026-04-28 | Checklist             | Created remediation checklist                            | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                            | Done   |
+| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | 45e56b9    | `get_errors` clean; `client npm run build` passed                  | Done   |
+| 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers             | Done   |
+| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3      | Done   |
+| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors            | Done   |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers                  | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked                   | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match             | Done   |
+| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass     | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | f233db1    | Prevents production exports/config from appearing in git status    | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes | Done   |
+| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source    | Pending    | Backup `20260428152107`; git clean; health 200; root candidates 0  | Done   |

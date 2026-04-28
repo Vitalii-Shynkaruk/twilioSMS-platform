@@ -565,5 +565,5 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers        | Done   |
 | 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3 | Done   |
 | 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors       | Done   |
-| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | Pending    | NODE_ENV production; health 200; no stack markers             | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | Pending    | 27 server root files; 32 modified + 55 untracked              | Done   |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers             | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked              | Done   |

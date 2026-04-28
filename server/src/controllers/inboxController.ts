@@ -798,14 +798,7 @@ export class InboxController {
   // — исключаем DNC/opted-out лиды
   // — требуем хотя бы одно входящее non-opt-out сообщение
   static async getUnreadSummary(req: AuthRequest, res: Response): Promise<void> {
-    const baseWhere: any = {
-      isActive: true,
-      unreadCount: { gt: 0 },
-      AND: [InboxController.inboundNonOptOutCondition()],
-    };
-    if (req.user?.role === 'REP') {
-      baseWhere.AND.push(InboxController.inboxOwnershipCondition(req.user.id));
-    }
+    const baseWhere = InboxController.buildUnreadSummaryWhere(req);
 
     const [unreadConversations, agg] = await Promise.all([
       prisma.conversation.count({ where: baseWhere }),
@@ -819,6 +812,23 @@ export class InboxController {
       unreadConversations,
       unreadMessages: agg._sum.unreadCount || 0,
     });
+  }
+
+  private static buildUnreadSummaryWhere(req: AuthRequest): any {
+    const extraConditions: any[] = [
+      ...InboxController.buildVisibilityConditions({
+        filter: 'all',
+        hasCampaignFilter: false,
+        unreadOnly: true,
+      }),
+      { unreadCount: { gt: 0 } },
+    ];
+
+    if (req.user?.role === 'REP') {
+      extraConditions.unshift(InboxController.inboxOwnershipCondition(req.user.id));
+    }
+
+    return InboxController.withConditions({ isActive: true }, extraConditions);
   }
 
   static async listConversations(req: AuthRequest, res: Response): Promise<void> {

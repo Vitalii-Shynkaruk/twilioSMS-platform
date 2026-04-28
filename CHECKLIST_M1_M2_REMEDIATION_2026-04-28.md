@@ -372,6 +372,7 @@ Evidence:
 - DB-free backend suite with follow-up policy: 14 files passed, 53 tests passed.
 - `server npm run build`: pass after Prisma generate.
 - `client npm run build`: pass with known CSS warning `.light .bg-dark-800.border*`.
+- GitHub Actions CI run `25064083733`: pass on trigger SHA `56b16cd`.
 
 Acceptance:
 
@@ -672,3 +673,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis            | Done   |
 | 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | 76d5a71    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |
 | 2026-04-28 | M2 Follow-up          | Added follow-up schema fields and deterministic timing    | 7e49d89    | 9 policy tests pass; builds pass; production DB migration pending     | Done   |
+| 2026-04-28 | M2 CI Proof           | Triggered CI for follow-up scheduling changes             | 56b16cd    | GitHub Actions run 25064083733 passed                                 | Done   |

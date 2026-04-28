@@ -31,7 +31,7 @@
 
 Evidence:
 
-- Local SHA: `2d53102` before CTA evidence script commit; CTA code fix is in `45e56b9`.
+- Local SHA: `2d53102` before CTA evidence script commit; CTA code fix is in `45e56b9`; CTA evidence script commit is `49374b9`.
 - Production SHA: `/opt/sms-platform` currently `main` at `3b8c055`, remote `Jbaker-SCL/scl-platform`.
 - Production PM2: `sms-api` online; 87 dirty/untracked git status lines captured before cleanup.
 - Production frontend: Nginx serves `/opt/sms-platform/client/dist`; static dist backup created at `/tmp/scl-client-dist-20260428143951.tgz` before CTA static deploy.
@@ -544,4 +544,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | 45e56b9    | `get_errors` clean; `client npm run build` passed             | Done   |
 | 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers        | Done   |
 | 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3 | Done   |
-| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | Pending    | Email/no-email production cases pass; no browser errors       | Done   |
+| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors       | Done   |

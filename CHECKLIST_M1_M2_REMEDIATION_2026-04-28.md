@@ -605,4 +605,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match          | Done   |
 | 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass  | Done   |
 | 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | f233db1    | Prevents production exports/config from appearing in git status | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | Pending    | `git rm --cached`; source control only, files preserved on disk | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | 2dbf400    | `git rm --cached`; source control only, files preserved on disk | Done   |

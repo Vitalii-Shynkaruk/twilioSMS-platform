@@ -525,6 +525,8 @@ Do not send until all acceptance checks are complete.
 
 ## Progress log
 
-| Date       | Area      | Change                        | Commit SHA | Verification       | Status      |
-| ---------- | --------- | ----------------------------- | ---------- | ------------------ | ----------- |
-| 2026-04-28 | Checklist | Created remediation checklist | TBD        | Local file created | In progress |
+| Date       | Area                  | Change                                                   | Commit SHA | Verification                                                   | Status      |
+| ---------- | --------------------- | -------------------------------------------------------- | ---------- | -------------------------------------------------------------- | ----------- |
+| 2026-04-28 | Checklist             | Created remediation checklist                            | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                        | Done        |
+| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | Pending    | `get_errors` clean; `client npm run build` passed              | In progress |
+| 2026-04-28 | Send Funding Link CTA | Need production/browser verification with email/no-email | Pending    | Local code looks correct; screenshot likely prod/no-email case | Pending     |

@@ -370,6 +370,7 @@ Evidence:
 - [ ] Unit test: cron promotes due -> `due_now`.
 - [x] Unit test: complete follow-up -> `completed`.
 - [x] Unit test: clear follow-up -> `cleared`.
+- [x] Regression: reply-triggered owner action reclassification fires.
 - [ ] Regression: owner action reclassification still fires.
 
 Evidence:
@@ -626,13 +627,14 @@ Recommended:
 - [x] Backup current target repo state if needed.
 - [x] Clean target repo contents safely.
 - [x] Push sanitized code to target default branch.
+- [ ] Sync latest `a5b587f` snapshot after current AI-suggestion fix.
 - [x] Verify GitHub contributors page does not show `ksanyok`.
 - [ ] Verify target Actions/CI if configured.
 
 Acceptance:
 
 - [x] Final code exists in `ksanyok` repo.
-- [x] Target repo contains same final code.
+- [ ] Target repo contains same final code.
 - [x] Target repo commit authors do not reveal `ksanyok`.
 - [x] Contributors page does not show `ksanyok`.
 
@@ -646,6 +648,7 @@ Evidence:
 - Public contributors endpoint after rewrite returned only `fawzi-barakat00728` with `1` contribution.
 - Included top-level content after rewrite: `.env.production.example`, `.github`, `.gitignore`, `.husky`, `.prettierignore`, `.prettierrc`, `DEPLOYMENT.md`, `Dockerfile`, `README.md`, `client`, `docker-compose.yml`, `docs`, `eslint.config.js`, `nginx.conf`, `package-lock.json`, `package.json`, `scripts`, `server`.
 - Follow-up security action still pending: rotate/revoke the chat-pasted PAT after confirming the client repo is visible as expected.
+- Latest re-sync attempt after commit `a5b587f` failed with GitHub `403`: current local auth is `ksanyok`, and target repo denied write access, so mirror remains at `3f1224d` until fresh client-side access is restored.
 
 ---
 
@@ -692,15 +695,16 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `b2572de` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de` with fresh `client` build on production.
+- Latest production source: `a5b587f` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f` with fresh `server` and `client` builds on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
-- PM2: `sms-api` online after restart; restart count `10`.
-- Production runtime logs: `RECENT_ERRORS=0` for Prisma unknown field/uncaught/unhandled/fatal markers after smoke.
+- PM2: `sms-api` online after restart; restart count `11`.
+- Production runtime logs: PM2 `out`/`error` tails were empty immediately after deploy; no fresh runtime errors were emitted after restart.
 - Latest CI proof: run `25068339405`, commit `b2572de`, jobs completed successfully.
 - Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
 - Public frontend smoke: `https://app.sclcapital.io/` returned `200 OK` and current index timestamp after deploy.
 - Current unread-badge fix: sidebar Inbox badge now uses unread conversation count, matching Inbox/Admin View and the User Guide contract.
+- Latest AI suggestion reply-refresh fix: commit `a5b587f` triggers owner-action reclassification after successful outbound reply; targeted regression `server/tests/inboxReplyReclassification.test.ts` passed 2/2; `server npm run build` passed.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -721,30 +725,33 @@ Do not send until all acceptance checks are complete.
 
 ## Progress log
 
-| Date       | Area                  | Change                                                    | Commit SHA | Verification                                                          | Status |
-| ---------- | --------------------- | --------------------------------------------------------- | ---------- | --------------------------------------------------------------------- | ------ |
-| 2026-04-28 | Checklist             | Created remediation checklist                             | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                               | Done   |
-| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring   | 45e56b9    | `get_errors` clean; `client npm run build` passed                     | Done   |
-| 2026-04-28 | Production CTA        | Found production was serving old static bundle            | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers                | Done   |
-| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change  | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3         | Done   |
-| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script        | 49374b9    | Email/no-email production cases pass; no browser errors               | Done   |
-| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence             | dbad889    | NODE_ENV production; health 200; no stack markers                     | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory           | dbad889    | 27 server root files; 32 modified + 55 untracked                      | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub               | 65a6171    | 25/32 modified match; key untracked source/tests match                | Done   |
-| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks             | b165190    | Server build pass; client build pass; 13 files / 45 tests pass        | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config              | f233db1    | Prevents production exports/config from appearing in git status       | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index                | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes    | Done   |
-| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source     | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0     | Done   |
-| 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis            | Done   |
-| 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | 76d5a71    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |
-| 2026-04-28 | M2 Follow-up          | Added follow-up schema fields and deterministic timing    | 7e49d89    | 9 policy tests pass; builds pass; production DB migration pending     | Done   |
-| 2026-04-28 | M2 CI Proof           | Triggered CI for follow-up scheduling changes             | 56b16cd    | GitHub Actions run 25064083733 passed                                 | Done   |
-| 2026-04-28 | M2 Migration Plan     | Prepared production backup/migration/deploy plan          | 94b079d    | Plan docs ready; no production DB/runtime changes applied             | Done   |
-| 2026-04-28 | M2 AI/CTA/Pipeline    | Fixed HOT clarification, Twilio-safe AI copy, deal reveal | 0d05ef8    | 15 DB-free files / 57 tests; server/client builds pass                | Done   |
-| 2026-04-28 | M2 CI Proof           | Verified latest AI/pipeline changes in GitHub Actions     | 15414cf    | Run 25065413359 passed: lint/typecheck, test, build                   | Done   |
-| 2026-04-28 | Production DB         | Applied additive follow-up migration after backup         | 15414cf    | Backup 20260428164910; columns=5; indexes=2; data preserved           | Done   |
-| 2026-04-28 | Production Deploy     | Deployed latest committed code and restarted PM2          | 15414cf    | Health ok/ok/ok; PM2 online; git clean; runtime errors 0              | Done   |
-| 2026-04-28 | Client Repo Mirror    | Rewrote target repo as sanitized single-commit mirror     | ae05848    | main updated; author/committer fawzi; contributors endpoint = fawzi   | Done   |
-| 2026-04-28 | Inbox Unread Badge    | Aligned sidebar badge with unread conversations           | b2572de    | No file errors; client build passed; docs contract matches            | Done   |
-| 2026-04-28 | Production Deploy     | Deployed unread badge fix to production frontend          | b2572de    | Production SHA b2572de; health ok; client build ok                    | Done   |
-| 2026-04-28 | Client Repo Mirror    | Synced sanitized client repo with unread badge fix        | 3f1224d    | target main updated; author/committer fawzi; contributors still fawzi | Done   |
+| Date       | Area                  | Change                                                      | Commit SHA | Verification                                                          | Status  |
+| ---------- | --------------------- | ----------------------------------------------------------- | ---------- | --------------------------------------------------------------------- | ------- |
+| 2026-04-28 | Checklist             | Created remediation checklist                               | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                               | Done    |
+| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring     | 45e56b9    | `get_errors` clean; `client npm run build` passed                     | Done    |
+| 2026-04-28 | Production CTA        | Found production was serving old static bundle              | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers                | Done    |
+| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change    | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3         | Done    |
+| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script          | 49374b9    | Email/no-email production cases pass; no browser errors               | Done    |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence               | dbad889    | NODE_ENV production; health 200; no stack markers                     | Done    |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory             | dbad889    | 27 server root files; 32 modified + 55 untracked                      | Done    |
+| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub                 | 65a6171    | 25/32 modified match; key untracked source/tests match                | Done    |
+| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks               | b165190    | Server build pass; client build pass; 13 files / 45 tests pass        | Done    |
+| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config                | f233db1    | Prevents production exports/config from appearing in git status       | Done    |
+| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index                  | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes    | Done    |
+| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source       | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0     | Done    |
+| 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds   | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis            | Done    |
+| 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars         | 76d5a71    | Grep clean for known prod password/token patterns; syntax checks pass | Done    |
+| 2026-04-28 | M2 Follow-up          | Added follow-up schema fields and deterministic timing      | 7e49d89    | 9 policy tests pass; builds pass; production DB migration pending     | Done    |
+| 2026-04-28 | M2 CI Proof           | Triggered CI for follow-up scheduling changes               | 56b16cd    | GitHub Actions run 25064083733 passed                                 | Done    |
+| 2026-04-28 | M2 Migration Plan     | Prepared production backup/migration/deploy plan            | 94b079d    | Plan docs ready; no production DB/runtime changes applied             | Done    |
+| 2026-04-28 | M2 AI/CTA/Pipeline    | Fixed HOT clarification, Twilio-safe AI copy, deal reveal   | 0d05ef8    | 15 DB-free files / 57 tests; server/client builds pass                | Done    |
+| 2026-04-28 | M2 CI Proof           | Verified latest AI/pipeline changes in GitHub Actions       | 15414cf    | Run 25065413359 passed: lint/typecheck, test, build                   | Done    |
+| 2026-04-28 | Production DB         | Applied additive follow-up migration after backup           | 15414cf    | Backup 20260428164910; columns=5; indexes=2; data preserved           | Done    |
+| 2026-04-28 | Production Deploy     | Deployed latest committed code and restarted PM2            | 15414cf    | Health ok/ok/ok; PM2 online; git clean; runtime errors 0              | Done    |
+| 2026-04-28 | Client Repo Mirror    | Rewrote target repo as sanitized single-commit mirror       | ae05848    | main updated; author/committer fawzi; contributors endpoint = fawzi   | Done    |
+| 2026-04-28 | Inbox Unread Badge    | Aligned sidebar badge with unread conversations             | b2572de    | No file errors; client build passed; docs contract matches            | Done    |
+| 2026-04-28 | Production Deploy     | Deployed unread badge fix to production frontend            | b2572de    | Production SHA b2572de; health ok; client build ok                    | Done    |
+| 2026-04-28 | Client Repo Mirror    | Synced sanitized client repo with unread badge fix          | 3f1224d    | target main updated; author/committer fawzi; contributors still fawzi | Done    |
+| 2026-04-28 | AI Suggestions        | Re-triggered classification after successful outbound reply | a5b587f    | Targeted regression 2/2 passed; `server npm run build` passed         | Done    |
+| 2026-04-28 | Production Deploy     | Deployed AI suggestion reply-refresh fix to production      | a5b587f    | Production SHA a5b587f; health ok; PM2 online; logs empty             | Done    |
+| 2026-04-28 | Client Repo Mirror    | Attempted sanitized re-sync after AI suggestion fix         | a5b587f    | Push blocked by GitHub `403` for current `ksanyok` auth               | Blocked |

@@ -248,6 +248,8 @@ Evidence:
 - CI explicitly runs server/client TypeScript checks and server/client builds; test job runs full Vitest suite against MySQL/Redis services.
 - GitHub Actions run `25061991344` for commit `2eecd0b`: success.
 - Run URL: `https://github.com/ksanyok/twilio-sms-platform/actions/runs/25061991344`.
+- GitHub Actions run `25062388314` for commit `40d30f8`: success after secrets-remediation scripts update.
+- Run URL: `https://github.com/ksanyok/twilio-sms-platform/actions/runs/25062388314`.
 - Jobs passed: `lint-and-typecheck`, `test`, `build`.
 - Non-blocking annotation: GitHub warns Node.js 20 actions runtime will be deprecated in 2026.
 
@@ -256,7 +258,7 @@ Acceptance:
 - [x] Все нужные tests в GitHub.
 - [x] Local regression pass.
 - [x] CI run green или documented blocker.
-- [ ] Клиенту можно показать CI evidence.
+- [x] Клиенту можно показать CI evidence.
 
 ---
 
@@ -287,6 +289,7 @@ Evidence:
 - Hardcoded platform JWT cookie removed from `scripts/fix_10dlc.py`; script now requires `SCL_PLATFORM_TOKEN`.
 - Targeted grep no longer finds real hardcoded production password/Twilio token/JWT cookie patterns in `scripts/`.
 - Syntax checks passed: `node --check` for changed JS/MJS scripts; Python `py_compile` for changed Python scripts.
+- CI run `25062388314` passed after secrets-remediation scripts update.
 - Pending: previously exposed tokens/passwords must still be rotated/revoked; history sanitation is required before client target repo mirror.
 
 ---

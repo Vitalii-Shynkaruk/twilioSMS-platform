@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractConversationEmail,
+  extractJsonObjectFromLlmResponse,
   resolveAiSuggestions,
   resolveDeterministicClassification,
   sanitizeAiSuggestionText,
@@ -184,5 +185,26 @@ describe('AI suggestion policy', () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].text).toMatch(/daily-payback mca|short-term pressure|cash-flow problem/i);
     expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
+  });
+
+  it('должна извлекать JSON из LLM ответа даже если после fenced block есть хвост с reply options', () => {
+    const raw = `\`\`\`json
+{
+  "classification": "HOT",
+  "leadScore": 72,
+  "suggestedReply": "Got it, your monthly revenue is $30k.",
+  "suggestedReengageMessage": null
+}
+\`\`\`
+
+**Reply Option 1:**
+"Got it, your monthly revenue is $30k."`;
+
+    expect(extractJsonObjectFromLlmResponse(raw)).toBe(`{
+  "classification": "HOT",
+  "leadScore": 72,
+  "suggestedReply": "Got it, your monthly revenue is $30k.",
+  "suggestedReengageMessage": null
+}`);
   });
 });

@@ -92,6 +92,58 @@ async function validateLockedSchemaShape(payload: unknown): Promise<{ ok: boolea
   return { ok: errors.length === 0, errors };
 }
 
+export function extractJsonObjectFromLlmResponse(raw: string | null | undefined): string | null {
+  const normalized = String(raw || '').trim();
+  if (!normalized) return null;
+
+  const fencedMatch = normalized.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = (fencedMatch?.[1] || normalized).trim();
+  const firstBraceIndex = candidate.indexOf('{');
+
+  if (firstBraceIndex < 0) {
+    return candidate || null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let index = firstBraceIndex; index < candidate.length; index += 1) {
+    const char = candidate[index];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return candidate.slice(firstBraceIndex, index + 1);
+      }
+    }
+  }
+
+  return candidate;
+}
+
 interface ClassificationEligibilityInput {
   leadStatus?: string | null;
   leadOptedOut?: boolean | null;
@@ -924,12 +976,11 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
 
     let parsed: any;
     try {
-      // На всякий случай вырежем markdown-обёртку если LLM нарушил инструкцию
-      const cleaned = raw
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/```\s*$/i, '')
-        .trim();
-      parsed = JSON.parse(cleaned);
+      const extractedJson = extractJsonObjectFromLlmResponse(raw);
+      if (!extractedJson) {
+        return null;
+      }
+      parsed = JSON.parse(extractedJson);
     } catch (err) {
       logger.error('AI: classifyInbound JSON parse failed', {
         conversationId,

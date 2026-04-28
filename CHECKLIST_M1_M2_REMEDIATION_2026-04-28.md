@@ -695,10 +695,10 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `9f6e478` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478` with fresh `server` and `client` builds on production.
+- Latest production source: `34e62a9` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9` with fresh `server` and `client` builds on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
-- PM2: `sms-api` online after restart; restart count `12`.
+- PM2: `sms-api` online after restart; restart count `15`.
 - Production runtime logs: PM2 `out`/`error` tails were empty immediately after deploy; no fresh runtime errors were emitted after restart.
 - Latest CI proof: run `25068339405`, commit `b2572de`, jobs completed successfully.
 - Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
@@ -707,6 +707,9 @@ Evidence:
 - Latest AI suggestion reply-refresh fix: commit `a5b587f` triggers owner-action reclassification after successful outbound reply; targeted regression `server/tests/inboxReplyReclassification.test.ts` passed 2/2; `server npm run build` passed.
 - Latest AI suggestion restore fix: commit `9f6e478` rebuilds fallback suggestions when classified conversations have an empty `aiSuggestions` array; targeted regression `server/tests/aiSuggestionPolicy.test.ts` passed 5/5; `server npm run build` passed.
 - Production API verification after deploy: previously broken threads `Audrey Berry $150,000.00` (`cmnt61hpb01cxzosfj9e0gj7d`) and `Jamie Johnson` (`cmoiqslus0d9tzo5uwqu6c25a`) now return `aiSuggestionsCount=1` with non-empty fallback text.
+- Uploaded handoff archive verification: `scl-handoff-2026-4-25.rar` contains the same `classifier_prompt_v4_LOCKED.md` as the live `SCL-HandOff/` folder, so the prompt file itself was not the regression source.
+- Latest handoff-alignment fix: commit `34e62a9` removes old deterministic HOT upgrades that contradicted locked v4 (`bare email` / `bare yes` no longer auto-promote to HOT), upgrades fallback suggestions to objection-aware Gap Selling phrasing, and keeps unread DNC replies visible in default Inbox filters until they are read.
+- Production evidence for client screenshots: `Reinforce Tools` (`cmo0m0skg04pyzo0ze7y1siwe`) had `aiClassification=null` and `aiSuggestions=null` at inspection time, so the generic “predatory MCA” reply shown in the screenshot was not persisted AI output; `SG ECHO LLC` / Patricia Ann Kaelin (`cmoj0561t08a4zo2sugztfeek`) remains assigned to Marcos while the lead is `DNC` + `optedOut=true`, which explains why the thread dropped out of the normal inbox flow after the removal request.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -759,3 +762,5 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Client Repo Mirror    | Attempted sanitized re-sync after AI suggestion fix         | a5b587f    | Push blocked by GitHub `403` for current `ksanyok` auth               | Blocked |
 | 2026-04-28 | AI Suggestions        | Restored fallback suggestions for classified empty threads  | 9f6e478    | Targeted regression 5/5 passed; `server npm run build` passed         | Done    |
 | 2026-04-28 | Production Deploy     | Deployed AI suggestion fallback restore fix to production   | 9f6e478    | Audrey/Jamie API checks now return `aiSuggestionsCount=1`             | Done    |
+| 2026-04-28 | AI / Inbox Alignment  | Restored locked-v4 handoff behavior + unread DNC visibility | 34e62a9    | AI tests 10/10 + visibility test 1/1 + server build passed            | Done    |
+| 2026-04-28 | Production Deploy     | Deployed handoff-gap-selling / inbox visibility fix         | 34e62a9    | Production SHA 34e62a9; PM2 online; SG ECHO + Reinforce checks logged | Done    |

@@ -695,16 +695,18 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `a5b587f` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f` with fresh `server` and `client` builds on production.
+- Latest production source: `9f6e478` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478` with fresh `server` and `client` builds on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
-- PM2: `sms-api` online after restart; restart count `11`.
+- PM2: `sms-api` online after restart; restart count `12`.
 - Production runtime logs: PM2 `out`/`error` tails were empty immediately after deploy; no fresh runtime errors were emitted after restart.
 - Latest CI proof: run `25068339405`, commit `b2572de`, jobs completed successfully.
 - Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
 - Public frontend smoke: `https://app.sclcapital.io/` returned `200 OK` and current index timestamp after deploy.
 - Current unread-badge fix: sidebar Inbox badge now uses unread conversation count, matching Inbox/Admin View and the User Guide contract.
 - Latest AI suggestion reply-refresh fix: commit `a5b587f` triggers owner-action reclassification after successful outbound reply; targeted regression `server/tests/inboxReplyReclassification.test.ts` passed 2/2; `server npm run build` passed.
+- Latest AI suggestion restore fix: commit `9f6e478` rebuilds fallback suggestions when classified conversations have an empty `aiSuggestions` array; targeted regression `server/tests/aiSuggestionPolicy.test.ts` passed 5/5; `server npm run build` passed.
+- Production API verification after deploy: previously broken threads `Audrey Berry $150,000.00` (`cmnt61hpb01cxzosfj9e0gj7d`) and `Jamie Johnson` (`cmoiqslus0d9tzo5uwqu6c25a`) now return `aiSuggestionsCount=1` with non-empty fallback text.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -755,3 +757,5 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | AI Suggestions        | Re-triggered classification after successful outbound reply | a5b587f    | Targeted regression 2/2 passed; `server npm run build` passed         | Done    |
 | 2026-04-28 | Production Deploy     | Deployed AI suggestion reply-refresh fix to production      | a5b587f    | Production SHA a5b587f; health ok; PM2 online; logs empty             | Done    |
 | 2026-04-28 | Client Repo Mirror    | Attempted sanitized re-sync after AI suggestion fix         | a5b587f    | Push blocked by GitHub `403` for current `ksanyok` auth               | Blocked |
+| 2026-04-28 | AI Suggestions        | Restored fallback suggestions for classified empty threads  | 9f6e478    | Targeted regression 5/5 passed; `server npm run build` passed         | Done    |
+| 2026-04-28 | Production Deploy     | Deployed AI suggestion fallback restore fix to production   | 9f6e478    | Audrey/Jamie API checks now return `aiSuggestionsCount=1`             | Done    |

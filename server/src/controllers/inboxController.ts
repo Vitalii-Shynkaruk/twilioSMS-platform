@@ -8,7 +8,7 @@ import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 import { OutboundGateService } from '../services/outboundGateService';
-import { AIService } from '../services/aiService';
+import { AIService, resolveAiSuggestions } from '../services/aiService';
 import { resolveFollowupStatus } from '../services/followupPolicy';
 
 type InboxFilter =
@@ -1437,9 +1437,30 @@ export class InboxController {
       authorId: n.createdById,
     }));
 
+    const resolvedAiSuggestions = resolveAiSuggestions({
+      suggestions: conversation.aiSuggestions,
+      classification: conversation.aiClassification,
+      signals: (conversation.aiSignals as Record<string, unknown> | null) || null,
+      messages: messages
+        .slice()
+        .reverse()
+        .map((message) => ({ direction: message.direction, body: message.body })),
+    });
+    const responseAiSignals = {
+      ...(((conversation.aiSignals as Record<string, unknown> | null) || {}) as Record<string, unknown>),
+    };
+    if (typeof responseAiSignals.suggestedReply !== 'string' && resolvedAiSuggestions[0]?.text) {
+      responseAiSignals.suggestedReply = resolvedAiSuggestions[0].text;
+    }
+    if (typeof responseAiSignals.suggestedReengageMessage !== 'string' && resolvedAiSuggestions[1]?.text) {
+      responseAiSignals.suggestedReengageMessage = resolvedAiSuggestions[1].text;
+    }
+
     res.json({
       conversation: {
         ...conversation,
+        aiSignals: responseAiSignals,
+        aiSuggestions: resolvedAiSuggestions,
         lead: hydratedLead,
         fromNumber,
         fromNumberFriendlyName,

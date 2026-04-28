@@ -192,6 +192,185 @@ export function sanitizeAiSuggestionText(text: string): string {
     .trim();
 }
 
+type SuggestionResolutionMessage = {
+  direction?: string | null;
+  body?: string | null;
+};
+
+type ResolvedAISuggestion = {
+  type: string;
+  text: string;
+  cta: string;
+};
+
+function hasSuggestionText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizeAiSuggestions(input: unknown): ResolvedAISuggestion[] {
+  if (!Array.isArray(input)) return [];
+
+  const normalized: ResolvedAISuggestion[] = [];
+  const seen = new Set<string>();
+
+  for (const rawItem of input) {
+    if (!rawItem || typeof rawItem !== 'object') continue;
+
+    const item = rawItem as Record<string, unknown>;
+    const text = sanitizeAiSuggestionText(String(item.text || '')).trim();
+    if (!text) continue;
+
+    const dedupeKey = text.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    normalized.push({
+      type: hasSuggestionText(item.type) ? item.type.trim() : normalized.length === 0 ? 'BEST' : 'ALT',
+      text,
+      cta: hasSuggestionText(item.cta) ? item.cta.trim() : normalized.length === 0 ? '→ SEND' : '→ RE-ENGAGE',
+    });
+
+    if (normalized.length >= 2) break;
+  }
+
+  return normalized;
+}
+
+function extractLatestInboundText(messages: SuggestionResolutionMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message.direction || '').toUpperCase() !== 'INBOUND') continue;
+    const body = String(message.body || '').trim();
+    if (body) return body;
+  }
+  return '';
+}
+
+function extractPreviousOutboundText(messages: SuggestionResolutionMessage[]): string {
+  let latestInboundIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (String(messages[index].direction || '').toUpperCase() === 'INBOUND') {
+      latestInboundIndex = index;
+      break;
+    }
+  }
+
+  if (latestInboundIndex > 0) {
+    for (let index = latestInboundIndex - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (String(message.direction || '').toUpperCase() !== 'OUTBOUND') continue;
+      const body = String(message.body || '').trim();
+      if (body) return body;
+    }
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message.direction || '').toUpperCase() !== 'OUTBOUND') continue;
+    const body = String(message.body || '').trim();
+    if (body) return body;
+  }
+
+  return '';
+}
+
+function buildDeterministicFallbackSuggestionText(input: {
+  classification?: string | null;
+  latestInboundText?: string;
+  previousOutboundText?: string;
+}): string {
+  const classification = String(input.classification || '').toUpperCase();
+  const latestInboundText = String(input.latestInboundText || '').trim();
+  const latestInboundLower = latestInboundText.toLowerCase();
+  const previousOutboundLower = String(input.previousOutboundText || '').toLowerCase();
+
+  if (classification === 'WRONG_NUMBER') {
+    return 'Got it - sorry about that. Is there a better contact for the business, or should I close this out?';
+  }
+
+  if (/hard pull|credit pull|hard credit/i.test(latestInboundLower)) {
+    return 'No hard pull to review options. Send the statements and I can look them over first, then walk you through the next step.';
+  }
+
+  if (/what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain/i.test(latestInboundLower)) {
+    return 'It is a business funding option based on what you need and how the business is performing. What amount are you looking for, and what would you use it for?';
+  }
+
+  if (/statement|bank statement/i.test(latestInboundLower) || /statement|bank statement/i.test(previousOutboundLower)) {
+    return 'Send the statements when you have them and I will review them right away so I can map out the best next step.';
+  }
+
+  if (/email/i.test(latestInboundLower) || /email/i.test(previousOutboundLower)) {
+    return 'Absolutely. What is the best email to send the terms to? Once I have it, I will send the next steps.';
+  }
+
+  switch (classification) {
+    case 'HOT':
+      return 'Thanks for the update. You look like a strong fit. What is the best email for the terms, or send the statements and I will review them right away?';
+    case 'WARM':
+      return 'Got it. Quick question so I can point you to the right option: what amount are you looking for, and what would you use the capital for?';
+    case 'NURTURE':
+      return 'No rush. When the timing is right, what amount would help most, and what would you use it for?';
+    default:
+      return 'Thanks for the update. What amount are you looking for, and what would you use the capital for?';
+  }
+}
+
+export function resolveAiSuggestions(input: {
+  suggestions?: unknown;
+  fallbackSuggestions?: unknown;
+  classification?: string | null;
+  signals?: Record<string, unknown> | null;
+  messages?: SuggestionResolutionMessage[];
+}): ResolvedAISuggestion[] {
+  const directSuggestions = normalizeAiSuggestions(input.suggestions);
+  if (directSuggestions.length > 0) return directSuggestions;
+
+  const preservedSuggestions = normalizeAiSuggestions(input.fallbackSuggestions);
+  if (preservedSuggestions.length > 0) return preservedSuggestions;
+
+  const signals = (input.signals || {}) as Record<string, unknown>;
+  const signalSuggestions = normalizeAiSuggestions([
+    {
+      type: 'BEST',
+      text: hasSuggestionText(signals.suggestedReply) ? signals.suggestedReply : '',
+      cta: '→ SEND',
+    },
+    {
+      type: 'ALT',
+      text: hasSuggestionText(signals.suggestedReengageMessage) ? signals.suggestedReengageMessage : '',
+      cta: '→ RE-ENGAGE',
+    },
+  ]);
+  if (signalSuggestions.length > 0) return signalSuggestions;
+
+  const chronologicalMessages = Array.isArray(input.messages) ? input.messages : [];
+  const latestInboundText = extractLatestInboundText(chronologicalMessages);
+  const previousOutboundText = extractPreviousOutboundText(chronologicalMessages);
+  const bestText = sanitizeAiSuggestionText(
+    buildDeterministicFallbackSuggestionText({
+      classification: input.classification,
+      latestInboundText,
+      previousOutboundText,
+    }),
+  );
+
+  if (!bestText) return [];
+
+  const resolved: ResolvedAISuggestion[] = [{ type: 'BEST', text: bestText, cta: '→ SEND' }];
+  const staleState = String(signals.staleState || '').toLowerCase();
+  if (staleState === 'stale' || staleState === 'ghosted') {
+    const altText = sanitizeAiSuggestionText(
+      'Quick check-in: should I send your Funding Link or circle back next week?',
+    );
+    if (altText && altText.toLowerCase() !== bestText.toLowerCase()) {
+      resolved.push({ type: 'ALT', text: altText, cta: '→ RE-ENGAGE' });
+    }
+  }
+
+  return resolved;
+}
+
 export class AIService {
   /**
    * Загружает активную AI-конфигурацию из SystemSetting.
@@ -654,7 +833,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     });
     const leadScore = hasLockedShape && typeof parsed.leadScore === 'number' ? parsed.leadScore : deterministicScore;
 
-    const suggestions = hasLockedShape
+    const parsedSuggestions = hasLockedShape
       ? [
           {
             type: 'BEST',
@@ -691,7 +870,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const suggestedReply =
       typeof rawSignals.suggestedReply === 'string' && rawSignals.suggestedReply.trim()
         ? sanitizeAiSuggestionText(rawSignals.suggestedReply.trim())
-        : suggestions[0]?.text || null;
+        : parsedSuggestions[0]?.text || null;
 
     const followupPlan = buildSuggestedFollowup({
       classification,
@@ -728,6 +907,23 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
           ? rawSignals.repBehavior.trim()
           : 'standard',
     };
+
+    const suggestions = resolveAiSuggestions({
+      suggestions: parsedSuggestions,
+      classification,
+      signals,
+      messages: messagesAsc.map((message) => ({
+        direction: message.direction,
+        body: message.body,
+      })),
+    });
+
+    if (!hasSuggestionText(signals.suggestedReply) && suggestions[0]?.text) {
+      signals.suggestedReply = suggestions[0].text;
+    }
+    if (!hasSuggestionText(signals.suggestedReengageMessage) && suggestions[1]?.text) {
+      signals.suggestedReengageMessage = suggestions[1].text;
+    }
 
     logger.info('AI: classifyInbound complete', {
       conversationId,

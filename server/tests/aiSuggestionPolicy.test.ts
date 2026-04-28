@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractConversationEmail,
   extractJsonObjectFromLlmResponse,
+  normalizeLockedClassifierPayload,
   resolveAiSuggestions,
   resolveDeterministicClassification,
   sanitizeAiSuggestionText,
@@ -206,5 +207,37 @@ describe('AI suggestion policy', () => {
   "suggestedReply": "Got it, your monthly revenue is $30k.",
   "suggestedReengageMessage": null
 }`);
+  });
+
+  it('должна нормализовать near-valid locked payload вместо null на schema drift', () => {
+    const normalized = normalizeLockedClassifierPayload({
+      classification: 'HOT',
+      leadScore: 81,
+      revenueMonthly: 30000,
+      revenueAnnual: null,
+      revenueConfidence: 'high',
+      amountRequested: null,
+      useOfFunds: null,
+      inferredProduct: 'Line of Credit',
+      objections: ['low fico'],
+      suggestedReply: 'Got it, your monthly revenue is $30k.',
+      suggestedFollowupTime: null,
+      suggestedFollowupReason: null,
+      staleState: null,
+      hadMeaningfulEngagement: true,
+      suggestedReengageMessage: null,
+      repBehavior: 'concerning',
+      coachingNote: '',
+      reasoning: 'Lead gave revenue but has credit issues.',
+    });
+
+    expect(normalized).toMatchObject({
+      classification: 'HOT',
+      product: 'LOC',
+      urgency: 'medium',
+      revenueMonthly: 30000,
+      suggestedReply: 'Got it, your monthly revenue is $30k.',
+    });
+    expect(normalized).not.toHaveProperty('inferredProduct');
   });
 });

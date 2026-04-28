@@ -144,6 +144,93 @@ export function extractJsonObjectFromLlmResponse(raw: string | null | undefined)
   return candidate;
 }
 
+function normalizeLockedProduct(value: unknown): string {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return 'Unknown';
+  if (normalized.includes('heloc')) return 'HELOC';
+  if (normalized.includes('bridge')) return 'Bridge';
+  if (normalized.includes('equipment')) return 'Equipment';
+  if (normalized.includes('sba')) return 'SBA';
+  if (normalized === 'cre' || normalized.includes('commercial')) return 'CRE';
+  if (normalized.includes('mca') || normalized.includes('merchant')) return 'MCA';
+  if (normalized === 'loc' || normalized.includes('line of credit')) return 'LOC';
+  return 'Unknown';
+}
+
+function normalizeLockedUrgency(value: unknown, classification: string): string {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (normalized === 'high' || normalized === 'medium' || normalized === 'low') return normalized;
+  if (/today|now|asap|urgent/.test(normalized)) return 'high';
+  if (/week|soon|medium/.test(normalized)) return 'medium';
+  return classification === 'HOT' ? 'medium' : 'low';
+}
+
+export function normalizeLockedClassifierPayload(payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+
+  const raw = payload as Record<string, unknown>;
+  const classificationCandidate = String(raw.classification || '')
+    .trim()
+    .toUpperCase();
+  const classification = ['HOT', 'WARM', 'NURTURE', 'DEAD', 'WRONG_NUMBER'].includes(classificationCandidate)
+    ? classificationCandidate
+    : 'NURTURE';
+  const productCandidate = raw.product ?? raw.inferredProduct ?? raw.productInference;
+  const objections = Array.isArray(raw.objections)
+    ? raw.objections.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).slice(0, 5)
+    : typeof raw.objections === 'string' && raw.objections.trim()
+      ? [raw.objections.trim()]
+      : [];
+  const staleState =
+    raw.staleState === 'fresh' || raw.staleState === 'stale' || raw.staleState === 'ghosted' ? raw.staleState : null;
+  const revenueConfidence =
+    raw.revenueConfidence === 'high' ||
+    raw.revenueConfidence === 'medium' ||
+    raw.revenueConfidence === 'low' ||
+    raw.revenueConfidence === 'none'
+      ? raw.revenueConfidence
+      : 'none';
+  const repBehavior =
+    raw.repBehavior === 'good' || raw.repBehavior === 'concerning' || raw.repBehavior === 'poor'
+      ? raw.repBehavior
+      : 'good';
+
+  return {
+    classification,
+    leadScore: typeof raw.leadScore === 'number' ? raw.leadScore : 0,
+    revenueMonthly: typeof raw.revenueMonthly === 'number' ? raw.revenueMonthly : null,
+    revenueAnnual: typeof raw.revenueAnnual === 'number' ? raw.revenueAnnual : null,
+    revenueConfidence,
+    amountRequested: typeof raw.amountRequested === 'number' ? raw.amountRequested : null,
+    useOfFunds: typeof raw.useOfFunds === 'string' && raw.useOfFunds.trim() ? raw.useOfFunds.trim() : null,
+    product: normalizeLockedProduct(productCandidate),
+    urgency: normalizeLockedUrgency(raw.urgency, classification),
+    objections,
+    suggestedReply: typeof raw.suggestedReply === 'string' ? raw.suggestedReply : '',
+    suggestedFollowupTime:
+      typeof raw.suggestedFollowupTime === 'string' && raw.suggestedFollowupTime.trim()
+        ? raw.suggestedFollowupTime.trim()
+        : null,
+    suggestedFollowupReason:
+      typeof raw.suggestedFollowupReason === 'string' && raw.suggestedFollowupReason.trim()
+        ? raw.suggestedFollowupReason.trim()
+        : null,
+    staleState,
+    hadMeaningfulEngagement: typeof raw.hadMeaningfulEngagement === 'boolean' ? raw.hadMeaningfulEngagement : false,
+    suggestedReengageMessage:
+      typeof raw.suggestedReengageMessage === 'string' && raw.suggestedReengageMessage.trim()
+        ? raw.suggestedReengageMessage.trim()
+        : null,
+    repBehavior,
+    coachingNote: typeof raw.coachingNote === 'string' ? raw.coachingNote : '',
+    reasoning: typeof raw.reasoning === 'string' ? raw.reasoning : '',
+  };
+}
+
 interface ClassificationEligibilityInput {
   leadStatus?: string | null;
   leadOptedOut?: boolean | null;
@@ -997,13 +1084,17 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       'suggestedReply' in parsed;
 
     if (hasLockedShape) {
+      const normalizedLockedPayload = normalizeLockedClassifierPayload(parsed);
+      if (normalizedLockedPayload) {
+        parsed = normalizedLockedPayload;
+      }
+
       const validation = await validateLockedSchemaShape(parsed);
       if (!validation.ok) {
-        logger.error('AI: locked schema validation failed', {
+        logger.warn('AI: locked schema validation drift, continuing with normalized payload', {
           conversationId,
           errors: validation.errors,
         });
-        return null;
       }
     }
 

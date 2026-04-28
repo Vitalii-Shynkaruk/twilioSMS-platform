@@ -114,6 +114,84 @@ export function getClassificationSkipReason(input: ClassificationEligibilityInpu
   return null;
 }
 
+interface DeterministicClassificationInput {
+  classification: string;
+  latestInboundText?: string | null;
+  previousOutboundText?: string | null;
+}
+
+export function resolveDeterministicClassification(input: DeterministicClassificationInput): {
+  classification: string;
+  triggers: Record<string, boolean>;
+} {
+  const originalClassification = input.classification;
+  if (originalClassification === 'DEAD' || originalClassification === 'WRONG_NUMBER') {
+    return { classification: originalClassification, triggers: {} };
+  }
+
+  const latestInboundText = String(input.latestInboundText || '').trim();
+  const lower = latestInboundText.toLowerCase();
+  if (!lower) return { classification: originalClassification, triggers: {} };
+
+  const previousOutboundText = String(input.previousOutboundText || '').toLowerCase();
+  const hasEmail = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(latestInboundText);
+  const strongYes =
+    /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
+      lower,
+    );
+  const asksForTerms =
+    /\b(rate|rates|term|terms|amount|how much|funding link|application|details|info|paperwork|docs?|requirements?|qualif(y|ication)|credit score|bank statements|collateral|cost)\b/.test(
+      lower,
+    );
+  const engagedObjectionQuestion =
+    /(what('?s| is) the catch|what do you need|what do i need|how does it work|how would that work|what are the terms|what are the rates|what's the rate|what is the rate|what docs do you need|what paperwork do you need|what are the requirements)/.test(
+      lower,
+    );
+  const hasProductOutreachContext =
+    /\b(funding|funding link|capital|mca|loc|line of credit|sba|equipment|cre|bridge|heloc|home equity|offer|approved|approval|terms?|lender|finance|financing)\b/.test(
+      previousOutboundText,
+    );
+  const contextualClarifyingQuestion =
+    hasProductOutreachContext &&
+    /^(what('?s| is) (that|this|it)|what does that mean|what do you mean|can you explain|explain that)\??$/.test(lower);
+  const givesUrgency =
+    /\b(today|asap|right now|this week|tomorrow|by (monday|tuesday|wednesday|thursday|friday)|need (it )?(now|soon))\b/.test(
+      lower,
+    );
+  const sharesAltPhone = /(?:^|\D)(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?:\D|$)/.test(latestInboundText);
+
+  const triggers = {
+    hasEmail,
+    strongYes,
+    asksForTerms,
+    engagedObjectionQuestion,
+    contextualClarifyingQuestion,
+    givesUrgency,
+    sharesAltPhone,
+  };
+
+  return Object.values(triggers).some(Boolean) && originalClassification !== 'HOT'
+    ? { classification: 'HOT', triggers }
+    : { classification: originalClassification, triggers };
+}
+
+export function sanitizeAiSuggestionText(text: string): string {
+  const normalized = String(text || '').trim();
+  if (!normalized) return normalized;
+
+  return normalized
+    .replace(
+      /\s*Do you own (?:any )?(?:property|a home|real estate)(?: with equity)?\??/gi,
+      ' I can explain the HELOC option and compare other funding paths. What amount are you looking for?',
+    )
+    .replace(
+      /\s*Do you have (?:home )?equity\??/gi,
+      ' I can explain the HELOC option and compare other funding paths. What amount are you looking for?',
+    )
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export class AIService {
   /**
    * Загружает активную AI-конфигурацию из SystemSetting.
@@ -237,12 +315,13 @@ METHODOLOGY: Gap Selling (Keenan). Every suggestion must reference a gap — the
 TONE: Direct, confident, Patrick Bet-David energy. Never soft, never overly formal, never apologetic.
 TERMINOLOGY: Never say "application" — always say "Funding Link."
 PRODUCTS: MCA, LOC (Line of Credit), SBA, Equipment financing, CRE, Bridge, HELOC, Invoice Factoring. Match the product to what the lead actually describes.
+TWILIO-SAFE PHRASING: Never ask "Do you own property?", "Do you own any property?", or "Do you own property with equity?" in a suggested SMS. For HELOC, explain the option and ask for funding amount or preferred next step instead.
 REVENUE NORMALIZATION: annual ÷ 12 = monthly. Range → midpoint. Always store both monthly and annual as integers (no $ or commas).
 BEST SUGGESTION LOGIC: HOT + urgency = aggressive close. WARM + evaluating = consultative. Always exactly 2 suggestions: one BEST, one ALT. Never 3.
 
 CLASSIFICATION RULES (apply strictly to the LATEST inbound message):
 - HOT — lead shares contact info (email address, alternate phone), explicitly says yes / interested / ready / send it / let's do it, asks for terms/Funding Link/docs/rate/amount, requests a call back, gives revenue numbers, names urgency (today / this week / ASAP / now / 30 days). ANY ONE of these = HOT. Sharing an email is the #1 buy-signal — always HOT.
-- WARM — engaged but exploring: "how does it work", "tell me more", asks general questions without committing, gives partial info.
+- WARM — engaged but exploring: "tell me more", asks general questions without committing, gives partial info. If the latest inbound is a clarification such as "What is that?" immediately after an outbound financing/product message, treat it as HOT because the lead is actively engaging with the offer.
 - NURTURE — polite but non-committal: "maybe later", "send info", "not right now but keep in touch".
 - DEAD — clear refusal: "no", "not interested", "stop contacting", swearing, hostile.
 - WRONG_NUMBER — "wrong number", "who is this", "don't know who you are", "I'm not [name]".${caBlock}
@@ -548,42 +627,20 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     // Защита от случаев, когда LLM недооценивает "контактный" ответ (email, телефон,
     // короткое "yes / send it"). Email-share — самый сильный сигнал интента.
     const lastInboundBody = (lastInbound?.body || '').trim();
-    if (lastInboundBody && classification !== 'DEAD' && classification !== 'WRONG_NUMBER') {
-      const lower = lastInboundBody.toLowerCase();
-      const hasEmail = /[\w.+-]+@[\w-]+\.[\w.-]+/.test(lastInboundBody);
-      // "yes" / "yeah" / "yep" / "sure" / "ok" / "send it" / "sounds good" / "i'm in" / "lets do it"
-      const strongYes =
-        /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
-          lower,
-        );
-      const asksForTerms =
-        /\b(rate|rates|term|terms|amount|how much|funding link|application|details|info|paperwork|docs?|requirements?|qualif(y|ication)|credit score|bank statements|collateral|cost)\b/.test(
-          lower,
-        );
-      // Объектный вопрос после первичного контакта — сильный сигнал коммерческого интента.
-      // Примеры: "what's the catch?", "what do you need?", "how does it work?"
-      const engagedObjectionQuestion =
-        /(what('?s| is) the catch|what do you need|what do i need|how does it work|how would that work|what are the terms|what are the rates|what's the rate|what is the rate|what docs do you need|what paperwork do you need|what are the requirements)/.test(
-          lower,
-        );
-      const givesUrgency =
-        /\b(today|asap|right now|this week|tomorrow|by (monday|tuesday|wednesday|thursday|friday)|need (it )?(now|soon))\b/.test(
-          lower,
-        );
-      const sharesAltPhone = /(?:^|\D)(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?:\D|$)/.test(
-        lastInboundBody,
-      );
-
-      if (
-        (hasEmail || strongYes || asksForTerms || engagedObjectionQuestion || givesUrgency || sharesAltPhone) &&
-        classification !== 'HOT'
-      ) {
+    if (lastInboundBody) {
+      const previousOutbound = [...messagesAsc].reverse().find((message) => message.direction === 'OUTBOUND');
+      const resolved = resolveDeterministicClassification({
+        classification,
+        latestInboundText: lastInboundBody,
+        previousOutboundText: previousOutbound?.body || null,
+      });
+      if (resolved.classification !== classification) {
         logger.info('AI: classification upgraded to HOT by deterministic override', {
           conversationId,
           original: classification,
-          triggers: { hasEmail, strongYes, asksForTerms, engagedObjectionQuestion, givesUrgency, sharesAltPhone },
+          triggers: resolved.triggers,
         });
-        classification = 'HOT';
+        classification = resolved.classification;
       }
     }
 
@@ -601,14 +658,14 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       ? [
           {
             type: 'BEST',
-            text: typeof parsed.suggestedReply === 'string' ? parsed.suggestedReply : '',
+            text: typeof parsed.suggestedReply === 'string' ? sanitizeAiSuggestionText(parsed.suggestedReply) : '',
             cta: '→ SEND',
           },
           ...(typeof parsed.suggestedReengageMessage === 'string' && parsed.suggestedReengageMessage.trim()
             ? [
                 {
                   type: 'ALT',
-                  text: parsed.suggestedReengageMessage.trim(),
+                  text: sanitizeAiSuggestionText(parsed.suggestedReengageMessage.trim()),
                   cta: '→ RE-ENGAGE',
                 },
               ]
@@ -620,7 +677,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
             .slice(0, 2)
             .map((s: any) => ({
               type: s.type === 'BEST' ? 'BEST' : 'ALT',
-              text: String(s.text),
+              text: sanitizeAiSuggestionText(String(s.text)),
               cta: String(s.cta || ''),
             }))
         : [];
@@ -633,7 +690,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
 
     const suggestedReply =
       typeof rawSignals.suggestedReply === 'string' && rawSignals.suggestedReply.trim()
-        ? rawSignals.suggestedReply.trim()
+        ? sanitizeAiSuggestionText(rawSignals.suggestedReply.trim())
         : suggestions[0]?.text || null;
 
     const followupPlan = buildSuggestedFollowup({
@@ -649,7 +706,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
 
     const suggestedReengageMessage =
       typeof rawSignals.suggestedReengageMessage === 'string' && rawSignals.suggestedReengageMessage.trim()
-        ? rawSignals.suggestedReengageMessage.trim()
+        ? sanitizeAiSuggestionText(rawSignals.suggestedReengageMessage.trim())
         : staleState === 'stale' || staleState === 'ghosted'
           ? 'Quick check-in: should I send your Funding Link or circle back next week?'
           : null;

@@ -182,6 +182,13 @@ const FILTERS: { key: QuickFilter; label: string; activeCls: string; passiveCls:
 
 const PIPELINE_VISUAL_MODE_KEY = 'scl_pipeline_visual_mode';
 
+interface CreatedPipelineDeal {
+  id: string;
+  clientId?: string;
+  assignedRepId?: string | null;
+  stage?: string;
+}
+
 // ═══════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════
@@ -664,6 +671,30 @@ export default function PipelinePage() {
     setViewTab(tab);
     if (scope) setPipelineScope(scope);
   };
+
+  const revealCreatedDeal = useCallback(
+    (deal: CreatedPipelineDeal) => {
+      setViewTab('pipeline');
+      setQuickFilter('all');
+      setSearchTerm('');
+      if (isAdmin) {
+        setPipelineScope('all');
+        setRepFilter('');
+      }
+      setSelectedDealId(deal.id);
+    },
+    [isAdmin],
+  );
+
+  useEffect(() => {
+    const handleDealCreated = (event: Event) => {
+      const createdDeal = (event as CustomEvent<CreatedPipelineDeal>).detail;
+      if (createdDeal?.id) revealCreatedDeal(createdDeal);
+    };
+
+    window.addEventListener('scl:deal-created', handleDealCreated);
+    return () => window.removeEventListener('scl:deal-created', handleDealCreated);
+  }, [revealCreatedDeal]);
 
   // ═══ RENDER ═══
   return (

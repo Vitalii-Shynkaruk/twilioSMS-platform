@@ -420,6 +420,8 @@ Decision:
 - [x] NURTURE: +3 days.
 - [x] Reason builder from extracted signals.
 - [x] Persist result on conversation.
+- [x] Add deterministic HOT override for contextual clarification like `What is that?` after product/funding outreach.
+- [x] Add Twilio-safe suggestion sanitizer for blocked HELOC/property phrasing.
 
 ### 8.3 Tests
 
@@ -430,6 +432,8 @@ Decision:
 - [x] NURTURE -> +3 days.
 - [x] Reason includes relevant signal.
 - [x] Null/invalid AI output still normalizes correctly.
+- [x] `What is that?` after HELOC/funding outreach -> `HOT`.
+- [x] AI suggested SMS does not include `Do you own property...` phrasing.
 
 Acceptance:
 
@@ -543,6 +547,34 @@ Evidence:
 - With-email case: CTA rendered as button, enabled, popup URL contains Gmail compose `to=` for lead email, no `subject`/`body`; lead email masked in evidence.
 - Loaded production assets include `InboxPageV2-B8OVM6yR.js` with `suggest-cta-btn` and Gmail compose URL markers; browser errors: none.
 - Use/Edit/Skip regression not executed on production because `Use`/`Skip` can write classification feedback; run locally or on safe test data before marking complete.
+- Follow-up fix pending production redeploy with current frontend assets after latest AI/pipeline changes.
+
+---
+
+## 11.5. M2 — Pipeline new deal card from Funding History
+
+Клиент: `There is a bug in the pipeline deal card logic. When selecting new deal, it does not create the new deal card`.
+
+Investigation:
+
+- [x] Checked `CreateDealModal` create flow.
+- [x] Checked `DealController.createDeal` assigned rep behavior.
+- [x] Checked board query invalidation/refetch behavior.
+
+Fix:
+
+- [x] Backend now allows `ADMIN` and `MANAGER` users to assign the selected rep when creating a deal.
+- [x] `CreateDealModal` now invalidates and refetches active `deals` queries after create.
+- [x] `CreateDealModal` dispatches a `scl:deal-created` browser event with the created deal id.
+- [x] `PipelinePageV2` listens for `scl:deal-created`, clears filters/search that can hide the card, switches admin/manager view to `All Deals`, and opens the newly created deal panel.
+
+Evidence:
+
+- Local diagnostics clean for touched files.
+- DB-free backend suite passed: 15 files / 57 tests.
+- Server build passed.
+- Client build passed with known CSS warning `.light .bg-dark-800.border*`.
+- Production deploy/smoke pending.
 
 ---
 
@@ -602,8 +634,8 @@ Acceptance:
 
 ### Backend
 
-- [ ] `server npm run build`.
-- [ ] Regression tests pass locally.
+- [x] `server npm run build`.
+- [x] Regression tests pass locally.
 - [ ] CI green.
 - [ ] Prisma migration/db push plan verified.
 - [ ] PM2 restart successful.
@@ -611,7 +643,7 @@ Acceptance:
 
 ### Frontend
 
-- [ ] `client npm run build`.
+- [x] `client npm run build`.
 - [ ] Inbox loads.
 - [ ] AI suggestion card works.
 - [ ] Funding link CTA works with email/no email.
@@ -676,3 +708,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M2 Follow-up          | Added follow-up schema fields and deterministic timing    | 7e49d89    | 9 policy tests pass; builds pass; production DB migration pending     | Done   |
 | 2026-04-28 | M2 CI Proof           | Triggered CI for follow-up scheduling changes             | 56b16cd    | GitHub Actions run 25064083733 passed                                 | Done   |
 | 2026-04-28 | M2 Migration Plan     | Prepared production backup/migration/deploy plan          | 94b079d    | Plan docs ready; no production DB/runtime changes applied             | Done   |
+| 2026-04-28 | M2 AI/CTA/Pipeline    | Fixed HOT clarification, Twilio-safe AI copy, deal reveal | Pending    | 15 DB-free files / 57 tests; server/client builds pass                | Done   |

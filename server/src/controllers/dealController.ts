@@ -468,8 +468,8 @@ export class DealController {
       }
     }
 
-    // Rule #7: Rep assignment = admin only
-    const effectiveRepId = req.user?.role === 'ADMIN' && assignedRepId ? assignedRepId : req.user!.id;
+    // Rule #7: Admin/manager can assign deals during creation.
+    const effectiveRepId = isAdminLike(req.user) && assignedRepId ? assignedRepId : req.user!.id;
 
     const parsedProductType = normalizeProductType(productType);
     if (productType !== undefined && productType !== null && !parsedProductType) {

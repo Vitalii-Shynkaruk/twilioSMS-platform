@@ -8,15 +8,40 @@ import type { Rep, ProductType } from '../../types';
 
 interface CreateDealModalProps {
   onClose: () => void;
+  onCreated?: (deal: CreatedDeal) => void;
   prefill?: {
+    clientId?: string;
     businessName?: string;
     contactName?: string;
     phone?: string;
     email?: string;
+    assignedRepId?: string;
   };
 }
 
-export default function CreateDealModal({ onClose, prefill }: CreateDealModalProps) {
+interface CreatedDeal {
+  id: string;
+  clientId?: string;
+  assignedRepId?: string | null;
+  stage?: string;
+}
+
+interface CreateDealPayload {
+  clientId?: string;
+  businessName: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  productType?: ProductType;
+  dealAmount?: number;
+  submittedAmount?: number;
+  assignedRepId?: string;
+  nextAction?: string;
+  nextActionDue?: string;
+  notes?: string;
+}
+
+export default function CreateDealModal({ onClose, onCreated, prefill }: CreateDealModalProps) {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
@@ -28,7 +53,7 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
   const [productType, setProductType] = useState<ProductType | ''>('');
   const [dealAmount, setDealAmount] = useState('');
   const [notes, setNotes] = useState('');
-  const [assignedRepId, setAssignedRepId] = useState(user?.id || '');
+  const [assignedRepId, setAssignedRepId] = useState(prefill?.assignedRepId || user?.id || '');
   const [nextAction, setNextAction] = useState('');
   const [nextActionDue, setNextActionDue] = useState('');
 
@@ -42,9 +67,18 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
   });
 
   const mutation = useMutation({
-    mutationFn: (data: any) => dealApi.createDeal(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deals'] });
+    mutationFn: (payload: CreateDealPayload) => dealApi.createDeal(payload),
+    onSuccess: async (response) => {
+      const createdDeal = response.data && typeof response.data.id === 'string' ? (response.data as CreatedDeal) : null;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['deals'] }),
+        createdDeal ? queryClient.invalidateQueries({ queryKey: ['deal', createdDeal.id] }) : Promise.resolve(),
+      ]);
+      await queryClient.refetchQueries({ queryKey: ['deals'], type: 'active' });
+      if (createdDeal) {
+        onCreated?.(createdDeal);
+        window.dispatchEvent(new CustomEvent('scl:deal-created', { detail: createdDeal }));
+      }
       toast.success('Deal created');
       onClose();
     },
@@ -67,6 +101,7 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
     }
     const parsedAmount = dealAmount ? parseFloat(dealAmount) : undefined;
     mutation.mutate({
+      clientId: prefill?.clientId || undefined,
       businessName,
       contactName: contactName || undefined,
       phone: phone || undefined,
@@ -91,7 +126,12 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
           <h3 className="text-base font-semibold text-[var(--text-primary)]">
             {prefill ? `New Deal — ${prefill.businessName || 'Client'}` : 'New Deal'}
           </h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-tertiary)]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded hover:bg-[var(--bg-tertiary)]"
+            aria-label="Close"
+          >
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
         </div>
@@ -213,6 +253,7 @@ export default function CreateDealModal({ onClose, prefill }: CreateDealModalPro
         </div>
 
         <button
+          type="button"
           onClick={handleSubmit}
           disabled={!businessName || !productType || mutation.isPending}
           className="w-full mt-4 py-2.5 rounded-lg bg-scl-500 text-white text-sm font-medium hover:bg-scl-600 disabled:opacity-50 transition"

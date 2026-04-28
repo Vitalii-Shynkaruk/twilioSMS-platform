@@ -5,6 +5,12 @@ node_modules/
 dist/
 build/
 
+# Runtime/generated exports (production data, not source code)
+exports/
+
+# PM2 deployment config may contain environment secrets
+ecosystem.config.js
+
 # Environment files (NEVER commit secrets)
 .env
 .env.local

@@ -12,7 +12,7 @@
 - [x] Любой production fix сначала переносить в локальный repo и коммитить в `ksanyok/twilio-sms-platform`.
 - [x] Production должен деплоиться только из зафиксированного commit SHA.
 - [ ] Не использовать токены, вставленные в чат. Текущий GitHub token считать скомпрометированным: отозвать и выдать новый минимальный token перед работой с чужим repo.
-- [ ] Не коммитить `.env`, токены, prod dumps, временные scripts, логи, screenshots с секретами.
+- [x] Не коммитить `.env`, токены, prod dumps, временные scripts, логи, screenshots с секретами.
 - [ ] Для repo `fawzi-barakat00728/Twilio-Project-For-Finanical-Company` не пушить историю с author/committer `ksanyok`; использовать sanitized export или rewritten mirror.
 - [x] Перед каждым push проверять `git status --short`, `git log -1 --format=fuller`, `git remote -v`.
 - [ ] После каждого deploy проверять app как пользователь: UI, API, logs, regression.
@@ -39,6 +39,7 @@ Evidence:
 - Production `/server` root inventory before cleanup: 27 candidate debug/check/backfill/root scripts captured.
 - Evidence path: this checklist + `scripts/check-funding-link-cta.mjs`.
 - Regression test inventory captured: local `server/tests` plus SHA-matching production DB-free regression tests.
+- `.gitignore` updated to keep runtime `exports/` and `ecosystem.config.js` out of Git tracking.
 
 ---
 
@@ -113,6 +114,7 @@ Decision notes:
 - Backfill/cleanup scripts already present locally and SHA-matching production: `scripts/backfill_reply_attribution.js`, `server/scripts/backfill642.ts`, `server/scripts/retroactive-closed-task-cleanup.ts`.
 - Root debug/check scripts should be removed from production after backup because they are one-off operational files in `server/` root, not application runtime code.
 - Keep required config files only if they are part of deployment process (`ecosystem.config.js` needs explicit decision because production has both root and `server/` copies).
+- Production `server/ecosystem.config.js` contains plaintext environment secrets; do not transfer to GitHub. Archive and remove from repo working tree, then rely on `.env`/PM2 env for runtime.
 
 ### 2.3 Cleanup
 
@@ -154,6 +156,7 @@ Evidence:
 - Untracked areas include root/server debug scripts, `server/src/realtime`, new services/jobs/webhook utilities, and multiple `server/tests/*.test.ts`.
 - SHA compare: 25/32 modified production files match local GitHub exactly.
 - SHA compare: key untracked source/test/realtime files match local GitHub exactly, including `server/src/realtime/socket.ts` and DB-free regression tests.
+- `exports/` is production data/export output; preserve in place and ignore via `.gitignore` rather than deleting.
 - Remaining 7 modified mismatches are production stale vs local GitHub: `client/src/pages/CampaignDetailPage.tsx`, `client/src/pages/CampaignsPage.tsx`, `client/src/services/api.ts`, `client/src/types/index.ts`, `server/src/controllers/inboxController.ts`, `server/src/index.ts`, `server/src/services/aiService.ts`.
 - Local GitHub contains newer fixes in those 7 files: responsive campaign UI/actions, AI types/feedback API, Inbox AI priority/rep stats/ownership/unread fixes, Socket.IO ownership guard, and HOT classification trigger expansion.
 
@@ -233,9 +236,10 @@ Acceptance:
 Клиент: unverifiable until commits happen.
 
 - [ ] Проверить committed files на secrets: `.env`, Twilio SID/token, Anthropic/OpenAI keys, DB URL, GitHub token.
+- [x] Проверить committed files на secrets: `.env`, Twilio SID/token, Anthropic/OpenAI keys, DB URL, GitHub token.
 - [ ] Проверить git history последних commits на случайное попадание secrets.
-- [ ] Проверить production-only files перед переносом в repo.
-- [ ] Добавить/обновить `.gitignore`, если надо.
+- [x] Проверить production-only files перед переносом в repo.
+- [x] Добавить/обновить `.gitignore`, если надо.
 - [ ] Если token попал в публичный канал — revoke/rotate.
 
 Acceptance:
@@ -244,6 +248,12 @@ Acceptance:
 - [ ] No secrets in staged diffs.
 - [ ] Sensitive prod values только в env/settings.
 - [ ] Chat-exposed GitHub token revoked/replaced.
+
+Evidence:
+
+- Production-only `server/ecosystem.config.js` inspected and classified as secrets-bearing config; it must be archived/removed, not committed.
+- `.gitignore` now covers `exports/` and `ecosystem.config.js`.
+- Staged diffs contain ignore/checklist changes only, no secret values.
 
 ---
 
@@ -581,14 +591,15 @@ Do not send until all acceptance checks are complete.
 
 ## Progress log
 
-| Date       | Area                  | Change                                                   | Commit SHA | Verification                                                   | Status |
-| ---------- | --------------------- | -------------------------------------------------------- | ---------- | -------------------------------------------------------------- | ------ |
-| 2026-04-28 | Checklist             | Created remediation checklist                            | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                        | Done   |
-| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | 45e56b9    | `get_errors` clean; `client npm run build` passed              | Done   |
-| 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers         | Done   |
-| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3  | Done   |
-| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors        | Done   |
-| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers              | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked               | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match         | Done   |
-| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass | Done   |
+| Date       | Area                  | Change                                                   | Commit SHA | Verification                                                    | Status |
+| ---------- | --------------------- | -------------------------------------------------------- | ---------- | --------------------------------------------------------------- | ------ |
+| 2026-04-28 | Checklist             | Created remediation checklist                            | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                         | Done   |
+| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring  | 45e56b9    | `get_errors` clean; `client npm run build` passed               | Done   |
+| 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers          | Done   |
+| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3   | Done   |
+| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors         | Done   |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers               | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked                | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match          | Done   |
+| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass  | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | Pending    | Prevents production exports/config from appearing in git status | Done   |

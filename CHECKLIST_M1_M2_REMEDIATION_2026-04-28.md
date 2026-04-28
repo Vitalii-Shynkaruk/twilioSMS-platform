@@ -591,4 +591,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers              | Done   |
 | 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked               | Done   |
 | 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match         | Done   |
-| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | Pending    | Server build pass; client build pass; 13 files / 45 tests pass | Done   |
+| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass | Done   |

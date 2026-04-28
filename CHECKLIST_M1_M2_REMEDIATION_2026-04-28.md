@@ -695,10 +695,10 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `34e62a9` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9` with fresh `server` and `client` builds on production.
+- Latest production source: `74f472f` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9`, then stale-DNC-visibility / opt-in-normalization fast-forward `34e62a9..74f472f` with fresh `server` and `client` builds on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
-- PM2: `sms-api` online after restart; restart count `15`.
+- PM2: `sms-api` online after restart; restart count `16`.
 - Production runtime logs: PM2 `out`/`error` tails were empty immediately after deploy; no fresh runtime errors were emitted after restart.
 - Latest CI proof: run `25068339405`, commit `b2572de`, jobs completed successfully.
 - Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
@@ -710,6 +710,9 @@ Evidence:
 - Uploaded handoff archive verification: `scl-handoff-2026-4-25.rar` contains the same `classifier_prompt_v4_LOCKED.md` as the live `SCL-HandOff/` folder, so the prompt file itself was not the regression source.
 - Latest handoff-alignment fix: commit `34e62a9` removes old deterministic HOT upgrades that contradicted locked v4 (`bare email` / `bare yes` no longer auto-promote to HOT), upgrades fallback suggestions to objection-aware Gap Selling phrasing, and keeps unread DNC replies visible in default Inbox filters until they are read.
 - Production evidence for client screenshots: `Reinforce Tools` (`cmo0m0skg04pyzo0ze7y1siwe`) had `aiClassification=null` and `aiSuggestions=null` at inspection time, so the generic “predatory MCA” reply shown in the screenshot was not persisted AI output; `SG ECHO LLC` / Patricia Ann Kaelin (`cmoj0561t08a4zo2sugztfeek`) remains assigned to Marcos while the lead is `DNC` + `optedOut=true`, which explains why the thread dropped out of the normal inbox flow after the removal request.
+- Twilio verification for the newly surfaced inbox replies: both `ROBBY 2025 / STAINLESS VALVE CO` (`START`, sid `SM8a2d22907979efa09bb51f84a18cf83b`) and `Jason Faraj / Woodland Creek` (`Okay`, sid `SM91f71ed97aca21d1561f8ff8f6fdb393`) are real inbound Twilio messages from 2026-04-15, not UI-generated phantom replies.
+- Latest inbox cleanup fix: commit `74f472f` narrows unread DNC visibility in default inbox scopes to a recent 7-day window so old hidden DNC backlog does not suddenly flood reps after the SG ECHO visibility fix.
+- Latest opt-in normalization fix: commit `74f472f` updates `ComplianceService.handleOptIn()` so `START/UNSTOP/SUBSCRIBE` clears DNC suppression state (`optedOut`, `isSuppressed`, `suppressionEntry`, `conversation.leadStatus`) instead of leaving a re-subscribed lead logically stuck in DNC.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -764,3 +767,6 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Production Deploy     | Deployed AI suggestion fallback restore fix to production   | 9f6e478    | Audrey/Jamie API checks now return `aiSuggestionsCount=1`             | Done    |
 | 2026-04-28 | AI / Inbox Alignment  | Restored locked-v4 handoff behavior + unread DNC visibility | 34e62a9    | AI tests 10/10 + visibility test 1/1 + server build passed            | Done    |
 | 2026-04-28 | Production Deploy     | Deployed handoff-gap-selling / inbox visibility fix         | 34e62a9    | Production SHA 34e62a9; PM2 online; SG ECHO + Reinforce checks logged | Done    |
+| 2026-04-28 | Inbox Backlog Guard   | Limited stale unread DNC backlog in default inbox scopes    | 74f472f    | Visibility test 1/1 + server build passed                             | Done    |
+| 2026-04-28 | Compliance Opt-In Fix | START now clears DNC / suppression state for re-subscribes  | 74f472f    | Compliance regression added; TS build passed                          | Done    |
+| 2026-04-28 | Production Deploy     | Deployed stale-DNC visibility + opt-in normalization fix    | 74f472f    | Production SHA 74f472f; PM2 online; Twilio SIDs verified              | Done    |

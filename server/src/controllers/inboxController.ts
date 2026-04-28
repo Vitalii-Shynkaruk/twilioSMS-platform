@@ -185,7 +185,7 @@ export class InboxController {
   private static triggerOwnerActionReclassification(
     req: AuthRequest,
     conversationId: string,
-    reason: 'status_update' | 'note_added' | 'pipeline_added',
+    reason: 'status_update' | 'note_added' | 'pipeline_added' | 'reply_sent',
     repId: string | null,
   ): void {
     if (!config.ai.classificationEnabled) return;
@@ -1598,6 +1598,9 @@ export class InboxController {
       }
     }
 
+    const effectiveAssignedRepId =
+      conversation.assignedRepId || conversation.lead.assignedRepId || (req.user?.role === 'REP' ? req.user.id : null);
+
     let messageId: string;
     try {
       messageId = await SendingEngine.queueMessage({
@@ -1664,12 +1667,14 @@ export class InboxController {
         body: body.trim(),
       });
       // Also notify inbox channel for conversation list refresh
-      if (conversation.assignedRepId) {
-        io.to(`inbox:${conversation.assignedRepId}`).emit('new-message', {
+      if (effectiveAssignedRepId) {
+        io.to(`inbox:${effectiveAssignedRepId}`).emit('new-message', {
           conversationId: id,
         });
       }
     }
+
+    InboxController.triggerOwnerActionReclassification(req, id, 'reply_sent', effectiveAssignedRepId);
 
     res.json({ messageId, status: 'queued' });
   }

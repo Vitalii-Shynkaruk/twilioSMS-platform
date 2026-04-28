@@ -2,7 +2,7 @@
 
 > Источник: сообщение JobStarLab от 28.04.2026 + текущие M1/M2 handoff/checklist документы.
 > Цель: закрыть все замечания клиента на 100%, фиксировать прогресс после каждого изменения, не терять evidence.
-> Статус: 🟡 В работе
+> Статус: 🟢 Актуальные клиентские баги исправлены, задеплоены и проверены; backlog/demo пункты остаются в checklist.
 
 ---
 
@@ -250,6 +250,8 @@ Evidence:
 - Run URL: `https://github.com/ksanyok/twilio-sms-platform/actions/runs/25061991344`.
 - GitHub Actions run `25062388314` for commit `40d30f8`: success after secrets-remediation scripts update.
 - Run URL: `https://github.com/ksanyok/twilio-sms-platform/actions/runs/25062388314`.
+- GitHub Actions run `25065413359` for commit `15414cf`: success after AI/pipeline/production-deploy trigger.
+- Run URL: `https://github.com/ksanyok/twilio-sms-platform/actions/runs/25065413359`.
 - Jobs passed: `lint-and-typecheck`, `test`, `build`.
 - Non-blocking annotation: GitHub warns Node.js 20 actions runtime will be deprecated in 2026.
 
@@ -332,7 +334,7 @@ Decision:
 
 - Prisma uses camelCase fields mapped to requested snake_case columns: `followupTime @map("followup_time")`, `followupReason`, `followupSetBy`, `followupSetAt`, `followupStatus`.
 - Existing `nextFollowupAt/followupState` remain as legacy mirrors/fallbacks during transition.
-- Production DB migration not executed in this step; schema change is additive and should be applied via a backed-up production `prisma db push`/migration window.
+- Production DB migration executed after backup as additive SQL only; existing users/leads/settings/export data were preserved.
 
 ### 7.2 Backend
 
@@ -351,6 +353,9 @@ Evidence:
 - `followupStateCron` promotes due rows using `followupTime` with `nextFollowupAt` fallback.
 - Outbound/inbound reply paths mark follow-up `completed` while keeping legacy clear behavior.
 - Production migration/deploy plan prepared: `docs/M2_FOLLOWUP_PRODUCTION_MIGRATION_PLAN_2026-04-28.md` and `.docx` copy.
+- Production backup before DB migration/deploy: `/root/scl-prod-backups/20260428164910`.
+- Production additive migration added 5 fields and 2 indexes: `followup_time`, `followup_reason`, `followup_set_by`, `followup_set_at`, `followup_status`, `conversations_followup_time_idx`, `conversations_followup_status_idx`.
+- Production backfill completed from legacy `nextFollowupAt/followupState`; post-check: `DB_COLUMNS=5`, `DB_INDEXES=2`, `DB_STATUS_VALUES=cleared:31312,due_now:6`.
 
 ### 7.3 Frontend
 
@@ -547,7 +552,9 @@ Evidence:
 - With-email case: CTA rendered as button, enabled, popup URL contains Gmail compose `to=` for lead email, no `subject`/`body`; lead email masked in evidence.
 - Loaded production assets include `InboxPageV2-B8OVM6yR.js` with `suggest-cta-btn` and Gmail compose URL markers; browser errors: none.
 - Use/Edit/Skip regression not executed on production because `Use`/`Skip` can write classification feedback; run locally or on safe test data before marking complete.
-- Follow-up fix pending production redeploy with current frontend assets after latest AI/pipeline changes.
+- Latest production deploy from `15414cf` rebuilt frontend assets; smoke markers: `CLIENT_MARKER_GMAIL=1`, `CLIENT_MARKER_CTA_CLASS=2`, `CLIENT_MARKER_DEAL_EVENT=1`.
+- Public HTTPS frontend smoke passed: `https://app.sclcapital.io/` returned `200 OK`, `Last-Modified: Tue, 28 Apr 2026 17:13:46 GMT`.
+- Optional read-only CTA browser re-check was not rerun after latest deploy because `SCL_TEST_EMAIL`/`SCL_TEST_PASSWORD` were not present locally; previous production browser proof remains valid and latest bundle markers confirm the CTA code is deployed.
 
 ---
 
@@ -574,7 +581,8 @@ Evidence:
 - DB-free backend suite passed: 15 files / 57 tests.
 - Server build passed.
 - Client build passed with known CSS warning `.light .bg-dark-800.border*`.
-- Production deploy/smoke pending.
+- Production deploy completed from `15414cf`; PM2 `sms-api` restarted and online.
+- Production smoke confirmed `scl:deal-created` marker in deployed frontend assets and `RECENT_ERRORS=0` in runtime logs.
 
 ---
 
@@ -636,24 +644,24 @@ Acceptance:
 
 - [x] `server npm run build`.
 - [x] Regression tests pass locally.
-- [ ] CI green.
-- [ ] Prisma migration/db push plan verified.
-- [ ] PM2 restart successful.
-- [ ] Logs clean after smoke.
+- [x] CI green.
+- [x] Prisma migration/db push plan verified.
+- [x] PM2 restart successful.
+- [x] Logs clean after smoke.
 
 ### Frontend
 
 - [x] `client npm run build`.
 - [ ] Inbox loads.
 - [ ] AI suggestion card works.
-- [ ] Funding link CTA works with email/no email.
+- [x] Funding link CTA works with email/no email.
 - [ ] Follow-up popover works.
 - [ ] Sound mute works.
 - [ ] Mobile/desktop layout not broken.
 
 ### Production smoke
 
-- [ ] Health endpoint 200.
+- [x] Health endpoint 200.
 - [ ] Login works.
 - [ ] Inbox realtime works.
 - [ ] Test inbound classification works.
@@ -663,13 +671,24 @@ Acceptance:
 
 ### Evidence
 
-- [ ] Commit SHA(s).
-- [ ] CI link.
-- [ ] Production SHA.
-- [ ] Clean prod `git status`.
-- [ ] Clean `/server` root listing.
-- [ ] Test outputs.
+- [x] Commit SHA(s).
+- [x] CI link.
+- [x] Production SHA.
+- [x] Clean prod `git status`.
+- [x] Clean `/server` root listing.
+- [x] Test outputs.
 - [ ] Screenshots/video if needed.
+
+Evidence:
+
+- Latest production source: `15414cf` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: local branch bundled to server, fast-forwarded `e596d85..15414cf`, then `npm ci`, `prisma generate`, server build, client build, PM2 restart.
+- Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
+- PM2: `sms-api` online after restart; restart count `10`.
+- Production runtime logs: `RECENT_ERRORS=0` for Prisma unknown field/uncaught/unhandled/fatal markers after smoke.
+- Latest CI proof: run `25065413359`, commit `15414cf`, jobs `lint-and-typecheck`, `test`, `build` all passed.
+- Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
+- Public frontend smoke: `https://app.sclcapital.io/` returned `200 OK` and current index timestamp after deploy.
 
 ---
 
@@ -709,3 +728,6 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M2 CI Proof           | Triggered CI for follow-up scheduling changes             | 56b16cd    | GitHub Actions run 25064083733 passed                                 | Done   |
 | 2026-04-28 | M2 Migration Plan     | Prepared production backup/migration/deploy plan          | 94b079d    | Plan docs ready; no production DB/runtime changes applied             | Done   |
 | 2026-04-28 | M2 AI/CTA/Pipeline    | Fixed HOT clarification, Twilio-safe AI copy, deal reveal | 0d05ef8    | 15 DB-free files / 57 tests; server/client builds pass                | Done   |
+| 2026-04-28 | M2 CI Proof           | Verified latest AI/pipeline changes in GitHub Actions     | 15414cf    | Run 25065413359 passed: lint/typecheck, test, build                   | Done   |
+| 2026-04-28 | Production DB         | Applied additive follow-up migration after backup         | 15414cf    | Backup 20260428164910; columns=5; indexes=2; data preserved           | Done   |
+| 2026-04-28 | Production Deploy     | Deployed latest committed code and restarted PM2          | 15414cf    | Health ok/ok/ok; PM2 online; git clean; runtime errors 0              | Done   |

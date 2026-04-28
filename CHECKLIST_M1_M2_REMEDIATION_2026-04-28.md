@@ -695,15 +695,15 @@ Evidence:
 
 Evidence:
 
-- Latest production source: `74f472f` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
-- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9`, then stale-DNC-visibility / opt-in-normalization fast-forward `34e62a9..74f472f` with fresh `server` and `client` builds on production.
+- Latest production source: `a54c027` on `deploy/mysql-hosting`; production `git status --porcelain` lines: `0`.
+- Production deploy path used committed code only: initial full deploy fast-forwarded `e596d85..15414cf`, then unread-badge frontend-only fast-forward `15414cf..b2572de`, then AI-suggestion reply-refresh fast-forward `b2572de..a5b587f`, then fallback-suggestion restore fast-forward `a5b587f..9f6e478`, then email-suggestion repair fast-forward `9f6e478..064b88d`, then handoff-gap-selling restore fast-forward `064b88d..34e62a9`, then stale-DNC-visibility / opt-in-normalization fast-forward `34e62a9..74f472f`, then sidebar-unread-summary alignment fast-forward `74f472f..a54c027` with fresh `server` and `client` builds on production.
 - Production health: `http://127.0.0.1:3001/api/health` returned `ok/ok/ok` for app/database/redis.
-- PM2: `sms-api` online after restart; restart count `16`.
+- PM2: `sms-api` online after restart; restart count `17`.
 - Production runtime logs: PM2 `out`/`error` tails were empty immediately after deploy; no fresh runtime errors were emitted after restart.
 - Latest CI proof: run `25068339405`, commit `b2572de`, jobs completed successfully.
 - Latest production build proof: server build passed; client build passed with known CSS minify warning `.light .bg-dark-800.border*` only.
 - Public frontend smoke: `https://app.sclcapital.io/` returned `200 OK` and current index timestamp after deploy.
-- Current unread-badge fix: sidebar Inbox badge now uses unread conversation count, matching Inbox/Admin View and the User Guide contract.
+- Current unread-badge fix: sidebar Inbox badge now uses unread conversation count, and commit `a54c027` aligns `/inbox/unread-summary` with the same visibility policy as Inbox/Admin View so the sidebar count no longer includes hidden unread DNC backlog.
 - Latest AI suggestion reply-refresh fix: commit `a5b587f` triggers owner-action reclassification after successful outbound reply; targeted regression `server/tests/inboxReplyReclassification.test.ts` passed 2/2; `server npm run build` passed.
 - Latest AI suggestion restore fix: commit `9f6e478` rebuilds fallback suggestions when classified conversations have an empty `aiSuggestions` array; targeted regression `server/tests/aiSuggestionPolicy.test.ts` passed 5/5; `server npm run build` passed.
 - Production API verification after deploy: previously broken threads `Audrey Berry $150,000.00` (`cmnt61hpb01cxzosfj9e0gj7d`) and `Jamie Johnson` (`cmoiqslus0d9tzo5uwqu6c25a`) now return `aiSuggestionsCount=1` with non-empty fallback text.
@@ -713,6 +713,8 @@ Evidence:
 - Twilio verification for the newly surfaced inbox replies: both `ROBBY 2025 / STAINLESS VALVE CO` (`START`, sid `SM8a2d22907979efa09bb51f84a18cf83b`) and `Jason Faraj / Woodland Creek` (`Okay`, sid `SM91f71ed97aca21d1561f8ff8f6fdb393`) are real inbound Twilio messages from 2026-04-15, not UI-generated phantom replies.
 - Latest inbox cleanup fix: commit `74f472f` narrows unread DNC visibility in default inbox scopes to a recent 7-day window so old hidden DNC backlog does not suddenly flood reps after the SG ECHO visibility fix.
 - Latest opt-in normalization fix: commit `74f472f` updates `ComplianceService.handleOptIn()` so `START/UNSTOP/SUBSCRIBE` clears DNC suppression state (`optedOut`, `isSuppressed`, `suppressionEntry`, `conversation.leadStatus`) instead of leaving a re-subscribed lead logically stuck in DNC.
+- Latest unread-summary alignment fix: commit `a54c027` makes `/inbox/unread-summary` reuse the same `buildVisibilityConditions()` logic as Inbox/Admin View, eliminating the server-side mismatch that previously showed sidebar `9+` while the visible inbox unread count was lower.
+- Production verification after unread-summary deploy: built backend helper `buildUnreadSummaryWhere()` and the Inbox list visibility path both now count the same `7` visible unread conversations (`10` unread messages) in Admin scope, confirming the badge/list logic is aligned even though live counts continue to change with new inbound traffic.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -770,3 +772,5 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Inbox Backlog Guard   | Limited stale unread DNC backlog in default inbox scopes    | 74f472f    | Visibility test 1/1 + server build passed                             | Done    |
 | 2026-04-28 | Compliance Opt-In Fix | START now clears DNC / suppression state for re-subscribes  | 74f472f    | Compliance regression added; TS build passed                          | Done    |
 | 2026-04-28 | Production Deploy     | Deployed stale-DNC visibility + opt-in normalization fix    | 74f472f    | Production SHA 74f472f; PM2 online; Twilio SIDs verified              | Done    |
+| 2026-04-28 | Sidebar Unread Fix    | Aligned sidebar unread-summary with Inbox visibility rules  | a54c027    | Visibility tests 2/2 + server build passed                            | Done    |
+| 2026-04-28 | Production Deploy     | Deployed sidebar unread-summary alignment fix               | a54c027    | Production SHA a54c027; PM2 online; helper/list counts both return 7  | Done    |

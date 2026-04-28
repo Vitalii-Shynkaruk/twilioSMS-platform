@@ -623,4 +623,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass     | Done   |
 | 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | f233db1    | Prevents production exports/config from appearing in git status    | Done   |
 | 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes | Done   |
-| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source    | Pending    | Backup `20260428152107`; git clean; health 200; root candidates 0  | Done   |
+| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source    | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0  | Done   |

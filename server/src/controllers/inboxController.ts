@@ -8,7 +8,7 @@ import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 import { OutboundGateService } from '../services/outboundGateService';
-import { AIService, resolveAiSuggestions } from '../services/aiService';
+import { AIService, extractConversationEmail, resolveAiSuggestions } from '../services/aiService';
 import { resolveFollowupStatus } from '../services/followupPolicy';
 
 type InboxFilter =
@@ -1327,6 +1327,15 @@ export class InboxController {
     const latestDealClient =
       latestSmsDeal && typeof latestSmsDeal === 'object' && 'client' in latestSmsDeal ? latestSmsDeal.client : null;
     const hydratedLead = InboxController.hydrateLeadFromDealClient(conversation.lead, latestDealClient || null);
+    const chronologicalMessages = messages
+      .slice()
+      .reverse()
+      .map((message) => ({ direction: message.direction, body: message.body }));
+    const detectedConversationEmail = extractConversationEmail(chronologicalMessages);
+    const responseLead =
+      detectedConversationEmail && !hydratedLead.email
+        ? { ...hydratedLead, email: detectedConversationEmail }
+        : hydratedLead;
     const statusStrip = {
       hotLead: !!conversation.hotLead,
       pipelineState: latestSmsDeal ? 'in_pipeline' : 'not_in_pipeline',
@@ -1340,9 +1349,9 @@ export class InboxController {
     };
 
     const contactInfo = {
-      email: hydratedLead.email || '',
-      phone: hydratedLead.phone || '',
-      company: hydratedLead.company || '',
+      email: responseLead.email || '',
+      phone: responseLead.phone || '',
+      company: responseLead.company || '',
       source: sourceName,
       product:
         latestSmsDeal && typeof latestSmsDeal === 'object' && 'productType' in latestSmsDeal
@@ -1441,10 +1450,7 @@ export class InboxController {
       suggestions: conversation.aiSuggestions,
       classification: conversation.aiClassification,
       signals: (conversation.aiSignals as Record<string, unknown> | null) || null,
-      messages: messages
-        .slice()
-        .reverse()
-        .map((message) => ({ direction: message.direction, body: message.body })),
+      messages: chronologicalMessages,
     });
     const responseAiSignals = {
       ...(((conversation.aiSignals as Record<string, unknown> | null) || {}) as Record<string, unknown>),
@@ -1459,9 +1465,10 @@ export class InboxController {
     res.json({
       conversation: {
         ...conversation,
+        emailReceived: conversation.emailReceived || !!detectedConversationEmail,
         aiSignals: responseAiSignals,
         aiSuggestions: resolvedAiSuggestions,
-        lead: hydratedLead,
+        lead: responseLead,
         fromNumber,
         fromNumberFriendlyName,
         isInPipeline: !!latestSmsDeal,

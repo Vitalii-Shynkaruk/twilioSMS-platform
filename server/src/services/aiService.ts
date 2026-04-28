@@ -114,6 +114,16 @@ export function getClassificationSkipReason(input: ClassificationEligibilityInpu
   return null;
 }
 
+export function extractEmailAddress(text: string | null | undefined): string | null {
+  const normalized = String(text || '').trim();
+  if (!normalized) return null;
+
+  const match = normalized.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  if (!match?.[0]) return null;
+
+  return match[0].trim().replace(/[>,.;:!?]+$/u, '');
+}
+
 interface DeterministicClassificationInput {
   classification: string;
   latestInboundText?: string | null;
@@ -274,6 +284,18 @@ function extractPreviousOutboundText(messages: SuggestionResolutionMessage[]): s
   return '';
 }
 
+export function extractConversationEmail(messages: SuggestionResolutionMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message.direction || '').toUpperCase() !== 'INBOUND') continue;
+
+    const detectedEmail = extractEmailAddress(message.body);
+    if (detectedEmail) return detectedEmail;
+  }
+
+  return null;
+}
+
 function buildDeterministicFallbackSuggestionText(input: {
   classification?: string | null;
   latestInboundText?: string;
@@ -283,6 +305,7 @@ function buildDeterministicFallbackSuggestionText(input: {
   const latestInboundText = String(input.latestInboundText || '').trim();
   const latestInboundLower = latestInboundText.toLowerCase();
   const previousOutboundLower = String(input.previousOutboundText || '').toLowerCase();
+  const sharedEmail = extractEmailAddress(latestInboundText);
 
   if (classification === 'WRONG_NUMBER') {
     return 'Got it - sorry about that. Is there a better contact for the business, or should I close this out?';
@@ -298,6 +321,10 @@ function buildDeterministicFallbackSuggestionText(input: {
 
   if (/statement|bank statement/i.test(latestInboundLower) || /statement|bank statement/i.test(previousOutboundLower)) {
     return 'Send the statements when you have them and I will review them right away so I can map out the best next step.';
+  }
+
+  if (sharedEmail) {
+    return 'Perfect, I have your email. I will send the terms there now. While you review them, what amount are you looking for so I can line up the right option?';
   }
 
   if (/email/i.test(latestInboundLower) || /email/i.test(previousOutboundLower)) {

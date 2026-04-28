@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractConversationEmail,
   resolveAiSuggestions,
   resolveDeterministicClassification,
   sanitizeAiSuggestionText,
@@ -69,5 +70,29 @@ describe('AI suggestion policy', () => {
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].text).toMatch(/what amount are you looking for/i);
+  });
+
+  it('должна распознавать входящий email и не спрашивать email повторно', () => {
+    const messages = [
+      { direction: 'OUTBOUND', body: "Hey, it's Marcos from SecureCreditLines. Best email to send details?" },
+      { direction: 'INBOUND', body: 'jay@seamoc.com' },
+    ];
+
+    expect(extractConversationEmail(messages)).toBe('jay@seamoc.com');
+
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+        suggestedReply: null,
+        suggestedReengageMessage: null,
+      },
+      messages,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/i have your email/i);
+    expect(suggestions[0].text).not.toMatch(/best email/i);
   });
 });

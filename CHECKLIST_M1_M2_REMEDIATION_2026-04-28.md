@@ -40,6 +40,7 @@ Evidence:
 - Evidence path: this checklist + `scripts/check-funding-link-cta.mjs`.
 - Regression test inventory captured: local `server/tests` plus SHA-matching production DB-free regression tests.
 - `.gitignore` updated to keep runtime `exports/` and `ecosystem.config.js` out of Git tracking.
+- Tracked export CSV files removed from Git index with `git rm --cached`; files stay on disk and production exports must be preserved.
 
 ---
 
@@ -157,6 +158,7 @@ Evidence:
 - SHA compare: 25/32 modified production files match local GitHub exactly.
 - SHA compare: key untracked source/test/realtime files match local GitHub exactly, including `server/src/realtime/socket.ts` and DB-free regression tests.
 - `exports/` is production data/export output; preserve in place and ignore via `.gitignore` rather than deleting.
+- Existing tracked `exports/**` files are being removed from source control without deleting local/production data.
 - Remaining 7 modified mismatches are production stale vs local GitHub: `client/src/pages/CampaignDetailPage.tsx`, `client/src/pages/CampaignsPage.tsx`, `client/src/services/api.ts`, `client/src/types/index.ts`, `server/src/controllers/inboxController.ts`, `server/src/index.ts`, `server/src/services/aiService.ts`.
 - Local GitHub contains newer fixes in those 7 files: responsive campaign UI/actions, AI types/feedback API, Inbox AI priority/rep stats/ownership/unread fixes, Socket.IO ownership guard, and HOT classification trigger expansion.
 
@@ -603,3 +605,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | 65a6171    | 25/32 modified match; key untracked source/tests match          | Done   |
 | 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks            | b165190    | Server build pass; client build pass; 13 files / 45 tests pass  | Done   |
 | 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config             | f233db1    | Prevents production exports/config from appearing in git status | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index               | Pending    | `git rm --cached`; source control only, files preserved on disk | Done   |

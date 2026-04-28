@@ -103,9 +103,15 @@ Additional files found in `/opt/sms-platform/server` root before cleanup:
 
 ### 2.2 Decision
 
-- [ ] Для каждого файла определить: удалить, перенести в repo `server/scripts`, перенести в archive, оставить как required.
-- [ ] Если файл содержит полезную логику/backfill — сначала перенести в GitHub с нормальным именем и документацией.
+- [x] Для каждого файла определить: удалить, перенести в repo `server/scripts`, перенести в archive, оставить как required.
+- [x] Если файл содержит полезную логику/backfill — сначала перенести в GitHub с нормальным именем и документацией.
 - [ ] Если файл одноразовый/debug — удалить с production.
+
+Decision notes:
+
+- Backfill/cleanup scripts already present locally and SHA-matching production: `scripts/backfill_reply_attribution.js`, `server/scripts/backfill642.ts`, `server/scripts/retroactive-closed-task-cleanup.ts`.
+- Root debug/check scripts should be removed from production after backup because they are one-off operational files in `server/` root, not application runtime code.
+- Keep required config files only if they are part of deployment process (`ecosystem.config.js` needs explicit decision because production has both root and `server/` copies).
 
 ### 2.3 Cleanup
 
@@ -131,13 +137,13 @@ Acceptance:
 - [x] Выполнить `git status --short` на production.
 - [x] Сохранить список modified files.
 - [x] Сохранить список untracked files.
-- [ ] Разделить файлы на категории:
-  - [ ] source code changes
-  - [ ] tests
-  - [ ] generated build output
-  - [ ] logs/temp/debug
-  - [ ] secrets/config
-  - [ ] DB/backfill scripts
+- [x] Разделить файлы на категории:
+  - [x] source code changes
+  - [x] tests
+  - [x] generated build output
+  - [x] logs/temp/debug
+  - [x] secrets/config
+  - [x] DB/backfill scripts
 
 Evidence:
 
@@ -145,12 +151,16 @@ Evidence:
 - `git status --short` before cleanup: `32` modified, `55` untracked, `87` total.
 - Modified source/test areas include `client/src/**`, `server/src/**`, `server/prisma/schema.prisma`, `server/package*.json`, `server/tests/api.test.ts`, `server/tests/compliance.test.ts`.
 - Untracked areas include root/server debug scripts, `server/src/realtime`, new services/jobs/webhook utilities, and multiple `server/tests/*.test.ts`.
+- SHA compare: 25/32 modified production files match local GitHub exactly.
+- SHA compare: key untracked source/test/realtime files match local GitHub exactly, including `server/src/realtime/socket.ts` and DB-free regression tests.
+- Remaining 7 modified mismatches are production stale vs local GitHub: `client/src/pages/CampaignDetailPage.tsx`, `client/src/pages/CampaignsPage.tsx`, `client/src/services/api.ts`, `client/src/types/index.ts`, `server/src/controllers/inboxController.ts`, `server/src/index.ts`, `server/src/services/aiService.ts`.
+- Local GitHub contains newer fixes in those 7 files: responsive campaign UI/actions, AI types/feedback API, Inbox AI priority/rep stats/ownership/unread fixes, Socket.IO ownership guard, and HOT classification trigger expansion.
 
 ### 3.2 Bring prod changes into local GitHub repo
 
-- [ ] Для каждого production source change проверить diff.
-- [ ] Нужные изменения перенести локально.
-- [ ] Нужные tests перенести локально.
+- [x] Для каждого production source change проверить diff.
+- [x] Нужные изменения перенести локально.
+- [x] Нужные tests перенести локально.
 - [ ] Generated/temp/log/secrets не переносить.
 - [ ] Собрать feature-wise commits в локальном repo.
 - [ ] Push в `ksanyok/twilio-sms-platform`.
@@ -567,3 +577,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors       | Done   |
 | 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | dbad889    | NODE_ENV production; health 200; no stack markers             | Done   |
 | 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | dbad889    | 27 server root files; 32 modified + 55 untracked              | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub              | Pending    | 25/32 modified match; key untracked source/tests match        | Done   |

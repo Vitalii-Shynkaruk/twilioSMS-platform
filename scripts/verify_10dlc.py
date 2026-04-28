@@ -1,7 +1,13 @@
 import requests
+import os
+import sys
 
-ACCOUNT_SID = "AC20b8b8e9f1c3dad7910b4d32d8c6c672"
-AUTH_TOKEN = "cb26edca7d49ea222123f61462b6866c"
+ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+
+if not ACCOUNT_SID or not AUTH_TOKEN:
+    sys.exit("Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN before running this script.")
+
 auth = (ACCOUNT_SID, AUTH_TOKEN)
 
 MS_SID = "MG48c7bd2baa8c738b9a19c910fea22903"

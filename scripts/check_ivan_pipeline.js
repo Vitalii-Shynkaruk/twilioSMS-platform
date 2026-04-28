@@ -1,5 +1,13 @@
 const http = require('http');
 
+const ADMIN_EMAIL = process.env.SCL_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.SCL_ADMIN_PASSWORD;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+  console.error('Set SCL_ADMIN_EMAIL and SCL_ADMIN_PASSWORD before running this script.');
+  process.exit(1);
+}
+
 function apiCall(method, path, token, body) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
@@ -23,8 +31,8 @@ function apiCall(method, path, token, body) {
 (async () => {
   // Login as admin
   const login = await apiCall('POST', '/api/auth/login', null, {
-    email: 'admin@securecreditlines.com',
-    password: 'SclAdmin2026!Secure'
+    email: ADMIN_EMAIL,
+    password: ADMIN_PASSWORD
   });
   console.log('Login:', login.token ? 'OK' : 'FAILED', login.error || '');
   if (!login.token) { console.log('Full response:', JSON.stringify(login)); return; }

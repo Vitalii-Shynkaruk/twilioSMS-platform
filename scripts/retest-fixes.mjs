@@ -2,8 +2,12 @@
 import { chromium } from "playwright";
 
 const URL = "https://app.sclcapital.io";
-const EMAIL = "admin@securecreditlines.com";
-const PASS = "SclAdmin2026!Secure";
+const EMAIL = process.env.SCL_ADMIN_EMAIL;
+const PASS = process.env.SCL_ADMIN_PASSWORD;
+
+if (!EMAIL || !PASS) {
+  throw new Error("Set SCL_ADMIN_EMAIL and SCL_ADMIN_PASSWORD before running this script.");
+}
 
 async function main() {
   const browser = await chromium.launch({ headless: true });

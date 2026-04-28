@@ -1,5 +1,13 @@
 const http = require('http');
 
+const ADMIN_EMAIL = process.env.SCL_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.SCL_ADMIN_PASSWORD;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+  console.error('Set SCL_ADMIN_EMAIL and SCL_ADMIN_PASSWORD before running this script.');
+  process.exit(1);
+}
+
 // 1. Login as admin to get a token (we'll pretend to be Stuart via direct API)
 function apiCall(method, path, body, token) {
   return new Promise((resolve, reject) => {
@@ -25,8 +33,8 @@ function apiCall(method, path, body, token) {
 (async () => {
   // Login as admin
   const loginRes = await apiCall('POST', '/api/auth/login', {
-    email: 'admin@securecreditlines.com',
-    password: 'SclAdmin2026!Secure'
+    email: ADMIN_EMAIL,
+    password: ADMIN_PASSWORD
   });
   const token = loginRes.token;
   console.log('Got token:', token ? 'yes' : 'no');

@@ -264,7 +264,7 @@ Acceptance:
 
 Клиент: unverifiable until commits happen.
 
-- [ ] Проверить committed files на secrets: `.env`, Twilio SID/token, Anthropic/OpenAI keys, DB URL, GitHub token.
+- [x] Проверить committed files на secrets: `.env`, Twilio SID/token, Anthropic/OpenAI keys, DB URL, GitHub token.
 - [ ] Проверить git history последних commits на случайное попадание secrets.
 - [x] Проверить production-only files перед переносом в repo.
 - [x] Добавить/обновить `.gitignore`, если надо.
@@ -272,9 +272,9 @@ Acceptance:
 
 Acceptance:
 
-- [ ] No secrets in committed files.
-- [ ] No secrets in staged diffs.
-- [ ] Sensitive prod values только в env/settings.
+- [x] No secrets in committed files.
+- [x] No secrets in staged diffs.
+- [x] Sensitive prod values только в env/settings.
 - [ ] Chat-exposed GitHub token revoked/replaced.
 
 Evidence:
@@ -282,7 +282,12 @@ Evidence:
 - Production-only `server/ecosystem.config.js` inspected and classified as secrets-bearing config; it must be archived/removed, not committed.
 - `.gitignore` now covers `exports/` and `ecosystem.config.js`.
 - Staged diffs contain ignore/checklist changes only, no secret values.
-- Known pending issue: existing audit/browser scripts still need a committed-files secrets pass for hardcoded login credentials.
+- Hardcoded admin credentials removed from committed API/browser audit scripts; scripts now require `SCL_ADMIN_EMAIL` and `SCL_ADMIN_PASSWORD`.
+- Hardcoded Twilio auth tokens removed from 10DLC/A2P scripts; scripts now require `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`.
+- Hardcoded platform JWT cookie removed from `scripts/fix_10dlc.py`; script now requires `SCL_PLATFORM_TOKEN`.
+- Targeted grep no longer finds real hardcoded production password/Twilio token/JWT cookie patterns in `scripts/`.
+- Syntax checks passed: `node --check` for changed JS/MJS scripts; Python `py_compile` for changed Python scripts.
+- Pending: previously exposed tokens/passwords must still be rotated/revoked; history sanitation is required before client target repo mirror.
 
 ---
 
@@ -620,18 +625,19 @@ Do not send until all acceptance checks are complete.
 
 ## Progress log
 
-| Date       | Area                  | Change                                                    | Commit SHA | Verification                                                       | Status |
-| ---------- | --------------------- | --------------------------------------------------------- | ---------- | ------------------------------------------------------------------ | ------ |
-| 2026-04-28 | Checklist             | Created remediation checklist                             | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                            | Done   |
-| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring   | 45e56b9    | `get_errors` clean; `client npm run build` passed                  | Done   |
-| 2026-04-28 | Production CTA        | Found production was serving old static bundle            | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers             | Done   |
-| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change  | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3      | Done   |
-| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script        | 49374b9    | Email/no-email production cases pass; no browser errors            | Done   |
-| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence             | dbad889    | NODE_ENV production; health 200; no stack markers                  | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory           | dbad889    | 27 server root files; 32 modified + 55 untracked                   | Done   |
-| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub               | 65a6171    | 25/32 modified match; key untracked source/tests match             | Done   |
-| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks             | b165190    | Server build pass; client build pass; 13 files / 45 tests pass     | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config              | f233db1    | Prevents production exports/config from appearing in git status    | Done   |
-| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index                | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes | Done   |
-| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source     | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0  | Done   |
-| 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis         | Done   |
+| Date       | Area                  | Change                                                    | Commit SHA | Verification                                                          | Status |
+| ---------- | --------------------- | --------------------------------------------------------- | ---------- | --------------------------------------------------------------------- | ------ |
+| 2026-04-28 | Checklist             | Created remediation checklist                             | 32fdd2e    | Pushed to `origin/deploy/mysql-hosting`                               | Done   |
+| 2026-04-28 | Send Funding Link CTA | Re-checked current `AISuggestions`/`InboxPageV2` wiring   | 45e56b9    | `get_errors` clean; `client npm run build` passed                     | Done   |
+| 2026-04-28 | Production CTA        | Found production was serving old static bundle            | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers                | Done   |
+| 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change  | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3         | Done   |
+| 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script        | 49374b9    | Email/no-email production cases pass; no browser errors               | Done   |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence             | dbad889    | NODE_ENV production; health 200; no stack markers                     | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory           | dbad889    | 27 server root files; 32 modified + 55 untracked                      | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Classified prod dirty files vs local GitHub               | 65a6171    | 25/32 modified match; key untracked source/tests match                | Done   |
+| 2026-04-28 | M1 Tests              | Ran local build and DB-free regression checks             | b165190    | Server build pass; client build pass; 13 files / 45 tests pass        | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Ignored runtime exports and ecosystem config              | f233db1    | Prevents production exports/config from appearing in git status       | Done   |
+| 2026-04-28 | M1 Secrets/Ignore     | Removed runtime export CSVs from Git index                | 2dbf400    | `git rm --cached`; production exports preserved by deploy excludes    | Done   |
+| 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source     | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0     | Done   |
+| 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis            | Done   |
+| 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | Pending    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |

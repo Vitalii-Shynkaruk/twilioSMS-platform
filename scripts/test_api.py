@@ -4,10 +4,16 @@ import requests
 import time
 import json
 import sys
+import os
 
 BASE = "http://localhost:3001/api"
 TOKEN = None
 RESULTS = {"passed": 0, "failed": 0, "errors": []}
+ADMIN_EMAIL = os.environ.get("SCL_ADMIN_EMAIL")
+ADMIN_PASSWORD = os.environ.get("SCL_ADMIN_PASSWORD")
+
+if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+    sys.exit("Set SCL_ADMIN_EMAIL and SCL_ADMIN_PASSWORD before running this script.")
 
 def ok(name, detail=""):
     RESULTS["passed"] += 1
@@ -45,7 +51,7 @@ test("Health", test_health)
 
 def test_login():
     global TOKEN
-    r = requests.post(f"{BASE}/auth/login", json={"email": "admin@securecreditlines.com", "password": "admin123"}, timeout=5)
+    r = requests.post(f"{BASE}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}, timeout=5)
     assert r.status_code == 200, f"status {r.status_code}"
     d = r.json()
     TOKEN = d["token"]

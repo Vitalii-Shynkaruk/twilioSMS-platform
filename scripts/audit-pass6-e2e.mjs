@@ -5,7 +5,11 @@ import path from "path";
 
 const BASE = "https://app.sclcapital.io";
 const OUT = path.join(process.cwd(), "audit-screenshots");
-const ADMIN = { email: "admin@securecreditlines.com", password: "SclAdmin2026!Secure" };
+const ADMIN = { email: process.env.SCL_ADMIN_EMAIL, password: process.env.SCL_ADMIN_PASSWORD };
+
+if (!ADMIN.email || !ADMIN.password) {
+  throw new Error("Set SCL_ADMIN_EMAIL and SCL_ADMIN_PASSWORD before running this script.");
+}
 
 if (!fs.existsSync(OUT)) fs.mkdirSync(OUT, { recursive: true });
 

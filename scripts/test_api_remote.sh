@@ -1,13 +1,23 @@
 #!/bin/bash
 # Test command center API on production
+set -euo pipefail
+
+: "${SCL_ADMIN_EMAIL:?SCL_ADMIN_EMAIL env var required}"
+: "${SCL_ADMIN_PASSWORD:?SCL_ADMIN_PASSWORD env var required}"
+
 cd /opt/sms-platform
 
 TOKEN=$(curl -s -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@securecreditlines.com","password":"SclAdmin2026!Secure"}' \
+  -d "{\"email\":\"$SCL_ADMIN_EMAIL\",\"password\":\"$SCL_ADMIN_PASSWORD\"}" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('token','NO_TOKEN'))")
 
-echo "TOKEN: ${TOKEN:0:30}..."
+if [[ "$TOKEN" == "NO_TOKEN" || -z "$TOKEN" ]]; then
+  echo "Login failed: token not returned"
+  exit 1
+fi
+
+echo "TOKEN: acquired"
 
 echo "--- /api/command-center/metrics ---"
 curl -s "http://localhost:3001/api/command-center/metrics" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool 2>&1 | head -30

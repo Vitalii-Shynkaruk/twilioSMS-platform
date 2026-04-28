@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 import urllib.request, json
+import os
+import sys
 
 BASE = "http://localhost:3001/api"
+ADMIN_EMAIL = os.environ.get("SCL_ADMIN_EMAIL")
+ADMIN_PASSWORD = os.environ.get("SCL_ADMIN_PASSWORD")
+
+if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+    sys.exit("Set SCL_ADMIN_EMAIL and SCL_ADMIN_PASSWORD before running this script.")
 
 # Login
-login_data = json.dumps({"email": "admin@securecreditlines.com", "password": "SclAdmin2026!Secure"}).encode()
+login_data = json.dumps({"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}).encode()
 req = urllib.request.Request(f"{BASE}/auth/login", data=login_data, headers={"Content-Type": "application/json"})
 resp = json.loads(urllib.request.urlopen(req).read())
 token = resp["token"]

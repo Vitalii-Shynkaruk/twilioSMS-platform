@@ -3,9 +3,15 @@
 import urllib.request
 import json
 import base64
+import os
+import sys
 
-SID = "AC20b8b8e9f1c3dad7910b4d32d8c6c672"
-TOKEN = "cb26edca7d49ea222123f61462b6866c"
+SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+
+if not SID or not TOKEN:
+    sys.exit("Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN before running this script.")
+
 auth = base64.b64encode(f"{SID}:{TOKEN}".encode()).decode()
 headers = {"Authorization": f"Basic {auth}"}
 

@@ -1,7 +1,17 @@
 import requests
+import os
+import sys
 
-ACCOUNT_SID = "AC20b8b8e9f1c3dad7910b4d32d8c6c672"
-AUTH_TOKEN = "cb26edca7d49ea222123f61462b6866c"
+ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+PLATFORM_TOKEN = os.environ.get("SCL_PLATFORM_TOKEN")
+
+if not ACCOUNT_SID or not AUTH_TOKEN:
+    sys.exit("Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN before running this script.")
+
+if not PLATFORM_TOKEN:
+    sys.exit("Set SCL_PLATFORM_TOKEN before running this script.")
+
 auth = (ACCOUNT_SID, AUTH_TOKEN)
 
 PHONE_SID = "PNe389d5e2552fe96178a544325db72ce2"
@@ -107,7 +117,7 @@ r = requests.put(
     },
     headers={
         "Content-Type": "application/json",
-        "Cookie": "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        "Authorization": f"Bearer {PLATFORM_TOKEN}",
     }
 )
 print(f"  Status: {r.status_code}")

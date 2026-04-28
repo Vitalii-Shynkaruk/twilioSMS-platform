@@ -95,4 +95,32 @@ describe('AI suggestion policy', () => {
     expect(suggestions[0].text).toMatch(/i have your email/i);
     expect(suggestions[0].text).not.toMatch(/best email/i);
   });
+
+  it('должна чинить сохраненную AI suggestion, если email уже есть в истории треда', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Absolutely. What is the best email to send the terms to? Once I have it, I will send the next steps.',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: "Hey, it's Marcos from SecureCreditLines. Would longer term credit options help the business? Best email to send details?",
+        },
+        { direction: 'INBOUND', body: 'Jay@seamoc.com' },
+        { direction: 'INBOUND', body: 'Received ' },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/i have your email/i);
+    expect(suggestions[0].text).not.toMatch(/what is the best email/i);
+  });
 });

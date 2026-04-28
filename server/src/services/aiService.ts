@@ -300,12 +300,13 @@ function buildDeterministicFallbackSuggestionText(input: {
   classification?: string | null;
   latestInboundText?: string;
   previousOutboundText?: string;
+  sharedEmail?: string | null;
 }): string {
   const classification = String(input.classification || '').toUpperCase();
   const latestInboundText = String(input.latestInboundText || '').trim();
   const latestInboundLower = latestInboundText.toLowerCase();
   const previousOutboundLower = String(input.previousOutboundText || '').toLowerCase();
-  const sharedEmail = extractEmailAddress(latestInboundText);
+  const sharedEmail = extractEmailAddress(latestInboundText) || String(input.sharedEmail || '').trim() || null;
 
   if (classification === 'WRONG_NUMBER') {
     return 'Got it - sorry about that. Is there a better contact for the business, or should I close this out?';
@@ -343,6 +344,60 @@ function buildDeterministicFallbackSuggestionText(input: {
   }
 }
 
+function suggestionRequestsEmail(text: string): boolean {
+  const lower = String(text || '').toLowerCase();
+  if (!lower) return false;
+
+  return /(best email|what('?s| is) the best email|email to send (the )?(terms|details|info)|email for (the )?(terms|details|info))/i.test(
+    lower,
+  );
+}
+
+function repairSuggestionsForInboundContext(input: {
+  suggestions: ResolvedAISuggestion[];
+  classification?: string | null;
+  latestInboundText?: string;
+  previousOutboundText?: string;
+  sharedEmail?: string | null;
+}): ResolvedAISuggestion[] {
+  const sharedEmail = String(input.sharedEmail || '').trim();
+  if (!sharedEmail) return input.suggestions;
+
+  const repairedBestText = sanitizeAiSuggestionText(
+    buildDeterministicFallbackSuggestionText({
+      classification: input.classification,
+      latestInboundText: input.latestInboundText,
+      previousOutboundText: input.previousOutboundText,
+      sharedEmail,
+    }),
+  );
+  if (!repairedBestText) return input.suggestions;
+
+  let changed = false;
+  const repaired = input.suggestions.map((suggestion) => {
+    if (!suggestionRequestsEmail(suggestion.text)) return suggestion;
+    changed = true;
+    return {
+      ...suggestion,
+      text: repairedBestText,
+    };
+  });
+
+  if (!changed) return input.suggestions;
+
+  const deduped: ResolvedAISuggestion[] = [];
+  const seen = new Set<string>();
+  for (const suggestion of repaired) {
+    const dedupeKey = suggestion.text.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    deduped.push(suggestion);
+    if (deduped.length >= 2) break;
+  }
+
+  return deduped;
+}
+
 export function resolveAiSuggestions(input: {
   suggestions?: unknown;
   fallbackSuggestions?: unknown;
@@ -350,35 +405,56 @@ export function resolveAiSuggestions(input: {
   signals?: Record<string, unknown> | null;
   messages?: SuggestionResolutionMessage[];
 }): ResolvedAISuggestion[] {
-  const directSuggestions = normalizeAiSuggestions(input.suggestions);
-  if (directSuggestions.length > 0) return directSuggestions;
-
-  const preservedSuggestions = normalizeAiSuggestions(input.fallbackSuggestions);
-  if (preservedSuggestions.length > 0) return preservedSuggestions;
-
-  const signals = (input.signals || {}) as Record<string, unknown>;
-  const signalSuggestions = normalizeAiSuggestions([
-    {
-      type: 'BEST',
-      text: hasSuggestionText(signals.suggestedReply) ? signals.suggestedReply : '',
-      cta: '→ SEND',
-    },
-    {
-      type: 'ALT',
-      text: hasSuggestionText(signals.suggestedReengageMessage) ? signals.suggestedReengageMessage : '',
-      cta: '→ RE-ENGAGE',
-    },
-  ]);
-  if (signalSuggestions.length > 0) return signalSuggestions;
-
   const chronologicalMessages = Array.isArray(input.messages) ? input.messages : [];
   const latestInboundText = extractLatestInboundText(chronologicalMessages);
   const previousOutboundText = extractPreviousOutboundText(chronologicalMessages);
+  const sharedEmail = extractConversationEmail(chronologicalMessages);
+
+  const directSuggestions = repairSuggestionsForInboundContext({
+    suggestions: normalizeAiSuggestions(input.suggestions),
+    classification: input.classification,
+    latestInboundText,
+    previousOutboundText,
+    sharedEmail,
+  });
+  if (directSuggestions.length > 0) return directSuggestions;
+
+  const preservedSuggestions = repairSuggestionsForInboundContext({
+    suggestions: normalizeAiSuggestions(input.fallbackSuggestions),
+    classification: input.classification,
+    latestInboundText,
+    previousOutboundText,
+    sharedEmail,
+  });
+  if (preservedSuggestions.length > 0) return preservedSuggestions;
+
+  const signals = (input.signals || {}) as Record<string, unknown>;
+  const signalSuggestions = repairSuggestionsForInboundContext({
+    suggestions: normalizeAiSuggestions([
+      {
+        type: 'BEST',
+        text: hasSuggestionText(signals.suggestedReply) ? signals.suggestedReply : '',
+        cta: '→ SEND',
+      },
+      {
+        type: 'ALT',
+        text: hasSuggestionText(signals.suggestedReengageMessage) ? signals.suggestedReengageMessage : '',
+        cta: '→ RE-ENGAGE',
+      },
+    ]),
+    classification: input.classification,
+    latestInboundText,
+    previousOutboundText,
+    sharedEmail,
+  });
+  if (signalSuggestions.length > 0) return signalSuggestions;
+
   const bestText = sanitizeAiSuggestionText(
     buildDeterministicFallbackSuggestionText({
       classification: input.classification,
       latestInboundText,
       previousOutboundText,
+      sharedEmail,
     }),
   );
 

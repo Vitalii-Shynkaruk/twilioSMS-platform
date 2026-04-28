@@ -23,9 +23,9 @@
 
 - [x] Зафиксировать текущий локальный SHA ветки `deploy/mysql-hosting`.
 - [x] Зафиксировать текущий production SHA и `pm2 status`.
-- [ ] Зафиксировать `NODE_ENV`, `CLIENT_URL`, `WEBHOOK_BASE_URL`.
+- [x] Зафиксировать `NODE_ENV`, `CLIENT_URL`, `WEBHOOK_BASE_URL`.
 - [x] Сохранить список production modified/untracked files до cleanup.
-- [ ] Сохранить список файлов `/opt/sms-platform/server` до cleanup.
+- [x] Сохранить список файлов `/opt/sms-platform/server` до cleanup.
 - [ ] Сохранить текущий список regression tests, которые есть локально и на production.
 - [ ] Создать evidence folder/notes для M1/M2 cleanup без секретов.
 
@@ -34,7 +34,9 @@ Evidence:
 - Local SHA: `2d53102` before CTA evidence script commit; CTA code fix is in `45e56b9`; CTA evidence script commit is `49374b9`.
 - Production SHA: `/opt/sms-platform` currently `main` at `3b8c055`, remote `Jbaker-SCL/scl-platform`.
 - Production PM2: `sms-api` online; 87 dirty/untracked git status lines captured before cleanup.
+- Production env markers: `.env` has `NODE_ENV=production`; `CLIENT_URL` and `WEBHOOK_BASE_URL` are set; PM2 env has `NODE_ENV=production`.
 - Production frontend: Nginx serves `/opt/sms-platform/client/dist`; static dist backup created at `/tmp/scl-client-dist-20260428143951.tgz` before CTA static deploy.
+- Production `/server` root inventory before cleanup: 27 candidate debug/check/backfill/root scripts captured.
 - Evidence path: this checklist + `scripts/check-funding-link-cta.mjs`.
 
 ---
@@ -43,18 +45,25 @@ Evidence:
 
 Клиент: PASS, но нужно сохранить доказательство.
 
-- [ ] Проверить `/opt/sms-platform/server/.env`: `NODE_ENV=production`.
-- [ ] Проверить `pm2 show sms-api` / `pm2 env`: процесс online и env production.
-- [ ] Проверить API health на `https://app.sclcapital.io/api/health`.
-- [ ] Проверить отсутствие dev stack traces на ошибочном API request.
-- [ ] Занести evidence в checklist.
+- [x] Проверить `/opt/sms-platform/server/.env`: `NODE_ENV=production`.
+- [x] Проверить `pm2 show sms-api` / `pm2 env`: процесс online и env production.
+- [x] Проверить API health на `https://app.sclcapital.io/api/health`.
+- [x] Проверить отсутствие dev stack traces на ошибочном API request.
+- [x] Занести evidence в checklist.
 
 Acceptance:
 
-- [ ] `NODE_ENV=production` подтверждено.
-- [ ] `sms-api` online.
-- [ ] Health endpoint отвечает 200.
-- [ ] Ошибки API не раскрывают stack trace.
+- [x] `NODE_ENV=production` подтверждено.
+- [x] `sms-api` online.
+- [x] Health endpoint отвечает 200.
+- [x] Ошибки API не раскрывают stack trace.
+
+Evidence:
+
+- `.env`: `NODE_ENV=production`; `CLIENT_URL`/`WEBHOOK_BASE_URL` set without printing values.
+- PM2 env: `NODE_ENV=production`; PM2 status: `sms-api` online.
+- `https://app.sclcapital.io/api/health` returns `200`.
+- `GET /api/inbox` without auth returns `401 {"error":"Authentication required"}`; stack markers found: `0`.
 
 ---
 
@@ -64,29 +73,33 @@ Acceptance:
 
 ### 2.1 Inventory
 
-- [ ] Найти все `.bak`, `.new`, `.tmp`, debug/check/test scripts в `/opt/sms-platform/server`.
-- [ ] Сверить список клиента:
-  - [ ] `wayne.js`
-  - [ ] `check3.js`
-  - [ ] `check_alerts.js`
-  - [ ] `check_camp.js`
-  - [ ] `check_hammad_filter.js`
-  - [ ] `check_more.js`
-  - [ ] `check_retarget.js`
-  - [ ] `check_two.js`
-  - [ ] `check_unreads.js`
-  - [ ] `debug_filter.js`
-  - [ ] `find_replies.js`
-  - [ ] `reclass.js`
-  - [ ] `rescore.js`
-  - [ ] `scan_lost.js`
-  - [ ] `sync_lead_assigned.js`
-  - [ ] `test_inbox.js`
-  - [ ] `twstat.js`
-  - [ ] `verify_reply.js`
-  - [ ] `backfill_assigned_rep.js`
-  - [ ] `backfill_lost_unread.js`
-  - [ ] `backfill_tmp.js`
+- [x] Найти все `.bak`, `.new`, `.tmp`, debug/check/test scripts в `/opt/sms-platform/server`.
+- [x] Сверить список клиента:
+  - [x] `wayne.js`
+  - [x] `check3.js`
+  - [x] `check_alerts.js`
+  - [x] `check_camp.js`
+  - [x] `check_hammad_filter.js`
+  - [x] `check_more.js`
+  - [x] `check_retarget.js`
+  - [x] `check_two.js`
+  - [x] `check_unreads.js`
+  - [x] `debug_filter.js`
+  - [x] `find_replies.js`
+  - [x] `reclass.js`
+  - [x] `rescore.js`
+  - [x] `scan_lost.js`
+  - [x] `sync_lead_assigned.js`
+  - [x] `test_inbox.js`
+  - [x] `twstat.js`
+  - [x] `verify_reply.js`
+  - [x] `backfill_assigned_rep.js`
+  - [x] `backfill_lost_unread.js`
+  - [x] `backfill_tmp.js`
+
+Additional files found in `/opt/sms-platform/server` root before cleanup:
+
+- `audit.js`, `ecosystem.config.js`, `revive_bucket_jb.js`, `revive_check_jb.js`, `revive_count_compare.js`, `vitest.config.ts`.
 
 ### 2.2 Decision
 
@@ -115,9 +128,9 @@ Acceptance:
 
 ### 3.1 Audit prod git state
 
-- [ ] Выполнить `git status --short` на production.
-- [ ] Сохранить список modified files.
-- [ ] Сохранить список untracked files.
+- [x] Выполнить `git status --short` на production.
+- [x] Сохранить список modified files.
+- [x] Сохранить список untracked files.
 - [ ] Разделить файлы на категории:
   - [ ] source code changes
   - [ ] tests
@@ -125,6 +138,13 @@ Acceptance:
   - [ ] logs/temp/debug
   - [ ] secrets/config
   - [ ] DB/backfill scripts
+
+Evidence:
+
+- Production repo: `/opt/sms-platform`, branch `main`, SHA `3b8c055`, remote `https://github.com/Jbaker-SCL/scl-platform.git`.
+- `git status --short` before cleanup: `32` modified, `55` untracked, `87` total.
+- Modified source/test areas include `client/src/**`, `server/src/**`, `server/prisma/schema.prisma`, `server/package*.json`, `server/tests/api.test.ts`, `server/tests/compliance.test.ts`.
+- Untracked areas include root/server debug scripts, `server/src/realtime`, new services/jobs/webhook utilities, and multiple `server/tests/*.test.ts`.
 
 ### 3.2 Bring prod changes into local GitHub repo
 
@@ -545,3 +565,5 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | Production CTA        | Found production was serving old static bundle           | N/A        | Browser check: legacy `.sug-cta`, no Gmail URL markers        | Done   |
 | 2026-04-28 | Production CTA        | Deployed frontend `client/dist` only, no data/API change | 2d53102    | Backup `/tmp/scl-client-dist-20260428143951.tgz`; markers = 3 | Done   |
 | 2026-04-28 | Send Funding Link CTA | Added read-only Playwright CTA verification script       | 49374b9    | Email/no-email production cases pass; no browser errors       | Done   |
+| 2026-04-28 | M1 Production Mode    | Captured production env/health/error evidence            | Pending    | NODE_ENV production; health 200; no stack markers             | Done   |
+| 2026-04-28 | M1 Prod Hygiene       | Captured `/server` root and git dirty inventory          | Pending    | 27 server root files; 32 modified + 55 untracked              | Done   |

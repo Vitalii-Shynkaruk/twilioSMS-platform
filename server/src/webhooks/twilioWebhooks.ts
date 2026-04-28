@@ -234,10 +234,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       select: { mobilePhone: true },
     });
     const envSuppressed = parseRepTestPhoneAllowlist(process.env.REP_TEST_PHONE_ALLOWLIST);
-    const suppressedNumbers = [
-      ...repMobiles.map((u) => String(u.mobilePhone || '')),
-      ...envSuppressed,
-    ];
+    const suppressedNumbers = [...repMobiles.map((u) => String(u.mobilePhone || '')), ...envSuppressed];
     const suppressRepOrTestNumber = isRepOrTestPhoneNumber(From, suppressedNumbers);
 
     // Find the lead by phone number (exact + normalized variants)
@@ -289,6 +286,8 @@ router.post('/inbound', async (req: Request, res: Response) => {
           lastDirection: 'inbound',
           unreadCount: { increment: 1 },
           nextFollowupAt: null,
+          followupTime: null,
+          followupStatus: 'completed',
           ...(inboundTwilioNumber?.id
             ? {
                 twilioNumberId: inboundTwilioNumber.id,

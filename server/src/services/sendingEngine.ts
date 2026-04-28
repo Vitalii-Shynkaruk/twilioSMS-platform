@@ -639,7 +639,13 @@ export class SendingEngine {
           });
           await prisma.conversation.update({
             where: { id: msg.conversationId },
-            data: { lastMessageAt: new Date(), lastDirection: 'outbound', nextFollowupAt: null },
+            data: {
+              lastMessageAt: new Date(),
+              lastDirection: 'outbound',
+              nextFollowupAt: null,
+              followupTime: null,
+              followupStatus: 'completed',
+            },
           });
 
           // Auto-move pipeline card to Contacted stage
@@ -725,7 +731,13 @@ export class SendingEngine {
         });
         await prisma.conversation.update({
           where: { id: msg.conversationId },
-          data: { lastMessageAt: new Date(), lastDirection: 'outbound', nextFollowupAt: null },
+          data: {
+            lastMessageAt: new Date(),
+            lastDirection: 'outbound',
+            nextFollowupAt: null,
+            followupTime: null,
+            followupStatus: 'completed',
+          },
         });
 
         // Auto-move pipeline card to Contacted stage

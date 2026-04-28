@@ -165,6 +165,9 @@ export const updateConversationStatusSchema = z.object({
   leadStatus: z.enum(['Interested', 'Not Interested', 'DNC', '']).optional(),
   emailReceived: z.boolean().optional(),
   nextFollowupAt: z.string().datetime().nullable().optional(),
+  followupTime: z.string().datetime().nullable().optional(),
+  followupReason: z.string().max(1000).trim().nullable().optional(),
+  followupStatus: z.enum(['scheduled', 'due_now', 'completed', 'cleared']).optional(),
 });
 
 // Phase 1: Заметки к разговору

@@ -176,6 +176,9 @@ export const inboxApi = {
       leadStatus?: string;
       emailReceived?: boolean;
       nextFollowupAt?: string | null;
+      followupTime?: string | null;
+      followupReason?: string | null;
+      followupStatus?: 'scheduled' | 'due_now' | 'completed' | 'cleared';
     },
   ) => api.patch(`/inbox/${id}/status`, data),
 

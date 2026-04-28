@@ -113,6 +113,10 @@ function getFollowBadge(nextFollowupAt?: string | null) {
   return '⏱ Follow-Up';
 }
 
+function getConversationFollowupAt(conv: Conversation): string | null {
+  return conv.followupTime || conv.nextFollowupAt || null;
+}
+
 function getConversationBadges(conv: Conversation): Array<{ label: string; cls: string }> {
   const badges: Array<{ label: string; cls: string }> = [];
   if (conv.hotLead) badges.push({ label: '🔥 Hot', cls: 'inbox-badge-hot' });
@@ -120,7 +124,7 @@ function getConversationBadges(conv: Conversation): Array<{ label: string; cls: 
   if (conv.leadStatus === 'Interested') badges.push({ label: '✓ Interested', cls: 'inbox-badge-interested' });
   if (conv.isInPipeline) badges.push({ label: '→ In Pipeline', cls: 'inbox-badge-pipeline' });
   if (conv.leadStatus === 'DNC') badges.push({ label: '⛔ DNC', cls: 'inbox-badge-dnc' });
-  const follow = getFollowBadge(conv.nextFollowupAt);
+  const follow = getFollowBadge(getConversationFollowupAt(conv));
   if (follow) {
     const cls = follow.includes('Overdue') ? 'inbox-badge-overdue' : 'inbox-badge-followup';
     badges.push({ label: follow, cls });
@@ -178,6 +182,7 @@ export default function InboxPage() {
   // Инициализируем campaign filter прямо из URL (ленивый initializer, без useEffect)
   const [campaignFilter, setCampaignFilter] = useState<string | null>(() => searchParams.get('campaign'));
   const [inboxScope, setInboxScope] = useState<'admin' | 'mine'>(() => (isAdminOrManager ? 'admin' : 'mine'));
+  const effectiveInboxScope = isAdminOrManager ? inboxScope : 'mine';
 
   // Обработка ?campaign=ID и ?lead=ID — очищаем URL после считывания
   useEffect(() => {
@@ -200,12 +205,6 @@ export default function InboxPage() {
         .catch(() => {});
     }
   }, [queryClient, searchParams, setSearchParams]);
-
-  useEffect(() => {
-    if (!isAdminOrManager && inboxScope !== 'mine') {
-      setInboxScope('mine');
-    }
-  }, [isAdminOrManager, inboxScope]);
 
   useEffect(() => {
     if (!socket || !selectedId) return;
@@ -267,8 +266,21 @@ export default function InboxPage() {
 
   const selectedSort = SORT_OPTIONS.find((option) => option.id === sort) || SORT_OPTIONS[0];
 
-  const { data: convData, isLoading } = useQuery({
-    queryKey: ['inbox-conversations', debouncedSearch, filter, sort, page, campaignFilter, inboxScope, isAdminOrManager],
+  const {
+    data: convData,
+    isLoading,
+    dataUpdatedAt: conversationsUpdatedAt,
+  } = useQuery({
+    queryKey: [
+      'inbox-conversations',
+      debouncedSearch,
+      filter,
+      sort,
+      page,
+      campaignFilter,
+      effectiveInboxScope,
+      isAdminOrManager,
+    ],
     queryFn: async () => {
       const params: Record<string, string> = {
         page: String(page),
@@ -279,7 +291,7 @@ export default function InboxPage() {
       };
       if (debouncedSearch) params.search = debouncedSearch;
       if (campaignFilter) params.campaignId = campaignFilter;
-      if (isAdminOrManager) params.scope = inboxScope;
+      if (isAdminOrManager) params.scope = effectiveInboxScope;
       const { data } = await inboxApi.listConversations(params);
       return data;
     },
@@ -291,8 +303,10 @@ export default function InboxPage() {
   const sortedConversations = useMemo(() => {
     if (sort !== 'ai_priority') return conversations;
     return [...conversations].sort((a, b) => {
-      const overdueA = a.nextFollowupAt && new Date(a.nextFollowupAt).getTime() < Date.now() ? 2000 : 0;
-      const overdueB = b.nextFollowupAt && new Date(b.nextFollowupAt).getTime() < Date.now() ? 2000 : 0;
+      const followupA = getConversationFollowupAt(a);
+      const followupB = getConversationFollowupAt(b);
+      const overdueA = followupA && new Date(followupA).getTime() < conversationsUpdatedAt ? 2000 : 0;
+      const overdueB = followupB && new Date(followupB).getTime() < conversationsUpdatedAt ? 2000 : 0;
       const sa = overdueA + (a.aiClassification === 'HOT' ? 1000 : 0) + (a.aiLeadScore ?? 0);
       const sb = overdueB + (b.aiClassification === 'HOT' ? 1000 : 0) + (b.aiLeadScore ?? 0);
       if (sb !== sa) return sb - sa;
@@ -300,7 +314,7 @@ export default function InboxPage() {
       const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
       return tb - ta;
     });
-  }, [conversations, sort]);
+  }, [conversations, conversationsUpdatedAt, sort]);
   const filterCounts = (convData?.filterCounts || {}) as Record<string, number>;
   const summaryCounts = (convData?.summaryCounts || {
     overdueFollowups: 0,
@@ -411,11 +425,7 @@ export default function InboxPage() {
           <div className="inbox-sort-row">
             <span className="inbox-sort-label">Sort</span>
             <div className="inbox-sort" ref={sortRef}>
-              <button
-                type="button"
-                className="inbox-sort-select"
-                onClick={() => setSortOpen((open) => !open)}
-              >
+              <button type="button" className="inbox-sort-select" onClick={() => setSortOpen((open) => !open)}>
                 <span>{selectedSort.label}</span>
                 <ChevronDown size={13} />
               </button>
@@ -659,7 +669,11 @@ function MessageThread({
     setDismissedSuggestionSignature(null);
   }, [conversationId]);
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    dataUpdatedAt: conversationUpdatedAt,
+  } = useQuery({
     queryKey: ['conversation', conversationId],
     queryFn: async () => {
       const { data } = await inboxApi.getConversation(conversationId);
@@ -722,8 +736,12 @@ function MessageThread({
       else if (v.leadStatus === 'Not Interested') toast('Marked Not Interested');
       else if (v.leadStatus === 'DNC') toast.success('Marked as DNC', { icon: '⛔' });
       else if (v.leadStatus === '') toast('Status cleared');
-      else if (typeof v.emailReceived === 'boolean') toast.success(v.emailReceived ? 'Email received' : 'Email cleared');
-      else if (v.nextFollowupAt) toast.success('Follow-up scheduled', { icon: '⏰' });
+      else if (typeof v.emailReceived === 'boolean')
+        toast.success(v.emailReceived ? 'Email received' : 'Email cleared');
+      else if (v.followupStatus === 'completed') toast.success('Follow-up completed', { icon: '✓' });
+      else if (v.followupStatus === 'cleared' || v.nextFollowupAt === null || v.followupTime === null)
+        toast('Follow-up cleared');
+      else if (v.nextFollowupAt || v.followupTime) toast.success('Follow-up scheduled', { icon: '⏰' });
     },
     onError: () => toast.error('Failed to update status'),
   });
@@ -795,7 +813,10 @@ function MessageThread({
 
   const conversation: Conversation | undefined = data?.conversation;
   const messages: Message[] = data?.messages || [];
-  const canAutoMarkRead = !!user?.id && !!conversation && (conversation.assignedRepId === user.id || conversation.lead?.assignedRepId === user.id);
+  const canAutoMarkRead =
+    !!user?.id &&
+    !!conversation &&
+    (conversation.assignedRepId === user.id || conversation.lead?.assignedRepId === user.id);
   const currentSuggestionSignature = useMemo(() => {
     const suggestions = ((conversation as any)?.aiSuggestions || []) as Array<{ text?: string }>;
     const firstSuggestion = suggestions[0]?.text?.trim();
@@ -836,12 +857,7 @@ function MessageThread({
   }, [messages]);
 
   useEffect(() => {
-    if (
-      canAutoMarkRead &&
-      conversation?.unreadCount &&
-      conversation.unreadCount > 0 &&
-      !markReadMutation.isPending
-    ) {
+    if (canAutoMarkRead && conversation?.unreadCount && conversation.unreadCount > 0 && !markReadMutation.isPending) {
       markReadMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -903,7 +919,11 @@ function MessageThread({
     } else {
       when = setMinutes(setHours(nextMonday(now), 9), 0);
     }
-    statusMutation.mutate({ nextFollowupAt: when.toISOString() });
+    statusMutation.mutate({
+      nextFollowupAt: when.toISOString(),
+      followupTime: when.toISOString(),
+      followupStatus: 'scheduled',
+    });
     setShowFollowupPopover(false);
     toast.success('Follow-up saved');
   };
@@ -947,8 +967,9 @@ function MessageThread({
     typeof aiSignals.suggestedFollowupTime === 'string' ? aiSignals.suggestedFollowupTime : '';
   const aiSuggestedFollowupReason =
     typeof aiSignals.suggestedFollowupReason === 'string' ? aiSignals.suggestedFollowupReason : '';
-  const nextFollowupDate = conversation.nextFollowupAt ? new Date(conversation.nextFollowupAt) : null;
-  const nextFollowupOverdue = !!nextFollowupDate && nextFollowupDate.getTime() < Date.now();
+  const effectiveFollowupAt = getConversationFollowupAt(conversation);
+  const nextFollowupDate = effectiveFollowupAt ? new Date(effectiveFollowupAt) : null;
+  const nextFollowupOverdue = !!nextFollowupDate && nextFollowupDate.getTime() < conversationUpdatedAt;
 
   const openGmailCompose = () => {
     if (!hasLeadEmail) return;
@@ -974,7 +995,9 @@ function MessageThread({
                   <Phone size={10} />
                   {conversation.lead?.phone}
                   {conversation.lead?.company ? ` · ${conversation.lead.company}` : ''}
-                  {conversation.lead?.source ? <span className="thread-source"> · Source: {conversation.lead.source}</span> : null}
+                  {conversation.lead?.source ? (
+                    <span className="thread-source"> · Source: {conversation.lead.source}</span>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1062,7 +1085,12 @@ function MessageThread({
                       toast.error('Invalid AI follow-up suggestion');
                       return;
                     }
-                    statusMutation.mutate({ nextFollowupAt: parsedDate.toISOString() });
+                    statusMutation.mutate({
+                      nextFollowupAt: parsedDate.toISOString(),
+                      followupTime: parsedDate.toISOString(),
+                      followupReason: aiSuggestedFollowupReason || null,
+                      followupStatus: 'scheduled',
+                    });
                     if (aiSuggestedFollowupReason) {
                       noteMutation.mutate(`[AI Follow-up] ${aiSuggestedFollowupReason}`);
                     }
@@ -1073,7 +1101,9 @@ function MessageThread({
                   AI Suggested: {format(new Date(aiSuggestedFollowupTime), 'MMM d, h:mm a')}
                 </button>
               )}
-              {aiSuggestedFollowupReason && <div className="inbox-popover-helper">Reason: {aiSuggestedFollowupReason}</div>}
+              {aiSuggestedFollowupReason && (
+                <div className="inbox-popover-helper">Reason: {aiSuggestedFollowupReason}</div>
+              )}
               <input
                 type="datetime-local"
                 value={followupDateTime}
@@ -1091,7 +1121,13 @@ function MessageThread({
                 <button
                   onClick={() => {
                     if (!followupDateTime) return;
-                    statusMutation.mutate({ nextFollowupAt: new Date(followupDateTime).toISOString() });
+                    const followupIso = new Date(followupDateTime).toISOString();
+                    statusMutation.mutate({
+                      nextFollowupAt: followupIso,
+                      followupTime: followupIso,
+                      followupReason: followupReason.trim() || null,
+                      followupStatus: 'scheduled',
+                    });
                     if (followupReason.trim()) {
                       noteMutation.mutate(`[Follow-up reason] ${followupReason.trim()}`);
                     }
@@ -1103,7 +1139,12 @@ function MessageThread({
                 </button>
                 <button
                   onClick={() => {
-                    statusMutation.mutate({ nextFollowupAt: null });
+                    statusMutation.mutate({
+                      nextFollowupAt: null,
+                      followupTime: null,
+                      followupReason: null,
+                      followupStatus: 'cleared',
+                    });
                     setFollowupReason('');
                     setShowFollowupPopover(false);
                   }}
@@ -1190,10 +1231,18 @@ function MessageThread({
             <button className="inbox-tool-btn icon-emoji" title="Templates" onClick={() => setShowTemplates(true)}>
               📄
             </button>
-            <button className="inbox-tool-btn icon-emoji" title="Schedule" onClick={() => setShowSchedulePopover((p) => !p)}>
+            <button
+              className="inbox-tool-btn icon-emoji"
+              title="Schedule"
+              onClick={() => setShowSchedulePopover((p) => !p)}
+            >
               📅
             </button>
-            <button className="inbox-tool-btn icon-emoji" title="Note (internal)" onClick={() => setShowNotePopover((p) => !p)}>
+            <button
+              className="inbox-tool-btn icon-emoji"
+              title="Note (internal)"
+              onClick={() => setShowNotePopover((p) => !p)}
+            >
               🔗
             </button>
             <button className="inbox-tool-btn icon-emoji" title="Tag" onClick={() => setShowTagPopover((p) => !p)}>
@@ -1419,7 +1468,12 @@ function MessageThread({
         )}
       </div>
 
-      <RightSidebar conversationId={conversationId} conversation={conversation} activity={data?.activity || []} />
+      <RightSidebar
+        conversationId={conversationId}
+        conversation={conversation}
+        activity={data?.activity || []}
+        nowMs={conversationUpdatedAt}
+      />
     </>
   );
 }
@@ -1446,10 +1500,12 @@ function RightSidebar({
   conversationId,
   conversation,
   activity,
+  nowMs,
 }: {
   conversationId: string;
   conversation: Conversation;
   activity: ConversationActivity[];
+  nowMs: number;
 }) {
   const [tab, setTab] = useState<'contact' | 'ai_state' | 'alerts'>('contact');
 
@@ -1474,7 +1530,7 @@ function RightSidebar({
         </>
       )}
       {tab === 'ai_state' && <AIStateSection conversation={conversation} />}
-      {tab === 'alerts' && <AlertsSection conversation={conversation} />}
+      {tab === 'alerts' && <AlertsSection conversation={conversation} nowMs={nowMs} />}
     </div>
   );
 }
@@ -1489,7 +1545,10 @@ function AIStateSection({ conversation }: { conversation: Conversation }) {
     { key: 'Revenue', value: signals.revenue || '—' },
     { key: 'Urgency', value: signals.urgency || '—' },
     { key: 'Ask', value: signals.ask || '—' },
-    { key: 'Last Classified', value: conversation.aiClassifiedAt ? format(new Date(conversation.aiClassifiedAt), 'MMM d, h:mm a') : '—' },
+    {
+      key: 'Last Classified',
+      value: conversation.aiClassifiedAt ? format(new Date(conversation.aiClassifiedAt), 'MMM d, h:mm a') : '—',
+    },
   ];
 
   return (
@@ -1504,9 +1563,10 @@ function AIStateSection({ conversation }: { conversation: Conversation }) {
   );
 }
 
-function AlertsSection({ conversation }: { conversation: Conversation }) {
-  const nextFollow = conversation.nextFollowupAt ? new Date(conversation.nextFollowupAt) : null;
-  const isOverdue = !!nextFollow && nextFollow.getTime() < Date.now();
+function AlertsSection({ conversation, nowMs }: { conversation: Conversation; nowMs: number }) {
+  const followupAt = getConversationFollowupAt(conversation);
+  const nextFollow = followupAt ? new Date(followupAt) : null;
+  const isOverdue = !!nextFollow && nextFollow.getTime() < nowMs;
 
   return (
     <div className="inbox-sidebar-section">
@@ -1519,9 +1579,7 @@ function AlertsSection({ conversation }: { conversation: Conversation }) {
                 : 'Follow-up scheduled.'
               : 'No follow-up alert set.'}
           </div>
-          <div className="inbox-activity-time">
-            {nextFollow ? format(nextFollow, 'MMM d, h:mm a') : '—'}
-          </div>
+          <div className="inbox-activity-time">{nextFollow ? format(nextFollow, 'MMM d, h:mm a') : '—'}</div>
         </div>
         <div className="inbox-activity-item">
           <div className="inbox-activity-text">
@@ -1544,9 +1602,11 @@ function ContactInfoSection({ conversation, title: _title }: { conversation: Con
   const extractedAsk = (conversation as unknown as { extractedAsk?: string | null }).extractedAsk;
   const extractedIndustry = (conversation as unknown as { extractedIndustry?: string | null }).extractedIndustry;
   const helocFit = (conversation as unknown as { helocFitFlag?: boolean | null }).helocFitFlag;
-  const repStats = (conversation as unknown as {
-    repStats?: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number };
-  }).repStats;
+  const repStats = (
+    conversation as unknown as {
+      repStats?: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number };
+    }
+  ).repStats;
 
   const formatRevenue = (val: number | null | undefined): string => {
     if (val == null) return '—';
@@ -1594,7 +1654,10 @@ function ContactInfoSection({ conversation, title: _title }: { conversation: Con
   const dealRows: Array<{ key: string; value?: string | null; tone?: 'hot' | 'gold' }> = [
     { key: 'Product', value: (signals.product as string) || info.product || '' },
     { key: 'Ask', value: extractedAsk || (signals.ask as string) || '' },
-    { key: 'Revenue', value: extractedRevenue != null ? formatRevenue(extractedRevenue) : ((signals.revenue as string) || '') },
+    {
+      key: 'Revenue',
+      value: extractedRevenue != null ? formatRevenue(extractedRevenue) : (signals.revenue as string) || '',
+    },
     { key: 'Industry', value: extractedIndustry || (signals.industry as string) || '' },
     { key: 'HELOC Fit', value: helocFit == null ? '' : helocFit ? '✓ Yes' : '— No' },
     {
@@ -1739,11 +1802,7 @@ function NotesSection({ conversationId, title }: { conversationId: string; title
             <span className="inbox-note-time">
               {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
             </span>
-            <button
-              className="inbox-tool-btn"
-              onClick={() => deleteMutation.mutate(note.id)}
-              title="Delete note"
-            >
+            <button className="inbox-tool-btn" onClick={() => deleteMutation.mutate(note.id)} title="Delete note">
               <X size={11} />
             </button>
           </div>

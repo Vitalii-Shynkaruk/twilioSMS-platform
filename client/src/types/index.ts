@@ -78,6 +78,11 @@ export interface Conversation {
   hotLead?: boolean;
   leadStatus?: string | null;
   nextFollowupAt?: string | null;
+  followupTime?: string | null;
+  followupReason?: string | null;
+  followupSetBy?: string | null;
+  followupSetAt?: string | null;
+  followupStatus?: 'scheduled' | 'due_now' | 'completed' | 'cleared' | null;
   emailReceived?: boolean;
   notes?: ConversationNote[];
   deals?: Array<{
@@ -142,6 +147,7 @@ export interface AISignals {
   suggestedReply?: string | null;
   suggestedFollowupTime?: string | null;
   suggestedFollowupReason?: string | null;
+  suggestedFollowupStatus?: 'scheduled' | 'due_now' | 'completed' | 'cleared' | null;
   suggestedReengageMessage?: string | null;
   repBehavior?: string | null;
 }

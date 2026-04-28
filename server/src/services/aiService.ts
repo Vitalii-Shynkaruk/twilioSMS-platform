@@ -3,6 +3,7 @@ import prisma from '../config/database';
 import logger from '../config/logger';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { buildSuggestedFollowup } from './followupPolicy';
 
 /**
  * AIService — Multi-provider LLM integration (Anthropic + OpenAI).
@@ -465,7 +466,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       `Lead: ${conv.lead?.firstName || ''} ${conv.lead?.lastName || ''}`.trim() || 'Unknown',
       conv.lead?.company ? `Business: ${conv.lead.company}` : null,
       conv.lead?.phone ? `Phone: ${conv.lead.phone} (area ${areaCode || 'n/a'})` : null,
-      `Owner state: leadStatus=${conv.leadStatus || 'none'}, emailReceived=${conv.emailReceived ? 'yes' : 'no'}, hotLead=${conv.hotLead ? 'yes' : 'no'}, nextFollowupAt=${conv.nextFollowupAt ? conv.nextFollowupAt.toISOString() : 'none'}`,
+      `Owner state: leadStatus=${conv.leadStatus || 'none'}, emailReceived=${conv.emailReceived ? 'yes' : 'no'}, hotLead=${conv.hotLead ? 'yes' : 'no'}, followupTime=${conv.followupTime ? conv.followupTime.toISOString() : conv.nextFollowupAt ? conv.nextFollowupAt.toISOString() : 'none'}, followupStatus=${conv.followupStatus || conv.followupState || 'none'}`,
       dealContext ? `Pipeline context: ${dealContext}` : null,
       '',
       'Conversation history (oldest → newest):',
@@ -517,29 +518,28 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       }
     }
 
-    const rawSignals: Record<string, unknown> =
-      hasLockedShape
-        ? {
-            revenueMonthly: parsed.revenueMonthly,
-            revenueAnnual: parsed.revenueAnnual,
-            revenueConfidence: parsed.revenueConfidence,
-            ask: typeof parsed.amountRequested === 'number' ? `$${parsed.amountRequested}` : null,
-            amountRequested: parsed.amountRequested,
-            useOfFunds: parsed.useOfFunds,
-            product: parsed.product,
-            urgency: parsed.urgency,
-            objections: Array.isArray(parsed.objections) ? parsed.objections.join(', ') : parsed.objections,
-            staleState: parsed.staleState,
-            hadMeaningfulEngagement: parsed.hadMeaningfulEngagement,
-            suggestedReply: parsed.suggestedReply,
-            suggestedFollowupTime: parsed.suggestedFollowupTime,
-            suggestedFollowupReason: parsed.suggestedFollowupReason,
-            suggestedReengageMessage: parsed.suggestedReengageMessage,
-            repBehavior: parsed.repBehavior,
-            coachingNote: parsed.coachingNote,
-            reasoning: parsed.reasoning,
-          }
-        : (((parsed && typeof parsed === 'object' && parsed.signals) || {}) as Record<string, unknown>);
+    const rawSignals: Record<string, unknown> = hasLockedShape
+      ? {
+          revenueMonthly: parsed.revenueMonthly,
+          revenueAnnual: parsed.revenueAnnual,
+          revenueConfidence: parsed.revenueConfidence,
+          ask: typeof parsed.amountRequested === 'number' ? `$${parsed.amountRequested}` : null,
+          amountRequested: parsed.amountRequested,
+          useOfFunds: parsed.useOfFunds,
+          product: parsed.product,
+          urgency: parsed.urgency,
+          objections: Array.isArray(parsed.objections) ? parsed.objections.join(', ') : parsed.objections,
+          staleState: parsed.staleState,
+          hadMeaningfulEngagement: parsed.hadMeaningfulEngagement,
+          suggestedReply: parsed.suggestedReply,
+          suggestedFollowupTime: parsed.suggestedFollowupTime,
+          suggestedFollowupReason: parsed.suggestedFollowupReason,
+          suggestedReengageMessage: parsed.suggestedReengageMessage,
+          repBehavior: parsed.repBehavior,
+          coachingNote: parsed.coachingNote,
+          reasoning: parsed.reasoning,
+        }
+      : (((parsed && typeof parsed === 'object' && parsed.signals) || {}) as Record<string, unknown>);
     let classification: string = ['HOT', 'WARM', 'NURTURE', 'DEAD', 'WRONG_NUMBER'].includes(parsed.classification)
       ? parsed.classification
       : 'NURTURE';
@@ -556,23 +556,28 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
         /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
           lower,
         );
-      const asksForTerms = /\b(rate|rates|term|terms|amount|how much|funding link|application|details|info|paperwork|docs?|requirements?|qualif(y|ication)|credit score|bank statements|collateral|cost)\b/.test(
-        lower,
-      );
+      const asksForTerms =
+        /\b(rate|rates|term|terms|amount|how much|funding link|application|details|info|paperwork|docs?|requirements?|qualif(y|ication)|credit score|bank statements|collateral|cost)\b/.test(
+          lower,
+        );
       // Объектный вопрос после первичного контакта — сильный сигнал коммерческого интента.
       // Примеры: "what's the catch?", "what do you need?", "how does it work?"
       const engagedObjectionQuestion =
         /(what('?s| is) the catch|what do you need|what do i need|how does it work|how would that work|what are the terms|what are the rates|what's the rate|what is the rate|what docs do you need|what paperwork do you need|what are the requirements)/.test(
           lower,
         );
-      const givesUrgency = /\b(today|asap|right now|this week|tomorrow|by (monday|tuesday|wednesday|thursday|friday)|need (it )?(now|soon))\b/.test(
-        lower,
-      );
+      const givesUrgency =
+        /\b(today|asap|right now|this week|tomorrow|by (monday|tuesday|wednesday|thursday|friday)|need (it )?(now|soon))\b/.test(
+          lower,
+        );
       const sharesAltPhone = /(?:^|\D)(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?:\D|$)/.test(
         lastInboundBody,
       );
 
-      if ((hasEmail || strongYes || asksForTerms || engagedObjectionQuestion || givesUrgency || sharesAltPhone) && classification !== 'HOT') {
+      if (
+        (hasEmail || strongYes || asksForTerms || engagedObjectionQuestion || givesUrgency || sharesAltPhone) &&
+        classification !== 'HOT'
+      ) {
         logger.info('AI: classification upgraded to HOT by deterministic override', {
           conversationId,
           original: classification,
@@ -610,15 +615,15 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
             : []),
         ].filter((item) => item.text.trim().length > 0)
       : Array.isArray(parsed.suggestions)
-      ? parsed.suggestions
-          .filter((s: any) => s && typeof s.text === 'string')
-          .slice(0, 2)
-          .map((s: any) => ({
-            type: s.type === 'BEST' ? 'BEST' : 'ALT',
-            text: String(s.text),
-            cta: String(s.cta || ''),
-          }))
-      : [];
+        ? parsed.suggestions
+            .filter((s: any) => s && typeof s.text === 'string')
+            .slice(0, 2)
+            .map((s: any) => ({
+              type: s.type === 'BEST' ? 'BEST' : 'ALT',
+              text: String(s.text),
+              cta: String(s.cta || ''),
+            }))
+        : [];
 
     const now = Date.now();
     const lastInboundAtTs = lastInbound?.createdAt ? new Date(lastInbound.createdAt).getTime() : null;
@@ -626,29 +631,27 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const staleState =
       silenceDays >= 7 ? 'ghosted' : silenceDays >= 3 ? 'stale' : (rawSignals.staleState as string) || 'active';
 
-    const suggestedReply = typeof rawSignals.suggestedReply === 'string' && rawSignals.suggestedReply.trim()
-      ? rawSignals.suggestedReply.trim()
-      : suggestions[0]?.text || null;
+    const suggestedReply =
+      typeof rawSignals.suggestedReply === 'string' && rawSignals.suggestedReply.trim()
+        ? rawSignals.suggestedReply.trim()
+        : suggestions[0]?.text || null;
 
-    const suggestedFollowupTime =
-      typeof rawSignals.suggestedFollowupTime === 'string' && rawSignals.suggestedFollowupTime.trim()
-        ? rawSignals.suggestedFollowupTime.trim()
-        : classification === 'HOT'
-          ? new Date(now + 30 * 60 * 1000).toISOString()
-          : null;
+    const followupPlan = buildSuggestedFollowup({
+      classification,
+      conversationState: parsed.conversationState,
+      signals: rawSignals,
+      latestInboundText: lastInboundBody,
+      now: new Date(now),
+    });
 
-    const suggestedFollowupReason =
-      typeof rawSignals.suggestedFollowupReason === 'string' && rawSignals.suggestedFollowupReason.trim()
-        ? rawSignals.suggestedFollowupReason.trim()
-        : classification === 'HOT'
-          ? 'HOT lead requires response within 30 minutes'
-          : null;
+    const suggestedFollowupTime = followupPlan.time ? followupPlan.time.toISOString() : null;
+    const suggestedFollowupReason = followupPlan.reason;
 
     const suggestedReengageMessage =
       typeof rawSignals.suggestedReengageMessage === 'string' && rawSignals.suggestedReengageMessage.trim()
         ? rawSignals.suggestedReengageMessage.trim()
         : staleState === 'stale' || staleState === 'ghosted'
-          ? "Quick check-in: should I send your Funding Link or circle back next week?"
+          ? 'Quick check-in: should I send your Funding Link or circle back next week?'
           : null;
 
     const signals: Record<string, unknown> = {
@@ -661,6 +664,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       suggestedReply,
       suggestedFollowupTime,
       suggestedFollowupReason,
+      suggestedFollowupStatus: followupPlan.status,
       suggestedReengageMessage,
       repBehavior:
         typeof rawSignals.repBehavior === 'string' && rawSignals.repBehavior.trim()

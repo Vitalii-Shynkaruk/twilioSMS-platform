@@ -297,6 +297,11 @@ model Conversation {
   leadStatus      String?   // "Interested" / "Not Interested" / "DNC"
   nextFollowupAt  DateTime? // Дата follow-up
   followupState   String?   @default("none") // "none" | "scheduled" | "due_now"
+  followupTime     DateTime? @map("followup_time")
+  followupReason   String?   @db.Text @map("followup_reason")
+  followupSetBy    String?   @map("followup_set_by")
+  followupSetAt    DateTime? @map("followup_set_at")
+  followupStatus   String    @default("cleared") @map("followup_status") // "scheduled" | "due_now" | "completed" | "cleared"
   emailReceived   Boolean   @default(false)   // Помечен как "Email Rcv"
 
   // Phase 1 AI Inbox: Anthropic classifyInbound() output — written on every inbound
@@ -334,6 +339,8 @@ model Conversation {
   @@index([hotLead])
   @@index([leadStatus])
   @@index([nextFollowupAt])
+  @@index([followupTime])
+  @@index([followupStatus])
   @@index([aiClassification])
   @@index([aiLeadScore])
   @@index([extractedIndustry])

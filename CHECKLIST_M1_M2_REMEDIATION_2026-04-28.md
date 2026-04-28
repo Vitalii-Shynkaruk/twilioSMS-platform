@@ -319,45 +319,65 @@ Acceptance:
 
 ### 7.1 Decision / mapping
 
-- [ ] Решить: добавляем новые DB columns с snake_case или маппим Prisma camelCase на snake_case.
-- [ ] Сверить текущие поля: `nextFollowupAt`, `followupState`.
-- [ ] Решить backward compatibility: как мигрировать existing `nextFollowupAt/followupState`.
-- [ ] Решить semantics:
-  - [ ] `scheduled` — future follow-up exists.
-  - [ ] `due_now` — follow-up time <= now.
-  - [ ] `completed` — rep completed follow-up action.
-  - [ ] `cleared` — follow-up manually cleared/cancelled.
+- [x] Решить: добавляем новые DB columns с snake_case или маппим Prisma camelCase на snake_case.
+- [x] Сверить текущие поля: `nextFollowupAt`, `followupState`.
+- [x] Решить backward compatibility: как мигрировать existing `nextFollowupAt/followupState`.
+- [x] Решить semantics:
+  - [x] `scheduled` — future follow-up exists.
+  - [x] `due_now` — follow-up time <= now.
+  - [x] `completed` — rep completed follow-up action.
+  - [x] `cleared` — follow-up manually cleared/cancelled.
+
+Decision:
+
+- Prisma uses camelCase fields mapped to requested snake_case columns: `followupTime @map("followup_time")`, `followupReason`, `followupSetBy`, `followupSetAt`, `followupStatus`.
+- Existing `nextFollowupAt/followupState` remain as legacy mirrors/fallbacks during transition.
+- Production DB migration not executed in this step; schema change is additive and should be applied via a backed-up production `prisma db push`/migration window.
 
 ### 7.2 Backend
 
-- [ ] Обновить `server/prisma/schema.prisma`.
-- [ ] Создать migration или safe `db push` plan.
-- [ ] Обновить `InboxController.updateStatus`.
-- [ ] Обновить follow-up cron.
-- [ ] Обновить conversation audit trail.
-- [ ] Обновить API response DTO.
-- [ ] Обновить validation schema.
+- [x] Обновить `server/prisma/schema.prisma`.
+- [x] Создать migration или safe `db push` plan.
+- [x] Обновить `InboxController.updateStatus`.
+- [x] Обновить follow-up cron.
+- [x] Обновить conversation audit trail.
+- [x] Обновить API response DTO.
+- [x] Обновить validation schema.
+
+Evidence:
+
+- Added new `server/src/services/followupPolicy.ts` for status normalization and deterministic timing.
+- `InboxController.updateConversationStatus` now writes new fields and legacy mirrors, and audit events include old/new follow-up state.
+- `followupStateCron` promotes due rows using `followupTime` with `nextFollowupAt` fallback.
+- Outbound/inbound reply paths mark follow-up `completed` while keeping legacy clear behavior.
 
 ### 7.3 Frontend
 
-- [ ] Обновить `Conversation` type.
-- [ ] Обновить Follow-Up popover.
-- [ ] Обновить Alerts/AI State/right panel.
+- [x] Обновить `Conversation` type.
+- [x] Обновить Follow-Up popover.
+- [x] Обновить Alerts/AI State/right panel.
 - [ ] Проверить отображение scheduled/due/completed/cleared.
 
 ### 7.4 Tests
 
-- [ ] Unit test: schedule future -> `scheduled`.
+- [x] Unit test: schedule future -> `scheduled`.
 - [ ] Unit test: cron promotes due -> `due_now`.
-- [ ] Unit test: complete follow-up -> `completed`.
-- [ ] Unit test: clear follow-up -> `cleared`.
+- [x] Unit test: complete follow-up -> `completed`.
+- [x] Unit test: clear follow-up -> `cleared`.
 - [ ] Regression: owner action reclassification still fires.
+
+Evidence:
+
+- `tests/followupPolicy.test.ts`: 9 tests passed.
+- DB-free backend suite with follow-up policy: 14 files passed, 53 tests passed.
+- `server npm run build`: pass after Prisma generate.
+- `client npm run build`: pass with known CSS warning `.light .bg-dark-800.border*`.
 
 Acceptance:
 
-- [ ] Conversation stores all requested follow-up fields.
+- [x] Conversation stores all requested follow-up fields.
 - [ ] Status transitions correct.
-- [ ] Audit trail records who/when/old/new.
+- [x] Audit trail records who/when/old/new.
 - [ ] UI and API agree.
 
 ---
@@ -375,39 +395,46 @@ Acceptance:
 
 ### 8.1 Spec alignment
 
-- [ ] Решить classification model для `SENSITIVE`: отдельная classification или `conversationState`.
-- [ ] Обновить locked prompt/spec или добавить deterministic normalizer после AI output.
-- [ ] Решить timezone/business-hour behavior для `tomorrow morning 9 AM`, `next morning`, `next week`.
-- [ ] Решить storage: `aiSignals.suggestedFollowupTime/Reason` и/или Conversation follow-up fields.
+- [x] Решить classification model для `SENSITIVE`: отдельная classification или `conversationState`.
+- [x] Обновить locked prompt/spec или добавить deterministic normalizer после AI output.
+- [x] Решить timezone/business-hour behavior для `tomorrow morning 9 AM`, `next morning`, `next week`.
+- [x] Решить storage: `aiSignals.suggestedFollowupTime/Reason` и/или Conversation follow-up fields.
+
+Decision:
+
+- `SENSITIVE` remains `conversationState`, not a new top-level classification.
+- Deterministic normalizer runs after AI output in `AIService.classifyInbound`.
+- Timing uses UTC-normalized 9 AM slots for deterministic server/CI behavior.
+- AI suggestions persist in `aiSignals.suggestedFollowupTime`, `suggestedFollowupReason`, and `suggestedFollowupStatus`; manual scheduling stores Conversation follow-up fields.
 
 ### 8.2 Backend implementation
 
-- [ ] Обновить `AIService.classifyInbound` follow-up normalizer.
-- [ ] Убрать fallback `30 minutes`, заменить на client rules.
-- [ ] HOT urgency detector: `today`, `now`, `ASAP`, `right away`, same-day words.
-- [ ] HOT regular: next business day 9 AM.
-- [ ] WARM: next morning or +24h.
-- [ ] SENSITIVE: next week soft window.
-- [ ] NURTURE: +3 days.
-- [ ] Reason builder from extracted signals.
-- [ ] Persist result on conversation.
+- [x] Обновить `AIService.classifyInbound` follow-up normalizer.
+- [x] Убрать fallback `30 minutes`, заменить на client rules.
+- [x] HOT urgency detector: `today`, `now`, `ASAP`, `right away`, same-day words.
+- [x] HOT regular: next business day 9 AM.
+- [x] WARM: next morning or +24h.
+- [x] SENSITIVE: next week soft window.
+- [x] NURTURE: +3 days.
+- [x] Reason builder from extracted signals.
+- [x] Persist result on conversation.
 
 ### 8.3 Tests
 
-- [ ] HOT + `today` -> +2h.
-- [ ] HOT regular -> tomorrow 9 AM.
-- [ ] WARM -> next morning/+24h.
-- [ ] SENSITIVE -> next week.
-- [ ] NURTURE -> +3 days.
-- [ ] Reason includes relevant signal.
-- [ ] Null/invalid AI output still normalizes correctly.
+- [x] HOT + `today` -> +2h.
+- [x] HOT regular -> tomorrow 9 AM.
+- [x] WARM -> next morning/+24h.
+- [x] SENSITIVE -> next week.
+- [x] NURTURE -> +3 days.
+- [x] Reason includes relevant signal.
+- [x] Null/invalid AI output still normalizes correctly.
 
 Acceptance:
 
-- [ ] Every requested bucket produces expected follow-up suggestion.
-- [ ] Reason text is clear and signal-based.
-- [ ] Suggestions persist in DB and API.
-- [ ] UI reads the persisted suggestion.
+- [x] Every requested bucket produces expected follow-up suggestion.
+- [x] Reason text is clear and signal-based.
+- [x] Suggestions persist in DB and API.
+- [x] UI reads the persisted suggestion.
 
 ---
 
@@ -644,3 +671,4 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | M1 Prod Deploy        | Cleaned production root/git state and deployed source     | 664ca37    | Backup `20260428152107`; git clean; health 200; root candidates 0     | Done   |
 | 2026-04-28 | M1 CI                 | Enabled CI for `deploy/mysql-hosting` and explicit builds | c27457b    | Workflow covers TS checks, builds, Vitest with MySQL/Redis            | Done   |
 | 2026-04-28 | M1 Secrets            | Replaced hardcoded script credentials with env vars       | 76d5a71    | Grep clean for known prod password/token patterns; syntax checks pass | Done   |
+| 2026-04-28 | M2 Follow-up          | Added follow-up schema fields and deterministic timing    | Pending    | 9 policy tests pass; builds pass; production DB migration pending     | Done   |

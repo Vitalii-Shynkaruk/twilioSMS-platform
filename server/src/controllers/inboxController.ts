@@ -9,6 +9,7 @@ import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 import { OutboundGateService } from '../services/outboundGateService';
 import { AIService } from '../services/aiService';
+import { resolveFollowupStatus } from '../services/followupPolicy';
 
 type InboxFilter =
   | 'all'
@@ -70,7 +71,10 @@ export class InboxController {
   private static readonly REP_STATS_CACHE_MS = 5 * 60 * 1000;
   private static readonly repStatsCache = new Map<
     string,
-    { ts: number; data: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number } }
+    {
+      ts: number;
+      data: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number };
+    }
   >();
 
   /**
@@ -138,15 +142,14 @@ export class InboxController {
     return data;
   }
 
-  private static buildAiPersistenceFields(
-    signals: Record<string, unknown>,
-  ): {
+  private static buildAiPersistenceFields(signals: Record<string, unknown>): {
     extractedIndustry: string | null;
     helocFitFlag: boolean | null;
     extractedRevenue: number | null;
     extractedAsk: string | null;
   } {
-    const extractedIndustry = typeof signals.industry === 'string' && signals.industry.trim() ? signals.industry.trim() : null;
+    const extractedIndustry =
+      typeof signals.industry === 'string' && signals.industry.trim() ? signals.industry.trim() : null;
     const helocFitFlag = typeof signals.helocFitFlag === 'boolean' ? signals.helocFitFlag : null;
     const extractedRevenue = typeof signals.revenueMonthly === 'number' ? Math.round(signals.revenueMonthly) : null;
     const extractedAsk = typeof signals.ask === 'string' && signals.ask.trim() ? signals.ask.trim() : null;
@@ -273,10 +276,7 @@ export class InboxController {
 
   private static inPipelineCondition(): any {
     return {
-      OR: [
-        { deals: { some: {} } },
-        { lead: { deal: { isNot: null } } },
-      ],
+      OR: [{ deals: { some: {} } }, { lead: { deal: { isNot: null } } }],
     };
   }
 
@@ -369,7 +369,7 @@ export class InboxController {
           ],
         };
       case 'followup':
-        return { nextFollowupAt: { gte: new Date() } };
+        return { OR: [{ followupTime: { gte: new Date() } }, { nextFollowupAt: { gte: new Date() } }] };
       case 'in_pipeline':
         return InboxController.inPipelineCondition();
       case 'dnc':
@@ -984,8 +984,8 @@ export class InboxController {
                 const baseVisibility = hasCampaignFilter
                   ? [visibilityCondition]
                   : key === 'dnc'
-                  ? [visibilityCondition]
-                  : [InboxController.excludeDncCondition(), visibilityCondition];
+                    ? [visibilityCondition]
+                    : [InboxController.excludeDncCondition(), visibilityCondition];
                 const scopedWhere = InboxController.withConditions(
                   baseWithSearch,
                   condition ? [...baseVisibility, condition] : baseVisibility,
@@ -1017,7 +1017,9 @@ export class InboxController {
 
             const [overdueFollowups, hotAiFlagged, newToday, unread, inPipelineQualified] = await Promise.all([
               prisma.conversation.count({
-                where: InboxController.withConditions(visibleWhere, [{ nextFollowupAt: { lt: now } }]),
+                where: InboxController.withConditions(visibleWhere, [
+                  { OR: [{ followupTime: { lt: now } }, { nextFollowupAt: { lt: now } }] },
+                ]),
               }),
               prisma.conversation.count({
                 where: InboxController.withConditions(visibleWhere, [InboxController.hotConversationCondition()]),
@@ -1334,7 +1336,7 @@ export class InboxController {
       assignedRep: conversation.assignedRep
         ? `${conversation.assignedRep.firstName} ${conversation.assignedRep.lastName || ''}`.trim()
         : null,
-      followUpAt: conversation.nextFollowupAt,
+      followUpAt: conversation.followupTime || conversation.nextFollowupAt,
     };
 
     const contactInfo = {
@@ -1621,6 +1623,10 @@ export class InboxController {
         lastMessageAt: new Date(),
         lastDirection: 'outbound',
         nextFollowupAt: null,
+        followupTime: null,
+        followupStatus: 'completed',
+        followupSetBy: req.user?.id || null,
+        followupSetAt: new Date(),
       },
     });
 
@@ -1734,11 +1740,12 @@ export class InboxController {
   // ============================================
 
   /**
-   * PATCH /:id/status — Обновить статус разговора (hotLead, leadStatus, emailReceived, nextFollowupAt)
+   * PATCH /:id/status — Обновить статус разговора (hotLead, leadStatus, emailReceived, follow-up)
    */
   static async updateConversationStatus(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const { hotLead, leadStatus, emailReceived, nextFollowupAt } = req.body;
+    const { hotLead, leadStatus, emailReceived, nextFollowupAt, followupTime, followupReason, followupStatus } =
+      req.body;
 
     const conversation = await prisma.conversation.findUnique({ where: { id } });
     if (!conversation) throw new AppError('Conversation not found', 404);
@@ -1748,19 +1755,40 @@ export class InboxController {
       emailReceived: conversation.emailReceived,
       nextFollowupAt: conversation.nextFollowupAt ? conversation.nextFollowupAt.toISOString() : null,
       followupState: conversation.followupState || null,
+      followupTime: conversation.followupTime ? conversation.followupTime.toISOString() : null,
+      followupReason: conversation.followupReason || null,
+      followupSetBy: conversation.followupSetBy || null,
+      followupSetAt: conversation.followupSetAt ? conversation.followupSetAt.toISOString() : null,
+      followupStatus: conversation.followupStatus || null,
     };
 
     const data: any = {};
     if (hotLead !== undefined) data.hotLead = hotLead;
     if (leadStatus !== undefined) data.leadStatus = leadStatus || null;
     if (emailReceived !== undefined) data.emailReceived = emailReceived;
-    if (nextFollowupAt !== undefined) {
-      const normalizedFollowup = nextFollowupAt ? new Date(nextFollowupAt) : null;
+    const incomingFollowupTime = followupTime !== undefined ? followupTime : nextFollowupAt;
+    const followupTouched =
+      incomingFollowupTime !== undefined || followupReason !== undefined || followupStatus !== undefined;
+    if (followupTouched) {
+      const normalizedFollowup = incomingFollowupTime ? new Date(incomingFollowupTime) : null;
+      const normalizedStatus = resolveFollowupStatus(normalizedFollowup, followupStatus);
       data.nextFollowupAt = normalizedFollowup;
-      if (!normalizedFollowup) {
+      data.followupTime = normalizedFollowup;
+      data.followupStatus = normalizedStatus;
+      data.followupSetBy = req.user?.id || null;
+      data.followupSetAt = new Date();
+      if (followupReason !== undefined) {
+        data.followupReason = followupReason ? String(followupReason).trim() : null;
+      }
+      if (normalizedStatus === 'cleared') {
+        data.followupState = 'none';
+        data.followupReason = null;
+        data.nextFollowupAt = null;
+        data.followupTime = null;
+      } else if (normalizedStatus === 'completed') {
         data.followupState = 'none';
       } else {
-        data.followupState = normalizedFollowup.getTime() <= Date.now() ? 'due_now' : 'scheduled';
+        data.followupState = normalizedStatus;
       }
     }
 
@@ -1780,6 +1808,11 @@ export class InboxController {
       emailReceived: updated.emailReceived,
       nextFollowupAt: updated.nextFollowupAt ? updated.nextFollowupAt.toISOString() : null,
       followupState: updated.followupState || null,
+      followupTime: updated.followupTime ? updated.followupTime.toISOString() : null,
+      followupReason: updated.followupReason || null,
+      followupSetBy: updated.followupSetBy || null,
+      followupSetAt: updated.followupSetAt ? updated.followupSetAt.toISOString() : null,
+      followupStatus: updated.followupStatus || null,
     };
 
     const changedStatusFields = Object.keys(afterState).filter(
@@ -1974,12 +2007,7 @@ export class InboxController {
 
     const [note] = await prisma.$transaction(txOps);
 
-    InboxController.triggerOwnerActionReclassification(
-      req,
-      id,
-      'note_added',
-      conversation.assignedRepId || null,
-    );
+    InboxController.triggerOwnerActionReclassification(req, id, 'note_added', conversation.assignedRepId || null);
 
     res.status(201).json({ note });
   }
@@ -2453,12 +2481,7 @@ export class InboxController {
       },
     });
 
-    InboxController.triggerOwnerActionReclassification(
-      req,
-      id,
-      'pipeline_added',
-      conversation.assignedRepId || null,
-    );
+    InboxController.triggerOwnerActionReclassification(req, id, 'pipeline_added', conversation.assignedRepId || null);
 
     res.status(201).json({ deal });
   }

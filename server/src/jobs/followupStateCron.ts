@@ -19,9 +19,9 @@ async function processDueFollowups(): Promise<void> {
   const now = new Date();
   const dueConversations = await prisma.conversation.findMany({
     where: {
-      nextFollowupAt: { lte: now },
+      OR: [{ followupTime: { lte: now } }, { nextFollowupAt: { lte: now } }],
       isActive: true,
-      OR: [{ followupState: null }, { followupState: { not: 'due_now' } }],
+      followupStatus: { notIn: ['due_now', 'completed'] },
     },
     select: {
       id: true,
@@ -37,7 +37,7 @@ async function processDueFollowups(): Promise<void> {
   const dueIds = dueConversations.map((conversation) => conversation.id);
   await prisma.conversation.updateMany({
     where: { id: { in: dueIds } },
-    data: { followupState: 'due_now' },
+    data: { followupState: 'due_now', followupStatus: 'due_now' },
   });
 
   logger.info('Follow-up cron: marked conversations as due_now', { count: dueIds.length });

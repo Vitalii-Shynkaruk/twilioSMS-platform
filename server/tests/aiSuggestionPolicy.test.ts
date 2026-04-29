@@ -188,6 +188,36 @@ describe('AI suggestion policy', () => {
     expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
   });
 
+  it('должна объяснять HELOC и чинить stale email-style suggestion после продуктового вопроса', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Absolutely. What is the best email to send the terms to? Once I have it, I can send the next steps.',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Andrea, if you have been considering a HELOC, I can get one done in 5-7 days. Interested?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'What is a HELOC?',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/home equity line of credit/i);
+    expect(suggestions[0].text).not.toMatch(/best email/i);
+  });
+
   it('должна извлекать JSON из LLM ответа даже если после fenced block есть хвост с reply options', () => {
     const raw = `\`\`\`json
 {

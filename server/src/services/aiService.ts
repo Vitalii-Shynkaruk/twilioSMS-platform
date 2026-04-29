@@ -504,6 +504,22 @@ function buildDeterministicFallbackSuggestionText(input: {
     return 'No hard pull to review options. Send the statements and I will look them over first so we can see whether this relieves the pressure without adding the wrong payment.';
   }
 
+  if (
+    /(what('?s| is)(?: a)? (heloc|home equity line of credit)|explain (?:a )?heloc|tell me about (?:a )?heloc)/i.test(
+      latestInboundLower,
+    )
+  ) {
+    return 'Good question - a HELOC is a Home Equity Line of Credit. It uses available equity to give you longer-term access to capital without stacking another short-term payment. If you want, I can break down how it works and whether it fits your situation.';
+  }
+
+  if (
+    /(what('?s| is)(?: a)? (loc|line of credit)|explain (?:a )?(loc|line of credit)|tell me about (?:a )?(loc|line of credit))/i.test(
+      latestInboundLower,
+    )
+  ) {
+    return 'Good question - a LOC is a Line of Credit, which gives you flexible access to capital you can draw from as needed instead of taking one rigid lump sum. If you want, I can break down how it works and what problem you are trying to solve.';
+  }
+
   if (/what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain/i.test(latestInboundLower)) {
     return 'It is a longer-term funding option meant to relieve short-term cash-flow pressure, not pile on the wrong payment. What are you trying to solve right now, and about how much would actually fix it?';
   }
@@ -571,7 +587,7 @@ function repairSuggestionsForInboundContext(input: {
   const sharedEmail = String(input.sharedEmail || '').trim();
   const needsContextualRepair =
     !!sharedEmail ||
-    /predatory|another mca|stacked mca|daily pay|weekly pay|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work/.test(
+    /predatory|another mca|stacked mca|daily pay|weekly pay|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)/.test(
       latestInboundLower,
     );
   if (!needsContextualRepair) return input.suggestions;

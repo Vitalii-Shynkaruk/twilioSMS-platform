@@ -720,6 +720,9 @@ Evidence:
 - Production direct-call verification after the final AI fix: `AIService.classifyInbound()` now returns structured non-null results for fresh non-DNC conversations `cmoabo8yd099wzopu72j9b11r` (HOT) and `cmoizm3xv02ztzo2sraq9v8x1` (WARM), proving the live classification path is healthy again for eligible inbound threads.
 - Production eligibility note: Gordon (`cmnes2ipl024ezopaelyfluui`) still returns `null` by design because the conversation is `leadStatus=DNC`, `optedOut=true`; `getClassificationSkipReason()` intentionally skips DNC/opt-out threads before any AI parsing.
 - Production AI recovery backfill: a safe one-off replay persisted AI state for 5 recent inbound conversations with `optedOut=false`, `status!=DNC`, and previously empty `aiClassification`; delayed HOT mobile alerts were intentionally not replayed during this backfill to avoid rep spam, and the post-check showed `0` remaining eligible recent conversations with empty AI state.
+- Latest inbox reassignment fix: restored a visible `Assign Rep` trigger in the inbox thread header so the existing admin/manager reassignment modal and `/api/inbox/:id/assign` API are reachable again; `client npm run build` passed.
+- Production outbound-gate override: Stuart (`15` overdue next actions) and Marcos (`3`) were unblocked for campaign blasts by setting their per-rep `smsOutboundThreshold` override to `0`; the underlying overdue backlog still exists and should be worked separately, but the blast gate no longer blocks those two reps.
+- Production REP account created: `Vitalii Shynkaruk` (`VS`, `94vshynkaryk@ukr.net`) created as an active `REP` user with default SMS lock threshold `1`.
 - Authenticated UI check for the unread badge itself is still pending because no current login credentials were available for a read-only browser pass in this turn.
 
 ---
@@ -784,3 +787,6 @@ Do not send until all acceptance checks are complete.
 | 2026-04-28 | AI Schema Drift Fix   | Normalized near-valid locked payload instead of null return | 56f4a8b    | AI tests 12/12 passed; `server npm run build` passed                  | Done    |
 | 2026-04-28 | Production Deploy     | Deployed classifier schema-drift tolerance fix              | 56f4a8b    | Production SHA 56f4a8b; PM2 online; direct classifyInbound non-null   | Done    |
 | 2026-04-28 | Production Recovery   | Backfilled recent eligible conversations missing AI state   | N/A        | 5 conversations updated; remaining eligible recent null count = 0     | Done    |
+| 2026-04-29 | Inbox Reassignment    | Restored visible Assign Rep trigger in inbox thread         | 56a2561    | `client npm run build` passed; existing modal/API path reachable      | Done    |
+| 2026-04-29 | Blast Gate Override   | Disabled SMS overdue lock for Stuart and Marcos             | N/A        | Threshold override `0`; gate now returns `blocked=false` for both     | Done    |
+| 2026-04-29 | REP Provisioning      | Created production REP account for Vitalii Shynkaruk        | N/A        | User exists as active `REP` with initials `VS`                        | Done    |

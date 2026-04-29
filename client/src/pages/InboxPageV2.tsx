@@ -1036,6 +1036,18 @@ function MessageThread({
               >
                 <Plus size={12} /> {inPipeline ? 'In Pipeline' : 'Pipeline'}
               </button>
+              {isAdmin && (
+                <button
+                  className="inbox-action-btn"
+                  onClick={() => {
+                    setSelectedRepId(conversation.assignedRepId || '');
+                    setShowAssignModal(true);
+                  }}
+                  title="Assign or reassign this conversation"
+                >
+                  Assign Rep
+                </button>
+              )}
               <button
                 className="inbox-action-btn followup-btn"
                 onClick={() => setShowFollowupPopover((p) => !p)}

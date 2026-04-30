@@ -4,7 +4,7 @@ import logger from '../config/logger';
 import { config } from '../config';
 import { AutoTagService } from './autoTagService';
 import { WebhookService } from './webhookService';
-import { isWithinQuietHoursWindow } from './quietHoursWindow';
+import { buildQuietHoursReason, isWithinQuietHoursWindow } from './quietHoursWindow';
 
 /**
  * ComplianceService - STOP/HELP handling, suppression, quiet hours
@@ -105,8 +105,9 @@ export class ComplianceService {
     }
 
     // Check quiet hours (not cached — time-dependent)
-    if (await this.isQuietHours()) {
-      return { allowed: false, reason: 'Quiet hours' };
+    const quietHours = await this.getQuietHoursStatus();
+    if (quietHours.active) {
+      return { allowed: false, reason: quietHours.reason };
     }
 
     const result = { allowed: true };
@@ -263,10 +264,13 @@ export class ComplianceService {
   }
 
   /**
-   * Check if current time is within quiet hours.
-   * Reads from DB SystemSetting first, falling back to env config.
+   * Reads quiet-hours settings from DB SystemSetting first, falling back to env config.
    */
-  static async isQuietHours(): Promise<boolean> {
+  private static async getQuietHoursConfig(): Promise<{
+    quietHoursStart: number;
+    quietHoursEnd: number;
+    timezone: string;
+  }> {
     let quietHoursStart = config.compliance.quietHoursStart;
     let quietHoursEnd = config.compliance.quietHoursEnd;
     let timezone = config.compliance.timezone;
@@ -310,15 +314,32 @@ export class ComplianceService {
       logger.warn('Failed to read quiet hours from DB, using env config', { error: (err as Error).message });
     }
 
-    const now = new Date();
+    return { quietHoursStart, quietHoursEnd, timezone };
+  }
+
+  /**
+   * Check if current time is within quiet hours.
+   */
+  static async getQuietHoursStatus(now = new Date()): Promise<{ active: boolean; reason: string; timezone: string }> {
+    const { quietHoursStart, quietHoursEnd, timezone } = await this.getQuietHoursConfig();
+
     const timeStr = now.toLocaleTimeString('en-US', {
       timeZone: timezone,
       hour12: false,
       hour: '2-digit',
     });
     const currentHour = parseInt(timeStr, 10);
+    const active = isWithinQuietHoursWindow(currentHour, quietHoursStart, quietHoursEnd);
 
-    return isWithinQuietHoursWindow(currentHour, quietHoursStart, quietHoursEnd);
+    return {
+      active,
+      reason: buildQuietHoursReason(quietHoursEnd, timezone),
+      timezone,
+    };
+  }
+
+  static async isQuietHours(): Promise<boolean> {
+    return (await this.getQuietHoursStatus()).active;
   }
 
   /**

@@ -20,6 +20,7 @@ import {
   shouldSkipTwilioSignatureValidation,
 } from './twilioSignatureValidation';
 import { phoneLookupVariants, splitContactName } from './inboundParsing';
+import { resolveInboundOwnerRepId } from './inboundOwnership';
 import { getSocketIO } from '../realtime/socket';
 
 const router = Router();
@@ -297,43 +298,52 @@ router.post('/inbound', async (req: Request, res: Response) => {
         },
       });
 
-      // Auto-assign conversation to the rep who last messaged the lead (если ещё не назначен).
-      // Раньше: assignedRepId оставался NULL у CSV-импортированных лидов → reps не видели unread в своём Inbox.
-      // Теперь: ищем последнее OUTBOUND с sentByUserId, и назначаем conversation + lead этому rep.
-      if (!conversation.assignedRepId) {
-        const lastOutboundCandidates = await prisma.message.findMany({
-          where: {
-            conversationId: conversation.id,
-            direction: 'OUTBOUND',
-            sentByUserId: { not: null },
-          },
-          orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
-          take: 10,
-          select: { sentByUserId: true },
+      // Keep the explicit owner when that rep is still active.
+      // Fall back to the latest active human sender only when the thread is unassigned or the owner is inactive.
+      const lastOutboundCandidates = await prisma.message.findMany({
+        where: {
+          conversationId: conversation.id,
+          direction: 'OUTBOUND',
+          sentByUserId: { not: null },
+        },
+        orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+        take: 10,
+        select: { sentByUserId: true },
+      });
+      const candidateIds = lastOutboundCandidates
+        .map((message) => message.sentByUserId)
+        .filter((id): id is string => !!id);
+      const activeRepLookupIds = Array.from(
+        new Set([conversation.assignedRepId, lead.assignedRepId, ...candidateIds].filter((id): id is string => !!id)),
+      );
+      const activeUsers =
+        activeRepLookupIds.length > 0
+          ? await prisma.user.findMany({
+              where: { id: { in: activeRepLookupIds }, isActive: true },
+              select: { id: true },
+            })
+          : [];
+      const nextOwnerRepId = resolveInboundOwnerRepId({
+        currentAssignedRepId: conversation.assignedRepId,
+        leadAssignedRepId: lead.assignedRepId,
+        recentHumanOutboundRepIds: candidateIds,
+        activeRepIds: activeUsers.map((user) => user.id),
+      });
+
+      if (nextOwnerRepId && nextOwnerRepId !== conversation.assignedRepId) {
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { assignedRepId: nextOwnerRepId },
         });
-        const candidateIds = lastOutboundCandidates.map((m) => m.sentByUserId).filter((id): id is string => !!id);
-        let pickedRepId: string | null = null;
-        if (candidateIds.length > 0) {
-          const activeUsers = await prisma.user.findMany({
-            where: { id: { in: candidateIds }, isActive: true },
-            select: { id: true },
-          });
-          const activeSet = new Set(activeUsers.map((u) => u.id));
-          pickedRepId = candidateIds.find((id) => activeSet.has(id)) || null;
-        }
-        if (pickedRepId) {
-          await prisma.conversation.update({
-            where: { id: conversation.id },
-            data: { assignedRepId: pickedRepId },
-          });
-          if (!lead.assignedRepId) {
-            await prisma.lead.update({
-              where: { id: lead.id },
-              data: { assignedRepId: pickedRepId },
-            });
-          }
-          conversation.assignedRepId = pickedRepId;
-        }
+        conversation.assignedRepId = nextOwnerRepId;
+      }
+
+      if (nextOwnerRepId && nextOwnerRepId !== lead.assignedRepId) {
+        await prisma.lead.update({
+          where: { id: lead.id },
+          data: { assignedRepId: nextOwnerRepId },
+        });
+        lead.assignedRepId = nextOwnerRepId;
       }
 
       // Handle reply - pause automations, update lead status

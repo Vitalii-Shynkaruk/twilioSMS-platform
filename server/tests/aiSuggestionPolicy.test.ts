@@ -133,6 +133,30 @@ describe('AI suggestion policy', () => {
     expect(suggestions[0].text).not.toMatch(/best email/i);
   });
 
+  it('должна распознавать короткий inbound email reply, если вместо @ пришёл знак вопроса', () => {
+    const messages = [
+      { direction: 'OUTBOUND', body: 'best email?' },
+      { direction: 'INBOUND', body: 'Billprichard07?gmail.com' },
+    ];
+
+    expect(extractConversationEmail(messages)).toBe('Billprichard07@gmail.com');
+
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+        suggestedReply: null,
+        suggestedReengageMessage: null,
+      },
+      messages,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/i have your email|sending (?:the )?(?:funding link|terms)/i);
+    expect(suggestions[0].text).not.toMatch(/best email/i);
+  });
+
   it('должна чинить сохраненную AI suggestion, если email уже есть в истории треда', () => {
     const suggestions = resolveAiSuggestions({
       suggestions: [

@@ -258,9 +258,21 @@ export function extractEmailAddress(text: string | null | undefined): string | n
   if (!normalized) return null;
 
   const match = normalized.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  if (!match?.[0]) return null;
+  if (match?.[0]) {
+    return match[0].trim().replace(/[>,.;:!?]+$/u, '');
+  }
 
-  return match[0].trim().replace(/[>,.;:!?]+$/u, '');
+  // Some short SMS replies replace @ with ? (for example: Billprichard07?gmail.com).
+  // When the whole token still looks like an email address, normalize it back to @.
+  for (const rawToken of normalized.split(/\s+/u)) {
+    const token = rawToken.replace(/^[<({\["']+/u, '').replace(/[>)}\]"',.;:!?]+$/u, '');
+    const obfuscatedMatch = token.match(/^([A-Z0-9._%+-]{2,})\?([A-Z0-9.-]+\.[A-Z]{2,})$/i);
+    if (obfuscatedMatch) {
+      return `${obfuscatedMatch[1]}@${obfuscatedMatch[2]}`;
+    }
+  }
+
+  return null;
 }
 
 interface DeterministicClassificationInput {

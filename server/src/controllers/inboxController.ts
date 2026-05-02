@@ -9,7 +9,8 @@ import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 import { OutboundGateService } from '../services/outboundGateService';
 import { AIService, extractConversationEmail, resolveAiSuggestions } from '../services/aiService';
-import { resolveFollowupStatus } from '../services/followupPolicy';
+import { buildSuggestedFollowup, resolveFollowupStatus } from '../services/followupPolicy';
+import { resolveConversationEmailRecipient } from '../services/conversationEmailPolicy';
 
 type InboxFilter =
   | 'all'
@@ -1362,12 +1363,18 @@ export class InboxController {
     const chronologicalMessages = messages
       .slice()
       .reverse()
-      .map((message) => ({ direction: message.direction, body: message.body }));
+      .map((message) => ({
+        direction: message.direction,
+        body: message.body,
+        createdAt: message.sentAt || message.createdAt,
+      }));
     const detectedConversationEmail = extractConversationEmail(chronologicalMessages);
-    const responseLead =
-      detectedConversationEmail && !hydratedLead.email
-        ? { ...hydratedLead, email: detectedConversationEmail }
-        : hydratedLead;
+    const emailRecipient = resolveConversationEmailRecipient({
+      textedEmail: detectedConversationEmail,
+      leadEmail: hydratedLead.email,
+      contactEmail: latestDealClient?.email || null,
+    });
+    const responseLead = emailRecipient.email ? { ...hydratedLead, email: emailRecipient.email } : hydratedLead;
     const statusStrip = {
       hotLead: !!conversation.hotLead,
       pipelineState: latestSmsDeal ? 'in_pipeline' : 'not_in_pipeline',
@@ -1381,7 +1388,10 @@ export class InboxController {
     };
 
     const contactInfo = {
-      email: responseLead.email || '',
+      email: emailRecipient.email,
+      emailSource: emailRecipient.source,
+      textedEmail: emailRecipient.textedEmail || '',
+      leadListEmail: emailRecipient.leadEmail || '',
       phone: responseLead.phone || '',
       company: responseLead.company || '',
       source: sourceName,
@@ -1483,21 +1493,47 @@ export class InboxController {
       classification: conversation.aiClassification,
       signals: (conversation.aiSignals as Record<string, unknown> | null) || null,
       messages: chronologicalMessages,
+      notes: notes.map((note) => note.body),
+      knownEmail: emailRecipient.email || null,
+      emailReceived: !!conversation.emailReceived || !!emailRecipient.textedEmail,
     });
     const responseAiSignals = {
       ...(((conversation.aiSignals as Record<string, unknown> | null) || {}) as Record<string, unknown>),
     };
-    if (typeof responseAiSignals.suggestedReply !== 'string' && resolvedAiSuggestions[0]?.text) {
+    const latestInboundMessage =
+      [...chronologicalMessages]
+        .reverse()
+        .find(
+          (message) =>
+            String(message.direction || '').toUpperCase() === 'INBOUND' && String(message.body || '').trim().length > 0,
+        ) || null;
+    const currentFollowupSuggestion = buildSuggestedFollowup({
+      classification: conversation.aiClassification,
+      signals: responseAiSignals,
+      latestInboundText: latestInboundMessage?.body || '',
+      now: latestInboundMessage?.createdAt ? new Date(latestInboundMessage.createdAt) : new Date(),
+    });
+
+    if (resolvedAiSuggestions[0]?.text) {
       responseAiSignals.suggestedReply = resolvedAiSuggestions[0].text;
     }
-    if (typeof responseAiSignals.suggestedReengageMessage !== 'string' && resolvedAiSuggestions[1]?.text) {
+    if (resolvedAiSuggestions[1]?.text) {
       responseAiSignals.suggestedReengageMessage = resolvedAiSuggestions[1].text;
     }
+    responseAiSignals.suggestedFollowupTime = currentFollowupSuggestion.time
+      ? currentFollowupSuggestion.time.toISOString()
+      : null;
+    responseAiSignals.suggestedFollowupReason = currentFollowupSuggestion.reason;
+    responseAiSignals.suggestedFollowupStatus = currentFollowupSuggestion.status;
 
     res.json({
       conversation: {
         ...conversation,
-        emailReceived: conversation.emailReceived || !!detectedConversationEmail,
+        emailReceived: conversation.emailReceived || !!emailRecipient.textedEmail,
+        emailRecipient: emailRecipient.email || null,
+        emailRecipientSource: emailRecipient.source,
+        textedEmail: emailRecipient.textedEmail,
+        leadListEmail: emailRecipient.leadEmail,
         aiSignals: responseAiSignals,
         aiSuggestions: resolvedAiSuggestions,
         lead: responseLead,
@@ -1742,6 +1778,8 @@ export class InboxController {
   static async assignRep(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
     const { repId } = req.body;
+    const allowPrivilegedSelfAssign =
+      repId === req.user?.id && (req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER');
 
     const [conversation, nextRep] = await Promise.all([
       prisma.conversation.findUnique({
@@ -1751,13 +1789,26 @@ export class InboxController {
         },
       }),
       prisma.user.findFirst({
-        where: { id: repId, role: 'REP', isActive: true },
+        where: {
+          id: repId,
+          isActive: true,
+          role: {
+            in: allowPrivilegedSelfAssign ? ['REP', 'ADMIN', 'MANAGER'] : ['REP'],
+          },
+        },
         select: { id: true, firstName: true, lastName: true },
       }),
     ]);
 
     if (!conversation) throw new AppError('Conversation not found', 404);
-    if (!nextRep) throw new AppError('Assigned rep must be an active REP user', 400);
+    if (!nextRep) {
+      throw new AppError(
+        allowPrivilegedSelfAssign
+          ? 'Assigned owner must be an active REP or yourself as ADMIN/MANAGER'
+          : 'Assigned rep must be an active REP user',
+        400,
+      );
+    }
 
     const previousRepLabel = conversation.assignedRep
       ? `${conversation.assignedRep.firstName} ${conversation.assignedRep.lastName || ''}`.trim()

@@ -30,16 +30,28 @@ describe('AI suggestion policy', () => {
     expect(result.classification).toBe('WRONG_NUMBER');
   });
 
-  it('не должна повышать bare email до HOT по locked v4 handoff', () => {
+  it('должна повышать email reply до HOT, если rep запросил email в прошлом outbound', () => {
     const result = resolveDeterministicClassification({
       classification: 'WARM',
       latestInboundText: 'jay@seamoc.com',
       previousOutboundText: 'Best email to send details?',
     });
 
-    expect(result.classification).toBe('WARM');
+    expect(result.classification).toBe('HOT');
     expect(result.triggers.hasEmail).toBe(true);
-    expect(result.triggers.contactInfoWithContext).toBe(false);
+    expect(result.triggers.contactInfoWithContext).toBe(true);
+  });
+
+  it('должна переопределять ошибочный DEAD в HOT, если inbound это email на прямой email request', () => {
+    const result = resolveDeterministicClassification({
+      classification: 'DEAD',
+      latestInboundText: 'kissmyass@gmail.com',
+      previousOutboundText: 'Could a flexible 10yr agreement be what your business needs? Best email to send terms?',
+    });
+
+    expect(result.classification).toBe('HOT');
+    expect(result.triggers.hasEmail).toBe(true);
+    expect(result.triggers.contactInfoWithContext).toBe(true);
   });
 
   it('должна убирать Twilio-risky вопрос про владение property из suggested SMS', () => {
@@ -157,6 +169,17 @@ describe('AI suggestion policy', () => {
     expect(suggestions[0].text).not.toMatch(/best email/i);
   });
 
+  it('должна выбирать самый свежий inbound email из истории треда', () => {
+    const messages = [
+      { direction: 'OUTBOUND', body: 'Best email to send terms?' },
+      { direction: 'INBOUND', body: 'old-owner@example.com' },
+      { direction: 'OUTBOUND', body: 'Could you send the best email for this file?' },
+      { direction: 'INBOUND', body: 'Use new-owner@example.com instead' },
+    ];
+
+    expect(extractConversationEmail(messages)).toBe('new-owner@example.com');
+  });
+
   it('должна чинить сохраненную AI suggestion, если email уже есть в истории треда', () => {
     const suggestions = resolveAiSuggestions({
       suggestions: [
@@ -240,6 +263,468 @@ describe('AI suggestion policy', () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].text).toMatch(/home equity line of credit/i);
     expect(suggestions[0].text).not.toMatch(/best email/i);
+  });
+
+  it('должна повышать выбор срока до HOT после term-based outreach', () => {
+    const result = resolveDeterministicClassification({
+      classification: 'WARM',
+      latestInboundText: '10 to 15 years',
+      previousOutboundText:
+        "Hey, it's Marcos from SecureCreditLines. Would longer term credit options help the business? Perhaps 10-25yrs? Best email to send details?",
+    });
+
+    expect(result.classification).toBe('HOT');
+  });
+
+  it('должна чинить suggestion для вопроса про fees вместо generic fallback', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+        suggestedReply: null,
+        suggestedReengageMessage: null,
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Good Morning this is Jonathan with SecureCreditLines. Can the business benefit from 10/30yr credit options?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'What are the fees?',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/fees depend|cleanest quote|how much you need/i);
+    expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
+  });
+
+  it('должна чинить stale email/funding suggestion, если текущий inbound спрашивает про payments/rate/years', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Great, I have your email. I am sending the Funding Link now. Once you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10/30yr agreement be what your business needs? Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'yes depends on monthly payments and % interest rate and how many years. i like very low monthly payments',
+        },
+      ],
+      knownEmail: 'drmark@ptd.net',
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/rate depends|payment|term|debt|working capital|fund growth/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|i have your email|what problem are you trying to solve/i);
+  });
+
+  it('должна чинить stale email/funding suggestion, если текущий inbound про credit score objection', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10/30yr agreement be what your business needs? Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'not at my credit score',
+        },
+      ],
+      knownEmail: 'foster.musicmasters@gmail.com',
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/credit|score|600|hard pull|qualify/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|i have your email|what problem are you trying to solve/i);
+  });
+
+  it('должна чинить stale email/funding suggestion, если lead уточняет credit score over 600', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10/30yr agreement be what your business needs? Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'not at my credit score',
+        },
+        {
+          direction: 'OUTBOUND',
+          body: 'You would be surprised! Is it under 500?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'no over 600',
+        },
+      ],
+      knownEmail: 'foster.musicmasters@gmail.com',
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/over 600|starter business credit line|qualify|minimum/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|i have your email|what problem are you trying to solve/i);
+  });
+
+  it('должна использовать notes для callback-aware fallback вместо generic reply', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+        suggestedReply: null,
+        suggestedReengageMessage: null,
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Marcial, do you want to see if a HELOC is feasible? Need the Address / DOB / Email. Interested?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'I tried to call you back but only got a recording',
+        },
+      ],
+      notes: ['Had $150k Kapitus in 2024'],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/kapitus|payment|working capital/i);
+    expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
+  });
+
+  it('должна чинить stale funding-link suggestion, если текущий inbound про phone call logistics', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'You got 2m for a quick call?',
+        },
+        {
+          direction: 'OUTBOUND',
+          body: "I don't need the call, it's just quicker. I just have a few things I wanted to clarify with you.",
+        },
+        {
+          direction: 'INBOUND',
+          body: 'You will have to give me a heads up as well. My phone declines any number not saved',
+        },
+        {
+          direction: 'OUTBOUND',
+          body: 'Hello Jacob, do you have 2m for me today?',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/heads-up|save this number|2 minute call|blocked/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|what problem are you trying to solve/i);
+  });
+
+  it('должна чинить stale funding-link suggestion, если lead подтверждает точное время звонка', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Maryra, if you have been considering a HELOC, I can get one done in 5-7 days. Interested?',
+        },
+        {
+          direction: 'OUTBOUND',
+          body: 'Hey Maryra, do you have 2m today for a quick call?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Yes, call about 3:30pm central time',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/call you at 3:30pm ct today/i);
+    expect(suggestions[0].text).toMatch(/heloc/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|what problem are you trying to solve/i);
+  });
+
+  it('должна чинить stale funding-link suggestion, если lead просит вернуться через 2 hours', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Ok. I just sent you an email with the docs needed to price out options. Can you confirm receipt? Alex@securecreditlines.com',
+        },
+        {
+          direction: 'INBOUND',
+          body: "I need 2 hours, I'm a little bit busy at another place",
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/follow up in 2 hours/i);
+    expect(suggestions[0].text).toMatch(/review the docs/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|what problem are you trying to solve/i);
+  });
+
+  it('должна чинить future check-in suggestion, если lead просит вернуться через 2 hours', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: "Hey Lillie, checking in-were you able to review the docs I sent? Let me know if you have questions or if you're ready to move forward on the $20k for equipment.",
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Ok. I just sent you an email with the docs needed to price out options. Can you confirm receipt? Alex@securecreditlines.com',
+        },
+        {
+          direction: 'INBOUND',
+          body: "I need 2 hours, I'm a little bit busy at another place",
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/follow up in 2 hours/i);
+    expect(suggestions[0].text).toMatch(/review the docs/i);
+    expect(suggestions[0].text).not.toMatch(/checking in|ready to move forward/i);
+  });
+
+  it('должна использовать email on file и positive confirmation вместо повторного запроса email', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+        suggestedReply: null,
+        suggestedReengageMessage: null,
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Is this the best email to send terms to jaicksdds@aol.com?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Yes',
+        },
+      ],
+      knownEmail: 'jaicksdds@aol.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/sending (?:the )?funding link|sending (?:the )?terms/i);
+    expect(suggestions[0].text).not.toMatch(/best email/i);
+  });
+
+  it('должна чинить hostile-looking email share и не предлагать remove from list', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Understood, removing you from our list. Have a good one.',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'NURTURE',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10yr agreement be what your business needs? Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Kissmyass@gmail.com',
+        },
+      ],
+      knownEmail: 'kissmyass@gmail.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/i have your email|sending (?:the )?funding link|sending (?:the )?terms/i);
+    expect(suggestions[0].text).not.toMatch(/removing you from our list/i);
+  });
+
+  it('должна чинить remove-list suggestion даже если после inbound email уже был follow-up outbound', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Understood, removing you from our list. Best of luck with the business.',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'DEAD',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Kissmyass@gmail.com',
+        },
+        {
+          direction: 'OUTBOUND',
+          body: 'Got it! How much are you looking to receive for the business?',
+        },
+      ],
+      knownEmail: 'kissmyass@gmail.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/i have your email|sending (?:the )?funding link|sending (?:the )?terms/i);
+    expect(suggestions[0].text).not.toMatch(/removing you from our list|best of luck/i);
+  });
+
+  it('должна использовать manual email received flag для repair даже если email не в последнем inbound', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Absolutely. What is the best email to send the terms to? Once I have it, what problem are you trying to solve in the business?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Yes',
+        },
+      ],
+      knownEmail: 'client@example.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/sending (?:the )?funding link|sending (?:the )?terms/i);
+    expect(suggestions[0].text).not.toMatch(/best email/i);
+  });
+
+  it('не должна подставлять email клиента как адрес rep-а в AI suggestion', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'I need 4 months biz bank statements, your DOB, SSN, and home address. You can reply here or email those to me at brian@awarenessgroup.llc. Once I have that, we can move forward with the unsecured line.',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Can you respond to my email with the last background info needed? No hard pulls.',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'What do you need?',
+        },
+      ],
+      knownEmail: 'brian@awarenessgroup.llc',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toContain('4 months biz bank statements');
+    expect(suggestions[0].text).not.toContain('brian@awarenessgroup.llc');
+    expect(suggestions[0].text).toMatch(/reply here|send that over by email/i);
+    expect(suggestions[0].text).not.toMatch(/to me at/i);
   });
 
   it('должна извлекать JSON из LLM ответа даже если после fenced block есть хвост с reply options', () => {

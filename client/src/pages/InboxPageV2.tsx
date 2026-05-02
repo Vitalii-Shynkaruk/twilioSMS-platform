@@ -813,6 +813,13 @@ function MessageThread({
 
   const conversation: Conversation | undefined = data?.conversation;
   const messages: Message[] = data?.messages || [];
+  const assignableUsers = useMemo(() => {
+    return (usersData?.users || []).filter((candidate: any) => {
+      if (candidate.isActive === false) return false;
+      if (candidate.role === 'REP') return true;
+      return candidate.id === user?.id && (candidate.role === 'ADMIN' || candidate.role === 'MANAGER');
+    });
+  }, [usersData, user?.id]);
   const canAutoMarkRead =
     !!user?.id &&
     !!conversation &&
@@ -881,11 +888,10 @@ function MessageThread({
 
   useEffect(() => {
     if (!showAssignModal || selectedRepId) return;
-    const activeReps = (usersData?.users || []).filter((u: any) => u.role === 'REP' && u.isActive !== false);
-    if (activeReps.length > 0) {
-      setSelectedRepId(activeReps[0].id);
+    if (assignableUsers.length > 0) {
+      setSelectedRepId(assignableUsers[0].id);
     }
-  }, [showAssignModal, selectedRepId, usersData]);
+  }, [assignableUsers, showAssignModal, selectedRepId]);
 
   const handleSend = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -960,8 +966,14 @@ function MessageThread({
   const fromNumber = statusStrip?.fromNumber || conversation.fromNumber || conversation.lead?.phone || '';
   const fromFriendly = statusStrip?.fromNumberFriendlyName || conversation.fromNumberFriendlyName || '';
   const inPipeline = conversation.isInPipeline || statusStrip?.pipelineState === 'in_pipeline';
-  const leadEmail = (conversation.lead?.email || '').trim();
-  const hasLeadEmail = leadEmail.length > 0;
+  const emailRecipient = (
+    conversation.emailRecipient ||
+    conversation.textedEmail ||
+    conversation.contactInfo?.email ||
+    conversation.lead?.email ||
+    ''
+  ).trim();
+  const hasEmailRecipient = emailRecipient.length > 0;
   const aiSignals = (conversation.aiSignals || {}) as Record<string, unknown>;
   const aiSuggestedFollowupTime =
     typeof aiSignals.suggestedFollowupTime === 'string' ? aiSignals.suggestedFollowupTime : '';
@@ -972,10 +984,22 @@ function MessageThread({
   const nextFollowupOverdue = !!nextFollowupDate && nextFollowupDate.getTime() < conversationUpdatedAt;
 
   const openGmailCompose = () => {
-    if (!hasLeadEmail) return;
-    const to = encodeURIComponent(leadEmail);
+    if (!hasEmailRecipient) return;
+    const to = encodeURIComponent(emailRecipient);
     const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+
+    if (!document.body) {
+      window.location.assign(url);
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
 
   return (
@@ -1215,7 +1239,7 @@ function MessageThread({
             suggestions={visibleSuggestions}
             signals={(conversation as any)?.aiSignals}
             onOpenSuggestionCta={openGmailCompose}
-            canOpenSuggestionCta={hasLeadEmail}
+            canOpenSuggestionCta={hasEmailRecipient}
             suggestionCtaDisabledTitle="No email on file yet"
             onUseSuggestion={(text) => {
               setReplyText(text);
@@ -1413,30 +1437,31 @@ function MessageThread({
                 </button>
               </div>
               <div className="inbox-assign-body">
-                <div className="inbox-assign-sub">Admin-only. Select rep and notify immediately.</div>
+                <div className="inbox-assign-sub">
+                  Admin-only. Select rep or assign to yourself and notify immediately.
+                </div>
                 <div className="inbox-assign-list">
-                  {(usersData?.users || [])
-                    .filter((u: any) => u.role === 'REP' && u.isActive !== false)
-                    .map((u: any) => {
-                      const isSelected = selectedRepId === u.id;
-                      const isCurrent = conversation?.assignedRepId === u.id;
-                      return (
-                        <button
-                          key={u.id}
-                          type="button"
-                          className={clsx('inbox-assign-row', isSelected && 'selected')}
-                          onClick={() => setSelectedRepId(u.id)}
-                        >
-                          <span className="inbox-assign-name">
-                            {u.firstName} {u.lastName}
-                          </span>
-                          <span className="inbox-assign-badges">
-                            {isCurrent ? <span className="badge-current">Current</span> : null}
-                            {isSelected ? <span className="badge-selected">Selected</span> : null}
-                          </span>
-                        </button>
-                      );
-                    })}
+                  {assignableUsers.map((u: any) => {
+                    const isSelected = selectedRepId === u.id;
+                    const isCurrent = conversation?.assignedRepId === u.id;
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        className={clsx('inbox-assign-row', isSelected && 'selected')}
+                        onClick={() => setSelectedRepId(u.id)}
+                      >
+                        <span className="inbox-assign-name">
+                          {u.firstName} {u.lastName}
+                          {u.id === user?.id ? ' (You)' : ''}
+                        </span>
+                        <span className="inbox-assign-badges">
+                          {isCurrent ? <span className="badge-current">Current</span> : null}
+                          {isSelected ? <span className="badge-selected">Selected</span> : null}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="inbox-popover-actions">
                   <button

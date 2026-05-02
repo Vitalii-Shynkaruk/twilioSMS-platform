@@ -1,0 +1,65 @@
+{
+  "scope": "M1.6 Inbox AI, Email/Gmail CTA, follow-up, quiet hours, inbound ownership regression gate",
+  "date": "2026-05-02",
+  "environment": "local root build plus client production preview with temporary mock API",
+  "checks": [
+    {
+      "name": "focused policy tests",
+      "status": "passed",
+      "command": "cd server && npx vitest run tests/aiSuggestionPolicy.test.ts tests/followupPolicy.test.ts tests/quietHoursWindow.test.ts tests/inboundOwnershipPolicy.test.ts tests/conversationEmailPolicy.test.ts",
+      "detail": {
+        "testFiles": 5,
+        "tests": 54,
+        "passed": 54,
+        "failed": 0
+      }
+    },
+    {
+      "name": "root production build",
+      "status": "passed",
+      "command": "npm run build",
+      "detail": "server tsc plus client tsc && vite build passed"
+    },
+    {
+      "name": "editor diagnostics",
+      "status": "passed",
+      "detail": "No errors found for InboxPageV2, inboxController, aiService, conversationEmailPolicy, and related tests"
+    },
+    {
+      "name": "Inbox AI suggestion browser smoke",
+      "status": "passed",
+      "detail": {
+        "url": "http://127.0.0.1:4176/inbox",
+        "hasSuggestion": true,
+        "hasTextedEmail": true,
+        "suggestionText": "I have your email, Shawn. I will send the funding options there and call you at 3:30pm CT today."
+      }
+    },
+    {
+      "name": "Gmail CTA browser smoke",
+      "status": "passed",
+      "detail": {
+        "capturedHref": "https://mail.google.com/mail/?view=cm&fs=1&to=Shawnthai%40gmail.com",
+        "usesTextedEmail": true,
+        "hasSubject": false,
+        "hasBody": false
+      }
+    }
+  ],
+  "coverage": {
+    "inboxAiUnaffected": true,
+    "emailGmailCtaUnaffected": true,
+    "followupTimingUnaffected": true,
+    "quietHoursUnaffected": true,
+    "inboundOwnershipUnaffected": true
+  },
+  "notes": [
+    "Browser smoke used Vite preview on 127.0.0.1:4176 and a temporary local mock API on 127.0.0.1:3001.",
+    "Socket.io warning from mock preview was ignored because real-time socket scoping is tracked as a separate M1.6 gate."
+  ],
+  "summary": {
+    "status": "passed",
+    "passed": 5,
+    "failed": 0
+  }
+}

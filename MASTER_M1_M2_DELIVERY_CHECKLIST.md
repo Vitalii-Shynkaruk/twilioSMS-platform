@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                       |
-| ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                         |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending           |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                            |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                  |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending       |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate        |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         6% | Inbox AI/email/follow-up policy gate passed; new deal/share/socket/visual gates remain       |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending               |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending          |
-| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending    |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                  |
-| **Overall**                                     | **100%** |    **73%** | **M1.6 Inbox AI/email/follow-up policy evidence added; new deal/share/socket/visual remain** |
+| Направление                                     |      Вес | Готовность | Статус                                                                                    |
+| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                      |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending        |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         6% | Inbox AI/email/follow-up policy gate deployed; new deal/share/socket/visual gates remain  |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
+| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
+| **Overall**                                     | **100%** |    **73%** | **M1.6 Inbox AI/email/follow-up policy deployed; new deal/share/socket/visual remain**    |
 
 ## Source Map
 
@@ -655,6 +655,7 @@
 - [x] Focused policy tests passed 54/54 across AI suggestion repair, conversation email priority, follow-up parsing, quiet-hours reason formatting, and inbound owner retention.
 - [x] Root production build passed after Inbox/AI changes: server `tsc` plus client `tsc && vite build`.
 - [x] Browser mock smoke passed on fresh production preview: Inbox rendered AI suggestion, texted email `Shawnthai@gmail.com`, and Gmail CTA generated `https://mail.google.com/mail/?view=cm&fs=1&to=Shawnthai%40gmail.com` without subject/body.
+- [x] Production deploy passed for commit `2f665aaf`: build/restart succeeded, `/api/health` returned HTTP 200 with database `ok` and Redis `ok`, root HTML returned HTTP 200, and live login UI rendered.
 - [x] Gmail recipient policy prefers conversation/texted email over lead-list email while preserving lead-list email in response metadata.
 - [x] Admin/manager self-assign path is allowed only for the current privileged user; ordinary assignment still requires an active REP.
 
@@ -1047,5 +1048,5 @@
 | ---------- | -------: | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | 2026-05-02 |      71% | M1.6     | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.                   | `audit-screenshots/m16-drag-funding-evidence.json`      |
 | 2026-05-02 |      72% | M1.6     | Deployed `1982fdb0` to `https://app.sclcapital.io/`, applied additive DB schema sync, rebuilt/restarted PM2, and passed production smoke. | `audit-screenshots/m16-production-deploy-evidence.json` |
-| 2026-05-02 |      73% | M1.6     | Added Inbox AI/email CTA/follow-up/quiet-hours/inbound-owner regression evidence and browser Gmail CTA smoke.                             | `audit-screenshots/m16-inbox-ai-policy-evidence.json`   |
+| 2026-05-02 |      73% | M1.6     | Added and deployed Inbox AI/email CTA/follow-up/quiet-hours/inbound-owner regression evidence; production smoke passed on `2f665aaf`.     | `audit-screenshots/m16-inbox-ai-policy-evidence.json`   |
 | 2026-05-02 |       6% | Planning | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.        | This file                                               |

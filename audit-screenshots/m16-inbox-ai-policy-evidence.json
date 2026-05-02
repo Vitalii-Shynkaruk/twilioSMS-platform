@@ -1,7 +1,7 @@
 {
   "scope": "M1.6 Inbox AI, Email/Gmail CTA, follow-up, quiet hours, inbound ownership regression gate",
   "date": "2026-05-02",
-  "environment": "local root build plus client production preview with temporary mock API",
+  "environment": "local root build, client production preview with temporary mock API, and production deploy smoke",
   "checks": [
     {
       "name": "focused policy tests",
@@ -44,6 +44,22 @@
         "hasSubject": false,
         "hasBody": false
       }
+    },
+    {
+      "name": "production deploy smoke",
+      "status": "passed",
+      "detail": {
+        "productionUrl": "https://app.sclcapital.io/",
+        "deployedCommit": "2f665aaf",
+        "gitStatusLines": 0,
+        "apiHealthStatus": 200,
+        "database": "ok",
+        "redis": "ok",
+        "rootHtmlStatus": 200,
+        "pm2Process": "sms-api",
+        "pm2Status": "online",
+        "browserLoginRendered": true
+      }
     }
   ],
   "coverage": {
@@ -59,7 +75,7 @@
   ],
   "summary": {
     "status": "passed",
-    "passed": 5,
+    "passed": 6,
     "failed": 0
   }
 }

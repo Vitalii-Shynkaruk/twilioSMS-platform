@@ -1,0 +1,145 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Response } from 'express';
+import { DealController } from '../src/controllers/dealController';
+import prisma from '../src/config/database';
+import type { AuthRequest } from '../src/middleware/auth';
+
+function createRequest(body: Record<string, unknown>, params: Record<string, string> = { id: 'deal-1' }): AuthRequest {
+  return {
+    params,
+    body,
+    app: {},
+    user: {
+      id: 'rep-1',
+      email: 'rep@sclcapital.io',
+      role: 'REP',
+      firstName: 'Rep',
+      lastName: 'One',
+    },
+  } as AuthRequest;
+}
+
+function createResponse(): Response {
+  return {
+    json: vi.fn(),
+    status: vi.fn().mockReturnThis(),
+  } as unknown as Response;
+}
+
+function createDealFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'deal-1',
+    clientId: 'client-1',
+    assignedRepId: 'rep-1',
+    assistingRepIds: [],
+    leadId: 'lead-1',
+    stage: 'ENGAGED_INTERESTED',
+    stageLabel: 'Engaged / Interested',
+    contactAttempts: 2,
+    contactAttemptThreshold: 10,
+    lastEngagementAt: null,
+    lastReplyAt: null,
+    lenderEngaged: false,
+    appSubmitted: false,
+    followUpType: null,
+    followUpDate: null,
+    client: { id: 'client-1', businessName: 'Ana Cafe' },
+    ...overrides,
+  };
+}
+
+describe('M1.5 deal contact attempts', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('инкрементирует quick-log attempts для no_answer', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture() as never);
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(createDealFixture({ contactAttempts: 3 }) as never);
+    const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+    const response = createResponse();
+
+    await DealController.logAttempt(createRequest({ kind: 'no_answer' }), response);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contactAttempts: 3 }),
+      }),
+    );
+    expect(eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: 'contact_attempt_logged',
+          metadata: expect.objectContaining({ kind: 'no_answer', previousAttempts: 2, contactAttempts: 3 }),
+        }),
+      }),
+    );
+    expect(response.json).toHaveBeenCalled();
+  });
+
+  it('автоматически переносит в Nurture при достижении threshold', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(
+      createDealFixture({ contactAttempts: 9, contactAttemptThreshold: 10 }) as never,
+    );
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(createDealFixture({ contactAttempts: 10, stage: 'NURTURE', stageLabel: 'Nurture' }) as never);
+    const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+    const leadUpdate = vi.spyOn(prisma.lead, 'update').mockResolvedValue({ id: 'lead-1' } as never);
+
+    await DealController.logAttempt(createRequest({ kind: 'voicemail' }), createResponse());
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactAttempts: 10,
+          stage: 'NURTURE',
+          lostReason: 'Auto-nurture after 10 contact attempts',
+        }),
+      }),
+    );
+    expect(eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ eventType: 'auto_nurture_attempt_threshold', toStage: 'NURTURE' }),
+      }),
+    );
+    expect(leadUpdate).toHaveBeenCalledWith({ where: { id: 'lead-1' }, data: { status: 'NOT_INTERESTED' } });
+  });
+
+  it('connected сбрасывает attempts и обновляет engagement timestamp', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 4 }) as never);
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(
+        createDealFixture({ contactAttempts: 0, lastEngagementAt: new Date('2026-05-02T10:00:00.000Z') }) as never,
+      );
+    vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+
+    await DealController.logAttempt(createRequest({ kind: 'connected' }), createResponse());
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contactAttempts: 0, lastEngagementAt: expect.any(Date) }),
+      }),
+    );
+  });
+
+  it('not_interested переносит в Nurture без инкремента counter', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 4 }) as never);
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(createDealFixture({ contactAttempts: 0, stage: 'NURTURE', stageLabel: 'Nurture' }) as never);
+    vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+    vi.spyOn(prisma.lead, 'update').mockResolvedValue({ id: 'lead-1' } as never);
+
+    await DealController.logAttempt(createRequest({ kind: 'not_interested' }), createResponse());
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contactAttempts: 0, stage: 'NURTURE', lostReason: 'Not interested' }),
+      }),
+    );
+  });
+});

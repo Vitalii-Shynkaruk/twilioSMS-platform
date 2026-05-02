@@ -857,6 +857,9 @@ model Deal {
   lastReplyAt       DateTime?
   daysInStage       Int             @default(0)
   staleDays         Int             @default(0)
+  contactAttempts   Int             @default(0)
+  contactAttemptThreshold Int        @default(10)
+  lastEngagementAt  DateTime?
 
   // App & Offer tracking
   appSubmitted      Boolean         @default(false)
@@ -911,6 +914,8 @@ model Deal {
   @@index([assignedRepId])
   @@index([clientId])
   @@index([lastActivityAt])
+  @@index([contactAttempts])
+  @@index([lastEngagementAt])
   @@index([fundedDate])
   @@index([nextActionDue])
   @@index([followUpDate])

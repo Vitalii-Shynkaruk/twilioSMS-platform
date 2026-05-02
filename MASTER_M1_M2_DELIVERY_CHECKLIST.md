@@ -15,13 +15,13 @@
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                               |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         3% | Backend log-attempt foundation + API tests/build passed; UI/reset/pixel pending           |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **57%** | **M2.3 AI Retarget cap coverage added; browser smoke and release gates remain**           |
+| **Overall**                                     | **100%** |    **60%** | **M1.5 backend attempt mechanic foundation added; UI/browser gates remain**               |
 
 ## Source Map
 
@@ -537,28 +537,41 @@
 
 ## M1.5 — Auto-Nurture Attempt Mechanic
 
+### Implementation evidence — 2026-05-02
+
+- [x] Added additive Deal fields in Prisma schema: `contactAttempts`, `contactAttemptThreshold`, `lastEngagementAt`.
+- [x] Added `POST /api/deals/:id/log-attempt` backend action.
+- [x] Implemented quick-log kinds: `no_answer`, `texted`, `voicemail`, `connected`, `not_interested`.
+- [x] `no_answer`, `texted`, and `voicemail` increment attempts and write audit metadata.
+- [x] `connected` resets attempts and updates `lastEngagementAt`.
+- [x] `not_interested` moves deal to `NURTURE`, sets lost semantics, resets attempts, and does not increment counter.
+- [x] Threshold auto-move to `NURTURE` implemented with audit metadata and linked lead status sync.
+- [x] Access control uses existing deal scope policy; funded/closed deals reject quick-log attempts.
+- [x] Validation passed: Prisma Client generation, server build, `cd server && npx vitest run tests/dealContactAttempts.test.ts tests/dealControllerScope.test.ts tests/dealScopePolicy.test.ts` — 14/14 passed.
+- [x] Targeted ESLint passed with 0 errors and existing warning debt only.
+
 ### Data and backend
 
-- [ ] Add `Deal.contactAttempts` default `0`.
-- [ ] Add `Deal.contactAttemptThreshold` default `10`.
-- [ ] Add `Deal.lastEngagementAt`.
+- [x] Add `Deal.contactAttempts` default `0`.
+- [x] Add `Deal.contactAttemptThreshold` default `10`.
+- [x] Add `Deal.lastEngagementAt`.
 - [ ] Confirm canonical `followUpType` values/casing for `GHOSTED` and `LOST` before implementation.
-- [ ] Add `POST /api/deals/:id/log-attempt`.
-- [ ] Implement quick-log kinds:
+- [x] Add `POST /api/deals/:id/log-attempt`.
+- [x] Implement quick-log kinds:
   - no answer;
   - texted;
   - voicemail;
   - connected;
   - not interested.
-- [ ] `no_answer`, `texted`, `voicemail` increment attempts and append auto-note.
-- [ ] `connected` resets attempts and updates `lastEngagementAt`.
-- [ ] `not_interested` moves to `NURTURE`, sets lost semantics, does not increment counter.
-- [ ] Auto-move to `NURTURE` at threshold.
+- [x] `no_answer`, `texted`, `voicemail` increment attempts and append auto-note.
+- [x] `connected` resets attempts and updates `lastEngagementAt`.
+- [x] `not_interested` moves to `NURTURE`, sets lost semantics, does not increment counter.
+- [x] Auto-move to `NURTURE` at threshold.
 - [ ] Reset attempts on substantive inbound SMS.
-- [ ] Reset attempts on connected action.
+- [x] Reset attempts on connected action.
 - [ ] Reset attempts on manual forward stage move.
 - [ ] Reset attempts on manual edit path from B.10.6.
-- [ ] Every change writes `DealEvent` audit metadata.
+- [x] Every change writes `DealEvent` audit metadata.
 - [ ] Revive Queue compatibility preserved.
 
 ### UI
@@ -576,15 +589,15 @@
 
 ### M1.5 Testing Gate
 
-- [ ] Each quick-log action tested by API.
+- [x] Each quick-log action tested by API.
 - [ ] Each quick-log action tested from UI.
-- [ ] Threshold auto-move tested.
+- [x] Threshold auto-move tested.
 - [ ] Reset on inbound tested.
-- [ ] Reset on connected tested.
+- [x] Reset on connected tested.
 - [ ] Reset on forward stage move tested.
 - [ ] Revive Queue still works.
 - [ ] Pixel-close compare for quick-log row and attempt banner.
-- [ ] Progress dashboard updated.
+- [x] Progress dashboard updated.
 
 ## M1.6 — M1 Full Regression And Release Gate
 

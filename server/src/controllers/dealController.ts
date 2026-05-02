@@ -64,6 +64,30 @@ const STAGE_ORDER: DealStage[] = [
 
 const SUBMITTED_AMOUNT_PRODUCTS = new Set<ProductType>([ProductType.SBA, ProductType.CRE, ProductType.EQUIPMENT]);
 
+const QUICK_LOG_KINDS = {
+  NO_ANSWER: 'no_answer',
+  TEXTED: 'texted',
+  VOICEMAIL: 'voicemail',
+  CONNECTED: 'connected',
+  NOT_INTERESTED: 'not_interested',
+} as const;
+
+type QuickLogKind = (typeof QUICK_LOG_KINDS)[keyof typeof QUICK_LOG_KINDS];
+
+const QUICK_LOG_LABELS: Record<QuickLogKind, string> = {
+  no_answer: 'No answer',
+  texted: 'Texted',
+  voicemail: 'Voicemail',
+  connected: 'Connected',
+  not_interested: 'Not interested',
+};
+
+const INCREMENT_ATTEMPT_KINDS = new Set<QuickLogKind>([
+  QUICK_LOG_KINDS.NO_ANSWER,
+  QUICK_LOG_KINDS.TEXTED,
+  QUICK_LOG_KINDS.VOICEMAIL,
+]);
+
 type RepIdentity = {
   id: string;
   firstName: string;
@@ -1657,6 +1681,126 @@ export class DealController {
     });
 
     res.json(updated);
+  }
+
+  // POST /api/deals/:id/log-attempt - M1.5 quick contact attempt logger
+  static async logAttempt(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { kind, note } = req.body as { kind?: QuickLogKind; note?: string };
+
+    if (!kind || !Object.values(QUICK_LOG_KINDS).includes(kind)) {
+      return res.status(400).json({ error: 'Invalid attempt kind' });
+    }
+
+    const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, existing)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (existing.stage === DealStage.FUNDED || existing.stage === DealStage.CLOSED) {
+      return res.status(400).json({ error: 'Cannot log contact attempts on funded or closed deals' });
+    }
+
+    const now = new Date();
+    const previousAttempts = existing.contactAttempts || 0;
+    const threshold = existing.contactAttemptThreshold || 10;
+    let nextAttempts = previousAttempts;
+    let eventType = 'contact_attempt_logged';
+    let eventNote = `${QUICK_LOG_LABELS[kind]} logged`;
+    const updateData: any = {
+      lastActivityAt: now,
+      staleDays: 0,
+    };
+
+    if (INCREMENT_ATTEMPT_KINDS.has(kind)) {
+      nextAttempts = previousAttempts + 1;
+      updateData.contactAttempts = nextAttempts;
+      eventNote = `${QUICK_LOG_LABELS[kind]} logged (${nextAttempts}/${threshold} attempts)`;
+
+      if (nextAttempts >= threshold && existing.stage !== DealStage.NURTURE) {
+        updateData.stage = DealStage.NURTURE;
+        updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
+        updateData.daysInStage = 0;
+        updateData.lostReason = `Auto-nurture after ${nextAttempts} contact attempts`;
+        updateData.followUpType = existing.followUpType || 're_engage';
+        updateData.followUpDate = existing.followUpDate || new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+        updateData.nextAction = 'Re-engage after contact attempts';
+        updateData.nextActionDue = updateData.followUpDate;
+        eventType = 'auto_nurture_attempt_threshold';
+        eventNote = `Auto-moved to Nurture after ${nextAttempts}/${threshold} contact attempts`;
+      }
+    }
+
+    if (kind === QUICK_LOG_KINDS.CONNECTED) {
+      nextAttempts = 0;
+      updateData.contactAttempts = 0;
+      updateData.lastEngagementAt = now;
+      eventNote = 'Connected with client; contact attempts reset';
+    }
+
+    if (kind === QUICK_LOG_KINDS.NOT_INTERESTED) {
+      nextAttempts = 0;
+      updateData.contactAttempts = 0;
+      updateData.stage = DealStage.NURTURE;
+      updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
+      updateData.daysInStage = 0;
+      updateData.lostReason = 'Not interested';
+      updateData.followUpType = existing.followUpType || 'nurture';
+      updateData.followUpDate = existing.followUpDate || new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      updateData.nextAction = 'Nurture check-in — Not interested';
+      updateData.nextActionDue = updateData.followUpDate;
+      eventType = 'not_interested_nurture';
+      eventNote = 'Marked not interested and moved to Nurture';
+    }
+
+    const customNote = typeof note === 'string' ? note.trim() : '';
+
+    const deal = await prisma.deal.update({
+      where: { id },
+      data: updateData,
+      include: {
+        client: true,
+        assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
+      },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType,
+        fromStage: existing.stage,
+        toStage: deal.stage,
+        note: customNote || eventNote,
+        metadata: {
+          kind,
+          previousAttempts,
+          contactAttempts: nextAttempts,
+          threshold,
+          autoMovedToNurture: existing.stage !== DealStage.NURTURE && deal.stage === DealStage.NURTURE,
+        },
+      },
+    });
+
+    if (deal.stage === DealStage.NURTURE && existing.leadId) {
+      await prisma.lead.update({
+        where: { id: existing.leadId },
+        data: { status: LeadStatus.NOT_INTERESTED },
+      });
+    }
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json({ ...deal, isHot: computeIsHot(deal), stageLabel: STAGE_LABELS[deal.stage] });
   }
 
   // POST /api/deals/:id/log-call - Log a call

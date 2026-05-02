@@ -36,6 +36,7 @@ router.delete('/:id/offers/:offerId', asyncHandler(DealController.deleteOffer));
 router.post('/:id/fund', asyncHandler(DealController.markFunded));
 router.post('/:id/complete-action', asyncHandler(DealController.completeAction));
 router.put('/:id/share', asyncHandler(DealController.shareDeal));
+router.post('/:id/log-attempt', asyncHandler(DealController.logAttempt));
 router.post('/:id/call-log', asyncHandler(DealController.logCall));
 router.get('/:id/sms', asyncHandler(DealController.getDealSms));
 router.post('/:id/sms/send', asyncHandler(DealController.sendDealSms));

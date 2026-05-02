@@ -8,6 +8,7 @@ import { WebhookService } from '../services/webhookService';
 import { AIService } from '../services/aiService';
 import { MobileAlertService } from '../services/mobileAlertService';
 import { isRepOrTestPhoneNumber, parseRepTestPhoneAllowlist } from '../services/inboundPhoneSuppression';
+import { resetDealEngagement, resetDealEngagementForConversation } from '../services/dealEngagementService';
 import '../config/twilio';
 import { getLiveCredentials } from '../config/twilio';
 import { config } from '../config';
@@ -220,6 +221,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       res.send(twimlResponse);
       return;
     }
+    const shouldResetDealEngagement = String(Body || '').trim().length > 0;
 
     const inboundTwilioNumber = await prisma.phoneNumber.findUnique({
       where: { phoneNumber: To },
@@ -297,6 +299,20 @@ router.post('/inbound', async (req: Request, res: Response) => {
             : {}),
         },
       });
+
+      if (shouldResetDealEngagement) {
+        void resetDealEngagementForConversation({
+          conversationId: conversation.id,
+          leadId: lead.id,
+          reason: 'inbound_sms',
+        }).catch((err) =>
+          logger.error('Failed to reset deal engagement on inbound SMS', {
+            conversationId: conversation.id,
+            leadId: lead.id,
+            error: err.message,
+          }),
+        );
+      }
 
       // Keep the explicit owner when that rep is still active.
       // Fall back to the latest active human sender only when the thread is unassigned or the owner is inactive.
@@ -469,7 +485,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       const matchedDeal = matchedClient
         ? await prisma.deal.findFirst({
             where: { clientId: matchedClient.id },
-            select: { assignedRepId: true },
+            select: { id: true, assignedRepId: true },
             orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
           })
         : null;
@@ -520,6 +536,15 @@ router.post('/inbound', async (req: Request, res: Response) => {
           sentAt: new Date(),
         },
       });
+
+      if (matchedDeal?.id && shouldResetDealEngagement) {
+        void resetDealEngagement({ dealId: matchedDeal.id, reason: 'inbound_sms' }).catch((err) =>
+          logger.error('Failed to reset matched deal engagement on inbound SMS', {
+            dealId: matchedDeal.id,
+            error: err.message,
+          }),
+        );
+      }
 
       // Notify rep if conversation could be auto-assigned
       const io = req.app.get('io');

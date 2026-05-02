@@ -1022,8 +1022,9 @@ export class DealController {
   static async moveDeal(req: AuthRequest, res: Response) {
     const { id } = req.params;
     const { stage } = req.body;
+    const targetStage = stage as DealStage;
 
-    if (!stage || !STAGE_ORDER.includes(stage as DealStage)) {
+    if (!stage || !STAGE_ORDER.includes(targetStage)) {
       return res.status(400).json({ error: 'Invalid stage' });
     }
 
@@ -1049,12 +1050,24 @@ export class DealController {
       return res.status(400).json({ error: 'Closed stage requires disqualification reason' });
     }
 
+    const now = new Date();
+    const previousAttempts = existing.contactAttempts || 0;
+    const shouldResetEngagement =
+      previousAttempts > 0 &&
+      STAGE_ORDER.indexOf(targetStage) > STAGE_ORDER.indexOf(existing.stage) &&
+      targetStage !== DealStage.NURTURE &&
+      targetStage !== DealStage.CLOSED;
     const updateData: any = {
-      stage: stage as DealStage,
-      stageLabel: STAGE_LABELS[stage as DealStage],
+      stage: targetStage,
+      stageLabel: STAGE_LABELS[targetStage],
       daysInStage: 0,
-      lastActivityAt: new Date(),
+      lastActivityAt: now,
     };
+
+    if (shouldResetEngagement) {
+      updateData.contactAttempts = 0;
+      updateData.lastEngagementAt = now;
+    }
 
     // Close/Lost/NQ flows must clear open/overdue tasks before stage update.
     // In this codebase, renewal tasks are stored in `renewal_tasks` and
@@ -1166,6 +1179,24 @@ export class DealController {
           (autoResolvedTasks > 0 ? ` · ${autoResolvedTasks} open task(s) auto-resolved` : ''),
       },
     });
+
+    if (shouldResetEngagement) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'engagement_reset',
+          fromStage: existing.stage,
+          toStage: targetStage,
+          note: 'Contact attempts reset after forward stage move',
+          metadata: {
+            reason: 'forward_stage_move',
+            previousAttempts,
+            contactAttempts: 0,
+          },
+        },
+      });
+    }
 
     const deal = await prisma.deal.update({
       where: { id },

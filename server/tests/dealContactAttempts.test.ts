@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Response } from 'express';
 import { DealController } from '../src/controllers/dealController';
+import { resetDealEngagementForConversation } from '../src/services/dealEngagementService';
 import prisma from '../src/config/database';
 import type { AuthRequest } from '../src/middleware/auth';
 
@@ -139,6 +140,63 @@ describe('M1.5 deal contact attempts', () => {
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ contactAttempts: 0, stage: 'NURTURE', lostReason: 'Not interested' }),
+      }),
+    );
+  });
+
+  it('сбрасывает attempts при forward stage move', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 4 }) as never);
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(
+        createDealFixture({ contactAttempts: 0, stage: 'QUALIFIED', stageLabel: 'Qualified' }) as never,
+      );
+    const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+    vi.spyOn(prisma.lead, 'update').mockResolvedValue({ id: 'lead-1' } as never);
+
+    await DealController.moveDeal(createRequest({ stage: 'QUALIFIED' }), createResponse());
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contactAttempts: 0, lastEngagementAt: expect.any(Date) }),
+      }),
+    );
+    expect(eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: 'engagement_reset',
+          metadata: expect.objectContaining({ reason: 'forward_stage_move', previousAttempts: 4, contactAttempts: 0 }),
+        }),
+      }),
+    );
+  });
+
+  it('сбрасывает attempts для active deals на inbound SMS conversation', async () => {
+    vi.spyOn(prisma.deal, 'findMany').mockResolvedValue([{ id: 'deal-1' }] as never);
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 5 }) as never);
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(createDealFixture({ contactAttempts: 0, lastEngagementAt: new Date() }) as never);
+    const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+
+    const resetDeals = await resetDealEngagementForConversation({
+      conversationId: 'conversation-1',
+      leadId: 'lead-1',
+      reason: 'inbound_sms',
+    });
+
+    expect(resetDeals).toHaveLength(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contactAttempts: 0, lastEngagementAt: expect.any(Date) }),
+      }),
+    );
+    expect(eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: 'engagement_reset',
+          metadata: expect.objectContaining({ reason: 'inbound_sms', previousAttempts: 5, contactAttempts: 0 }),
+        }),
       }),
     );
   });

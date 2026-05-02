@@ -15,13 +15,13 @@
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         9% | Attempt UI, reset mechanics, manual override, and browser/pixel gate implemented          |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **66%** | **M1.5 browser/pixel gate added; Revive Queue and release gates remain**                  |
+| **Overall**                                     | **100%** |    **67%** | **M1.5 complete; next gates are M1.6 regression/release and remaining M2 work**           |
 
 ## Source Map
 
@@ -563,13 +563,16 @@
 - [x] Pixel/browser evidence captured in `audit-screenshots/m15-attempt-ui-evidence.json`; local ignored screenshots generated at `audit-screenshots/m15-attempt-ui-desktop.png` and `audit-screenshots/m15-attempt-ui-mobile.png`.
 - [x] Quick-log CSS tightened after pixel review: desktop uses compact grid layout; mobile keeps two-column button stack with full-width Not interested.
 - [x] Validation passed: `cd client && npm run build` after quick-log CSS/pixel adjustment.
+- [x] Confirmed canonical `followUpType` values are lowercase UI values; M1.5 auto-threshold now writes `reengage` instead of snake_case `re_engage`, while backend label mapping accepts both old and canonical variants.
+- [x] Revive Queue compatibility preserved: focused test verifies canonical `reengage` Nurture follow-up is returned with `reviveSource: follow_up`.
+- [x] Validation passed: focused backend tests 18/18, server build, and targeted ESLint 0 errors / existing warning debt only.
 
 ### Data and backend
 
 - [x] Add `Deal.contactAttempts` default `0`.
 - [x] Add `Deal.contactAttemptThreshold` default `10`.
 - [x] Add `Deal.lastEngagementAt`.
-- [ ] Confirm canonical `followUpType` values/casing for `GHOSTED` and `LOST` before implementation.
+- [x] Confirm canonical `followUpType` values/casing for `GHOSTED` and `LOST` before implementation.
 - [x] Add `POST /api/deals/:id/log-attempt`.
 - [x] Implement quick-log kinds:
   - no answer;
@@ -586,7 +589,7 @@
 - [x] Reset attempts on manual forward stage move.
 - [x] Reset attempts on manual edit path from B.10.6.
 - [x] Every change writes `DealEvent` audit metadata.
-- [ ] Revive Queue compatibility preserved.
+- [x] Revive Queue compatibility preserved.
 
 ### UI
 
@@ -611,7 +614,7 @@
 - [x] Reset on connected tested.
 - [x] Reset on forward stage move tested.
 - [x] Manual override reset tested.
-- [ ] Revive Queue still works.
+- [x] Revive Queue still works.
 - [x] Pixel-close compare for quick-log row and attempt banner.
 - [x] Progress dashboard updated.
 

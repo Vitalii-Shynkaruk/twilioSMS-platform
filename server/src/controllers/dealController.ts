@@ -795,8 +795,11 @@ export class DealController {
       const typeLabels: Record<string, string> = {
         renewal: 'Renewal follow-up',
         nurture: 'Nurture check-in',
+        statement: 'Statement refresh',
         statement_refresh: 'Statement refresh',
+        timing: 'Check timing',
         check_timing: 'Check timing',
+        reengage: 'Re-engage',
         re_engage: 'Re-engage',
       };
       const actionLabel = typeLabels[updateData.followUpType] || 'Follow up';
@@ -1819,7 +1822,7 @@ export class DealController {
         updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
         updateData.daysInStage = 0;
         updateData.lostReason = `Auto-nurture after ${nextAttempts} contact attempts`;
-        updateData.followUpType = existing.followUpType || 're_engage';
+        updateData.followUpType = existing.followUpType || 'reengage';
         updateData.followUpDate = existing.followUpDate || new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
         updateData.nextAction = 'Re-engage after contact attempts';
         updateData.nextActionDue = updateData.followUpDate;

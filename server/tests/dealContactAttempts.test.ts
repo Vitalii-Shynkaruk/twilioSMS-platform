@@ -13,6 +13,7 @@ function createRequest(
   return {
     params,
     body,
+    query: {},
     app: {},
     user: {
       id: 'rep-1',
@@ -102,6 +103,7 @@ describe('M1.5 deal contact attempts', () => {
           contactAttempts: 10,
           stage: 'NURTURE',
           lostReason: 'Auto-nurture after 10 contact attempts',
+          followUpType: 'reengage',
         }),
       }),
     );
@@ -231,5 +233,28 @@ describe('M1.5 deal contact attempts', () => {
         }),
       }),
     );
+  });
+
+  it('сохраняет Revive Queue compatibility для canonical reengage follow-up', async () => {
+    const dueDeal = createDealFixture({
+      id: 'deal-revive',
+      stage: 'NURTURE',
+      followUpType: 'reengage',
+      followUpDate: new Date('2026-05-01T10:00:00.000Z'),
+      dealAmount: 50000,
+    });
+    vi.spyOn(prisma.deal, 'findMany')
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([dueDeal] as never)
+      .mockResolvedValueOnce([] as never);
+    const response = createResponse();
+
+    await DealController.getReviveQueue(createRequest({}, {}, 'ADMIN'), response);
+
+    expect(response.json).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'deal-revive', followUpType: 'reengage', reviveSource: 'follow_up' }),
+    ]);
   });
 });

@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                    |
-| ----------------------------------------------- | -------: | ---------: | --------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                      |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         7% | OTP foundation implemented; live infra validation pending |
-| M1.2 — Pipeline v2 base parity                  |      12% |         0% | Not started                                               |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                               |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         0% | Not started                                               |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                               |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                               |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         0% | Not started                                               |
-| M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                               |
-| M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                               |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                               |
-| **Overall**                                     | **100%** |    **13%** | **M1.1 OTP foundation implemented**                       |
+| Направление                                     |      Вес | Готовность | Статус                                                                             |
+| ----------------------------------------------- | -------: | ---------: | ---------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                               |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending |
+| M1.2 — Pipeline v2 base parity                  |      12% |         0% | Not started                                                                        |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                        |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         0% | Not started                                                                        |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                        |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                        |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         0% | Not started                                                                        |
+| M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                        |
+| M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                        |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                        |
+| **Overall**                                     | **100%** |    **14%** | **M1.1 auth UI parity added; live OTP validation pending**                         |
 
 ## Source Map
 
@@ -126,11 +126,15 @@
 - [x] Public endpoints added: `POST /api/auth/request-otp`, `POST /api/auth/verify-otp`.
 - [x] Admin unlock endpoint added: `POST /api/auth/users/:id/unlock-otp`.
 - [x] Login UI converted to passwordless email -> OTP flow while preserving SCL visual style.
+- [x] Login UI redesigned to match the SCL Auth target: SCL wordmark, `SALES COMMAND LAYER`, `COMMAND YOUR PIPELINE`, `EXECUTION. FOCUS. RESULTS.`, `SIGN IN TO SCL`, email field, blue `SEND CODE`, phone verification note, and SCL Systems footer.
+- [x] Login visual styling is scoped under `.scl-auth` in `client/src/styles/globals.css` to avoid sidebar/dashboard regressions.
 - [x] Admin Users UI now shows OTP locked status and clear-lock action.
 - [x] Password `/api/auth/login` endpoint intentionally preserved as fallback until demo/JB approval.
 - [x] Account enumeration reduced: request-code response is generic for missing/inactive/missing-phone accounts.
 - [x] Wrong OTP attempts 1-4 return remaining-attempts messaging; 5th failed attempt locks account for 30 minutes.
 - [x] Local validation passed: Prisma Client generation, backend build, frontend build, DB-free OTP policy tests, production-preview login UI check.
+- [x] Browser validation passed for auth UI: desktop preview, mobile-width preview, server-unavailable state, and mocked email -> OTP -> verify -> REP `/pipeline` redirect.
+- [x] Frontend CSS minify warning fixed by replacing the problematic light-mode combo selector with `:is()` selectors.
 - [ ] Live validation pending: real MySQL schema sync, Redis availability, Twilio SMS delivery, Resend email delivery.
 - [ ] Deployment note pending: production DB needs schema sync via reviewed migration or existing `prisma db push` path.
 
@@ -148,7 +152,7 @@
 
 ### Login screen behavior
 
-- [x] Keep existing SCL login screen design language; no broad redesign.
+- [x] Match the M1 SCL auth visual target while preserving passwordless OTP behavior.
 - [x] Keep email field as account identifier.
 - [x] Replace password input flow with `SEND CODE` flow.
 - [x] Send OTP via SMS to account `mobilePhone` by default.
@@ -273,13 +277,14 @@
   - expired/malformed token;
   - rep trying admin-only action.
 - [ ] Browser tests:
-  - login page desktop;
-  - login page half-screen width;
-  - email -> send code -> OTP state;
+  - [x] login page desktop;
+  - [x] login page half-screen width;
+  - [x] email -> send code -> OTP state;
   - OTP paste;
   - email fallback link;
   - lockout UI;
   - resend countdown UI;
+  - [x] role redirect after mocked OTP login;
   - reload after login;
   - logout.
 - [ ] Live demo acceptance from PDF passes in one flow.

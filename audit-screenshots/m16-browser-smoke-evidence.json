@@ -1,0 +1,70 @@
+{
+  "scope": "M1.6 browser smoke on production preview with mock API",
+  "date": "2026-05-02",
+  "checks": [
+    {
+      "name": "login/auth OTP mock flow",
+      "status": "passed",
+      "detail": "http://127.0.0.1:4174/command-center"
+    },
+    {
+      "name": "pipeline simple mode smoke",
+      "status": "passed",
+      "detail": {
+        "hasSimpleButton": true,
+        "hasExecutionButton": true,
+        "hasDealCard": true,
+        "hasAttemptBanner": true,
+        "hasClosedStageText": false
+      }
+    },
+    {
+      "name": "pipeline execution mode smoke",
+      "status": "passed",
+      "detail": {
+        "hasExecutionMode": true,
+        "hasApprovedDeal": true,
+        "hasActivePipelineValue": true
+      }
+    },
+    {
+      "name": "deal card/panel smoke",
+      "status": "passed",
+      "detail": {
+        "hasPanelTitle": true,
+        "hasDealClientTab": true,
+        "hasQuickLog": true,
+        "hasAttemptBanner": true,
+        "quickLogBox": {
+          "width": 523,
+          "height": 112,
+          "top": 126,
+          "left": 899
+        },
+        "bannerBox": {
+          "width": 178,
+          "height": 35,
+          "top": 327,
+          "left": 285
+        }
+      }
+    }
+  ],
+  "consoleMessages": [],
+  "requestFailures": [],
+  "screenshots": {
+    "login": "audit-screenshots/m16-login-smoke.png",
+    "pipelineSimple": "audit-screenshots/m16-pipeline-simple-smoke.png",
+    "pipelineExecution": "audit-screenshots/m16-pipeline-execution-smoke.png",
+    "dealPanel": "audit-screenshots/m16-deal-panel-smoke.png",
+    "note": "PNG screenshots are local ignored evidence; measured results are preserved in this JSON."
+  },
+  "summary": {
+    "status": "passed",
+    "passed": 4,
+    "failed": 0,
+    "ignoredRequestFailures": [
+      "Google Fonts or socket.io are not part of this M1.6 smoke gate"
+    ]
+  }
+}

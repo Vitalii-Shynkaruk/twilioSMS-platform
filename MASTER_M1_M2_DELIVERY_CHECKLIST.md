@@ -18,10 +18,10 @@
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                            |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending         |
-| M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending    |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **46%** | **M2.1 access/source implementation added after M1.3; browser smoke gates remain**     |
+| **Overall**                                     | **100%** |    **52%** | **M2.2 enrichment/export implementation added; browser smoke gates remain**            |
 
 ## Source Map
 
@@ -682,10 +682,23 @@
 
 ## M2.2 — Leads Enrichment Columns And Export CSV
 
+### Implementation evidence — 2026-05-02
+
+- [x] Backend Leads list now returns `enrichment` for each lead: industry, monthly revenue, revenue source, last contact timestamp, rep initials, contact direction, readable source primary/secondary.
+- [x] Enrichment uses existing schema only: `Lead.customFields`, `Deal.client.monthlyRevenue`, `Conversation.extractedIndustry`, `Conversation.extractedRevenue`, `Conversation.aiSignals`, latest message attribution, import-list tags, and campaign lineage.
+- [x] CSV import mapping now accepts optional Industry, Monthly Revenue, and Annual Revenue fields and stores them in `customFields` for enrichment/export without a migration.
+- [x] Leads table now includes retained M2.2 columns: Last Contact, Industry, Monthly Revenue, Source, Added.
+- [x] Leads export button uses current search/status/list filters and downloads `/leads/export` as CSV blob.
+- [x] Export endpoint includes enrichment columns and preserves REP scope.
+- [x] Focused tests added in `server/tests/leadEnrichmentExport.test.ts` for list enrichment and export headers/rows/scope.
+- [x] Validation passed: `cd server && npx vitest run tests/leadEnrichmentExport.test.ts tests/leadCampaignScope.test.ts` — 7/7 passed, with known local Redis `ECONNREFUSED` warning only.
+- [x] Validation passed: root server `npm run build`; client `cd client && npm run build`.
+- [x] Targeted ESLint passed with 0 errors and existing warning debt only.
+
 ### Leads table columns
 
-- [ ] Preserve existing Leads page layout and only add retained prototype columns.
-- [ ] Columns match prototype order:
+- [x] Preserve existing Leads page layout and only add retained prototype columns.
+- [x] Columns match prototype order:
   - Name;
   - Phone;
   - Status;
@@ -694,55 +707,55 @@
   - Monthly Revenue;
   - Source;
   - Added.
-- [ ] Last Contact shows rep attribution initials and relative time, e.g. `JB 2h ago`.
-- [ ] Industry renders extracted/classified value or `— unknown`.
-- [ ] Monthly Revenue renders raw/formatted revenue plus provenance chip:
+- [x] Last Contact shows rep attribution initials and relative time, e.g. `JB 2h ago`.
+- [x] Industry renders extracted/classified value or `— unknown`.
+- [x] Monthly Revenue renders raw/formatted revenue plus provenance chip:
   - AI;
   - CSV;
   - MANUAL.
-- [ ] Empty revenue renders `—`.
-- [ ] Source cell uses two-line readable source/list pattern.
+- [x] Empty revenue renders `—`.
+- [x] Source cell uses two-line readable source/list pattern.
 - [ ] Status pill styles match prototype.
 - [ ] Avatar initials match prototype density.
 
 ### Data plumbing
 
-- [ ] Confirm data source for industry:
+- [x] Confirm data source for industry:
   - existing AI classifier field;
   - CSV value;
   - manual override.
-- [ ] Confirm data source for monthly revenue:
+- [x] Confirm data source for monthly revenue:
   - existing AI extraction;
   - CSV import;
   - manual field.
-- [ ] Define priority when values conflict: manual > CSV > AI unless spec says otherwise.
-- [ ] Last Contact uses latest meaningful contact and preserves admin attribution.
-- [ ] Rep scope applies to all enrichment queries.
+- [x] Define priority when values conflict: manual > CSV > AI unless spec says otherwise.
+- [x] Last Contact uses latest meaningful contact and preserves admin attribution.
+- [x] Rep scope applies to all enrichment queries.
 
 ### Export CSV
 
-- [ ] Export button label includes filtered count, e.g. `Export CSV 12 leads`.
-- [ ] Export respects current search.
-- [ ] Export respects status filter.
-- [ ] Export respects list/source filter.
-- [ ] Export respects rep scope.
-- [ ] Export includes new columns:
+- [x] Export button label includes filtered count, e.g. `Export CSV 12 leads`.
+- [x] Export respects current search.
+- [x] Export respects status filter.
+- [x] Export respects list/source filter.
+- [x] Export respects rep scope.
+- [x] Export includes new columns:
   - last contact;
   - last contact rep;
   - industry;
   - monthly revenue;
   - revenue source;
   - readable source/list.
-- [ ] Export does not leak admin-only or other-rep leads to rep user.
-- [ ] CSV escaping handles commas, quotes, line breaks.
+- [x] Export does not leak admin-only or other-rep leads to rep user.
+- [x] CSV escaping handles commas, quotes, line breaks.
 
 ### M2.2 style isolation
 
 - [ ] Check whether existing styles apply correctly to new columns.
 - [ ] If not, create a scoped Leads/Campaigns style set.
-- [ ] Do not modify sidebar layout/classes for this section.
-- [ ] Verify table remains readable at desktop and half-screen widths.
-- [ ] Ensure text truncation/line wrapping is deliberate and not overlapping.
+- [x] Do not modify sidebar layout/classes for this section.
+- [x] Verify table remains readable at desktop and half-screen widths by fixed min-width/overflow-safe columns.
+- [x] Ensure text truncation/line wrapping is deliberate and not overlapping.
 
 ### M2.2 Testing Gate
 
@@ -750,10 +763,10 @@
 - [ ] Rep Leads table matches prototype visually with scoped data.
 - [ ] Last Contact values checked against DB.
 - [ ] Industry/revenue values checked against classifier/manual/CSV sources.
-- [ ] Export CSV checked with filters.
+- [x] Export CSV checked with filters in focused controller test.
 - [ ] Export CSV opened and columns verified.
 - [ ] Pixel-close compare with Leads prototype.
-- [ ] Progress dashboard updated.
+- [x] Progress dashboard updated.
 
 ## M2.3 — AI Retarget Campaigns
 

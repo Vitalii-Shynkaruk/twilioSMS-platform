@@ -26,9 +26,10 @@ import {
   Play,
   Zap,
   Pencil,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { clsx } from 'clsx';
 import LeadDetailDrawer from '../components/leads/LeadDetailDrawer';
 
@@ -65,6 +66,36 @@ function getReadableLeadSource(lead: any): string {
   if (rawSource && !sourceLooksOpaque(rawSource)) return rawSource;
   if (rawSource) return 'Imported list';
   return '—';
+}
+
+function getLeadSourceDetail(lead: any): string | null {
+  const secondary = lead.enrichment?.readableSourceSecondary;
+  if (typeof secondary === 'string' && secondary.trim()) return secondary.trim();
+  const rawSource = String(lead.source || '').trim();
+  const primary = getReadableLeadSource(lead);
+  return rawSource && rawSource !== primary && !sourceLooksOpaque(rawSource) ? rawSource : null;
+}
+
+function formatMonthlyRevenue(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '—';
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M/mo`;
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}K/mo`;
+  return `$${value.toLocaleString()}/mo`;
+}
+
+function formatLastContact(lead: any): string {
+  const at = lead.enrichment?.lastContactAt || lead.lastRepliedAt || lead.lastContactedAt;
+  if (!at) return '—';
+  const initials = lead.enrichment?.lastContactRepInitials || lead.assignedRep?.initials || '';
+  const relative = formatDistanceToNow(new Date(at), { addSuffix: true }).replace(/^about /, '');
+  return initials ? `${initials} ${relative}` : relative;
+}
+
+function revenueSourceClass(source: string | null | undefined): string {
+  if (source === 'MANUAL') return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300';
+  if (source === 'CSV') return 'border-blue-500/40 bg-blue-500/10 text-blue-300';
+  if (source === 'AI') return 'border-purple-500/40 bg-purple-500/10 text-purple-300';
+  return 'border-dark-700 bg-dark-800 text-dark-500';
 }
 
 export default function LeadsPage() {
@@ -213,6 +244,28 @@ export default function LeadsPage() {
   const { user } = useAuthStore();
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
 
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set('search', debouncedSearch);
+      if (statusFilter) params.set('status', statusFilter);
+      if (listFilter) params.set('tags', listFilter);
+      return api.get(`/leads/export?${params}`, { responseType: 'blob' });
+    },
+    onSuccess: (response) => {
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `leads-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Leads export ready');
+    },
+    onError: () => toast.error('Export failed'),
+  });
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -232,6 +285,14 @@ export default function LeadsPage() {
               Import CSV
             </button>
           )}
+          <button
+            onClick={() => exportMutation.mutate()}
+            className="btn-ghost flex items-center gap-2"
+            disabled={exportMutation.isPending}
+          >
+            <Download className="w-4 h-4" />
+            {exportMutation.isPending ? 'Exporting...' : `Export CSV ${total} leads`}
+          </button>
         </div>
       </div>
 
@@ -425,7 +486,7 @@ export default function LeadsPage() {
         /* Default: flat table of all leads */
         <div className="card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[1120px]">
               <thead>
                 <tr className="border-b border-dark-700/50">
                   <th className="table-th w-10">
@@ -439,10 +500,12 @@ export default function LeadsPage() {
                   <th className="table-th">Name</th>
                   <th className="table-th">Phone</th>
                   <th className="table-th">Status</th>
-                  <th className="table-th">Pipeline</th>
+                  <th className="table-th">Last Contact</th>
+                  <th className="table-th">Industry</th>
+                  <th className="table-th">Monthly Revenue</th>
                   <th className="table-th">Source</th>
-                  <th className="table-th">Tags</th>
                   <th className="table-th">Added</th>
+                  <th className="table-th">Tags</th>
                   <th className="table-th w-10"></th>
                 </tr>
               </thead>
@@ -450,7 +513,7 @@ export default function LeadsPage() {
                 {isLoading &&
                   [...Array(10)].map((_, i) => (
                     <tr key={i}>
-                      {[...Array(9)].map((_, j) => (
+                      {[...Array(10)].map((_, j) => (
                         <td key={j} className="table-td">
                           <div className="h-4 bg-dark-700 rounded animate-pulse" />
                         </td>
@@ -459,7 +522,7 @@ export default function LeadsPage() {
                   ))}
                 {!isLoading && leads.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center">
+                    <td colSpan={10} className="py-16 text-center">
                       <p className="text-sm text-dark-500">No leads found</p>
                     </td>
                   </tr>
@@ -702,21 +765,39 @@ function LeadRow({
         <StatusBadge status={lead.status} />
       </td>
       <td className="table-td">
-        {lead.deal ? (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-scl-500/15 text-scl-400 font-medium whitespace-nowrap">
-            {lead.deal.stageLabel || lead.deal.stage?.replace(/_/g, ' ')}
-          </span>
-        ) : (
-          <span className="text-xs text-dark-600">—</span>
-        )}
+        <span className="text-xs text-dark-400 whitespace-nowrap">{formatLastContact(lead)}</span>
       </td>
       <td className="table-td">
-        <span
-          className="text-sm text-dark-400"
+        <span className="text-sm text-dark-300 max-w-[140px] block truncate" title={lead.enrichment?.industry || ''}>
+          {lead.enrichment?.industry || '— unknown'}
+        </span>
+      </td>
+      <td className="table-td">
+        <div className="flex flex-col gap-1">
+          <span className="text-sm font-mono text-dark-200">
+            {formatMonthlyRevenue(lead.enrichment?.monthlyRevenue)}
+          </span>
+          {lead.enrichment?.revenueSource && (
+            <span
+              className={`w-fit text-[10px] px-1.5 py-0.5 rounded border ${revenueSourceClass(lead.enrichment.revenueSource)}`}
+            >
+              {lead.enrichment.revenueSource}
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="table-td">
+        <div
           title={lead.source && lead.source !== getReadableLeadSource(lead) ? `Raw source: ${lead.source}` : undefined}
         >
-          {getReadableLeadSource(lead)}
-        </span>
+          <span className="text-sm text-dark-300 max-w-[180px] block truncate">{getReadableLeadSource(lead)}</span>
+          {getLeadSourceDetail(lead) && (
+            <span className="text-[11px] text-dark-500 max-w-[180px] block truncate">{getLeadSourceDetail(lead)}</span>
+          )}
+        </div>
+      </td>
+      <td className="table-td">
+        <span className="text-sm text-dark-400 whitespace-nowrap">{format(new Date(lead.createdAt), 'MMM d')}</span>
       </td>
       <td className="table-td">
         <div className="flex items-center gap-1 relative">
@@ -771,9 +852,6 @@ function LeadRow({
             </div>
           )}
         </div>
-      </td>
-      <td className="table-td">
-        <span className="text-sm text-dark-400">{format(new Date(lead.createdAt), 'MMM d')}</span>
       </td>
       <td className="table-td">
         <div className="relative">
@@ -955,17 +1033,19 @@ function LeadListGroup({
             <p className="text-sm text-dark-500 text-center py-4">No leads found</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[1120px]">
                 <thead>
                   <tr className="border-b border-dark-700/50">
                     <th className="table-th w-10"></th>
                     <th className="table-th">Name</th>
                     <th className="table-th">Phone</th>
                     <th className="table-th">Status</th>
-                    <th className="table-th">Pipeline</th>
+                    <th className="table-th">Last Contact</th>
+                    <th className="table-th">Industry</th>
+                    <th className="table-th">Monthly Revenue</th>
                     <th className="table-th">Source</th>
-                    <th className="table-th">Tags</th>
                     <th className="table-th">Added</th>
+                    <th className="table-th">Tags</th>
                     <th className="table-th w-10"></th>
                   </tr>
                 </thead>
@@ -1034,6 +1114,9 @@ function ImportModal({ onClose }: { onClose: () => void }) {
     { key: 'city', label: 'City', required: false },
     { key: 'state', label: 'State', required: false },
     { key: 'source', label: 'Source', required: false },
+    { key: 'industry', label: 'Industry', required: false },
+    { key: 'monthlyRevenue', label: 'Monthly Revenue', required: false },
+    { key: 'annualRevenue', label: 'Annual Revenue', required: false },
   ];
 
   // Step 1 → Step 2: Upload & preview

@@ -3,7 +3,7 @@ import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { parse } from 'csv-parse/sync';
-import { DealStage, LeadStatus } from '@prisma/client';
+import { DealStage, LeadStatus, Prisma } from '@prisma/client';
 
 // Lead status → Deal stage mapping
 const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
@@ -62,7 +62,24 @@ function requiredLeadValue(value: unknown, fallback: string, limit = LEAD_VARCHA
   return truncateForLeadColumn(normalized || fallback, limit);
 }
 
-type LeadUpsertPayload = {
+function importCustomFields(fields: {
+  industry?: unknown;
+  monthlyRevenue?: unknown;
+  annualRevenue?: unknown;
+}): Prisma.InputJsonValue | undefined {
+  const customFields: Record<string, string> = {};
+  const industry = nullableLeadValue(fields.industry);
+  const monthlyRevenue = nullableLeadValue(fields.monthlyRevenue);
+  const annualRevenue = nullableLeadValue(fields.annualRevenue);
+
+  if (industry) customFields.industry = industry;
+  if (monthlyRevenue) customFields.monthlyRevenue = monthlyRevenue;
+  if (annualRevenue) customFields.annualRevenue = annualRevenue;
+
+  return Object.keys(customFields).length > 0 ? customFields : undefined;
+}
+
+type LeadUpsertPayload = Prisma.LeadUncheckedCreateInput & {
   phone: string;
   firstName: string;
   lastName: string;
@@ -151,6 +168,150 @@ async function resolveScopedLeadIds(leadIds: string[], req: AuthRequest): Promis
   return leads.map((lead) => lead.id);
 }
 
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as JsonRecord;
+}
+
+function readString(record: JsonRecord | null | undefined, keys: string[]): string | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function readNumber(record: JsonRecord | null | undefined, keys: string[], annual = false): number | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.round(annual ? value / 12 : value);
+    if (typeof value === 'string') {
+      const parsed = parseMonthlyRevenue(value, annual);
+      if (parsed !== null) return parsed;
+    }
+  }
+  return null;
+}
+
+function parseMonthlyRevenue(value: unknown, annual = false): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.round(annual ? value / 12 : value);
+  }
+  if (typeof value !== 'string') return null;
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const multiplier = normalized.includes('m') ? 1_000_000 : normalized.includes('k') ? 1_000 : 1;
+  const numeric = Number(normalized.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+
+  const monthly = numeric * multiplier;
+  const looksAnnual = annual || /annual|year|yr/.test(normalized);
+  return Math.round(looksAnnual ? monthly / 12 : monthly);
+}
+
+function sourceLooksOpaque(value: string): boolean {
+  return (
+    value === 'csv_import' ||
+    /^[0-9a-f]{24,}$/i.test(value) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ||
+    /^c[a-z0-9]{20,}$/i.test(value)
+  );
+}
+
+function userInitials(
+  user?: { initials?: string | null; firstName?: string | null; lastName?: string | null } | null,
+): string {
+  if (!user) return '';
+  if (user.initials) return user.initials;
+  const first = String(user.firstName || '').trim()[0] || '';
+  const last = String(user.lastName || '').trim()[0] || '';
+  return `${first}${last}`.toUpperCase();
+}
+
+function resolveLeadSource(lead: any): { primary: string; secondary: string | null } {
+  const rawSource = String(lead.source || '').trim();
+  const tagRows = Array.isArray(lead.tags) ? lead.tags : [];
+  const importListTag =
+    tagRows.find((row: any) => row.tag?.isImportList === true)?.tag ||
+    tagRows.find((row: any) => rawSource && row.tag?.id === rawSource)?.tag ||
+    (rawSource && sourceLooksOpaque(rawSource) && tagRows.length === 1 ? tagRows[0]?.tag : null);
+  const latestCampaign = Array.isArray(lead.campaignLeads) ? lead.campaignLeads[0]?.campaign : null;
+
+  if (rawSource && !sourceLooksOpaque(rawSource)) {
+    const secondary =
+      importListTag?.name && importListTag.name !== rawSource ? importListTag.name : latestCampaign?.name || null;
+    return { primary: rawSource, secondary };
+  }
+
+  if (importListTag?.name) {
+    return { primary: importListTag.name, secondary: latestCampaign?.name || null };
+  }
+
+  if (latestCampaign?.name) {
+    return { primary: latestCampaign.name, secondary: latestCampaign.isRetarget ? 'Retarget campaign' : 'Campaign' };
+  }
+
+  if (rawSource) return { primary: 'Imported list', secondary: null };
+  return { primary: '—', secondary: null };
+}
+
+function resolveLeadEnrichment(lead: any) {
+  const conversation = Array.isArray(lead.conversations) ? lead.conversations[0] : null;
+  const signals = asRecord(conversation?.aiSignals);
+  const customFields = asRecord(lead.customFields);
+  const manualRevenue = parseMonthlyRevenue(lead.deal?.client?.monthlyRevenue);
+  const csvRevenue =
+    readNumber(customFields, ['monthlyRevenue', 'monthly_revenue', 'monthly_revenue_usd', 'revenueMonthly']) ||
+    readNumber(customFields, ['annualRevenue', 'annual_revenue', 'annual_revenue_usd', 'revenueAnnual'], true);
+  const aiRevenue =
+    (typeof conversation?.extractedRevenue === 'number' ? conversation.extractedRevenue : null) ||
+    readNumber(signals, ['revenueMonthly']);
+  const monthlyRevenue = manualRevenue || csvRevenue || aiRevenue || null;
+  const revenueSource = manualRevenue ? 'MANUAL' : csvRevenue ? 'CSV' : aiRevenue ? 'AI' : null;
+  const industry =
+    readString(customFields, ['industry', 'businessIndustry', 'business_industry']) ||
+    (typeof conversation?.extractedIndustry === 'string' && conversation.extractedIndustry.trim()
+      ? conversation.extractedIndustry.trim()
+      : null) ||
+    readString(signals, ['industry']);
+  const latestMessage = conversation?.messages?.[0] || null;
+  const lastContactAt =
+    latestMessage?.createdAt || lead.lastRepliedAt || lead.lastContactedAt || conversation?.lastMessageAt || null;
+  const repForLastContact =
+    latestMessage?.sentByUser ||
+    conversation?.assignedRep ||
+    lead.assignedRep ||
+    (lead.assignedRepId ? lead.assignedRep : null);
+  const source = resolveLeadSource(lead);
+
+  return {
+    industry: industry || null,
+    monthlyRevenue,
+    revenueSource,
+    lastContactAt,
+    lastContactRepInitials: userInitials(repForLastContact),
+    lastContactDirection: latestMessage?.direction || null,
+    readableSourcePrimary: source.primary,
+    readableSourceSecondary: source.secondary,
+  };
+}
+
+function withLeadEnrichment<T extends Record<string, unknown>>(
+  lead: T,
+): T & { enrichment: ReturnType<typeof resolveLeadEnrichment> } {
+  return {
+    ...lead,
+    enrichment: resolveLeadEnrichment(lead),
+  };
+}
+
 export class LeadController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const {
@@ -214,10 +375,44 @@ export class LeadController {
         include: {
           tags: { include: { tag: true } },
           assignedRep: {
-            select: { id: true, firstName: true, lastName: true },
+            select: { id: true, firstName: true, lastName: true, initials: true },
           },
           deal: {
-            select: { id: true, stage: true, stageLabel: true, dealAmount: true, isHot: true },
+            select: {
+              id: true,
+              stage: true,
+              stageLabel: true,
+              dealAmount: true,
+              isHot: true,
+              client: { select: { monthlyRevenue: true } },
+            },
+          },
+          conversations: {
+            take: 1,
+            orderBy: { updatedAt: 'desc' },
+            select: {
+              id: true,
+              lastMessageAt: true,
+              extractedIndustry: true,
+              extractedRevenue: true,
+              aiSignals: true,
+              assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+              messages: {
+                take: 1,
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  id: true,
+                  direction: true,
+                  createdAt: true,
+                  sentByUser: { select: { id: true, firstName: true, lastName: true, initials: true } },
+                },
+              },
+            },
+          },
+          campaignLeads: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            include: { campaign: { select: { id: true, name: true, isRetarget: true } } },
           },
           _count: {
             select: { conversations: true },
@@ -228,7 +423,7 @@ export class LeadController {
     ]);
 
     res.json({
-      leads,
+      leads: leads.map((lead) => withLeadEnrichment(lead as unknown as Record<string, unknown>)),
       pagination: {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
@@ -631,6 +826,16 @@ export class LeadController {
           // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
           source: requiredLeadValue(record.source || record.Source, listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(record.notes || record.Notes || record.NOTE || record.COMMENTS, 4000),
+          customFields: importCustomFields({
+            industry: record.industry || record.Industry || record.INDUSTRY,
+            monthlyRevenue:
+              record.monthlyRevenue ||
+              record.monthly_revenue ||
+              record['Monthly Revenue'] ||
+              record.revenue ||
+              record.Revenue,
+            annualRevenue: record.annualRevenue || record.annual_revenue || record['Annual Revenue'],
+          }),
           ...(importAssignedRepId ? { assignedRepId: importAssignedRepId } : {}),
         });
       }
@@ -769,6 +974,9 @@ export class LeadController {
       state: ['state', 'province', 'region', 'st'],
       source: ['source', 'lead_source', 'leadsource', 'origin', 'channel', 'utm_source'],
       notes: ['notes', 'note', 'comments', 'comment', 'memo'],
+      industry: ['industry', 'business_industry', 'vertical', 'business_type', 'category'],
+      monthlyRevenue: ['monthlyrevenue', 'monthly_revenue', 'monthly revenue', 'revenue_monthly', 'monthly_sales'],
+      annualRevenue: ['annualrevenue', 'annual_revenue', 'annual revenue', 'revenue_annual', 'annual_sales'],
     };
 
     for (const [field, aliases] of Object.entries(columnAliases)) {
@@ -866,6 +1074,11 @@ export class LeadController {
           // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
           source: requiredLeadValue(mapping.source ? record[mapping.source] : '', listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(mapping.notes ? record[mapping.notes] : '', 4000),
+          customFields: importCustomFields({
+            industry: mapping.industry ? record[mapping.industry] : '',
+            monthlyRevenue: mapping.monthlyRevenue ? record[mapping.monthlyRevenue] : '',
+            annualRevenue: mapping.annualRevenue ? record[mapping.annualRevenue] : '',
+          }),
           ...(importAssignedRepId ? { assignedRepId: importAssignedRepId } : {}),
         });
       }
@@ -1127,7 +1340,7 @@ export class LeadController {
    * GET /leads/export — Export leads as streaming CSV (cursor-based, OOM-safe)
    */
   static async exportCSV(req: AuthRequest, res: Response): Promise<void> {
-    const { status, tags, assignedRepId, search } = req.query;
+    const { status, tags, assignedRepId, search, source, state } = req.query;
 
     const where: any = {};
 
@@ -1141,6 +1354,8 @@ export class LeadController {
     }
     if (status) where.status = { in: (status as string).split(',') };
     if (tags) where.tags = { some: { tagId: { in: (tags as string).split(',') } } };
+    if (source) where.source = { contains: source as string };
+    if (state) where.state = { contains: state as string };
     if (assignedRepId) where.assignedRepId = assignedRepId;
     if (req.user?.role === 'REP') where.assignedRepId = req.user.id;
     // Exclude soft-deleted
@@ -1168,11 +1383,17 @@ export class LeadController {
       'Company',
       'State',
       'Status',
-      'Source',
+      'Last Contact',
+      'Last Contact Rep',
+      'Industry',
+      'Monthly Revenue',
+      'Revenue Source',
+      'Readable Source',
+      'Source Detail',
+      'Raw Source',
       'Tags',
       'Assigned Rep',
       'Created At',
-      'Last Contacted',
     ];
     res.write(headers.join(',') + '\n');
 
@@ -1186,7 +1407,37 @@ export class LeadController {
         where,
         include: {
           tags: { include: { tag: true } },
-          assignedRep: { select: { firstName: true, lastName: true } },
+          assignedRep: { select: { firstName: true, lastName: true, initials: true } },
+          deal: {
+            select: {
+              client: { select: { monthlyRevenue: true } },
+            },
+          },
+          conversations: {
+            take: 1,
+            orderBy: { updatedAt: 'desc' },
+            select: {
+              lastMessageAt: true,
+              extractedIndustry: true,
+              extractedRevenue: true,
+              aiSignals: true,
+              assignedRep: { select: { firstName: true, lastName: true, initials: true } },
+              messages: {
+                take: 1,
+                orderBy: { createdAt: 'desc' },
+                select: {
+                  direction: true,
+                  createdAt: true,
+                  sentByUser: { select: { firstName: true, lastName: true, initials: true } },
+                },
+              },
+            },
+          },
+          campaignLeads: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            include: { campaign: { select: { id: true, name: true, isRetarget: true } } },
+          },
         },
         orderBy: { id: 'asc' },
         take: BATCH_SIZE,
@@ -1199,6 +1450,7 @@ export class LeadController {
       }
 
       for (const l of leads) {
+        const enrichment = resolveLeadEnrichment(l);
         const row = [
           l.firstName,
           l.lastName || '',
@@ -1207,11 +1459,17 @@ export class LeadController {
           l.company || '',
           l.state || '',
           l.status,
+          enrichment.lastContactAt ? new Date(enrichment.lastContactAt).toISOString() : '',
+          enrichment.lastContactRepInitials || '',
+          enrichment.industry || '',
+          enrichment.monthlyRevenue ? String(enrichment.monthlyRevenue) : '',
+          enrichment.revenueSource || '',
+          enrichment.readableSourcePrimary || '',
+          enrichment.readableSourceSecondary || '',
           l.source || '',
           l.tags.map((t) => t.tag.name).join('; '),
           l.assignedRep ? `${l.assignedRep.firstName} ${l.assignedRep.lastName}` : '',
           l.createdAt.toISOString(),
-          l.lastContactedAt?.toISOString() || '',
         ];
         res.write(row.map(escapeCSV).join(',') + '\n');
       }

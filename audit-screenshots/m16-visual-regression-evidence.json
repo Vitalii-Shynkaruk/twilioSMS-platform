@@ -1,0 +1,132 @@
+{
+  "gate": "M1.6 visual regression",
+  "status": "passed",
+  "generatedAt": "2026-05-02T22:05:00.000Z",
+  "environment": {
+    "frontend": "Vite preview at http://127.0.0.1:4178/pipeline",
+    "api": "Local in-memory mock API at http://127.0.0.1:3001",
+    "browser": "Playwright Chromium headless + VS Code browser visual review",
+    "auth": "Mock admin localStorage session without production secrets"
+  },
+  "screenshots": [
+    {
+      "name": "Pipeline desktop 1440px",
+      "path": "audit-screenshots/m16-pipeline-desktop-1440.png",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "fileSize": {
+        "width": 1440,
+        "height": 960
+      }
+    },
+    {
+      "name": "Pipeline half-screen 960px",
+      "path": "audit-screenshots/m16-pipeline-half-960.png",
+      "viewport": {
+        "width": 960,
+        "height": 900
+      },
+      "fileSize": {
+        "width": 960,
+        "height": 900
+      }
+    },
+    {
+      "name": "DealPanel desktop 1440px",
+      "path": "audit-screenshots/m16-deal-panel-desktop-1440.png",
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "fileSize": {
+        "width": 1440,
+        "height": 960
+      }
+    },
+    {
+      "name": "DealCard stacking + attempt banner",
+      "path": "audit-screenshots/m16-deal-card-stacking-attempt.png",
+      "fileSize": {
+        "width": 163,
+        "height": 168
+      }
+    }
+  ],
+  "checks": {
+    "desktop1440PipelineScreenshotCompare": "passed",
+    "halfScreen960PipelineScreenshotCompare": "passed",
+    "dealPanelScreenshotCompare": "passed",
+    "dealCardScreenshotCompare": "passed",
+    "noUnexpectedTextOverflow": "passed",
+    "noDocumentHorizontalOverflow": "passed",
+    "noLayoutShiftWithBadgesAndAttemptBanner": "passed",
+    "sidebarUnchanged": "passed"
+  },
+  "domAudit": {
+    "desktop1440": {
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "pipelineRootVisible": true,
+      "boardVisible": true,
+      "visibleColumns": 8,
+      "visibleCards": 8,
+      "rootOverflow": false,
+      "bodyOverflow": false,
+      "bannerWithinCard": true,
+      "actionBelowBanner": true,
+      "stackingWithinCard": true,
+      "unexpectedOverflow": [],
+      "layoutShiftScore": 0,
+      "sidebarNavHrefCount": 22
+    },
+    "halfScreen960": {
+      "viewport": {
+        "width": 960,
+        "height": 900
+      },
+      "pipelineRootVisible": true,
+      "boardVisible": true,
+      "visibleColumns": 8,
+      "visibleCards": 8,
+      "rootOverflow": false,
+      "bodyOverflow": false,
+      "bannerWithinCard": true,
+      "actionBelowBanner": true,
+      "stackingWithinCard": true,
+      "unexpectedOverflow": [],
+      "layoutShiftScore": 0,
+      "sidebarNavHrefCount": 22
+    },
+    "dealPanelDesktop1440": {
+      "viewport": {
+        "width": 1440,
+        "height": 960
+      },
+      "panelVisible": true,
+      "overlayVisible": true,
+      "panelRect": {
+        "x": 880,
+        "y": 0,
+        "width": 560,
+        "height": 960
+      },
+      "rootOverflow": false,
+      "bodyOverflow": false,
+      "overflowing": []
+    }
+  },
+  "manualVisualReview": {
+    "desktop1440": "Pipeline board renders 8 visible columns and 8 visual mock cards; toolbar/sidebar stay consistent; no visible overlapping text.",
+    "halfScreen960": "Pipeline remains readable at 960px with board contained and no document-level horizontal overflow.",
+    "dealPanel": "Right drawer opens over dimmed board, controls remain aligned, quick-log/threshold controls fit without text overflow.",
+    "dealCard": "Stacking chip and WAITING 8/10 attempt banner remain inside card; action row is below banner. Long names/actions use intentional truncation."
+  },
+  "notes": [
+    "Screenshot PNG files are local visual artifacts and are ignored by repository .gitignore; this JSON records their expected paths and dimensions.",
+    "The only observed console warning in the focused audit was the browser's deprecated Performance entry-type warning; no application console errors or request failures were observed inside this gate."
+  ]
+}

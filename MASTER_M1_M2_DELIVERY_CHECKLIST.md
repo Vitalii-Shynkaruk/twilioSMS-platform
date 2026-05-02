@@ -16,12 +16,12 @@
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         7% | Functional gates deployed through new deal/share/socket; visual gate remains              |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **74%** | **M1.6 functional gates deployed through new deal/share/socket; visual remains**          |
+| **Overall**                                     | **100%** |    **75%** | **M1.6 visual gate complete; remaining work shifts to M1.1, M1.4, and M2 gates**          |
 
 ## Source Map
 
@@ -670,6 +670,17 @@
 - [x] Production deploy passed for commit `01b6700d`: Git bundle fast-forward, root `npm run build`, and `pm2 restart sms-api --update-env` all completed successfully.
 - [x] Production smoke passed: `/api/health` returned HTTP 200 with database `ok` and Redis `ok`; root HTML returned HTTP 200; live browser opened `/login` and rendered the SCL OTP login screen.
 
+### Visual regression smoke — 2026-05-02
+
+- [x] Evidence JSON added: `audit-screenshots/m16-visual-regression-evidence.json`.
+- [x] Desktop 1440px Pipeline screenshot captured and visually reviewed: `audit-screenshots/m16-pipeline-desktop-1440.png`.
+- [x] Half-screen 960px Pipeline screenshot captured and visually reviewed: `audit-screenshots/m16-pipeline-half-960.png`.
+- [x] DealPanel screenshot captured and visually reviewed: `audit-screenshots/m16-deal-panel-desktop-1440.png`.
+- [x] DealCard stacking + attempt banner screenshot captured and visually reviewed: `audit-screenshots/m16-deal-card-stacking-attempt.png`.
+- [x] Playwright DOM audit passed for desktop and half-screen: no document horizontal overflow, no unexpected text overflow, 8 visible columns, 8 visible cards, and layout shift score `0`.
+- [x] Stacking chip and `WAITING 8/10 ATTEMPTS` banner remain inside the card; next action row stays below the attempt banner.
+- [x] Sidebar/nav links remained unchanged in the visual audit surface.
+
 ### Functional regression
 
 - [x] Login/auth full pass.
@@ -690,13 +701,13 @@
 
 ### Visual regression
 
-- [ ] Desktop 1440px Pipeline screenshot compare.
-- [ ] Half-screen 960px Pipeline screenshot compare.
-- [ ] DealPanel screenshot compare.
-- [ ] DealCard screenshot compare.
-- [ ] No overlapping text.
-- [ ] No layout shift when badges/attempt banners appear.
-- [ ] Sidebar remains unchanged unless intentionally touched.
+- [x] Desktop 1440px Pipeline screenshot compare.
+- [x] Half-screen 960px Pipeline screenshot compare.
+- [x] DealPanel screenshot compare.
+- [x] DealCard screenshot compare.
+- [x] No overlapping text.
+- [x] No layout shift when badges/attempt banners appear.
+- [x] Sidebar remains unchanged unless intentionally touched.
 
 ### Release readiness
 
@@ -704,7 +715,7 @@
 - [x] Client build passes.
 - [x] Relevant DB migration reviewed as additive.
 - [x] Rollback note prepared: source stash/worktree backup and DB dump paths recorded in production deploy evidence.
-- [ ] Evidence screenshots saved.
+- [x] Evidence screenshots saved.
 - [ ] Demo script prepared for JB/client.
 - [ ] Progress dashboard updated to M1 complete only after all gates pass.
 
@@ -1055,9 +1066,11 @@
 
 ## Progress Update Log
 
-| Date       | Progress | Area     | What changed                                                                                                                              | Evidence                                                |
-| ---------- | -------: | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| 2026-05-02 |      71% | M1.6     | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.                   | `audit-screenshots/m16-drag-funding-evidence.json`      |
-| 2026-05-02 |      72% | M1.6     | Deployed `1982fdb0` to `https://app.sclcapital.io/`, applied additive DB schema sync, rebuilt/restarted PM2, and passed production smoke. | `audit-screenshots/m16-production-deploy-evidence.json` |
-| 2026-05-02 |      73% | M1.6     | Added and deployed Inbox AI/email CTA/follow-up/quiet-hours/inbound-owner regression evidence; production smoke passed on `2f665aaf`.     | `audit-screenshots/m16-inbox-ai-policy-evidence.json`   |
-| 2026-05-02 |       6% | Planning | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.        | This file                                               |
+| Date       | Progress | Area     | What changed                                                                                                                              | Evidence                                                       |
+| ---------- | -------: | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 2026-05-02 |      71% | M1.6     | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.                   | `audit-screenshots/m16-drag-funding-evidence.json`             |
+| 2026-05-02 |      72% | M1.6     | Deployed `1982fdb0` to `https://app.sclcapital.io/`, applied additive DB schema sync, rebuilt/restarted PM2, and passed production smoke. | `audit-screenshots/m16-production-deploy-evidence.json`        |
+| 2026-05-02 |      73% | M1.6     | Added and deployed Inbox AI/email CTA/follow-up/quiet-hours/inbound-owner regression evidence; production smoke passed on `2f665aaf`.     | `audit-screenshots/m16-inbox-ai-policy-evidence.json`          |
+| 2026-05-02 |      74% | M1.6     | Added and deployed new deal creation/sharing/socket scoping evidence; production smoke passed on `01b6700d`.                              | `audit-screenshots/m16-deal-create-share-socket-evidence.json` |
+| 2026-05-02 |      75% | M1.6     | Added visual regression evidence for Pipeline 1440/960, DealPanel, DealCard, overlap/layout-shift, and sidebar checks.                    | `audit-screenshots/m16-visual-regression-evidence.json`        |
+| 2026-05-02 |       6% | Planning | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.        | This file                                                      |

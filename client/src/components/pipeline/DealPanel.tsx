@@ -36,6 +36,16 @@ const STAGE_QUICK_ACTIONS: Record<DealStage, string[]> = {
   CLOSED: [],
 };
 
+type AttemptKind = 'no_answer' | 'texted' | 'voicemail' | 'connected' | 'not_interested';
+
+const QUICK_LOG_ACTIONS: Array<{ kind: AttemptKind; label: string }> = [
+  { kind: 'no_answer', label: 'No answer' },
+  { kind: 'texted', label: 'Texted' },
+  { kind: 'voicemail', label: 'Voicemail' },
+  { kind: 'connected', label: 'Connected' },
+  { kind: 'not_interested', label: 'Not interested' },
+];
+
 function extractSmsCampaignSource(clientNotes?: string | null): string {
   if (!clientNotes) return '';
   const match = clientNotes.match(/Source:\s*SMS\s*[—-]\s*([^·\n\r]+)/i);
@@ -212,6 +222,17 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
     },
   });
 
+  const logAttemptMutation = useMutation({
+    mutationFn: (kind: AttemptKind) => dealApi.logAttempt(dealId, { kind }),
+    onSuccess: (_response, kind) => {
+      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['board'] });
+      toast.success(kind === 'not_interested' ? 'Moved to nurture' : 'Attempt logged');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to log attempt'),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => dealApi.deleteDeal(dealId),
     onSuccess: () => {
@@ -260,6 +281,10 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
       ? `Next action: ${deal.nextAction}`
       : 'No activity yet';
   const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
+  const contactAttempts = deal.contactAttempts || 0;
+  const contactAttemptThreshold = deal.contactAttemptThreshold || 10;
+  const attemptsRemaining = Math.max(0, contactAttemptThreshold - contactAttempts);
+  const quickLogDisabled = !canEditDeal || ['FUNDED', 'CLOSED'].includes(deal.stage) || logAttemptMutation.isPending;
 
   const handleStageChange = (nextStage: DealStage) => {
     if (nextStage === deal.stage) return;
@@ -377,6 +402,28 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               <span className={clsx('ph-stage-badge ph-badge-info', sysStatus.cls)}>{sysStatus.label}</span>
             ) : null}
           </div>
+
+          {deal.stage !== 'FUNDED' && deal.stage !== 'CLOSED' ? (
+            <div className="quick-log-row" aria-label="Quick contact attempt log">
+              <div className="quick-log-status">
+                <span>WAITING {contactAttempts}/{contactAttemptThreshold}</span>
+                <small>{attemptsRemaining} before auto-nurture</small>
+              </div>
+              <div className="quick-log-actions">
+                {QUICK_LOG_ACTIONS.map((action) => (
+                  <button
+                    key={action.kind}
+                    type="button"
+                    className={clsx('ql-btn', action.kind === 'not_interested' && 'ql-danger')}
+                    onClick={() => logAttemptMutation.mutate(action.kind)}
+                    disabled={quickLogDisabled}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="panel-tabs">
             <button className={`ptab ${tab === 'convo' ? 'act' : ''}`} onClick={() => setTab('convo')}>

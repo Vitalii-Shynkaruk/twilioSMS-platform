@@ -468,6 +468,9 @@ export interface Deal {
   lastReplyAt?: string;
   daysInStage: number;
   staleDays: number;
+  contactAttempts?: number;
+  contactAttemptThreshold?: number;
+  lastEngagementAt?: string | null;
   appSubmitted: boolean;
   lenderEngaged: boolean;
   commitSubStatus?: CommitSubStatus;

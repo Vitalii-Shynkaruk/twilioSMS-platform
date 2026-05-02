@@ -153,6 +153,17 @@ function staleTxt(days: number): { text: string; cls: string } {
   return { text: `${days}d STALE`, cls: 'dead' };
 }
 
+function attemptBanner(deal: Deal): { text: string; cls: string } | null {
+  if (['FUNDED', 'CLOSED', 'NURTURE'].includes(deal.stage)) return null;
+  const attempts = deal.contactAttempts || 0;
+  const threshold = deal.contactAttemptThreshold || 10;
+  if (attempts <= 0) return null;
+  const remaining = Math.max(0, threshold - attempts);
+  const ratio = attempts / threshold;
+  const cls = ratio >= 0.8 ? 'attempt-near' : ratio >= 0.5 ? 'attempt-mid' : 'attempt-low';
+  return { text: `WAITING ${attempts}/${threshold} ATTEMPTS · ${remaining} BEFORE AUTO-NURTURE`, cls };
+}
+
 function simpleAmount(deal: Deal): { text: string; cls: string } {
   if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
     return { text: `💰 ${formatCurrency(deal.fundingEvents[0].amountFunded)}`, cls: 'sca-green' };
@@ -292,6 +303,7 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
   const hot = isDealHot(deal);
   const businessName = deal.client?.businessName || 'Unknown';
   const cardClickHandlers = useGuardedCardClick(onClick);
+  const attempt = attemptBanner(deal);
 
   return (
     <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} {...cardClickHandlers}>
@@ -307,6 +319,8 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
         >
           {renderHighlightedText(businessName, highlightTerm)}
         </div>
+
+        {attempt && <div className={`nurture-banner ${attempt.cls}`}>{attempt.text}</div>}
 
         {deal.nextAction ? (
           <div className="sc-action-row">
@@ -336,6 +350,7 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
   const contactName = deal.client?.contactName || '';
   const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
   const cardClickHandlers = useGuardedCardClick(onClick);
+  const attempt = attemptBanner(deal);
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
   const showSubmittedBadge =
@@ -706,6 +721,8 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
             <span>⚠ No next action set</span>
           </div>
         )}
+
+        {attempt && <div className={`nurture-banner ${attempt.cls}`}>{attempt.text}</div>}
 
         {/* Next action row */}
         {deal.nextAction && (

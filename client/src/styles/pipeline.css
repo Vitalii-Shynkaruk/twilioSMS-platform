@@ -487,6 +487,19 @@ body.execution-view .touched-by{display:flex;}
 .lost-r{font-size:9px;color:var(--attn);padding:1px 6px 3px;font-style:italic;}
 .nu-urg{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:5px;border:1px solid var(--watch-b);background:var(--watch-bg);margin-bottom:3px;}
 .nu-t{font-size:10px;color:var(--watch);font-weight:500;}
+.nurture-banner{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:5px;margin-bottom:3px;font-size:9px;font-weight:700;letter-spacing:.02em;}
+.nurture-banner.attempt-low{border:1px solid var(--watch-b);background:var(--watch-bg);color:var(--watch);}
+.nurture-banner.attempt-mid{border:1px solid var(--attn-b);background:var(--attn-bg);color:var(--attn);}
+.nurture-banner.attempt-near{border:1.5px solid var(--urgent-b);background:var(--urgent-bg);color:var(--urgent);animation:pulse-border 2s infinite;}
+.quick-log-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px;border:1px solid var(--border);border-radius:8px;background:rgba(13,17,23,.72);}
+.quick-log-status{display:flex;flex-direction:column;gap:2px;min-width:112px;}
+.quick-log-status span{font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--watch);}
+.quick-log-status small{font-size:9px;color:var(--text3);}
+.quick-log-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px;}
+.ql-btn{font-size:10px;font-weight:700;color:var(--text2);background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:5px 7px;transition:all .15s ease;}
+.ql-btn:hover:not(:disabled){color:var(--text);border-color:var(--watch-b);background:var(--watch-bg);}
+.ql-btn.ql-danger:hover:not(:disabled){color:var(--urgent);border-color:var(--urgent-b);background:var(--urgent-bg);}
+.ql-btn:disabled{opacity:.45;cursor:not-allowed;}
 /* Card footer */
 .c-foot{display:flex;justify-content:space-between;align-items:center;padding-top:5px;border-top:1px solid var(--border);}
 .stale-t{font-size:9px;}
@@ -1302,6 +1315,9 @@ body.simple-view .queue-dock .sum-bar{
     scrollbar-width: none;
   }
   .panel-tabs::-webkit-scrollbar { display: none; }
+  .quick-log-row{align-items:stretch;flex-direction:column;gap:7px;}
+  .quick-log-actions{justify-content:flex-start;}
+  .ql-btn{flex:1 1 calc(50% - 5px);}
   .ptab { padding: 9px 0; font-size: 11px; flex-shrink: 0; }
   .bubble { max-width: 90%; }
   .dc-tab { padding: 0 12px 12px; }

@@ -15,13 +15,13 @@
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         3% | Backend log-attempt foundation + API tests/build passed; UI/reset/pixel pending           |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         5% | Backend + Pipeline UI attempt banner/quick-log implemented; browser/reset/pixel pending   |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **60%** | **M1.5 backend attempt mechanic foundation added; UI/browser gates remain**               |
+| **Overall**                                     | **100%** |    **62%** | **M1.5 Pipeline UI attempt controls added; browser/reset/release gates remain**           |
 
 ## Source Map
 
@@ -549,6 +549,10 @@
 - [x] Access control uses existing deal scope policy; funded/closed deals reject quick-log attempts.
 - [x] Validation passed: Prisma Client generation, server build, `cd server && npx vitest run tests/dealContactAttempts.test.ts tests/dealControllerScope.test.ts tests/dealScopePolicy.test.ts` — 14/14 passed.
 - [x] Targeted ESLint passed with 0 errors and existing warning debt only.
+- [x] Pipeline UI added M1.5 attempt banner on DealCard with `WAITING X/Y ATTEMPTS · Z BEFORE AUTO-NURTURE` copy and low/mid/near-threshold color states.
+- [x] DealPanel added quick-log row using `POST /api/deals/:id/log-attempt` with No answer/Texted/Voicemail/Connected/Not interested actions.
+- [x] Client validation passed: `cd client && npm run build`.
+- [ ] Targeted ESLint for `DealPanel.tsx` still has pre-existing React Compiler errors around old synchronous `useEffect` state setters/manual memoization; not fixed in this M1.5 UI slice to avoid broad refactor.
 
 ### Data and backend
 
@@ -576,16 +580,16 @@
 
 ### UI
 
-- [ ] Render quick-log row in DealPanel.
-- [ ] Render waiting/attempt banner on DealCard.
-- [ ] Render attempt status in DealPanel.
-- [ ] Banner text: `WAITING X/Y ATTEMPTS · Z BEFORE AUTO-NURTURE`.
-- [ ] Color ratio states:
+- [x] Render quick-log row in DealPanel.
+- [x] Render waiting/attempt banner on DealCard.
+- [x] Render attempt status in DealPanel.
+- [x] Banner text: `WAITING X/Y ATTEMPTS · Z BEFORE AUTO-NURTURE`.
+- [x] Color ratio states:
   - low/yellow;
   - mid/orange;
   - near-threshold/red pulse.
-- [ ] Quick-log buttons match `quick-log-row` / `ql-btn` visual target.
-- [ ] Attempt banner matches `nurture-banner` / `nu-urg` visual target.
+- [x] Quick-log buttons match `quick-log-row` / `ql-btn` visual target.
+- [x] Attempt banner matches `nurture-banner` / `nu-urg` visual target.
 
 ### M1.5 Testing Gate
 

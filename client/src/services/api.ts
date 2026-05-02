@@ -106,6 +106,7 @@ export const dealApi = {
   markFunded: (id: string, data: any) => api.post(`/deals/${id}/fund`, data),
   completeAction: (id: string, data: any) => api.post(`/deals/${id}/complete-action`, data),
   shareDeal: (id: string, data: any) => api.put(`/deals/${id}/share`, data),
+  logAttempt: (id: string, data: { kind: string; note?: string }) => api.post(`/deals/${id}/log-attempt`, data),
   logCall: (id: string, data: any) => api.post(`/deals/${id}/call-log`, data),
   getSms: (id: string) => api.get(`/deals/${id}/sms`),
   sendSms: (id: string, body: string) => api.post(`/deals/${id}/sms/send`, { body }),

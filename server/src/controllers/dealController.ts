@@ -714,7 +714,10 @@ export class DealController {
 
         manualAttemptEvent = {
           eventType: nextAttempts === 0 ? 'engagement_reset' : 'contact_attempt_override',
-          note: nextAttempts === 0 ? 'Contact attempts reset by admin override' : 'Contact attempts adjusted by admin override',
+          note:
+            nextAttempts === 0
+              ? 'Contact attempts reset by admin override'
+              : 'Contact attempts adjusted by admin override',
           metadata: {
             reason: 'manual_override',
             previousAttempts: existing.contactAttempts || 0,
@@ -1772,9 +1775,9 @@ export class DealController {
     const io = (req.app as any).io;
     emitDealUpdatedScoped(io, {
       dealId: id,
-      stage: deal.stage,
-      repId: deal.assignedRepId,
-      assistingRepIds: (deal as any).assistingRepIds || [],
+      stage: updated.stage,
+      repId: updated.assignedRepId,
+      assistingRepIds: (updated as any).assistingRepIds || [],
       actorUserId: req.user?.id || null,
     });
 

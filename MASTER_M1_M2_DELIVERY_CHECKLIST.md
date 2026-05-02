@@ -659,6 +659,16 @@
 - [x] Gmail recipient policy prefers conversation/texted email over lead-list email while preserving lead-list email in response metadata.
 - [x] Admin/manager self-assign path is allowed only for the current privileged user; ordinary assignment still requires an active REP.
 
+### New deal creation / sharing / socket scoping smoke — 2026-05-02
+
+- [x] Evidence JSON added: `audit-screenshots/m16-deal-create-share-socket-evidence.json`.
+- [x] Backend fix added: `shareDeal` now emits scoped socket updates from the updated deal record, so newly added assisting reps receive `inbox:{repId}` updates.
+- [x] Focused backend regression passed 14/14 across deal controller scope, deal scope policy, and inbox reply reclassification tests.
+- [x] Root production build passed after the backend fix: server `tsc` plus client `tsc && vite build`.
+- [x] Browser production-preview smoke passed with mock API: created `M1.6 Smoke Capital`, captured `POST /api/deals`, shared `Atlas Demo Logistics`, and captured `PUT /api/deals/deal-1/share` with `assistingRepIds: ["rep-2"]`.
+- [x] Browser screenshot saved: `audit-screenshots/m16-deal-create-share-browser-smoke.png`.
+- [ ] Production deploy/smoke pending for this gate.
+
 ### Functional regression
 
 - [x] Login/auth full pass.
@@ -667,15 +677,15 @@
 - [x] Deal card pass.
 - [x] Deal panel pass.
 - [x] Drag/drop pass.
-- [ ] New deal creation pass.
-- [ ] Deal sharing pass if in current implementation.
+- [x] New deal creation pass.
+- [x] Deal sharing pass if in current implementation.
 - [x] Funding history pass.
 - [x] Inbox AI unaffected.
 - [x] Email/Gmail CTA unaffected.
 - [x] Follow-up timing unaffected.
 - [x] Quiet hours unaffected.
 - [x] Inbound ownership unaffected.
-- [ ] Socket scoping unaffected.
+- [x] Socket scoping unaffected.
 
 ### Visual regression
 

@@ -403,6 +403,38 @@ export type CommitSubStatus = 'DOCS_REQUESTED' | 'DOCS_SIGNED' | 'FUNDING';
 
 export type RenewalTaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SKIPPED';
 
+export interface PipelineAiMoneySignal {
+  value_usd?: number | null;
+  raw?: string | null;
+}
+
+export interface PipelineAiUseOfFundsSignal {
+  category?: string | null;
+  detail?: string | null;
+}
+
+export interface PipelineAiCurrentPositionsSignal {
+  count?: number | null;
+  total_debt_usd?: number | null;
+}
+
+export interface PipelineAiRecentStackingSignal {
+  active?: boolean;
+  window?: 'last_30d' | 'last_60d' | 'last_90d' | null;
+}
+
+export interface PipelineAiSignals {
+  industry?: string | null;
+  monthly_revenue?: PipelineAiMoneySignal | null;
+  use_of_funds?: PipelineAiUseOfFundsSignal | null;
+  requested_amount?: PipelineAiMoneySignal | null;
+  product_interest?: ProductType[];
+  pending_actions?: Array<Record<string, unknown>>;
+  has_stacked_history?: boolean;
+  current_active_positions?: PipelineAiCurrentPositionsSignal | null;
+  recent_stacking_activity?: PipelineAiRecentStackingSignal | null;
+}
+
 export interface Client {
   id: string;
   businessName: string;
@@ -452,6 +484,8 @@ export interface Deal {
   notes?: string;
   clientNotes?: string;
   isHot: boolean;
+  pipelineAiSignals?: PipelineAiSignals | null;
+  pipelineAiUpdatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   // Relations

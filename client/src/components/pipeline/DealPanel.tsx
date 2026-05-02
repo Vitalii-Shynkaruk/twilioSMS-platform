@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
 import type { Deal, DealStage, Rep, Offer, ProductType, DealEvent } from '../../types';
 import { formatCurrency } from './DealCard';
+import StackingChip from './StackingChip';
 import CreateDealModal from './CreateDealModal';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -356,6 +357,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               ))}
             </select>
             {deal.productType ? <span className="ph-stage-badge ph-badge-good">{deal.productType}</span> : null}
+            <StackingChip signals={deal.pipelineAiSignals} className="ph-stacking-chip" />
             {smsCampaignSource ? <span className="ph-stage-badge ph-badge-amber">{smsCampaignSource}</span> : null}
             {deal.nextActionDue ? (
               <span

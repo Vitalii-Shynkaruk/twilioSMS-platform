@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import type { Deal, CommitSubStatus } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
+import StackingChip from './StackingChip';
 
 // ─── Exported constants (used by DealPanel, CommandCenter, etc.) ───
 
@@ -260,6 +261,7 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
     <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} onClick={onClick}>
       <div style={{ padding: '10px 11px 8px' }}>
         {hot && <div className="sc-hot-badge">🔥 HOT</div>}
+        <StackingChip signals={deal.pipelineAiSignals} compact className="sc-stacking-chip" />
         <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
         <div className="sc-name" onMouseDown={blockDragOnTextPointerDown} onPointerDown={blockDragOnTextPointerDown}>
           {renderHighlightedText(businessName, highlightTerm)}
@@ -339,6 +341,7 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
           </div>
           <div className="bdgs">
             {hot && <span className="b b-hot">🔥HOT</span>}
+            <StackingChip signals={deal.pipelineAiSignals} compact />
             {deal.stage === 'NURTURE' && deal.followUpType === 'renewal' && <span className="b b-renew">RENEW</span>}
             {deal.stage === 'NURTURE' &&
               (!deal.followUpType || deal.followUpType === 'reengage' || deal.followUpType === 'competitor') && (

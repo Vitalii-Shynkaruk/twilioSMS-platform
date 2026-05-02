@@ -14,14 +14,14 @@
 | M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending |
 | M1.2 — Pipeline v2 base parity                  |      12% |         0% | Not started                                                                        |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                        |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         0% | Not started                                                                        |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                        |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                        |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         0% | Not started                                                                        |
 | M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                        |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                        |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                        |
-| **Overall**                                     | **100%** |    **14%** | **M1.1 auth UI parity added; live OTP validation pending**                         |
+| **Overall**                                     | **100%** |    **16%** | **M1.1 auth UI parity + M1.4 B.6 stacking chip update added**                      |
 
 ## Source Map
 
@@ -416,6 +416,18 @@
 
 ## M1.4 — Pipeline AI Extractor And Badges
 
+### Implementation evidence — 2026-05-02 B.6 client correction
+
+- [x] Client B.6 correction folded into M1 without schema change: MCA `stacked` now means `3+` active positions.
+- [x] Added typed `PipelineAiSignals` frontend shape with `current_active_positions`, `has_stacked_history`, and `recent_stacking_activity`.
+- [x] Added reusable stacking chip resolver/component for DealCard and DealPanel.
+- [x] Implemented chip labels/colors: green `1ST POSITION`, yellow `1-POSITION`, orange `2-POSITIONS`, red `{N}-STACKED` for `count >= 3`.
+- [x] Implemented active stacking modifier: red pulse and ` · ACTIVE` appended to the rendered base chip.
+- [x] Implemented optional debt suffix ` · $XXXk` when `total_debt_usd` is set and `count >= 2`.
+- [x] Frontend build passed after B.6 chip update.
+- [x] Browser mock validation passed: DealCard rendered `1ST POSITION`, `1-POSITION`, `2-POSITIONS · $180k`, `3-STACKED · $240k · ACTIVE`; DealPanel rendered active stacked chip.
+- [ ] Backend extractor/data plumbing still pending: `Deal.pipelineAiSignals`, `Deal.pipelineAiUpdatedAt`, and live AI extraction endpoint.
+
 ### Backend foundation
 
 - [ ] Add `Deal.pipelineAiSignals`.
@@ -457,15 +469,18 @@
 
 ### Frontend badges and inline bar
 
-- [ ] Add `PipelineAiSignals` type distinct from Inbox `AISignals`.
+- [x] Add `PipelineAiSignals` type distinct from Inbox `AISignals`.
 - [ ] Extend deal API response shape.
 - [ ] Render industry badge.
 - [ ] Render monthly revenue badge.
 - [ ] Render use-of-funds badge.
-- [ ] Render stacking chip priority:
-  - Active stacking;
-  - X-stacked;
-  - Stacked before.
+- [x] Render corrected B.6 stacking chip priority from client update:
+  - `count >= 3` -> red `{N}-STACKED`;
+  - `count === 2` -> orange `2-POSITIONS`;
+  - `count === 1` -> yellow `1-POSITION`;
+  - `has_stacked_history === false && current_active_positions === null` -> green `1ST POSITION`;
+  - `recent_stacking_activity.active === true` -> red pulse and append ` · ACTIVE`.
+- [x] Append ` · $XXXk` to stacking chip when `total_debt_usd` is set and `count >= 2`.
 - [ ] Render AI inline bar in DealPanel above stage/product row.
 - [ ] Render empty/dashed placeholders where spec requires.
 - [ ] Render extracted-time/source label.
@@ -480,6 +495,8 @@
 - [ ] Note save works when Anthropic API fails.
 - [ ] Rapid note updates serialize per deal.
 - [ ] DealCard AI badges render full/partial/empty states.
+- [x] DealCard/DealPanel B.6 stacking chip helper compiles for all corrected count states.
+- [x] DealCard/DealPanel B.6 stacking chip browser mock renders corrected count states and active pulse modifier.
 - [ ] DealPanel AI inline bar renders full/partial/empty states.
 - [ ] Re-run AI tested with note, no-note, API error.
 - [ ] Pixel-close compare with `scl_pipeline_v11.html` retained elements.

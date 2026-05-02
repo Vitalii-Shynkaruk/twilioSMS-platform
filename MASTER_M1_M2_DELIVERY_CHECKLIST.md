@@ -16,12 +16,12 @@
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         1% | Initial build gate passed; full server suite blocked by local DB/Redis env                |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **67%** | **M1.5 complete; next gates are M1.6 regression/release and remaining M2 work**           |
+| **Overall**                                     | **100%** |    **68%** | **M1.6 initial build evidence added; browser/full-env regression gates remain**           |
 
 ## Source Map
 
@@ -620,6 +620,13 @@
 
 ## M1.6 — M1 Full Regression And Release Gate
 
+### Initial gate evidence — 2026-05-02
+
+- [x] Evidence JSON added: `audit-screenshots/m16-regression-gate-evidence.json`.
+- [x] Root release build passed: `npm run build` completed server `tsc` and client `tsc && vite build`.
+- [ ] Full backend suite attempted: `cd server && npm test -- --run` is blocked by local environment, not by the M1.5 changes. Redis is unavailable on local `6379`, and the local Prisma datasource provider does not match the MySQL schema; DB-backed `auth` and `numberService` tests cannot complete until a valid MySQL test DB and Redis are available.
+- [x] M1.5 focused backend regression remains green: 18/18 focused tests passed before opening M1.6 gate.
+
 ### Functional regression
 
 - [ ] Login/auth full pass.
@@ -651,7 +658,7 @@
 ### Release readiness
 
 - [ ] Server tests pass.
-- [ ] Client build passes.
+- [x] Client build passes.
 - [ ] Relevant DB migration reviewed as additive.
 - [ ] Rollback note prepared.
 - [ ] Evidence screenshots saved.

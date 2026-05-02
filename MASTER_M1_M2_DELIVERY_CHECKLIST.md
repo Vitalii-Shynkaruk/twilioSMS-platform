@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                 |
-| ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                   |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending     |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                      |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                            |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                            |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending         |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending    |
-| M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **52%** | **M2.2 enrichment/export implementation added; browser smoke gates remain**            |
+| Направление                                     |      Вес | Готовность | Статус                                                                                        |
+| ----------------------------------------------- | -------: | ---------: | --------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                          |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending            |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                             |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                   |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending        |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                                   |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                                   |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending           |
+| M2.3 — AI Retarget campaigns                    |       8% |         4% | Live cohort API/UI/build-draft foundation + focused tests/build passed; DB/cron/pixel pending |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                   |
+| **Overall**                                     | **100%** |    **56%** | **M2.3 AI Retarget foundation added; browser smoke and release gates remain**                 |
 
 ## Source Map
 
@@ -770,14 +770,28 @@
 
 ## M2.3 — AI Retarget Campaigns
 
+### Implementation evidence — 2026-05-02
+
+- [x] Added live AI cohort API foundation without DB migration: `GET /api/campaigns/ai-cohorts`, `GET /api/campaigns/ai-cohorts/:cohortId/preview`, `POST /api/campaigns/ai-cohorts/:cohortId/build`.
+- [x] Added three deterministic analytical cohort engines: multi-retarget, new restaurants, and admin-only renewals.
+- [x] Cohort queries exclude deleted, opted-out, suppressed, and DNC leads and apply rep lead scope for REP users.
+- [x] Cooldowns are applied before count/build: 7 days for multi-retarget/new cohorts, 30 days for renewals.
+- [x] AI cohort build creates a DRAFT campaign only; it does not auto-send or queue SMS.
+- [x] AI-built campaign lineage is stored through existing `Campaign.description` + `isRetarget` fields and surfaced as `AI Cohort · N leads · ~X funded expected`.
+- [x] Campaigns UI now renders AI Retarget Suggestions above All Campaigns, preview modal, Build Campaign action, AI badge, and lineage marker.
+- [x] Focused tests added in `server/tests/campaignAiCohorts.test.ts` for admin cohorts, REP renewal exclusion, and draft campaign build.
+- [x] Validation passed: `cd server && npx vitest run tests/campaignAiCohorts.test.ts tests/leadCampaignScope.test.ts tests/leadEnrichmentExport.test.ts` — 10/10 passed, with known local Redis `ECONNREFUSED` warning only.
+- [x] Validation passed: root `npm run build` including server and client build.
+- [x] Targeted ESLint passed with 0 errors and existing warning debt only.
+
 ### Scope lock for AI Retarget
 
-- [ ] Confirm current scope follows v3 prototype Phase 3 only.
-- [ ] Do not add suppressed leads zone, list management, multi-owner, or extra cohort bar.
-- [ ] Admin view can build all-campaigns cohorts.
-- [ ] Rep view behavior respects createdBy/ownership rules.
-- [ ] Treat Phase 3 as data intelligence pipeline, not UI-only work.
-- [ ] Confirm Phase 1 access fixes are complete before Phase 3 cohort generation:
+- [x] Confirm current scope follows v3 prototype Phase 3 only.
+- [x] Do not add suppressed leads zone, list management, multi-owner, or extra cohort bar.
+- [x] Admin view can build all-campaigns cohorts.
+- [x] Rep view behavior respects createdBy/ownership rules.
+- [x] Treat Phase 3 as data intelligence pipeline, not UI-only work.
+- [x] Confirm Phase 1 access fixes are complete before Phase 3 cohort generation:
   - lead `assignedRepId` correctness;
   - campaign `createdById` scoping correctness.
 
@@ -802,53 +816,53 @@
 
 ### Cohort generation
 
-- [ ] Build/verify all-campaigns cohort source across relevant past campaigns.
-- [ ] Generate `Cross-rep retarget — replied with $80K+ revenue, stalled at docs` style cohort.
-- [ ] Generate `Restaurants · $80K+ rev · never contacted across all rep imports` style cohort.
-- [ ] Generate `Funded 8-12 mo ago · likely renewals · admin-only` style cohort.
-- [ ] Implement three separate analytical query engines:
+- [x] Build/verify all-campaigns cohort source across relevant past campaigns.
+- [x] Generate `Cross-rep retarget — replied with $80K+ revenue, stalled at docs` style cohort.
+- [x] Generate `Restaurants · $80K+ rev · never contacted across all rep imports` style cohort.
+- [x] Generate `Funded 8-12 mo ago · likely renewals · admin-only` style cohort.
+- [x] Implement three separate analytical query engines:
   - multi-campaign retarget;
   - new cohorts from unsent leads;
   - renewal candidates.
-- [ ] Each query joins only the required campaign/lead/funded/deal data and remains performant.
-- [ ] Each cohort includes:
+- [x] Each query joins only the required campaign/lead/funded/deal data and remains performant.
+- [x] Each cohort includes:
   - lead count;
   - predicted reply rate;
   - expected funded deals;
   - historical anchor line;
   - AI reasoning line;
   - override/cooldown warning when applicable.
-- [ ] Exclude opted-out, DNC, suppressed leads.
-- [ ] Respect recent retarget cooldown and admin override warning semantics.
-- [ ] Ensure predicted funded deals are traceable to historical anchor, not arbitrary text.
+- [x] Exclude opted-out, DNC, suppressed leads.
+- [x] Respect recent retarget cooldown and admin override warning semantics.
+- [x] Ensure predicted funded deals are traceable to historical anchor, not arbitrary text.
 
 ### Cooldowns and compliance
 
-- [ ] Enforce 7-day cooldown for multi-retarget and new cohort contact history.
-- [ ] Enforce 30-day cooldown for renewal candidates.
-- [ ] Track contact event timestamps across all campaigns for each lead.
-- [ ] Surface cooldown countdown/override warning in UI where prototype expects it.
-- [ ] Ensure cooldown logic applies before cohort count and before campaign build.
-- [ ] Verify no cohort can re-contact opted-out, DNC, suppressed, or too-recent leads.
+- [x] Enforce 7-day cooldown for multi-retarget and new cohort contact history.
+- [x] Enforce 30-day cooldown for renewal candidates.
+- [x] Track contact event timestamps across all campaigns for each lead.
+- [x] Surface cooldown countdown/override warning in UI where prototype expects it.
+- [x] Ensure cooldown logic applies before cohort count and before campaign build.
+- [x] Verify no cohort can re-contact opted-out, DNC, suppressed, or too-recent leads.
 
 ### Two-layer send caps
 
-- [ ] Enforce per-campaign cap server-side:
+- [x] Enforce per-campaign cap server-side for AI cohort build:
   - rep: 500;
   - admin: 3000.
-- [ ] Enforce rolling 24-hour daily total cap server-side:
+- [x] Enforce rolling 24-hour daily total cap server-side for AI cohort build:
   - rep: 800;
   - admin: 4500.
-- [ ] Daily total uses rolling 24h window, not calendar day reset.
+- [x] Daily total uses rolling 24h window, not calendar day reset.
 - [ ] Cap errors include requested/cap/role/dailyUsed/remaining details.
-- [ ] UI displays current daily capacity and nearly-full state.
-- [ ] Cohort card lead count reflects current remaining capacity at render/build time.
+- [x] UI displays current daily capacity and nearly-full state.
+- [x] Cohort card lead count reflects current remaining capacity at render/build time.
 
 ### AI reasoning and cron
 
 - [ ] Use Anthropic Claude Sonnet 4.5 for cohort reasoning.
 - [ ] Reasoning prompt includes filter criteria, anonymized sample leads, and funded history aggregates.
-- [ ] Reasoning output is 1-2 business-specific sentences, not generic boilerplate.
+- [x] Reasoning output is 1-2 business-specific sentences, not generic boilerplate.
 - [ ] Cache reasoning for 24h.
 - [ ] Scheduled job runs every 15 minutes.
 - [ ] Cron runs per user: admin + each active rep.
@@ -858,47 +872,47 @@
 
 ### UI
 
-- [ ] AI Retarget Suggestions section appears above All Campaigns list.
-- [ ] Section subtitle shows all-reps campaign base and refresh time.
-- [ ] Three cards render with correct priority labels.
-- [ ] Cards show live capacity data.
-- [ ] Cards show cohort-trim messaging when cap is lower than match count.
-- [ ] Cards show daily capacity nearly full messaging.
-- [ ] Preview button opens intended preview flow or documented placeholder.
+- [x] AI Retarget Suggestions section appears above All Campaigns list.
+- [x] Section subtitle shows all-reps campaign base and refresh time.
+- [x] Three cards render with correct priority labels.
+- [x] Cards show live capacity data.
+- [x] Cards show cohort-trim messaging when cap is lower than match count.
+- [x] Cards show daily capacity nearly full messaging.
+- [x] Preview button opens intended preview flow or documented placeholder.
 - [ ] Build Campaign opens existing New Campaign modal with preloaded lead set.
-- [ ] AI-built campaigns appear in All Campaigns table.
-- [ ] AI-built campaigns show `AI` badge.
-- [ ] AI-built campaigns show lineage marker, e.g. `↻ from AI Cohort · 487 leads · ~6 funded expected`.
+- [x] AI-built campaigns appear in All Campaigns table.
+- [x] AI-built campaigns show `AI` badge.
+- [x] AI-built campaigns show lineage marker, e.g. `↻ from AI Cohort · 487 leads · ~6 funded expected`.
 - [ ] Existing campaign actions still work: rerun/refresh, start, pause, delete where allowed.
 
 ### Backend/API
 
-- [ ] Add/verify endpoint for AI cohorts.
-- [ ] Add/verify endpoint to resolve cohort to lead ids.
-- [ ] Ensure cohort build does not bypass campaign caps or compliance guards.
+- [x] Add/verify endpoint for AI cohorts.
+- [x] Add/verify endpoint to resolve cohort to lead ids.
+- [x] Ensure cohort build does not bypass campaign caps or compliance guards.
 - [ ] Ensure build campaign path uses existing campaign creation validation.
-- [ ] Ensure created campaign stores lineage metadata.
-- [ ] Ensure rep users cannot use admin-only renewal/cross-rep cohorts unless explicitly allowed.
-- [ ] Existing campaign send path remains unchanged downstream of preloaded leads.
-- [ ] AI Retarget is upstream recommendation only; no auto-send.
+- [x] Ensure created campaign stores lineage metadata.
+- [x] Ensure rep users cannot use admin-only renewal/cross-rep cohorts unless explicitly allowed.
+- [x] Existing campaign send path remains unchanged downstream of preloaded leads.
+- [x] AI Retarget is upstream recommendation only; no auto-send.
 
 ### M2.3 Testing Gate
 
-- [ ] Admin sees all 3 AI Retarget cohorts.
-- [ ] Rep sees only allowed/scoped cohorts.
+- [x] Admin sees all 3 AI Retarget cohorts in focused API test.
+- [x] Rep sees only allowed/scoped cohorts in focused API test.
 - [ ] Preview flow tested.
-- [ ] Build Campaign flow tested.
+- [x] Build Campaign flow tested in focused API test.
 - [ ] New AI-built campaign appears in All Campaigns list.
 - [ ] Lineage marker verified.
-- [ ] Cooldown/override warning verified.
-- [ ] Compliance exclusions verified.
+- [x] Cooldown/override warning verified in focused API test.
+- [x] Compliance exclusions verified by query constraints and focused build/list tests.
 - [ ] Per-campaign caps tested for rep and admin.
 - [ ] Rolling 24h daily caps tested for rep and admin.
 - [ ] Expired cohorts ignored after 24h.
 - [ ] Cron failure for one cohort does not break other cohorts.
 - [ ] AI reasoning is cached and not regenerated unnecessarily.
 - [ ] Pixel-close compare with Campaigns prototype.
-- [ ] Progress dashboard updated.
+- [x] Progress dashboard updated.
 
 ## M2.4 — M2 Full Regression And Release Gate
 

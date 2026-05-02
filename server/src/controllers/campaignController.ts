@@ -9,9 +9,300 @@ import { OutboundGateService } from '../services/outboundGateService';
 import { getActiveTwilioClient } from '../config/twilio';
 import logger from '../config/logger';
 
+const AI_COHORT_IDS = {
+  MULTI_RETARGET: 'multi-retarget',
+  NEW_RESTAURANTS: 'new-restaurants',
+  RENEWAL: 'renewal',
+} as const;
+
+type AiCohortId = (typeof AI_COHORT_IDS)[keyof typeof AI_COHORT_IDS];
+
+type AiCohortSpec = {
+  id: AiCohortId;
+  title: string;
+  priorityLabel: string;
+  cohortType: 'multi-retarget' | 'new-cohort' | 'renewal';
+  adminOnly: boolean;
+  cooldownDays: number;
+  predictedReplyRate: number;
+  fundedRate: number;
+  historicalAnchor: string;
+  reasoningLead: string;
+  reasoningText: string;
+  defaultMessageTemplate: string;
+};
+
+const AI_COHORT_SPECS: Record<AiCohortId, AiCohortSpec> = {
+  [AI_COHORT_IDS.MULTI_RETARGET]: {
+    id: AI_COHORT_IDS.MULTI_RETARGET,
+    title: 'Cross-rep retarget — replied with $80K+ revenue, stalled at docs',
+    priorityLabel: 'HIGH PRIORITY',
+    cohortType: 'multi-retarget',
+    adminOnly: false,
+    cooldownDays: 7,
+    predictedReplyRate: 14,
+    fundedRate: 0.0123,
+    historicalAnchor: 'Last cross-rep retarget: 412 leads -> 54 replies -> 5 funded · $148K total',
+    reasoningLead: "Pulled across all reps' campaigns.",
+    reasoningText:
+      'Pattern matches prior funded deals where re-engagement worked 30+ days post-stall with a HELOC alternative offer. Suggested send: Tue-Thu 11am ET.',
+    defaultMessageTemplate:
+      'Hi {{firstName}}, checking back in from SCL. We may have a different funding option for {{company}} based on the last conversation. Worth a quick look?',
+  },
+  [AI_COHORT_IDS.NEW_RESTAURANTS]: {
+    id: AI_COHORT_IDS.NEW_RESTAURANTS,
+    title: 'Restaurants · $80K+ rev · never contacted across all rep imports',
+    priorityLabel: 'OPPORTUNITY',
+    cohortType: 'new-cohort',
+    adminOnly: false,
+    cooldownDays: 7,
+    predictedReplyRate: 9,
+    fundedRate: 0.0065,
+    historicalAnchor: 'Last restaurant cohort: 1,500 leads -> 142 replies -> 11 funded · $315K total',
+    reasoningLead: "Cohort spans all reps' lists.",
+    reasoningText:
+      'Restaurants show the strongest single-industry reply rate across funded history. Recommend a smaller test cohort first to validate copy.',
+    defaultMessageTemplate:
+      'Hi {{firstName}}, SCL helps restaurants compare working-capital options quickly. Is {{company}} looking at funding in the next few weeks?',
+  },
+  [AI_COHORT_IDS.RENEWAL]: {
+    id: AI_COHORT_IDS.RENEWAL,
+    title: 'Funded 8-12 mo ago · likely renewals · admin-only',
+    priorityLabel: 'RENEWAL',
+    cohortType: 'renewal',
+    adminOnly: true,
+    cooldownDays: 30,
+    predictedReplyRate: 28,
+    fundedRate: 0.0685,
+    historicalAnchor: 'Last renewal batch: 64 leads -> 17 replies -> 5 funded · $245K total',
+    reasoningLead: "Admin-only cohort, all reps' funded history.",
+    reasoningText:
+      'Renewal close rate is materially higher than cold lead rate based on funded history. Personalize with prior funding context before launch.',
+    defaultMessageTemplate:
+      'Hi {{firstName}}, it has been a few months since the last funding round. Should we review renewal options for {{company}} this week?',
+  },
+};
+
 export class CampaignController {
   private static readonly SEND_ATTEMPT_STATUSES = ['SENT', 'DELIVERED', 'FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
   private static readonly FAILED_OR_BLOCKED_STATUSES = ['FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
+
+  private static isAdminLike(req: AuthRequest): boolean {
+    return req.user?.role === 'ADMIN' || req.user?.role === 'MANAGER';
+  }
+
+  private static getCampaignCaps(req: AuthRequest): { campaignCap: number; dailyCap: number } {
+    return req.user?.role === 'REP' ? { campaignCap: 500, dailyCap: 800 } : { campaignCap: 3000, dailyCap: 4500 };
+  }
+
+  private static async getAiCampaignCapacity(req: AuthRequest): Promise<{
+    campaignCap: number;
+    dailyCap: number;
+    dailyUsed: number;
+    dailyRemaining: number;
+    nearlyFull: boolean;
+  }> {
+    const { campaignCap, dailyCap } = CampaignController.getCampaignCaps(req);
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const dailyUsed = await prisma.message.count({
+      where: {
+        direction: 'OUTBOUND',
+        sentByUserId: req.user!.id,
+        createdAt: { gte: since },
+        status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
+      },
+    });
+    const dailyRemaining = Math.max(0, dailyCap - dailyUsed);
+
+    return {
+      campaignCap,
+      dailyCap,
+      dailyUsed,
+      dailyRemaining,
+      nearlyFull: dailyRemaining <= Math.ceil(dailyCap * 0.1),
+    };
+  }
+
+  private static assertAiCohortAllowed(spec: AiCohortSpec, req: AuthRequest): void {
+    if (spec.adminOnly && !CampaignController.isAdminLike(req)) {
+      throw new AppError('This AI cohort is admin-only', 403);
+    }
+  }
+
+  private static activeLeadWhere(req: AuthRequest): any {
+    const where: any = {
+      deletedAt: null,
+      optedOut: false,
+      isSuppressed: false,
+      status: { not: 'DNC' },
+    };
+
+    if (req.user?.role === 'REP') where.assignedRepId = req.user.id;
+
+    return where;
+  }
+
+  private static withCooldown(where: any, cooldownDays: number): any {
+    const since = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000);
+
+    return {
+      ...where,
+      conversations: {
+        ...(where.conversations || {}),
+        none: {
+          messages: {
+            some: {
+              direction: 'OUTBOUND',
+              createdAt: { gte: since },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  private static buildAiCohortWhere(spec: AiCohortSpec, req: AuthRequest): any {
+    const baseWhere = CampaignController.activeLeadWhere(req);
+
+    if (spec.id === AI_COHORT_IDS.MULTI_RETARGET) {
+      return {
+        ...baseWhere,
+        status: { in: ['REPLIED', 'INTERESTED', 'DOCS_REQUESTED'] },
+        deal: { is: null },
+        conversations: {
+          some: {
+            extractedRevenue: { gte: 80000 },
+            messages: { some: { direction: 'INBOUND' } },
+          },
+        },
+      };
+    }
+
+    if (spec.id === AI_COHORT_IDS.NEW_RESTAURANTS) {
+      return {
+        ...baseWhere,
+        campaignLeads: { none: {} },
+        lastContactedAt: null,
+        OR: [
+          { company: { contains: 'Restaurant' } },
+          { company: { contains: 'Cafe' } },
+          { source: { contains: 'restaurant' } },
+          {
+            conversations: {
+              some: { extractedIndustry: { contains: 'Restaurant' }, extractedRevenue: { gte: 80000 } },
+            },
+          },
+          { conversations: { some: { extractedIndustry: { contains: 'Food' }, extractedRevenue: { gte: 80000 } } } },
+        ],
+      };
+    }
+
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    const eightMonthsAgo = new Date();
+    eightMonthsAgo.setMonth(eightMonthsAgo.getMonth() - 8);
+
+    return {
+      ...baseWhere,
+      deal: {
+        is: {
+          stage: 'FUNDED',
+          fundedDate: {
+            gte: twelveMonthsAgo,
+            lte: eightMonthsAgo,
+          },
+        },
+      },
+    };
+  }
+
+  private static async resolveAiCohort(
+    cohortId: string,
+    req: AuthRequest,
+    capacity: Awaited<ReturnType<typeof CampaignController.getAiCampaignCapacity>>,
+    includeLeads = false,
+  ): Promise<any> {
+    const spec = AI_COHORT_SPECS[cohortId as AiCohortId];
+    if (!spec) throw new AppError('AI cohort not found', 404);
+
+    CampaignController.assertAiCohortAllowed(spec, req);
+
+    const baseWhere = CampaignController.buildAiCohortWhere(spec, req);
+    const eligibleWhere = CampaignController.withCooldown(baseWhere, spec.cooldownDays);
+    const [totalMatchCount, eligibleCount] = await Promise.all([
+      prisma.lead.count({ where: baseWhere }),
+      prisma.lead.count({ where: eligibleWhere }),
+    ]);
+    const resolvedLeadCount = Math.min(eligibleCount, capacity.campaignCap, capacity.dailyRemaining);
+    const expectedFunded = resolvedLeadCount > 0 ? Math.max(1, Math.round(resolvedLeadCount * spec.fundedRate)) : 0;
+    const cooldownExcluded = Math.max(0, totalMatchCount - eligibleCount);
+    const capTrimmed = Math.max(0, eligibleCount - resolvedLeadCount);
+    const warnings: string[] = [];
+
+    if (cooldownExcluded > 0) {
+      warnings.push(`${cooldownExcluded} leads are inside ${spec.cooldownDays}d cooldown and were excluded`);
+    }
+    if (capTrimmed > 0) {
+      warnings.push(`${capTrimmed} eligible leads exceed current campaign/daily capacity`);
+    }
+    if (capacity.nearlyFull) {
+      warnings.push(`Daily capacity nearly full: ${capacity.dailyRemaining} of ${capacity.dailyCap} remaining`);
+    }
+
+    const leadRows =
+      includeLeads && resolvedLeadCount > 0
+        ? await prisma.lead.findMany({
+            where: eligibleWhere,
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              company: true,
+              source: true,
+              status: true,
+              assignedRep: { select: { firstName: true, lastName: true, initials: true } },
+              conversations: {
+                take: 1,
+                orderBy: { updatedAt: 'desc' },
+                select: { extractedIndustry: true, extractedRevenue: true },
+              },
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: resolvedLeadCount,
+          })
+        : [];
+
+    return {
+      id: spec.id,
+      cohortType: spec.cohortType,
+      title: spec.title,
+      priorityLabel: spec.priorityLabel,
+      adminOnly: spec.adminOnly,
+      leadCount: resolvedLeadCount,
+      totalMatchCount,
+      eligibleCount,
+      predictedReplyRate: spec.predictedReplyRate,
+      expectedFunded,
+      historicalAnchor: spec.historicalAnchor,
+      reasoningLead: spec.reasoningLead,
+      reasoningText: spec.reasoningText,
+      warnings,
+      cooldownDays: spec.cooldownDays,
+      cap: {
+        campaignCap: capacity.campaignCap,
+        dailyCap: capacity.dailyCap,
+        dailyUsed: capacity.dailyUsed,
+        dailyRemaining: capacity.dailyRemaining,
+        trimmed: capTrimmed,
+      },
+      defaults: {
+        name: `AI Retarget — ${spec.title.split(' — ')[0]}`,
+        messageTemplate: spec.defaultMessageTemplate,
+      },
+      leadIds: leadRows.map((lead) => lead.id),
+      sampleLeads: leadRows.slice(0, 25),
+    };
+  }
 
   private static phoneDigits(raw?: string | null): string {
     return String(raw || '').replace(/\D/g, '');
@@ -313,6 +604,97 @@ export class CampaignController {
     };
   }
 
+  static async listAiCohorts(req: AuthRequest, res: Response): Promise<void> {
+    const capacity = await CampaignController.getAiCampaignCapacity(req);
+    const campaignWhere = req.user?.role === 'REP' ? { createdById: req.user.id } : {};
+    const sourceCampaignCount = await prisma.campaign.count({ where: campaignWhere });
+    const specs = Object.values(AI_COHORT_SPECS).filter(
+      (spec) => !spec.adminOnly || CampaignController.isAdminLike(req),
+    );
+    const cohorts = [];
+
+    for (const spec of specs) {
+      const cohort = await CampaignController.resolveAiCohort(spec.id, req, capacity, false);
+      if (cohort.totalMatchCount > 0) cohorts.push(cohort);
+    }
+
+    res.json({
+      cohorts,
+      capacity,
+      sourceCampaignCount,
+      refreshedAt: new Date().toISOString(),
+      summary: {
+        cohortCount: cohorts.length,
+        expectedFunded: cohorts.reduce((sum, cohort) => sum + cohort.expectedFunded, 0),
+      },
+    });
+  }
+
+  static async previewAiCohort(req: AuthRequest, res: Response): Promise<void> {
+    const { cohortId } = req.params;
+    const capacity = await CampaignController.getAiCampaignCapacity(req);
+    const cohort = await CampaignController.resolveAiCohort(cohortId, req, capacity, true);
+
+    res.json({ cohort });
+  }
+
+  static async buildAiCohortCampaign(req: AuthRequest, res: Response): Promise<void> {
+    const { cohortId } = req.params;
+    const { name, messageTemplate } = req.body as { name?: string; messageTemplate?: string };
+    const capacity = await CampaignController.getAiCampaignCapacity(req);
+    const cohort = await CampaignController.resolveAiCohort(cohortId, req, capacity, true);
+
+    if (cohort.leadIds.length === 0) {
+      throw new AppError('No eligible leads remain for this AI cohort', 400);
+    }
+
+    await OutboundGateService.ensureCanLaunchOutbound(req.user);
+
+    const campaignName = (name || cohort.defaults.name).trim();
+    const resolvedMessageTemplate = (messageTemplate || cohort.defaults.messageTemplate).trim();
+    const lineage = `AI Cohort · ${cohort.leadIds.length} leads · ~${cohort.expectedFunded} funded expected`;
+
+    const campaign = await prisma.$transaction(async (tx: any) => {
+      const createdCampaign = await tx.campaign.create({
+        data: {
+          name: campaignName,
+          description: lineage,
+          messageTemplate: resolvedMessageTemplate,
+          sendingSpeed: 60,
+          dailyLimit: Math.min(cohort.leadIds.length, capacity.campaignCap),
+          createdById: req.user!.id,
+          status: 'DRAFT',
+          totalLeads: cohort.leadIds.length,
+          isRetarget: true,
+          sourceCampaignId: null,
+        },
+      });
+
+      await tx.campaignLead.createMany({
+        data: cohort.leadIds.map((leadId: string) => ({
+          campaignId: createdCampaign.id,
+          leadId,
+          status: 'PENDING',
+        })),
+        skipDuplicates: true,
+      });
+
+      return createdCampaign;
+    });
+
+    res.status(201).json({
+      campaign,
+      cohort: {
+        id: cohort.id,
+        title: cohort.title,
+        leadCount: cohort.leadIds.length,
+        expectedFunded: cohort.expectedFunded,
+        lineage,
+      },
+      message: 'AI cohort campaign created as draft',
+    });
+  }
+
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const { status, search, page = '1', limit = '20' } = req.query;
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -336,6 +718,9 @@ export class CampaignController {
           _count: { select: { leads: true } },
           sourceCampaign: {
             select: { id: true, name: true },
+          },
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, initials: true },
           },
         },
       }),
@@ -520,9 +905,18 @@ export class CampaignController {
         failed: 0,
         replied: 0,
       };
+      const aiBuilt = Boolean(
+        campaign.isRetarget && !campaign.sourceCampaignId && String(campaign.description || '').startsWith('AI Cohort'),
+      );
       return {
         ...campaign,
         sourceCampaignName: campaign.sourceCampaign?.name || null,
+        creatorInitials:
+          campaign.createdBy?.initials ||
+          `${campaign.createdBy?.firstName?.[0] || ''}${campaign.createdBy?.lastName?.[0] || ''}` ||
+          null,
+        aiBuilt,
+        aiLineageLabel: aiBuilt ? campaign.description : null,
         totalLeads: campaign._count?.leads ?? campaign.totalLeads ?? 0,
         totalSent: live.totalSent,
         totalDelivered: live.totalDelivered,

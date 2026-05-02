@@ -3,13 +3,30 @@ import { CampaignController } from '../controllers/campaignController';
 import { authenticate, requireRole } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../validation/middleware';
-import { createCampaignSchema, updateCampaignSchema, retargetCampaignSchema } from '../validation/schemas';
+import {
+  createCampaignSchema,
+  updateCampaignSchema,
+  retargetCampaignSchema,
+  buildAiCohortSchema,
+} from '../validation/schemas';
 
 const router = Router();
 
 router.use(authenticate);
 
 router.get('/', asyncHandler(CampaignController.list));
+router.get('/ai-cohorts', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(CampaignController.listAiCohorts));
+router.get(
+  '/ai-cohorts/:cohortId/preview',
+  requireRole('ADMIN', 'MANAGER', 'REP'),
+  asyncHandler(CampaignController.previewAiCohort),
+);
+router.post(
+  '/ai-cohorts/:cohortId/build',
+  requireRole('ADMIN', 'MANAGER', 'REP'),
+  validate(buildAiCohortSchema),
+  asyncHandler(CampaignController.buildAiCohortCampaign),
+);
 router.get('/:id', asyncHandler(CampaignController.get));
 router.get('/:id/analytics', asyncHandler(CampaignController.getAnalytics));
 router.post(

@@ -250,8 +250,11 @@ export interface Campaign {
   description?: string;
   status: CampaignStatus;
   isRetarget?: boolean;
+  aiBuilt?: boolean;
+  aiLineageLabel?: string | null;
   sourceCampaignId?: string | null;
   sourceCampaignName?: string | null;
+  creatorInitials?: string | null;
   messageTemplate: string;
   scheduledAt?: string;
   startedAt?: string;

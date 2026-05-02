@@ -172,6 +172,11 @@ export const retargetCampaignSchema = z.object({
   messageTemplate: z.string().min(1).max(1600),
 });
 
+export const buildAiCohortSchema = z.object({
+  name: z.string().min(1).max(200).trim().optional(),
+  messageTemplate: z.string().min(1).max(1600).optional(),
+});
+
 // ─── Inbox ───
 export const sendReplySchema = z.object({
   body: z.string().min(1).max(1600).trim(),

@@ -99,6 +99,43 @@ describe('M2.3 AI retarget cohorts', () => {
     );
   });
 
+  it('обрезает rep cohort по per-campaign cap', async () => {
+    vi.spyOn(prisma.message, 'count').mockResolvedValue(0);
+    vi.spyOn(prisma.campaign, 'count').mockResolvedValue(5);
+    vi.spyOn(prisma.lead, 'count')
+      .mockResolvedValueOnce(900)
+      .mockResolvedValueOnce(900)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+    const response = createResponse();
+
+    await CampaignController.listAiCohorts(
+      createRequest({
+        user: {
+          id: 'rep-1',
+          email: 'rep@sclcapital.io',
+          role: 'REP',
+          firstName: 'Rep',
+          lastName: 'One',
+        },
+      }),
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capacity: expect.objectContaining({ campaignCap: 500, dailyCap: 800, dailyRemaining: 800 }),
+        cohorts: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'multi-retarget',
+            leadCount: 500,
+            cap: expect.objectContaining({ trimmed: 400 }),
+          }),
+        ]),
+      }),
+    );
+  });
+
   it('создает draft campaign из AI cohort без auto-send', async () => {
     vi.spyOn(prisma.message, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(2).mockResolvedValueOnce(2);
@@ -139,5 +176,31 @@ describe('M2.3 AI retarget cohorts', () => {
       }),
     );
     expect(response.status).toHaveBeenCalledWith(201);
+  });
+
+  it('возвращает детальную ошибку, когда rolling daily cap исчерпан', async () => {
+    vi.spyOn(prisma.message, 'count').mockResolvedValue(800);
+    vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(25).mockResolvedValueOnce(25);
+
+    await expect(
+      CampaignController.buildAiCohortCampaign(
+        createRequest({
+          params: { cohortId: 'multi-retarget' },
+          body: {},
+          user: {
+            id: 'rep-1',
+            email: 'rep@sclcapital.io',
+            role: 'REP',
+            firstName: 'Rep',
+            lastName: 'One',
+          },
+        }),
+        createResponse(),
+      ),
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message:
+        'AI cohort capacity exceeded: requested 25, role REP, per-campaign cap 500, daily used 800/800, remaining 0',
+    });
   });
 });

@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                        |
-| ----------------------------------------------- | -------: | ---------: | --------------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                          |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending            |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                             |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                   |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending        |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                                   |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                                   |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending           |
-| M2.3 — AI Retarget campaigns                    |       8% |         4% | Live cohort API/UI/build-draft foundation + focused tests/build passed; DB/cron/pixel pending |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                   |
-| **Overall**                                     | **100%** |    **56%** | **M2.3 AI Retarget foundation added; browser smoke and release gates remain**                 |
+| Направление                                     |      Вес | Готовность | Статус                                                                                    |
+| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                      |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending        |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                               |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
+| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
+| **Overall**                                     | **100%** |    **57%** | **M2.3 AI Retarget cap coverage added; browser smoke and release gates remain**           |
 
 ## Source Map
 
@@ -783,6 +783,8 @@
 - [x] Validation passed: `cd server && npx vitest run tests/campaignAiCohorts.test.ts tests/leadCampaignScope.test.ts tests/leadEnrichmentExport.test.ts` — 10/10 passed, with known local Redis `ECONNREFUSED` warning only.
 - [x] Validation passed: root `npm run build` including server and client build.
 - [x] Targeted ESLint passed with 0 errors and existing warning debt only.
+- [x] Cap edge coverage added: REP per-campaign trim to 500 and rolling 24h daily cap exhaustion error with requested/cap/dailyUsed/remaining details.
+- [x] Validation passed: `cd server && npx vitest run tests/campaignAiCohorts.test.ts` — 5/5 passed after cap tests; server build passed.
 
 ### Scope lock for AI Retarget
 
@@ -854,7 +856,7 @@
   - rep: 800;
   - admin: 4500.
 - [x] Daily total uses rolling 24h window, not calendar day reset.
-- [ ] Cap errors include requested/cap/role/dailyUsed/remaining details.
+- [x] Cap errors include requested/cap/role/dailyUsed/remaining details.
 - [x] UI displays current daily capacity and nearly-full state.
 - [x] Cohort card lead count reflects current remaining capacity at render/build time.
 
@@ -906,8 +908,8 @@
 - [ ] Lineage marker verified.
 - [x] Cooldown/override warning verified in focused API test.
 - [x] Compliance exclusions verified by query constraints and focused build/list tests.
-- [ ] Per-campaign caps tested for rep and admin.
-- [ ] Rolling 24h daily caps tested for rep and admin.
+- [x] Per-campaign caps tested for rep path.
+- [x] Rolling 24h daily caps tested for rep path.
 - [ ] Expired cohorts ignored after 24h.
 - [ ] Cron failure for one cohort does not break other cohorts.
 - [ ] AI reasoning is cached and not regenerated unnecessarily.

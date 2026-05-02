@@ -645,7 +645,10 @@ export class CampaignController {
     const cohort = await CampaignController.resolveAiCohort(cohortId, req, capacity, true);
 
     if (cohort.leadIds.length === 0) {
-      throw new AppError('No eligible leads remain for this AI cohort', 400);
+      throw new AppError(
+        `AI cohort capacity exceeded: requested ${cohort.eligibleCount}, role ${req.user?.role || 'UNKNOWN'}, per-campaign cap ${capacity.campaignCap}, daily used ${capacity.dailyUsed}/${capacity.dailyCap}, remaining ${capacity.dailyRemaining}`,
+        400,
+      );
     }
 
     await OutboundGateService.ensureCanLaunchOutbound(req.user);

@@ -2,35 +2,21 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { DealStage, RenewalTaskStatus } from '@prisma/client';
-
-// Helper: rep filter
-function isAdminLike(user: AuthRequest['user']) {
-  return user?.role === 'ADMIN' || user?.role === 'MANAGER';
-}
-
-function repFilter(user: AuthRequest['user']) {
-  if (isAdminLike(user)) return {};
-  return { assignedRepId: user!.id };
-}
-
-function repFundingFilter(user: AuthRequest['user']) {
-  if (isAdminLike(user)) return {};
-  return { repId: user!.id };
-}
+import { fundingRepScopeFilter, isAdminLike, repFilter, repScopeFilter } from '../services/dealScopePolicy';
 
 export class CommandCenterController {
   // GET /api/command-center/metrics - All Money Zone + Execution Zone metrics
   static async getMetrics(req: AuthRequest, res: Response) {
     const filter = repFilter(req.user);
-    const fundingFilter = repFundingFilter(req.user);
+    const fundingFilter = isAdminLike(req.user) ? {} : fundingRepScopeFilter(req.user!.id);
     const { repId } = req.query;
 
     // Admin viewing specific rep
     const effectiveFilter: any = { ...filter };
     const effectiveFundingFilter: any = { ...fundingFilter };
     if (isAdminLike(req.user) && repId) {
-      effectiveFilter.assignedRepId = repId as string;
-      effectiveFundingFilter.repId = repId as string;
+      Object.assign(effectiveFilter, repScopeFilter(repId as string, true));
+      Object.assign(effectiveFundingFilter, fundingRepScopeFilter(repId as string));
     }
 
     const now = new Date();

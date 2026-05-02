@@ -4,6 +4,13 @@ import prisma from '../config/database';
 import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { OutboundGateService } from '../services/outboundGateService';
+import {
+  canUseUnscopedTeamScope,
+  fundingRepScopeFilter,
+  isAdminLike,
+  repFilter,
+  repScopeFilter,
+} from '../services/dealScopePolicy';
 
 // ─── Lead ↔ Deal status mapping ───
 const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
@@ -147,17 +154,6 @@ function matchRepByName(reps: RepIdentity[], repNameRaw: string): RepIdentity | 
   return null;
 }
 
-function isAdminLike(user: AuthRequest['user']): boolean {
-  return user?.role === 'ADMIN' || user?.role === 'MANAGER';
-}
-
-function repScopeFilter(repId: string, includeAssist = true) {
-  if (!includeAssist) return { assignedRepId: repId };
-  return {
-    OR: [{ assignedRepId: repId }, { assistingRepIds: { array_contains: repId } }],
-  };
-}
-
 async function autoResolveOpenTasksForClosingDeal(dealId: string): Promise<number> {
   const result = await prisma.renewalTask.updateMany({
     where: {
@@ -170,13 +166,6 @@ async function autoResolveOpenTasksForClosingDeal(dealId: string): Promise<numbe
     },
   });
   return result.count;
-}
-
-// Helper: rep filter for data isolation
-function repFilter(user: AuthRequest['user'], options?: { primaryOnly?: boolean }) {
-  if (isAdminLike(user)) return {};
-  if (!user?.id) return { assignedRepId: '__no_user__' };
-  return repScopeFilter(user.id, !options?.primaryOnly);
 }
 
 function emitDealUpdatedScoped(
@@ -293,9 +282,11 @@ export class DealController {
     const forcePrimaryOnly = primaryOnlyParam === 'true';
     const includeAssistForBoard = !forcePrimaryOnly;
 
-    // teamView=true → показываем все данные команды (даже для REP)
+    // teamView=true без admin-role остается scoped к текущему rep.
     // primaryOnly=true limits board to primary owner only; otherwise include shared deals.
-    const filter = teamView === 'true' ? {} : repFilter(req.user, { primaryOnly: forcePrimaryOnly });
+    const filter = canUseUnscopedTeamScope(req.user, teamView)
+      ? {}
+      : repFilter(req.user, { primaryOnly: forcePrimaryOnly });
     const where: any = { ...filter };
     const requestedRepId = repId ? String(repId) : '';
     const canScopeToRep = !!requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id);
@@ -1710,19 +1701,19 @@ export class DealController {
     const requestedRepId = repId ? String(repId) : null;
     const selectedRepId =
       requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id) ? requestedRepId : null;
-    // teamView=true → показываем командные данные (без фильтра по пользователю)
-    const isTeamView = teamView === 'true';
+    // teamView=true без admin-role остается scoped к текущему rep.
+    const isUnscopedTeamView = canUseUnscopedTeamScope(req.user, teamView, selectedRepId);
     const where: any = selectedRepId
-      ? repScopeFilter(selectedRepId, false)
-      : isTeamView
+      ? repScopeFilter(selectedRepId, true)
+      : isUnscopedTeamView
         ? {}
-        : repFilter(req.user, { primaryOnly: true });
-    const fundingScopedRepId = selectedRepId || (!isTeamView && !isAdminLike(req.user) ? req.user!.id : null);
+        : repFilter(req.user);
+    const fundingScopedRepId = selectedRepId || (!isUnscopedTeamView && !isAdminLike(req.user) ? req.user!.id : null);
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const fundingEventScope = fundingScopedRepId ? { deal: repScopeFilter(fundingScopedRepId, false) } : {};
+    const fundingEventScope = fundingScopedRepId ? fundingRepScopeFilter(fundingScopedRepId) : {};
 
     const [deals, fundedMTD, fundedMTDCount, allDeals] = await Promise.all([
       // Active pipeline deals
@@ -1840,7 +1831,7 @@ export class DealController {
         select: { monthlyGoal: true },
       });
       monthlyGoal = repUser?.monthlyGoal || 0;
-    } else if (isTeamView) {
+    } else if (isUnscopedTeamView) {
       const teamGoal = await prisma.goal.findUnique({
         where: {
           entityType_entityId: {

@@ -372,7 +372,7 @@ export default function PipelinePage() {
       return params;
     }
 
-    params.primaryOnly = quickFilter === 'shared' ? 'false' : 'true';
+    params.primaryOnly = 'false';
 
     if (effectiveRepFilter) {
       params.repId = effectiveRepFilter;
@@ -902,7 +902,7 @@ export default function PipelinePage() {
             >
               My Pipeline ({displayReps.find((r) => r.id === repFilter)?.initials || '?'})
             </span>
-            <span className="btext">Your deals only</span>
+            <span className="btext">Primary + shared deals</span>
           </>
         ) : (
           <>
@@ -912,7 +912,7 @@ export default function PipelinePage() {
             >
               My Pipeline
             </span>
-            <span className="btext">Your deals only</span>
+            <span className="btext">Primary + shared deals</span>
           </>
         )}
       </div>

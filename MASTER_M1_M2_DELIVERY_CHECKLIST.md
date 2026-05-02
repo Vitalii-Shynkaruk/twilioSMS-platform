@@ -12,7 +12,7 @@
 | ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------- |
 | Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                   |
 | M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending     |
-| M1.2 — Pipeline v2 base parity                  |      12% |         2% | Stage label parity verified; Simple mode CLOSED column hidden                          |
+| M1.2 — Pipeline v2 base parity                  |      12% |         6% | Stage label parity + Simple/Execution visibility + deal scope policy guarded           |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                            |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
@@ -21,7 +21,7 @@
 | M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **18%** | **M1.1 auth, M1.2 stage parity, and M1.4 B.6 stacking chip update added**              |
+| **Overall**                                     | **100%** |    **22%** | **M1.1 auth, M1.2 stage/scope parity, and M1.4 B.6 stacking chip update added**        |
 
 ## Source Map
 
@@ -305,6 +305,12 @@
 - [x] Updated stale Pipeline CSS stage comment from legacy `Contacted/New Business` vocabulary to current M1.2 stage language.
 - [x] Simple mode now hides `CLOSED` column while execution mode keeps it available.
 - [x] Browser mock validation passed: Simple mode columns = 8 without `Closed`; Execution mode columns = 9 with `Closed`.
+- [x] Browser mock validation passed: search no-match zeroes visible stage counts and clearing search restores board counts.
+- [x] Extracted shared deal scope policy for Pipeline + Command Center metrics.
+- [x] Guarded `/api/deals/board?teamView=true` and `/api/deals/stats?teamView=true` so non-admin users remain scoped to their own/shared deals.
+- [x] Default rep Pipeline board now requests primary + explicitly shared/assisting deals; Shared filter still isolates assisting deals in UI.
+- [x] Added `dealScopePolicy` unit tests for admin unscoped team view, rep scoped team view, primary-only filters, shared deal visibility, and funding-event scope.
+- [x] Verification passed: `npm run build` and `cd server && npx vitest run tests/dealScopePolicy.test.ts`.
 - [ ] Legacy `pipelineStage` seed/old `/pipeline/stages` lead-board path still needs separate decision because current v2 route uses `/api/deals/board`.
 
 ### Stage system and board structure
@@ -329,28 +335,28 @@
 - [x] Simple mode hides `CLOSED` column.
 - [ ] Execution mode shows expected columns and totals.
 - [ ] Admin view can see all deals.
-- [ ] Rep view sees own + explicitly shared/assisting deals only.
+- [x] Rep view sees own + explicitly shared/assisting deals only.
 - [ ] Search filters business name and contact/client name.
-- [ ] Clearing search restores board.
+- [x] Clearing search restores board.
 - [ ] Drag/drop works only when current filters/search state cannot cause wrong-stage moves.
 
 ### Pipeline metrics and totals
 
-- [ ] Active Pipeline $ = Approved + Committed only.
-- [ ] Submitted/In Review amount, if implemented, does not alter Active Pipeline $.
-- [ ] Funded MTD matches funding events current month.
+- [x] Active Pipeline $ = Approved + Committed only.
+- [x] Submitted/In Review amount, if implemented, does not alter Active Pipeline $.
+- [x] Funded MTD matches funding events current month.
 - [ ] Lifetime Funded remains unchanged unless explicitly in scope.
 - [ ] At Risk logic remains consistent with current business rules.
-- [ ] Admin Command Center Pipeline Value, if touched, must read `Pipeline Value (Approved)` and sum Approved deals only.
+- [x] Admin Command Center Pipeline Value, if touched, must read `Pipeline Value (Approved)` and sum Approved deals only.
 
 ### Pipeline ownership and sharing
 
-- [ ] Verify primary rep ownership.
-- [ ] Verify assisting reps if supported by current schema/UI.
+- [x] Verify primary rep ownership.
+- [x] Verify assisting reps if supported by current schema/UI.
 - [ ] Verify `All Deals` button visible only to admin if prototype requires it.
 - [ ] Verify shared deals sort below primary deals.
 - [ ] Verify contact info hidden from unauthorized reps.
-- [ ] Verify scoped Socket.IO events do not leak deal updates to all users.
+- [x] Verify scoped Socket.IO events do not leak deal updates to all users.
 
 ### M1.2 Testing Gate
 

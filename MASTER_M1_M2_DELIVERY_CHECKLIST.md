@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                    |
-| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                      |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending        |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         3% | Build gate and browser smoke passed; full-env DB/Redis, drag/drop, and release gates remain |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
-| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **70%** | **M1.6 build/browser smoke evidence added; full-env regression gates remain**             |
+| Направление                                     |      Вес | Готовность | Статус                                                                                                |
+| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                  |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending                    |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                     |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                           |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending                |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                 |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         4% | Build/browser smoke plus drag/drop + Funding History pass; full-env DB/Redis and release gates remain |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                        |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending                   |
+| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending             |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                           |
+| **Overall**                                     | **100%** |    **71%** | **M1.6 drag/drop + Funding History evidence added; full-env regression gates remain**                 |
 
 ## Source Map
 
@@ -630,6 +630,13 @@
 - [x] Production preview + mock API browser smoke passed 4/4: OTP login redirect, Pipeline simple mode, Pipeline execution mode, and DealCard/DealPanel smoke.
 - [x] Browser smoke captured no console errors and no request failures inside gate scope; local ignored screenshots were generated for login, simple pipeline, execution pipeline, and deal panel.
 
+### Drag/drop + Funding History smoke — 2026-05-02
+
+- [x] Evidence JSON added: `audit-screenshots/m16-drag-funding-evidence.json`.
+- [x] Drag/drop smoke passed on production preview + mock API: `Atlas Demo Logistics` moved from Engaged / Interested to Qualified and `PUT /api/deals/deal-1/move` was captured with `{"stage":"QUALIFIED"}`.
+- [x] Funding History smoke passed: funded deal panel opened, Funding History tab became active, and the existing event showed lender, amount, product, rep, and notes.
+- [x] Gate captured no console errors and no request failures inside scope; local ignored screenshots were generated for before-drag, after-drag, and Funding History states.
+
 ### Functional regression
 
 - [x] Login/auth full pass.
@@ -637,10 +644,10 @@
 - [x] Pipeline execution mode pass.
 - [x] Deal card pass.
 - [x] Deal panel pass.
-- [ ] Drag/drop pass.
+- [x] Drag/drop pass.
 - [ ] New deal creation pass.
 - [ ] Deal sharing pass if in current implementation.
-- [ ] Funding history pass.
+- [x] Funding history pass.
 - [ ] Inbox AI unaffected.
 - [ ] Email/Gmail CTA unaffected.
 - [ ] Follow-up timing unaffected.
@@ -1015,6 +1022,7 @@
 
 ## Progress Update Log
 
-| Date       | Progress | Area     | What changed                                                                                                                       | Evidence  |
-| ---------- | -------: | -------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| 2026-05-02 |       6% | Planning | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist. | This file |
+| Date       | Progress | Area     | What changed                                                                                                                       | Evidence                                           |
+| ---------- | -------: | -------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| 2026-05-02 |      71% | M1.6     | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.            | `audit-screenshots/m16-drag-funding-evidence.json` |
+| 2026-05-02 |       6% | Planning | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist. | This file                                          |

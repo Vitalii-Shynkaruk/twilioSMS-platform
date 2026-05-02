@@ -45,6 +45,12 @@ export class CampaignController {
     }
   }
 
+  private static ensureCampaignAccess(campaign: { id: string; createdById: string }, req: AuthRequest): void {
+    if (req.user?.role === 'REP' && campaign.createdById !== req.user.id) {
+      throw new AppError('Access denied: you can only manage your own campaigns', 403);
+    }
+  }
+
   private static async buildRetargetPreview(sourceCampaignId: string): Promise<{
     sourceCampaign: {
       id: string;
@@ -316,6 +322,9 @@ export class CampaignController {
     if (search) {
       where.name = { contains: search as string };
     }
+    if (req.user?.role === 'REP') {
+      where.createdById = req.user.id;
+    }
 
     const [campaigns, total] = await Promise.all([
       (prisma.campaign as any).findMany({
@@ -564,6 +573,7 @@ export class CampaignController {
     });
 
     if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
 
     res.json({ campaign });
   }
@@ -609,6 +619,9 @@ export class CampaignController {
       isSuppressed: false,
       deletedAt: null,
     };
+    if (req.user?.role === 'REP') {
+      leadQuery.assignedRepId = req.user.id;
+    }
 
     let hasFilter = false;
 
@@ -675,6 +688,7 @@ export class CampaignController {
 
     const campaign = await prisma.campaign.findUnique({ where: { id } });
     if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
 
     if (!['DRAFT', 'SCHEDULED'].includes(campaign.status)) {
       throw new AppError('Can only edit draft or scheduled campaigns', 400);
@@ -703,6 +717,7 @@ export class CampaignController {
       include: { _count: { select: { leads: true } } },
     });
     if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
 
     if (!['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status)) {
       throw new AppError('Campaign cannot be started in current status', 400);
@@ -986,6 +1001,10 @@ export class CampaignController {
   static async pause(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
 
+    const campaign = await prisma.campaign.findUnique({ where: { id } });
+    if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
+
     await prisma.campaign.update({
       where: { id },
       data: { status: 'PAUSED' },
@@ -996,6 +1015,10 @@ export class CampaignController {
 
   static async cancel(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
+
+    const campaign = await prisma.campaign.findUnique({ where: { id } });
+    if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
 
     await prisma.campaign.update({
       where: { id },
@@ -1029,10 +1052,12 @@ export class CampaignController {
         totalOptedOut: true,
         startedAt: true,
         completedAt: true,
+        createdById: true,
       },
     });
 
     if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
 
     // Lead status breakdown
     const leadStatuses = await prisma.campaignLead.groupBy({
@@ -1081,6 +1106,7 @@ export class CampaignController {
 
     const campaign = await prisma.campaign.findUnique({ where: { id } });
     if (!campaign) throw new AppError('Campaign not found', 404);
+    CampaignController.ensureCampaignAccess(campaign, req);
 
     const stuckMessages = await prisma.message.findMany({
       where: {

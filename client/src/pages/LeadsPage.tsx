@@ -44,6 +44,29 @@ const STATUSES = [
   'DNC',
 ];
 
+function sourceLooksOpaque(value: string): boolean {
+  return (
+    value === 'csv_import' ||
+    /^[0-9a-f]{24,}$/i.test(value) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ||
+    /^c[a-z0-9]{20,}$/i.test(value)
+  );
+}
+
+function getReadableLeadSource(lead: any): string {
+  const rawSource = String(lead.source || '').trim();
+  const tags = Array.isArray(lead.tags) ? lead.tags.map((leadTag: any) => leadTag.tag).filter(Boolean) : [];
+  const importListTag =
+    tags.find((tag: any) => tag.isImportList === true) ||
+    tags.find((tag: any) => rawSource && tag.id === rawSource) ||
+    (rawSource && sourceLooksOpaque(rawSource) && tags.length === 1 ? tags[0] : null);
+
+  if (importListTag?.name) return importListTag.name;
+  if (rawSource && !sourceLooksOpaque(rawSource)) return rawSource;
+  if (rawSource) return 'Imported list';
+  return '—';
+}
+
 export default function LeadsPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
@@ -688,7 +711,12 @@ function LeadRow({
         )}
       </td>
       <td className="table-td">
-        <span className="text-sm text-dark-400">{lead.source || '—'}</span>
+        <span
+          className="text-sm text-dark-400"
+          title={lead.source && lead.source !== getReadableLeadSource(lead) ? `Raw source: ${lead.source}` : undefined}
+        >
+          {getReadableLeadSource(lead)}
+        </span>
       </td>
       <td className="table-td">
         <div className="flex items-center gap-1 relative">

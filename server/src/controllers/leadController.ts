@@ -62,6 +62,95 @@ function requiredLeadValue(value: unknown, fallback: string, limit = LEAD_VARCHA
   return truncateForLeadColumn(normalized || fallback, limit);
 }
 
+type LeadUpsertPayload = {
+  phone: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  company: string | null;
+  state: string | null;
+  source: string;
+  notes: string | null;
+  assignedRepId?: string;
+};
+
+function dedupeLeadUpserts(leadsToUpsert: LeadUpsertPayload[]): {
+  uniqueLeadsToUpsert: LeadUpsertPayload[];
+  duplicateRows: number;
+} {
+  const uniqueByPhone = new Map<string, LeadUpsertPayload>();
+  let duplicateRows = 0;
+
+  for (const lead of leadsToUpsert) {
+    if (uniqueByPhone.has(lead.phone)) {
+      duplicateRows++;
+      continue;
+    }
+
+    uniqueByPhone.set(lead.phone, lead);
+  }
+
+  return {
+    uniqueLeadsToUpsert: Array.from(uniqueByPhone.values()),
+    duplicateRows,
+  };
+}
+
+async function getEligibleLeadIds(leadIds: string[], user?: AuthRequest['user']): Promise<string[]> {
+  if (leadIds.length === 0) return [];
+
+  const where: any = {
+    id: { in: leadIds },
+    optedOut: false,
+    isSuppressed: false,
+    deletedAt: null,
+  };
+
+  if (user?.role === 'REP') {
+    where.assignedRepId = user.id;
+  }
+
+  const eligibleLeads = await prisma.lead.findMany({
+    where,
+    select: { id: true },
+  });
+
+  const eligibleIdSet = new Set(eligibleLeads.map((lead) => lead.id));
+  return leadIds.filter((leadId) => eligibleIdSet.has(leadId));
+}
+
+function isRep(req: AuthRequest): boolean {
+  return req.user?.role === 'REP';
+}
+
+async function ensureLeadAccess(leadId: string, req: AuthRequest): Promise<void> {
+  if (!isRep(req)) return;
+
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: { assignedRepId: true },
+  });
+
+  if (!lead || lead.assignedRepId !== req.user?.id) {
+    throw new AppError('Access denied: you can only access your own leads', 403);
+  }
+}
+
+async function resolveScopedLeadIds(leadIds: string[], req: AuthRequest): Promise<string[]> {
+  if (!isRep(req)) return leadIds;
+
+  const leads = await prisma.lead.findMany({
+    where: {
+      id: { in: leadIds },
+      assignedRepId: req.user!.id,
+      deletedAt: null,
+    },
+    select: { id: true },
+  });
+
+  return leads.map((lead) => lead.id);
+}
+
 export class LeadController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const {
@@ -196,6 +285,9 @@ export class LeadController {
     });
 
     if (!lead) throw new AppError('Lead not found', 404);
+    if (req.user?.role === 'REP' && lead.assignedRepId !== req.user.id) {
+      throw new AppError('Access denied: you can only access your own leads', 403);
+    }
 
     res.json({ lead });
   }
@@ -215,8 +307,13 @@ export class LeadController {
     const existing = await prisma.lead.findUnique({
       where: { phone: e164Phone },
     });
+    const resolvedAssignedRepId = req.user?.role === 'REP' ? req.user.id : assignedRepId;
 
     if (existing) {
+      if (req.user?.role === 'REP' && existing.assignedRepId && existing.assignedRepId !== req.user.id) {
+        throw new AppError('Access denied: lead belongs to another rep', 403);
+      }
+
       // If lead was soft-deleted, restore it with updated info
       if (existing.deletedAt) {
         const restored = await prisma.lead.update({
@@ -230,7 +327,7 @@ export class LeadController {
             source: source || existing.source,
             status: 'NEW',
             deletedAt: null,
-            assignedRepId: assignedRepId || (req.user?.role === 'REP' ? req.user.id : undefined),
+            assignedRepId: existing.assignedRepId || resolvedAssignedRepId || undefined,
           },
         });
 
@@ -274,7 +371,7 @@ export class LeadController {
         company,
         state,
         source,
-        assignedRepId: assignedRepId || (req.user?.role === 'REP' ? req.user.id : undefined),
+        assignedRepId: resolvedAssignedRepId || undefined,
         isSuppressed: !!suppressed,
         suppressReason: suppressed?.reason,
       },
@@ -332,7 +429,12 @@ export class LeadController {
     if (state !== undefined) data.state = state;
     if (source !== undefined) data.source = source;
     if (status) data.status = status;
-    if (assignedRepId !== undefined) data.assignedRepId = assignedRepId;
+    if (assignedRepId !== undefined) {
+      if (req.user?.role === 'REP') {
+        throw new AppError('Access denied: reps cannot reassign leads', 403);
+      }
+      data.assignedRepId = assignedRepId;
+    }
     if (notes !== undefined) data.notes = notes;
 
     const lead = await prisma.lead.update({
@@ -485,7 +587,8 @@ export class LeadController {
     let duplicates = 0;
     let errors = 0;
     const errorDetails: string[] = [];
-    const allLeadIds: string[] = [];
+    const allLeadIds = new Set<string>();
+    const importAssignedRepId = req.user?.role === 'REP' ? req.user.id : undefined;
 
     // Query default stage ONCE before the loop (with fallback to first stage)
     const defaultStage =
@@ -497,16 +600,7 @@ export class LeadController {
     const CHUNK_SIZE = 500;
     for (let chunk = 0; chunk < records.length; chunk += CHUNK_SIZE) {
       const batch = records.slice(chunk, chunk + CHUNK_SIZE);
-      const leadsToUpsert: Array<{
-        phone: string;
-        firstName: string;
-        lastName: string;
-        email: string | null;
-        company: string | null;
-        state: string | null;
-        source: string;
-        notes: string | null;
-      }> = [];
+      const leadsToUpsert: LeadUpsertPayload[] = [];
 
       // Parse and validate the batch
       for (const record of batch) {
@@ -537,32 +631,42 @@ export class LeadController {
           // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
           source: requiredLeadValue(record.source || record.Source, listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(record.notes || record.Notes || record.NOTE || record.COMMENTS, 4000),
+          ...(importAssignedRepId ? { assignedRepId: importAssignedRepId } : {}),
         });
       }
 
       // Batch upsert leads using a transaction
       if (leadsToUpsert.length > 0) {
+        const { uniqueLeadsToUpsert, duplicateRows } = dedupeLeadUpserts(leadsToUpsert);
+        duplicates += duplicateRows;
+
         // Check which phones already exist to distinguish new vs duplicate
-        const phones = leadsToUpsert.map((l) => l.phone);
+        const phones = uniqueLeadsToUpsert.map((lead) => lead.phone);
         const existingLeads = await prisma.lead.findMany({
           where: { phone: { in: phones } },
-          select: { id: true, phone: true, deletedAt: true },
+          select: { id: true, phone: true, deletedAt: true, assignedRepId: true },
         });
         const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
 
         const results = await prisma.$transaction(
-          leadsToUpsert.map((lead) =>
-            prisma.lead.upsert({
+          uniqueLeadsToUpsert.map((lead) => {
+            const existing = existingPhoneMap.get(lead.phone);
+            const restoreOwnerPatch =
+              existing?.deletedAt && !existing.assignedRepId && importAssignedRepId
+                ? { assignedRepId: importAssignedRepId }
+                : {};
+
+            return prisma.lead.upsert({
               where: { phone: lead.phone },
               create: lead,
-              update: { deletedAt: null },
-            }),
-          ),
+              update: { deletedAt: null, ...restoreOwnerPatch },
+            });
+          }),
         );
 
         const newLeadIds: string[] = [];
         for (const result of results) {
-          allLeadIds.push(result.id); // Track ALL lead IDs (new + existing)
+          allLeadIds.add(result.id);
           const existing = existingPhoneMap.get(result.phone);
           if (!existing) {
             newLeadIds.push(result.id);
@@ -588,7 +692,9 @@ export class LeadController {
     }
 
     // Auto-tag all imported leads with list name
-    if (listName && allLeadIds.length > 0) {
+    const uniqueLeadIds = Array.from(allLeadIds);
+
+    if (listName && uniqueLeadIds.length > 0) {
       const tagName = listName.trim();
       const userId = req.user!.id;
       const tag = await prisma.tag.upsert({
@@ -597,16 +703,23 @@ export class LeadController {
         update: {},
       });
       await prisma.leadTag.createMany({
-        data: allLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
+        data: uniqueLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
         skipDuplicates: true,
       });
     }
+
+    const eligibleLeadIds = await getEligibleLeadIds(uniqueLeadIds, req.user);
 
     res.json({
       imported,
       duplicates,
       errors,
       total: records.length,
+      leadIds: uniqueLeadIds,
+      uniqueLeadCount: uniqueLeadIds.length,
+      eligibleLeadIds,
+      campaignReadyLeadCount: eligibleLeadIds.length,
+      suppressedExcluded: uniqueLeadIds.length - eligibleLeadIds.length,
       errorDetails: errorDetails.slice(0, 10),
     });
   }
@@ -715,7 +828,8 @@ export class LeadController {
     let duplicates = 0;
     let errors = 0;
     const errorDetails: string[] = [];
-    const allLeadIds: string[] = [];
+    const allLeadIds = new Set<string>();
+    const importAssignedRepId = req.user?.role === 'REP' ? req.user.id : undefined;
 
     const defaultStage =
       (await prisma.pipelineStage.findFirst({
@@ -725,16 +839,7 @@ export class LeadController {
     const CHUNK_SIZE = 500;
     for (let chunk = 0; chunk < records.length; chunk += CHUNK_SIZE) {
       const batch = records.slice(chunk, chunk + CHUNK_SIZE);
-      const leadsToUpsert: Array<{
-        phone: string;
-        firstName: string;
-        lastName: string;
-        email: string | null;
-        company: string | null;
-        state: string | null;
-        source: string;
-        notes: string | null;
-      }> = [];
+      const leadsToUpsert: LeadUpsertPayload[] = [];
 
       for (const record of batch) {
         const rawPhone = normalizeCell(mapping.phone ? record[mapping.phone] : '').replace(/\D/g, '');
@@ -761,32 +866,42 @@ export class LeadController {
           // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
           source: requiredLeadValue(mapping.source ? record[mapping.source] : '', listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(mapping.notes ? record[mapping.notes] : '', 4000),
+          ...(importAssignedRepId ? { assignedRepId: importAssignedRepId } : {}),
         });
       }
 
       if (leadsToUpsert.length > 0) {
+        const { uniqueLeadsToUpsert, duplicateRows } = dedupeLeadUpserts(leadsToUpsert);
+        duplicates += duplicateRows;
+
         // Check which phones already exist to distinguish new vs duplicate
-        const phones = leadsToUpsert.map((l) => l.phone);
+        const phones = uniqueLeadsToUpsert.map((lead) => lead.phone);
         const existingLeads = await prisma.lead.findMany({
           where: { phone: { in: phones } },
-          select: { id: true, phone: true, deletedAt: true },
+          select: { id: true, phone: true, deletedAt: true, assignedRepId: true },
         });
         const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
 
         const results = await prisma.$transaction(
-          leadsToUpsert.map((lead) =>
-            prisma.lead.upsert({
+          uniqueLeadsToUpsert.map((lead) => {
+            const existing = existingPhoneMap.get(lead.phone);
+            const restoreOwnerPatch =
+              existing?.deletedAt && !existing.assignedRepId && importAssignedRepId
+                ? { assignedRepId: importAssignedRepId }
+                : {};
+
+            return prisma.lead.upsert({
               where: { phone: lead.phone },
               create: lead,
-              update: { deletedAt: null },
-            }),
-          ),
+              update: { deletedAt: null, ...restoreOwnerPatch },
+            });
+          }),
         );
 
         const newLeadIds: string[] = [];
         for (const result of results) {
           // Track ALL lead IDs (new + existing) so they can be added to campaigns
-          allLeadIds.push(result.id);
+          allLeadIds.add(result.id);
           const existing = existingPhoneMap.get(result.phone);
           if (!existing) {
             newLeadIds.push(result.id);
@@ -812,7 +927,9 @@ export class LeadController {
     }
 
     // Auto-tag all imported leads (new + existing) with list name
-    if (listName && allLeadIds.length > 0) {
+    const uniqueLeadIds = Array.from(allLeadIds);
+
+    if (listName && uniqueLeadIds.length > 0) {
       const tagName = listName.trim();
       const userId = req.user!.id;
       const tag = await prisma.tag.upsert({
@@ -821,17 +938,23 @@ export class LeadController {
         update: {},
       });
       await prisma.leadTag.createMany({
-        data: allLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
+        data: uniqueLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
         skipDuplicates: true,
       });
     }
+
+    const eligibleLeadIds = await getEligibleLeadIds(uniqueLeadIds, req.user);
 
     res.json({
       imported,
       duplicates,
       errors,
       total: records.length,
-      leadIds: allLeadIds,
+      leadIds: uniqueLeadIds,
+      uniqueLeadCount: uniqueLeadIds.length,
+      eligibleLeadIds,
+      campaignReadyLeadCount: eligibleLeadIds.length,
+      suppressedExcluded: uniqueLeadIds.length - eligibleLeadIds.length,
       errorDetails: errorDetails.slice(0, 10),
     });
   }
@@ -845,6 +968,7 @@ export class LeadController {
 
     const tag = await prisma.tag.findUnique({ where: { id: tagId } });
     if (!tag) throw new AppError('Tag not found', 404);
+    await ensureLeadAccess(id, req);
 
     await prisma.leadTag.create({
       data: { leadId: id, tagId },
@@ -858,6 +982,7 @@ export class LeadController {
 
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) throw new AppError('Lead not found', 404);
+    await ensureLeadAccess(id, req);
 
     await prisma.leadTag.deleteMany({
       where: { leadId: id, tagId },
@@ -868,18 +993,26 @@ export class LeadController {
 
   static async bulkAction(req: AuthRequest, res: Response): Promise<void> {
     const { action, leadIds, data } = req.body;
+    const scopedLeadIds = await resolveScopedLeadIds(leadIds, req);
+
+    if (scopedLeadIds.length !== leadIds.length) {
+      throw new AppError('Access denied: one or more leads are outside your scope', 403);
+    }
 
     switch (action) {
       case 'assign_rep':
+        if (req.user?.role === 'REP') {
+          throw new AppError('Access denied: reps cannot reassign leads', 403);
+        }
         await prisma.lead.updateMany({
-          where: { id: { in: leadIds } },
+          where: { id: { in: scopedLeadIds } },
           data: { assignedRepId: data.repId },
         });
         break;
 
       case 'change_status': {
         await prisma.lead.updateMany({
-          where: { id: { in: leadIds } },
+          where: { id: { in: scopedLeadIds } },
           data: { status: data.status },
         });
         // Move pipeline cards to the stage mapped to the new status
@@ -889,16 +1022,16 @@ export class LeadController {
         if (targetStage) {
           // Update existing cards
           await prisma.pipelineCard.updateMany({
-            where: { leadId: { in: leadIds } },
+            where: { leadId: { in: scopedLeadIds } },
             data: { stageId: targetStage.id },
           });
           // Create cards for leads that don't have one
           const existingCards = await prisma.pipelineCard.findMany({
-            where: { leadId: { in: leadIds } },
+            where: { leadId: { in: scopedLeadIds } },
             select: { leadId: true },
           });
           const existingLeadIds = new Set(existingCards.map((c) => c.leadId));
-          const missingLeadIds = leadIds.filter((lid: string) => !existingLeadIds.has(lid));
+          const missingLeadIds = scopedLeadIds.filter((lid: string) => !existingLeadIds.has(lid));
           if (missingLeadIds.length > 0) {
             await prisma.pipelineCard.createMany({
               data: missingLeadIds.map((lid: string) => ({ leadId: lid, stageId: targetStage.id })),
@@ -911,7 +1044,7 @@ export class LeadController {
 
       case 'add_tag':
         await prisma.leadTag.createMany({
-          data: leadIds.map((leadId: string) => ({
+          data: scopedLeadIds.map((leadId: string) => ({
             leadId,
             tagId: data.tagId,
           })),
@@ -921,7 +1054,7 @@ export class LeadController {
 
       case 'suppress':
         await prisma.lead.updateMany({
-          where: { id: { in: leadIds } },
+          where: { id: { in: scopedLeadIds } },
           data: {
             isSuppressed: true,
             suppressedAt: new Date(),
@@ -932,7 +1065,7 @@ export class LeadController {
 
       case 'unsuppress':
         await prisma.lead.updateMany({
-          where: { id: { in: leadIds } },
+          where: { id: { in: scopedLeadIds } },
           data: {
             isSuppressed: false,
             suppressedAt: null,
@@ -944,7 +1077,7 @@ export class LeadController {
       case 'remove_tag':
         await prisma.leadTag.deleteMany({
           where: {
-            leadId: { in: leadIds },
+            leadId: { in: scopedLeadIds },
             tagId: data.tagId,
           },
         });
@@ -952,9 +1085,9 @@ export class LeadController {
 
       case 'delete':
         await prisma.$transaction([
-          prisma.pipelineCard.deleteMany({ where: { leadId: { in: leadIds } } }),
+          prisma.pipelineCard.deleteMany({ where: { leadId: { in: scopedLeadIds } } }),
           prisma.lead.updateMany({
-            where: { id: { in: leadIds } },
+            where: { id: { in: scopedLeadIds } },
             data: { deletedAt: new Date() },
           }),
         ]);
@@ -964,7 +1097,7 @@ export class LeadController {
         throw new AppError('Unknown action', 400);
     }
 
-    res.json({ message: 'Bulk action completed', affected: leadIds.length });
+    res.json({ message: 'Bulk action completed', affected: scopedLeadIds.length });
   }
 
   static async delete(req: AuthRequest, res: Response): Promise<void> {
@@ -973,9 +1106,9 @@ export class LeadController {
     const lead = await prisma.lead.findUnique({ where: { id } });
     if (!lead) throw new AppError('Lead not found', 404);
 
-      // Defense-in-depth: route is admin-only, but keep an explicit guard here.
-      if (req.user?.role !== 'ADMIN') {
-        throw new AppError('Access denied', 403);
+    // Defense-in-depth: route is admin-only, but keep an explicit guard here.
+    if (req.user?.role !== 'ADMIN') {
+      throw new AppError('Access denied', 403);
     }
 
     // Soft-delete: mark as deleted instead of destroying data

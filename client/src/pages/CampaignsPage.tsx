@@ -34,6 +34,7 @@ export default function CampaignsPage() {
   const { user } = useAuthStore();
   const isRep = user?.role === 'REP';
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
+  const canDeleteCampaign = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
@@ -202,7 +203,7 @@ export default function CampaignsPage() {
           <XCircle className="w-4 h-4" />
         </button>
       )}
-      {['DRAFT', 'COMPLETED', 'CANCELLED'].includes(campaign.status) && (
+      {canDeleteCampaign && ['DRAFT', 'COMPLETED', 'CANCELLED'].includes(campaign.status) && (
         <button
           onClick={() => {
             if (window.confirm('Delete this campaign?')) deleteMutation.mutate(campaign.id);
@@ -648,7 +649,7 @@ export default function CampaignsPage() {
                   <XCircle className="w-3.5 h-3.5" /> Cancel Campaign
                 </button>
               )}
-              {['DRAFT', 'COMPLETED', 'CANCELLED'].includes(ctxMenu.campaign.status) && (
+              {canDeleteCampaign && ['DRAFT', 'COMPLETED', 'CANCELLED'].includes(ctxMenu.campaign.status) && (
                 <>
                   <div className="border-t border-dark-700 my-1" />
                   <button
@@ -885,7 +886,14 @@ function CreateCampaignModal({
   const [csvPreview, setCsvPreview] = useState<any>(null);
   const [csvMapping, setCsvMapping] = useState<Record<string, string>>({});
   const [csvUploading, setCsvUploading] = useState(false);
-  const [csvImported, setCsvImported] = useState<{ ids: string[]; count: number } | null>(null);
+  const [csvImported, setCsvImported] = useState<{
+    ids: string[];
+    count: number;
+    totalRows: number;
+    uniqueLeadCount: number;
+    duplicates: number;
+    suppressedExcluded: number;
+  } | null>(null);
   const [csvListName, setCsvListName] = useState('');
 
   // Load available import lists for selection
@@ -1009,10 +1017,29 @@ function CreateCampaignModal({
       fd.append('mapping', JSON.stringify(csvMapping));
       if (csvListName.trim()) fd.append('listName', csvListName.trim());
       const { data } = await api.post('/leads/import-mapped', fd);
-      const ids = data.leadIds || [];
-      setCsvImported({ ids, count: ids.length });
+      const leadIds = Array.isArray(data.leadIds) ? data.leadIds : [];
+      const eligibleLeadIds = Array.isArray(data.eligibleLeadIds) ? data.eligibleLeadIds : leadIds;
+      const uniqueLeadCount = typeof data.uniqueLeadCount === 'number' ? data.uniqueLeadCount : leadIds.length;
+      const count =
+        typeof data.campaignReadyLeadCount === 'number' ? data.campaignReadyLeadCount : eligibleLeadIds.length;
+      const duplicates = typeof data.duplicates === 'number' ? data.duplicates : 0;
+      const suppressedExcluded =
+        typeof data.suppressedExcluded === 'number' ? data.suppressedExcluded : Math.max(uniqueLeadCount - count, 0);
+
+      setCsvImported({
+        ids: eligibleLeadIds,
+        count,
+        totalRows: typeof data.total === 'number' ? data.total : csvPreview?.totalRows || eligibleLeadIds.length,
+        uniqueLeadCount,
+        duplicates,
+        suppressedExcluded,
+      });
       queryClient.invalidateQueries({ queryKey: ['leads'] });
-      toast.success(`${data.imported} leads imported, ${data.duplicates} duplicates updated`);
+      toast.success(
+        `${count} leads ready for campaign, ${uniqueLeadCount} unique phones, ${duplicates} duplicate rows or existing leads reused${
+          suppressedExcluded > 0 ? `, ${suppressedExcluded} suppressed/DNC excluded` : ''
+        }`,
+      );
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Import failed');
     } finally {
@@ -1374,7 +1401,7 @@ function CreateCampaignModal({
                           disabled={!csvMapping.phone || csvUploading}
                           className="btn-primary w-full text-sm"
                         >
-                          {csvUploading ? 'Importing...' : `Import ${csvPreview.totalRows} Leads`}
+                          {csvUploading ? 'Importing...' : `Import ${csvPreview.totalRows} Rows`}
                         </button>
                       </div>
                     )}
@@ -1382,8 +1409,14 @@ function CreateCampaignModal({
                 ) : (
                   <div className="text-center py-4">
                     <CheckCircle className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                    <p className="text-sm text-dark-200 font-medium">{csvImported.count} leads ready</p>
-                    <p className="text-xs text-dark-500 mt-1">Leads imported and will be added to this campaign</p>
+                    <p className="text-sm text-dark-200 font-medium">{csvImported.count} leads ready for campaign</p>
+                    <p className="text-xs text-dark-500 mt-1">
+                      {csvImported.totalRows} rows processed, {csvImported.uniqueLeadCount} unique phones,{' '}
+                      {csvImported.duplicates} duplicate rows or existing leads reused
+                      {csvImported.suppressedExcluded > 0
+                        ? `, ${csvImported.suppressedExcluded} suppressed/DNC excluded`
+                        : ''}
+                    </p>
                     <button
                       type="button"
                       onClick={() => {

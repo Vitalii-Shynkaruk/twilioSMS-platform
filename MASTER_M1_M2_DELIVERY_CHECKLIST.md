@@ -17,11 +17,11 @@
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                            |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         0% | Not started                                                                            |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending         |
 | M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **40%** | **M1.1 auth, M1.2 base parity, M1.3 parity, and M1.4 B.6 stacking chip update added**  |
+| **Overall**                                     | **100%** |    **46%** | **M2.1 access/source implementation added after M1.3; browser smoke gates remain**     |
 
 ## Source Map
 
@@ -628,35 +628,44 @@
 
 ## M2.1 — Leads/Campaign Access And Source Fixes
 
+### Implementation evidence — 2026-05-02
+
+- [x] Affected files: `server/src/controllers/leadController.ts`, `server/src/controllers/campaignController.ts`, `client/src/pages/LeadsPage.tsx`, `client/src/pages/CampaignsPage.tsx`, `server/tests/leadCampaignScope.test.ts`.
+- [x] Regression surface: Leads list/get/update/import/bulk/tag/export scope; Campaigns list/get/create/update/start/pause/cancel/analytics/sync scope; Campaigns delete UI visibility; Leads Source display fallback.
+- [x] Focused tests passed: `cd server && npx vitest run tests/leadCampaignScope.test.ts` — 5/5 passed.
+- [x] Build passed: root `npm run build` — server `tsc` + client `tsc && vite build`.
+- [ ] Browser smoke pending for admin/rep Leads and Campaigns views.
+- [ ] CSV import smoke pending with two real rep accounts.
+
 ### Leads ownership bug
 
-- [ ] In `server/src/controllers/leadController.ts`, verify both `importCSV` and `importMappedCSV`.
-- [ ] On REP create, set `assignedRepId = req.user.id` for newly uploaded leads.
-- [ ] On ADMIN create, preserve admin/global behavior according to spec.
-- [ ] On update/upsert existing lead by phone, do not overwrite existing `assignedRepId` silently.
-- [ ] Rep Leads tab returns only leads assigned/uploaded by that rep.
-- [ ] Admin Leads tab returns all leads.
-- [ ] Manager behavior documented and tested.
+- [x] In `server/src/controllers/leadController.ts`, verify both `importCSV` and `importMappedCSV`.
+- [x] On REP create, set `assignedRepId = req.user.id` for newly uploaded leads.
+- [x] On ADMIN create, preserve admin/global behavior according to spec.
+- [x] On update/upsert existing lead by phone, do not overwrite existing `assignedRepId` silently.
+- [x] Rep Leads tab returns only leads assigned/uploaded by that rep.
+- [x] Admin Leads tab returns all leads.
+- [x] Manager behavior documented: manager keeps admin-like global visibility for M2.1 unless JB narrows manager scope later.
 
 ### Campaign ownership bug
 
-- [ ] In `server/src/controllers/campaignController.ts`, apply rep-scope to list/get/analytics/start/pause/cancel/syncStatuses.
-- [ ] Rep sees only campaigns where `createdById = current_user_id`.
-- [ ] Admin sees all campaigns across reps.
-- [ ] Rep cannot GET another rep campaign.
-- [ ] Rep cannot start/pause/cancel/sync another rep campaign.
-- [ ] `ensureRetargetAccess` remains compatible.
+- [x] In `server/src/controllers/campaignController.ts`, apply rep-scope to list/get/analytics/start/pause/cancel/syncStatuses.
+- [x] Rep sees only campaigns where `createdById = current_user_id`.
+- [x] Admin sees all campaigns across reps.
+- [x] Rep cannot GET another rep campaign.
+- [x] Rep cannot start/pause/cancel/sync another rep campaign.
+- [x] `ensureRetargetAccess` remains compatible.
 
 ### Source readable fix
 
-- [ ] Leads table Source column shows readable list/campaign name, not UUID.
+- [x] Leads table Source column shows readable list/campaign name, not UUID.
 - [ ] Source examples match prototype:
   - `CJ 10.8 12K / Verizon list`;
   - `FDR Apr / FDR scrubbed`;
   - `Lead Hoop / Lead Hoop list`;
   - `Renewal Queue / Renewal · prior`.
-- [ ] Existing UUID-only sources mapped to readable fallback where possible.
-- [ ] Import flow stores list name as source for future leads.
+- [x] Existing UUID-only sources mapped to readable fallback where possible.
+- [x] Import flow stores list name as source for future leads.
 - [ ] Campaign-created leads preserve campaign/list lineage.
 
 ### M2.1 Testing Gate
@@ -665,11 +674,11 @@
 - [ ] Rep HB cannot see AN leads.
 - [ ] Admin JB sees all leads.
 - [ ] Rep AN sees only AN campaigns.
-- [ ] Rep HB cannot open AN campaign detail.
+- [x] Rep HB cannot open AN campaign detail.
 - [ ] Admin JB sees all campaigns.
 - [ ] Source column before/after checked against prototype.
-- [ ] API permission tests pass.
-- [ ] Progress dashboard updated.
+- [x] API permission tests pass.
+- [x] Progress dashboard updated.
 
 ## M2.2 — Leads Enrichment Columns And Export CSV
 

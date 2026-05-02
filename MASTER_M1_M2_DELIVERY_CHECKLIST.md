@@ -15,13 +15,13 @@
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         8% | Attempt UI, reset mechanics, and admin manual override implemented; browser/pixel pending |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         9% | Attempt UI, reset mechanics, manual override, and browser/pixel gate implemented          |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **65%** | **M1.5 manual override added; browser/pixel/release gates remain**                        |
+| **Overall**                                     | **100%** |    **66%** | **M1.5 browser/pixel gate added; Revive Queue and release gates remain**                  |
 
 ## Source Map
 
@@ -558,6 +558,11 @@
 - [x] Validation passed: `cd server && npx vitest run tests/dealContactAttempts.test.ts tests/dealControllerScope.test.ts tests/dealScopePolicy.test.ts` — 16/16 passed; `cd server && npm run build` passed; targeted backend ESLint 0 errors / existing warnings only.
 - [x] Added admin/manager manual override for `contactAttempts` reset and `contactAttemptThreshold` in DealPanel with backend validation and audit metadata.
 - [x] Validation passed: focused backend tests 17/17, server build, and client build.
+- [x] Browser mock validation passed on production preview: DealCard attempt banner and DealPanel quick-log row rendered for admin with `WAITING 3/5`, reset changed panel status to `WAITING 0/5`, and threshold input saved `12`.
+- [x] Browser UI quick-log buttons exercised from DealPanel: No answer, Texted, Voicemail, Connected, and Not interested buttons all invoked the quick-log flow; backend semantics remain covered by focused Vitest tests.
+- [x] Pixel/browser evidence captured in `audit-screenshots/m15-attempt-ui-evidence.json`; local ignored screenshots generated at `audit-screenshots/m15-attempt-ui-desktop.png` and `audit-screenshots/m15-attempt-ui-mobile.png`.
+- [x] Quick-log CSS tightened after pixel review: desktop uses compact grid layout; mobile keeps two-column button stack with full-width Not interested.
+- [x] Validation passed: `cd client && npm run build` after quick-log CSS/pixel adjustment.
 
 ### Data and backend
 
@@ -600,14 +605,14 @@
 ### M1.5 Testing Gate
 
 - [x] Each quick-log action tested by API.
-- [ ] Each quick-log action tested from UI.
+- [x] Each quick-log action tested from UI.
 - [x] Threshold auto-move tested.
 - [x] Reset on inbound tested.
 - [x] Reset on connected tested.
 - [x] Reset on forward stage move tested.
 - [x] Manual override reset tested.
 - [ ] Revive Queue still works.
-- [ ] Pixel-close compare for quick-log row and attempt banner.
+- [x] Pixel-close compare for quick-log row and attempt banner.
 - [x] Progress dashboard updated.
 
 ## M1.6 — M1 Full Regression And Release Gate

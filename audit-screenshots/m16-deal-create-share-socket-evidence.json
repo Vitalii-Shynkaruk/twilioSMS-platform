@@ -2,7 +2,7 @@
   "gate": "M1.6 deal creation, deal sharing, and socket scoping",
   "date": "2026-05-02",
   "productionUrl": "https://app.sclcapital.io/",
-  "status": "local_verified_prod_pending",
+  "status": "passed",
   "codeChanges": [
     {
       "file": "server/src/controllers/dealController.ts",
@@ -70,13 +70,46 @@
     "notes": "Browser mock API did not implement Socket.IO, so websocket connection warnings are outside this browser gate; socket scoping is covered by focused backend tests."
   },
   "production": {
-    "deployStatus": "pending",
-    "deployedCommit": null,
-    "smoke": null
+    "deployStatus": "passed",
+    "deployedCommit": "01b6700d",
+    "branch": "deploy/mysql-hosting",
+    "method": "git bundle fast-forward on /opt/sms-platform",
+    "previousProductionCommit": "2797bfcb",
+    "build": {
+      "command": "npm run build",
+      "result": "passed",
+      "pm2Process": "sms-api",
+      "pm2StatusAfterRestart": "online"
+    },
+    "smoke": {
+      "apiHealth": {
+        "url": "https://app.sclcapital.io/api/health",
+        "httpStatus": 200,
+        "status": "ok",
+        "services": {
+          "database": "ok",
+          "redis": "ok"
+        }
+      },
+      "rootHtml": {
+        "url": "https://app.sclcapital.io/",
+        "httpStatus": 200,
+        "bytes": 1132,
+        "hasRootMarker": true
+      },
+      "browser": {
+        "url": "https://app.sclcapital.io/login",
+        "pageTitle": "SecureCreditLines - SMS Platform",
+        "loginHeadingRendered": true,
+        "emailFieldRendered": true,
+        "sendCodeButtonRendered": true
+      },
+      "pm2RecentErrorTail": "no error lines in last 60 lines after restart"
+    }
   },
   "summary": {
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
-    "pending": 1
+    "pending": 0
   }
 }

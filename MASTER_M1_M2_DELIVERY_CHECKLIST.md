@@ -16,12 +16,12 @@
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         6% | Inbox AI/email/follow-up policy gate deployed; new deal/share/socket/visual gates remain  |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         7% | Functional gates deployed through new deal/share/socket; visual gate remains              |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **73%** | **M1.6 Inbox AI/email/follow-up policy deployed; new deal/share/socket/visual remain**    |
+| **Overall**                                     | **100%** |    **74%** | **M1.6 functional gates deployed through new deal/share/socket; visual remains**          |
 
 ## Source Map
 
@@ -667,7 +667,8 @@
 - [x] Root production build passed after the backend fix: server `tsc` plus client `tsc && vite build`.
 - [x] Browser production-preview smoke passed with mock API: created `M1.6 Smoke Capital`, captured `POST /api/deals`, shared `Atlas Demo Logistics`, and captured `PUT /api/deals/deal-1/share` with `assistingRepIds: ["rep-2"]`.
 - [x] Browser screenshot saved: `audit-screenshots/m16-deal-create-share-browser-smoke.png`.
-- [ ] Production deploy/smoke pending for this gate.
+- [x] Production deploy passed for commit `01b6700d`: Git bundle fast-forward, root `npm run build`, and `pm2 restart sms-api --update-env` all completed successfully.
+- [x] Production smoke passed: `/api/health` returned HTTP 200 with database `ok` and Redis `ok`; root HTML returned HTTP 200; live browser opened `/login` and rendered the SCL OTP login screen.
 
 ### Functional regression
 

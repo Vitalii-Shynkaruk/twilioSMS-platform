@@ -528,6 +528,11 @@ export default function PipelinePage() {
     };
   }, [board, quickFilter, user?.id, searchTerm, isAdmin]);
 
+  const visibleStageDefs = useMemo(
+    () => (viewMode === 'simple' ? STAGES.filter((stage) => stage.value !== 'CLOSED') : STAGES),
+    [viewMode],
+  );
+
   // ─── DnD handlers ───
   const handleDragEnd = useCallback(
     (event: any) => {
@@ -945,7 +950,7 @@ export default function PipelinePage() {
                 }}
               >
                 <div className="board">
-                  {STAGES.map((stageDef) => {
+                  {visibleStageDefs.map((stageDef) => {
                     const stageData = filteredBoard?.stages?.find((s: any) => s.stage === stageDef.value);
                     const deals = stageData?.deals || [];
                     const count = stageData?.count || deals.length;

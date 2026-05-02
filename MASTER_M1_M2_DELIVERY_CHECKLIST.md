@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                             |
-| ----------------------------------------------- | -------: | ---------: | ---------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                               |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending |
-| M1.2 — Pipeline v2 base parity                  |      12% |         0% | Not started                                                                        |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                        |
+| Направление                                     |      Вес | Готовность | Статус                                                                                 |
+| ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                   |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending     |
+| M1.2 — Pipeline v2 base parity                  |      12% |         2% | Stage label parity verified; Simple mode CLOSED column hidden                          |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                            |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                        |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                        |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         0% | Not started                                                                        |
-| M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                        |
-| M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                        |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                        |
-| **Overall**                                     | **100%** |    **16%** | **M1.1 auth UI parity + M1.4 B.6 stacking chip update added**                      |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                            |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         0% | Not started                                                                            |
+| M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
+| M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
+| **Overall**                                     | **100%** |    **18%** | **M1.1 auth, M1.2 stage parity, and M1.4 B.6 stacking chip update added**              |
 
 ## Source Map
 
@@ -298,9 +298,18 @@
 
 ## M1.2 — Pipeline v2 Base Parity
 
+### Implementation evidence — 2026-05-02
+
+- [x] Verified v2 stage labels in `PipelinePageV2`, `DealPanel`, `dealController`, `leadController`, `inboxController`, `dashboardController`, `commandCenterController`.
+- [x] Confirmed old audit mismatches are fixed in v2 runtime: `ENGAGED_INTERESTED` -> `Engaged / Interested`, `QUALIFIED` -> `Qualified`, `APPROVED_OFFERS` -> `Approved / Offers`.
+- [x] Updated stale Pipeline CSS stage comment from legacy `Contacted/New Business` vocabulary to current M1.2 stage language.
+- [x] Simple mode now hides `CLOSED` column while execution mode keeps it available.
+- [x] Browser mock validation passed: Simple mode columns = 8 without `Closed`; Execution mode columns = 9 with `Closed`.
+- [ ] Legacy `pipelineStage` seed/old `/pipeline/stages` lead-board path still needs separate decision because current v2 route uses `/api/deals/board`.
+
 ### Stage system and board structure
 
-- [ ] Verify exact 9 stage list and labels:
+- [x] Verify exact 9 stage list and labels:
   - New Lead;
   - Engaged / Interested;
   - Qualified;
@@ -310,14 +319,14 @@
   - Funded;
   - Nurture;
   - Closed.
-- [ ] Fix mismatch from audit:
+- [x] Fix mismatch from audit:
   - `ENGAGED_INTERESTED` label must be `Engaged / Interested`, not `Contacted`.
   - `QUALIFIED` label must be `Qualified`, not `Qualified / Interested`.
   - `APPROVED_OFFERS` label must be `Approved / Offers`, not `New Business`.
 - [ ] Verify stage colors against prototype and `archive/PIPELINE_AUDIT.md`.
 - [ ] Add/apply per-stage column bar opacity.
 - [ ] Ensure `APPROVED_OFFERS` and `COMMITTED_FUNDING` both use active pipeline classes.
-- [ ] Simple mode hides `CLOSED` column.
+- [x] Simple mode hides `CLOSED` column.
 - [ ] Execution mode shows expected columns and totals.
 - [ ] Admin view can see all deals.
 - [ ] Rep view sees own + explicitly shared/assisting deals only.

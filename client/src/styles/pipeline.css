@@ -3,22 +3,23 @@
   STAGE LOGIC (final)
   ─────────────────────────────────────────────
   New Lead               → Lead created, not yet contacted
-  Contacted              → Rep has reached out
-  Qualified/Interested   → Verbal interest confirmed
+  Engaged / Interested   → Rep has reached out / verbal interest confirmed
+  Qualified              → Fit confirmed and ready for app/doc work
                            STATUS inside this stage (system-driven):
                            • "Needs app"          (appSubmitted = false)
                            • "Awaiting offers"    (appSubmitted = true, offers = 0)
                            • "Offer received"     (offers = 1)
                            • "Multiple offers"    (offers > 1)
-                           When offers > 0 → system auto-promotes to New Business
-  New Business           → Submitted to ≥1 lender + offer(s) received, working the deal
+  Submitted (In Review)  → Submitted to lender / underwriting
+  Approved / Offers      → Approved offer(s) received, working the deal
+  Committed (Funding)    → Client accepted terms / funding in progress
   Funded                 → Deal closed and funded
   Nurture                → Lost/timing/re-engage later
   Closed                 → NQ / Disqualified / Do not contact
 
   HOT (system-driven, not manual):
   • client replied within 48h       (lastReplyHours ≤ 48)
-  • offer received from lender      (offers.length > 0 AND stage = Qualified or NB)
+  • offer received from lender      (offers.length > 0 AND stage = Qualified or Approved / Offers)
   • lender engagement logged        (lenderEngaged = true)
   ─────────────────────────────────────────────
 */

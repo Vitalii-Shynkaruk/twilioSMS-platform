@@ -310,6 +310,9 @@
 - [x] Guarded `/api/deals/board?teamView=true` and `/api/deals/stats?teamView=true` so non-admin users remain scoped to their own/shared deals.
 - [x] Default rep Pipeline board now requests primary + explicitly shared/assisting deals; Shared filter still isolates assisting deals in UI.
 - [x] Added `dealScopePolicy` unit tests for admin unscoped team view, rep scoped team view, primary-only filters, shared deal visibility, and funding-event scope.
+- [x] Verified stage colors against `archive/PIPELINE_AUDIT.md` and aligned per-stage `.col-bar` opacity values.
+- [x] Confirmed `APPROVED_OFFERS` and `COMMITTED_FUNDING` both use active pipeline `nb-col` / `pipe` classes.
+- [x] Browser computed-style validation passed for all 9 stage bar colors/opacity values, including Committed `0.85` opacity.
 - [x] Verification passed: `npm run build` and `cd server && npx vitest run tests/dealScopePolicy.test.ts`.
 - [ ] Legacy `pipelineStage` seed/old `/pipeline/stages` lead-board path still needs separate decision because current v2 route uses `/api/deals/board`.
 
@@ -329,9 +332,9 @@
   - `ENGAGED_INTERESTED` label must be `Engaged / Interested`, not `Contacted`.
   - `QUALIFIED` label must be `Qualified`, not `Qualified / Interested`.
   - `APPROVED_OFFERS` label must be `Approved / Offers`, not `New Business`.
-- [ ] Verify stage colors against prototype and `archive/PIPELINE_AUDIT.md`.
-- [ ] Add/apply per-stage column bar opacity.
-- [ ] Ensure `APPROVED_OFFERS` and `COMMITTED_FUNDING` both use active pipeline classes.
+- [x] Verify stage colors against prototype and `archive/PIPELINE_AUDIT.md`.
+- [x] Add/apply per-stage column bar opacity.
+- [x] Ensure `APPROVED_OFFERS` and `COMMITTED_FUNDING` both use active pipeline classes.
 - [x] Simple mode hides `CLOSED` column.
 - [ ] Execution mode shows expected columns and totals.
 - [ ] Admin view can see all deals.

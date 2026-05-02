@@ -25,7 +25,7 @@ interface StageConfig {
 }
 
 const STAGES: StageConfig[] = [
-  { value: 'NEW_LEAD', label: 'New Lead', short: 'New Lead', color: '#4A9EE8', opacity: 0.28 },
+  { value: 'NEW_LEAD', label: 'New Lead', short: 'New Lead', color: '#4A9EE8', opacity: 0.32 },
   {
     value: 'ENGAGED_INTERESTED',
     label: 'Engaged / Interested',
@@ -38,21 +38,21 @@ const STAGES: StageConfig[] = [
     label: 'Qualified',
     short: 'Qualified',
     color: '#C9952A',
-    opacity: 0.45,
+    opacity: 0.55,
   },
   {
     value: 'SUBMITTED_IN_REVIEW',
     label: 'Submitted (In Review)',
     short: 'Submitted (In Review)',
     color: '#4A9EE8',
-    opacity: 0.55,
+    opacity: 0.7,
   },
   {
     value: 'APPROVED_OFFERS',
     label: 'Approved / Offers',
     short: 'Approved / Offers',
     color: '#FF8C00',
-    opacity: 0.85,
+    opacity: 1,
     colClass: 'nb-col',
     stageClass: 'pipe',
   },
@@ -61,11 +61,11 @@ const STAGES: StageConfig[] = [
     label: 'Committed (Funding)',
     short: 'Committed (Funding)',
     color: '#3AB97A',
-    opacity: 0.95,
+    opacity: 0.85,
     colClass: 'nb-col',
     stageClass: 'pipe',
   },
-  { value: 'FUNDED', label: 'Funded', short: 'Funded', color: '#3AB97A', opacity: 1, stageClass: 'pipe' },
+  { value: 'FUNDED', label: 'Funded', short: 'Funded', color: '#3AB97A', opacity: 0.7, stageClass: 'pipe' },
   { value: 'NURTURE', label: 'Nurture', short: 'Nurture', color: '#4A9EE8', opacity: 0.3 },
   { value: 'CLOSED', label: 'Closed', short: 'Closed', color: '#536070', opacity: 0.28, stageClass: 'closed-s' },
 ];

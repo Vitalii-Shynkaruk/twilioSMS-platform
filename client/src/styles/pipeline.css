@@ -122,7 +122,7 @@
 .col-stage.pipe{color:var(--good);font-size:11px;font-weight:700;letter-spacing:.04em;}
 .col-stage.app-req{color:var(--attn);}
 .col.nb-col{border-radius:10px;padding:0 4px;margin:0 -4px;}
-.col.nb-col .col-bar{height:3px;opacity:1 !important;}
+.col.nb-col .col-bar{height:3px;}
 .nb-total{font-size:10px;color:var(--good);margin-top:2px;font-weight:500;}
 .col-stage.closed-s{color:var(--text4);}
 .col-vol{font-size:14px;font-weight:700;margin-top:3px;min-height:19px;font-variant-numeric:tabular-nums;}

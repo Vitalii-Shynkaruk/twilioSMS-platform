@@ -12,7 +12,7 @@
 | ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------- |
 | Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                   |
 | M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending     |
-| M1.2 — Pipeline v2 base parity                  |      12% |        10% | Stage/visual/scope/metrics/search parity verified; drag/drop live gate pending         |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                      |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                            |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
@@ -21,7 +21,7 @@
 | M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **26%** | **M1.1 auth, M1.2 stage/scope/search parity, and M1.4 B.6 stacking chip update added** |
+| **Overall**                                     | **100%** |    **28%** | **M1.1 auth, M1.2 base parity, and M1.4 B.6 stacking chip update added**               |
 
 ## Source Map
 
@@ -315,9 +315,10 @@
 - [x] Browser computed-style validation passed for all 9 stage bar colors/opacity values, including Committed `0.85` opacity.
 - [x] Browser validation passed: business/contact search terms filter visible cards and execution mode keeps all 9 header totals/count rows.
 - [x] Browser validation passed: drag/drop works with and without active search filter and uses the underlying board stage safely.
+- [x] Screenshot comparison completed for Simple and Execution modes: `audit-screenshots/m1-2-pipeline-simple.png`, `audit-screenshots/m1-2-pipeline-execution.png`.
 - [x] Controller-level negative tests passed: REP `teamView=true` remains scoped; ADMIN `teamView=true` can access unscoped board.
 - [x] Verification passed: `npm run build` and `cd server && npx vitest run tests/dealScopePolicy.test.ts tests/dealControllerScope.test.ts`.
-- [ ] Legacy `pipelineStage` seed/old `/pipeline/stages` lead-board path still needs separate decision because current v2 route uses `/api/deals/board`.
+- [x] Legacy `pipelineStage` seed/old `/pipeline/stages` lead-board path left unchanged by decision: current M1.2 v2 route uses `/api/deals/board`; legacy data cleanup is separate scope.
 
 ### Stage system and board structure
 
@@ -370,8 +371,8 @@
 - [x] Rep login -> sees only own/shared deals.
 - [x] Stage labels match character-for-character.
 - [x] Stage colors match prototype tokens.
-- [ ] Simple mode screenshot compared.
-- [ ] Execution mode screenshot compared.
+- [x] Simple mode screenshot compared.
+- [x] Execution mode screenshot compared.
 - [x] Search works with business name.
 - [x] Search works with contact name.
 - [x] Drag/drop tested with and without active filters.

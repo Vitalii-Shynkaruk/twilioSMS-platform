@@ -15,13 +15,13 @@
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |         7% | Backend, Pipeline UI, inbound/forward reset mechanics implemented; browser/pixel pending  |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |         8% | Attempt UI, reset mechanics, and admin manual override implemented; browser/pixel pending |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                               |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
 | M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
 | M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **64%** | **M1.5 reset mechanics added; browser/pixel/release gates remain**                        |
+| **Overall**                                     | **100%** |    **65%** | **M1.5 manual override added; browser/pixel/release gates remain**                        |
 
 ## Source Map
 
@@ -556,6 +556,8 @@
 - [x] Added inbound SMS engagement reset helper for active deals linked by `smsConversationId` / `leadId`, plus matched client deal fallback.
 - [x] Added forward stage move reset in `moveDeal` with `engagement_reset` audit metadata.
 - [x] Validation passed: `cd server && npx vitest run tests/dealContactAttempts.test.ts tests/dealControllerScope.test.ts tests/dealScopePolicy.test.ts` — 16/16 passed; `cd server && npm run build` passed; targeted backend ESLint 0 errors / existing warnings only.
+- [x] Added admin/manager manual override for `contactAttempts` reset and `contactAttemptThreshold` in DealPanel with backend validation and audit metadata.
+- [x] Validation passed: focused backend tests 17/17, server build, and client build.
 
 ### Data and backend
 
@@ -577,7 +579,7 @@
 - [x] Reset attempts on substantive inbound SMS.
 - [x] Reset attempts on connected action.
 - [x] Reset attempts on manual forward stage move.
-- [ ] Reset attempts on manual edit path from B.10.6.
+- [x] Reset attempts on manual edit path from B.10.6.
 - [x] Every change writes `DealEvent` audit metadata.
 - [ ] Revive Queue compatibility preserved.
 
@@ -593,6 +595,7 @@
   - near-threshold/red pulse.
 - [x] Quick-log buttons match `quick-log-row` / `ql-btn` visual target.
 - [x] Attempt banner matches `nurture-banner` / `nu-urg` visual target.
+- [x] Admin/manager manual override controls added for reset and threshold.
 
 ### M1.5 Testing Gate
 
@@ -602,6 +605,7 @@
 - [x] Reset on inbound tested.
 - [x] Reset on connected tested.
 - [x] Reset on forward stage move tested.
+- [x] Manual override reset tested.
 - [ ] Revive Queue still works.
 - [ ] Pixel-close compare for quick-log row and attempt banner.
 - [x] Progress dashboard updated.

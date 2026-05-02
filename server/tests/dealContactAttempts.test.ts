@@ -5,7 +5,11 @@ import { resetDealEngagementForConversation } from '../src/services/dealEngageme
 import prisma from '../src/config/database';
 import type { AuthRequest } from '../src/middleware/auth';
 
-function createRequest(body: Record<string, unknown>, params: Record<string, string> = { id: 'deal-1' }): AuthRequest {
+function createRequest(
+  body: Record<string, unknown>,
+  params: Record<string, string> = { id: 'deal-1' },
+  role = 'REP',
+): AuthRequest {
   return {
     params,
     body,
@@ -13,7 +17,7 @@ function createRequest(body: Record<string, unknown>, params: Record<string, str
     user: {
       id: 'rep-1',
       email: 'rep@sclcapital.io',
-      role: 'REP',
+      role,
       firstName: 'Rep',
       lastName: 'One',
     },
@@ -196,6 +200,34 @@ describe('M1.5 deal contact attempts', () => {
         data: expect.objectContaining({
           eventType: 'engagement_reset',
           metadata: expect.objectContaining({ reason: 'inbound_sms', previousAttempts: 5, contactAttempts: 0 }),
+        }),
+      }),
+    );
+  });
+
+  it('разрешает admin manual override и пишет audit event', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 6 }) as never);
+    const update = vi
+      .spyOn(prisma.deal, 'update')
+      .mockResolvedValue(createDealFixture({ contactAttempts: 0, lastEngagementAt: new Date() }) as never);
+    const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+
+    await DealController.updateDeal(createRequest({ contactAttempts: 0, contactAttemptThreshold: 12 }, { id: 'deal-1' }, 'ADMIN'), createResponse());
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactAttempts: 0,
+          contactAttemptThreshold: 12,
+          lastEngagementAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(eventCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          eventType: 'engagement_reset',
+          metadata: expect.objectContaining({ reason: 'manual_override', previousAttempts: 6, contactAttempts: 0 }),
         }),
       }),
     );

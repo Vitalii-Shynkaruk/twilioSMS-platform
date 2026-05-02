@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
-import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus } from '@prisma/client';
+import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus, Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { OutboundGateService } from '../services/outboundGateService';
 import {
@@ -685,6 +685,56 @@ export class DealController {
       delete updateData.assistingRepIds;
     }
 
+    const contactAttemptsProvided = hasOwn('contactAttempts');
+    const contactAttemptThresholdProvided = hasOwn('contactAttemptThreshold');
+    let manualAttemptEvent: { eventType: string; note: string; metadata: Prisma.InputJsonObject } | null = null;
+    if (contactAttemptsProvided || contactAttemptThresholdProvided) {
+      if (!isAdminLike(req.user)) {
+        return res.status(403).json({ error: 'Only admin/manager can override contact attempt counters' });
+      }
+
+      const nextThreshold = contactAttemptThresholdProvided
+        ? Number.parseInt(String(updateData.contactAttemptThreshold), 10)
+        : existing.contactAttemptThreshold || 10;
+      if (!Number.isInteger(nextThreshold) || nextThreshold < 1 || nextThreshold > 50) {
+        return res.status(400).json({ error: 'Contact attempt threshold must be between 1 and 50' });
+      }
+      updateData.contactAttemptThreshold = nextThreshold;
+
+      if (contactAttemptsProvided) {
+        const nextAttempts = Number.parseInt(String(updateData.contactAttempts), 10);
+        if (!Number.isInteger(nextAttempts) || nextAttempts < 0 || nextAttempts > nextThreshold) {
+          return res.status(400).json({ error: 'Contact attempts must be between 0 and threshold' });
+        }
+        updateData.contactAttempts = nextAttempts;
+
+        if (nextAttempts === 0) {
+          updateData.lastEngagementAt = new Date();
+        }
+
+        manualAttemptEvent = {
+          eventType: nextAttempts === 0 ? 'engagement_reset' : 'contact_attempt_override',
+          note: nextAttempts === 0 ? 'Contact attempts reset by admin override' : 'Contact attempts adjusted by admin override',
+          metadata: {
+            reason: 'manual_override',
+            previousAttempts: existing.contactAttempts || 0,
+            contactAttempts: nextAttempts,
+            threshold: nextThreshold,
+          },
+        };
+      } else {
+        manualAttemptEvent = {
+          eventType: 'contact_attempt_override',
+          note: 'Contact attempt threshold adjusted by admin override',
+          metadata: {
+            reason: 'manual_override',
+            previousThreshold: existing.contactAttemptThreshold || 10,
+            threshold: nextThreshold,
+          },
+        };
+      }
+    }
+
     const productTypeProvided = hasOwn('productType');
     const dealAmountProvided = hasOwn('dealAmount');
     const submittedAmountProvided = hasOwn('submittedAmount');
@@ -1002,6 +1052,20 @@ export class DealController {
           repId: req.user!.id,
           eventType: noteEventType,
           note: nextNotes ? nextNotes : 'Note cleared',
+        },
+      });
+    }
+
+    if (manualAttemptEvent) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: manualAttemptEvent.eventType,
+          fromStage: existing.stage,
+          toStage: deal.stage,
+          note: manualAttemptEvent.note,
+          metadata: manualAttemptEvent.metadata,
         },
       });
     }

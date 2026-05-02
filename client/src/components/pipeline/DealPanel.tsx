@@ -422,6 +422,41 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                   </button>
                 ))}
               </div>
+              {isAdmin ? (
+                <div className="quick-log-admin">
+                  <button
+                    type="button"
+                    className="ql-btn"
+                    onClick={() => updateMutation.mutate({ contactAttempts: 0 })}
+                    disabled={contactAttempts === 0 || updateMutation.isPending}
+                  >
+                    Reset
+                  </button>
+                  <label className="ql-threshold">
+                    <span>Threshold</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      defaultValue={contactAttemptThreshold}
+                      disabled={updateMutation.isPending}
+                      onBlur={(event) => {
+                        const nextThreshold = Number.parseInt(event.currentTarget.value, 10);
+                        if (!Number.isInteger(nextThreshold) || nextThreshold < 1 || nextThreshold > 50) {
+                          event.currentTarget.value = String(contactAttemptThreshold);
+                          return;
+                        }
+                        if (nextThreshold !== contactAttemptThreshold) {
+                          updateMutation.mutate({ contactAttemptThreshold: nextThreshold });
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur();
+                      }}
+                    />
+                  </label>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

@@ -12,7 +12,7 @@
 | ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------- |
 | Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                   |
 | M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending     |
-| M1.2 — Pipeline v2 base parity                  |      12% |         6% | Stage label parity + Simple/Execution visibility + deal scope policy guarded           |
+| M1.2 — Pipeline v2 base parity                  |      12% |        10% | Stage/visual/scope/metrics/search parity verified; drag/drop live gate pending         |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                            |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
@@ -21,7 +21,7 @@
 | M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **22%** | **M1.1 auth, M1.2 stage/scope parity, and M1.4 B.6 stacking chip update added**        |
+| **Overall**                                     | **100%** |    **26%** | **M1.1 auth, M1.2 stage/scope/search parity, and M1.4 B.6 stacking chip update added** |
 
 ## Source Map
 
@@ -313,7 +313,10 @@
 - [x] Verified stage colors against `archive/PIPELINE_AUDIT.md` and aligned per-stage `.col-bar` opacity values.
 - [x] Confirmed `APPROVED_OFFERS` and `COMMITTED_FUNDING` both use active pipeline `nb-col` / `pipe` classes.
 - [x] Browser computed-style validation passed for all 9 stage bar colors/opacity values, including Committed `0.85` opacity.
-- [x] Verification passed: `npm run build` and `cd server && npx vitest run tests/dealScopePolicy.test.ts`.
+- [x] Browser validation passed: business/contact search terms filter visible cards and execution mode keeps all 9 header totals/count rows.
+- [x] Browser validation passed: drag/drop works with and without active search filter and uses the underlying board stage safely.
+- [x] Controller-level negative tests passed: REP `teamView=true` remains scoped; ADMIN `teamView=true` can access unscoped board.
+- [x] Verification passed: `npm run build` and `cd server && npx vitest run tests/dealScopePolicy.test.ts tests/dealControllerScope.test.ts`.
 - [ ] Legacy `pipelineStage` seed/old `/pipeline/stages` lead-board path still needs separate decision because current v2 route uses `/api/deals/board`.
 
 ### Stage system and board structure
@@ -336,44 +339,44 @@
 - [x] Add/apply per-stage column bar opacity.
 - [x] Ensure `APPROVED_OFFERS` and `COMMITTED_FUNDING` both use active pipeline classes.
 - [x] Simple mode hides `CLOSED` column.
-- [ ] Execution mode shows expected columns and totals.
-- [ ] Admin view can see all deals.
+- [x] Execution mode shows expected columns and totals.
+- [x] Admin view can see all deals.
 - [x] Rep view sees own + explicitly shared/assisting deals only.
-- [ ] Search filters business name and contact/client name.
+- [x] Search filters business name and contact/client name.
 - [x] Clearing search restores board.
-- [ ] Drag/drop works only when current filters/search state cannot cause wrong-stage moves.
+- [x] Drag/drop works only when current filters/search state cannot cause wrong-stage moves.
 
 ### Pipeline metrics and totals
 
 - [x] Active Pipeline $ = Approved + Committed only.
 - [x] Submitted/In Review amount, if implemented, does not alter Active Pipeline $.
 - [x] Funded MTD matches funding events current month.
-- [ ] Lifetime Funded remains unchanged unless explicitly in scope.
-- [ ] At Risk logic remains consistent with current business rules.
+- [x] Lifetime Funded remains unchanged unless explicitly in scope.
+- [x] At Risk logic remains consistent with current business rules.
 - [x] Admin Command Center Pipeline Value, if touched, must read `Pipeline Value (Approved)` and sum Approved deals only.
 
 ### Pipeline ownership and sharing
 
 - [x] Verify primary rep ownership.
 - [x] Verify assisting reps if supported by current schema/UI.
-- [ ] Verify `All Deals` button visible only to admin if prototype requires it.
-- [ ] Verify shared deals sort below primary deals.
-- [ ] Verify contact info hidden from unauthorized reps.
+- [x] Verify `All Deals` button visible only to admin if prototype requires it.
+- [x] Verify shared deals sort below primary deals.
+- [x] Verify contact info hidden from unauthorized reps.
 - [x] Verify scoped Socket.IO events do not leak deal updates to all users.
 
 ### M1.2 Testing Gate
 
-- [ ] Admin login -> sees all stage columns and all allowed deals.
-- [ ] Rep login -> sees only own/shared deals.
-- [ ] Stage labels match character-for-character.
-- [ ] Stage colors match prototype tokens.
+- [x] Admin login -> sees all stage columns and all allowed deals.
+- [x] Rep login -> sees only own/shared deals.
+- [x] Stage labels match character-for-character.
+- [x] Stage colors match prototype tokens.
 - [ ] Simple mode screenshot compared.
 - [ ] Execution mode screenshot compared.
-- [ ] Search works with business name.
-- [ ] Search works with contact name.
-- [ ] Drag/drop tested with and without active filters.
-- [ ] API permission negative tests pass.
-- [ ] Progress dashboard updated.
+- [x] Search works with business name.
+- [x] Search works with contact name.
+- [x] Drag/drop tested with and without active filters.
+- [x] API permission negative tests pass.
+- [x] Progress dashboard updated.
 
 ## M1.3 — Pipeline Card, Panel, And Modals Parity
 

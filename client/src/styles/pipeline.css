@@ -337,6 +337,8 @@ body.execution-view .touched-by{display:flex;}
 @keyframes pulse-border{0%,100%{border-color:rgba(226,75,74,.3);}50%{border-color:rgba(226,75,74,.7);}};
 /* ── PRODUCT BADGE ── */
 .prod-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;}
+.source-row{display:flex;align-items:center;gap:5px;margin-bottom:3px;min-width:0;}
+.source-chip{display:inline-flex;align-items:center;max-width:100%;min-width:0;padding:2px 6px;border-radius:4px;background:var(--info-bg);border:1px solid var(--info-b);color:var(--info);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .stacking-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;padding:2px 7px;border-radius:3px;border:1px solid;font-family:'DM Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.05em;line-height:1.25;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .stacking-chip--compact{padding:1px 5px;font-size:9px;}
 .stacking-chip--first{background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.4);color:#4ADE80;}
@@ -416,7 +418,8 @@ body.execution-view .touched-by{display:flex;}
 .c-top{display:flex;align-items:flex-start;justify-content:space-between;gap:4px;margin-bottom:3px;}
 .c-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .c-biz{font-size:10px;color:var(--text2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.bdgs{display:flex;gap:3px;flex-shrink:0;}
+.bdgs{display:flex;gap:3px;flex:0 1 48%;max-width:48%;min-width:0;flex-wrap:wrap;justify-content:flex-end;}
+.bdgs .stacking-chip{max-width:100%;}
 .b{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;}
 .b-hot{background:var(--hot-bg);color:var(--hot);border:1px solid var(--hot-b);}
 .b-sms{background:var(--info-bg);color:var(--info);border:1px solid var(--info-b);}

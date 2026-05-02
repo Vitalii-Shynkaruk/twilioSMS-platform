@@ -1416,7 +1416,7 @@ export default function PipelinePage() {
                 🔁 Transfer Ownership
               </button>
             )}
-            {(isAdmin || user?.id === ctxMenu.assignedRepId) && ctxMenu.stage !== 'FUNDED' && (
+            {isAdmin && ctxMenu.stage !== 'FUNDED' && (
               <button
                 className="ctx-item ctx-delete"
                 onClick={async () => {
@@ -1673,9 +1673,23 @@ function DraggableDealCard({
   highlightTerm?: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: deal.id });
+  const textPointerDownRef = useRef(false);
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, opacity: isDragging ? 0.25 : 1 }
     : undefined;
+
+  const handlePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    textPointerDownRef.current = !!target?.closest('.c-name,.c-biz,.sc-name');
+  };
+
+  const handleClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
+    const hasSelection = !!window.getSelection()?.toString().trim();
+    if (textPointerDownRef.current || hasSelection) {
+      event.stopPropagation();
+      textPointerDownRef.current = false;
+    }
+  };
 
   return (
     <div
@@ -1683,6 +1697,8 @@ function DraggableDealCard({
       style={style}
       {...listeners}
       {...attributes}
+      onPointerDownCapture={handlePointerDownCapture}
+      onClickCapture={handleClickCapture}
       onContextMenu={onContextMenu}
       onMouseEnter={(e) => onMouseEnter?.((e.currentTarget as HTMLDivElement).getBoundingClientRect())}
       onMouseLeave={onMouseLeave}

@@ -70,6 +70,10 @@ type RepIdentity = {
   lastName: string;
   initials: string | null;
 };
+type DealAccessShape = {
+  assignedRepId?: string | null;
+  assistingRepIds?: unknown;
+};
 
 function isSubmittedAmountProduct(productType?: ProductType | null): boolean {
   return !!productType && SUBMITTED_AMOUNT_PRODUCTS.has(productType);
@@ -211,6 +215,19 @@ function computeIsHot(deal: {
   if (deal.stage === DealStage.APPROVED_OFFERS || deal.stage === DealStage.COMMITTED_FUNDING) return true;
   if (deal.lenderEngaged && deal.appSubmitted) return true;
   return false;
+}
+function canAccessDeal(user: AuthRequest['user'], deal: DealAccessShape): boolean {
+  if (isAdminLike(user)) return true;
+  if (!user?.id) return false;
+  if (deal.assignedRepId === user.id) return true;
+  const assistingIds = Array.isArray(deal.assistingRepIds)
+    ? deal.assistingRepIds.filter((repId): repId is string => typeof repId === 'string')
+    : [];
+  return assistingIds.includes(user.id);
+}
+
+function canAdminOrPrimary(user: AuthRequest['user'], deal: DealAccessShape): boolean {
+  return isAdminLike(user) || (!!user?.id && deal.assignedRepId === user.id);
 }
 
 export class DealController {
@@ -398,11 +415,8 @@ export class DealController {
     }
 
     // Also check assisting reps access
-    if (req.user?.role !== 'ADMIN' && deal.assignedRepId !== req.user?.id) {
-      const assistingIds = (deal.assistingRepIds as string[]) || [];
-      if (!assistingIds.includes(req.user!.id)) {
-        return res.status(404).json({ error: 'Deal not found' });
-      }
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(404).json({ error: 'Deal not found' });
     }
 
     res.json({
@@ -623,11 +637,6 @@ export class DealController {
     const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 
-    // REP может редактировать только свои сделки
-    if (!isAdminLike(req.user) && existing.assignedRepId !== req.user?.id) {
-      return res.status(403).json({ error: 'You can only edit deals assigned to you' });
-    }
-
     const fundingEventUpdate = hasOwn('fundingEventUpdate') ? updateData.fundingEventUpdate : null;
     delete updateData.fundingEventUpdate;
 
@@ -640,16 +649,13 @@ export class DealController {
     }
 
     // Rule #9: Closed deals locked — only admin can edit
-    if (existing.stage === DealStage.CLOSED && req.user?.role !== 'ADMIN') {
+    if (existing.stage === DealStage.CLOSED && !isAdminLike(req.user)) {
       return res.status(403).json({ error: 'Closed deals are locked. Ask an admin to unlock.' });
     }
 
     // Permission check
-    if (req.user?.role !== 'ADMIN') {
-      const assistingIds = (existing.assistingRepIds as string[]) || [];
-      if (existing.assignedRepId !== req.user?.id && !assistingIds.includes(req.user!.id)) {
-        return res.status(403).json({ error: 'Access denied' });
-      }
+    if (!isAdminLike(req.user)) {
+      if (!canAccessDeal(req.user, existing)) return res.status(403).json({ error: 'Access denied' });
       // Reps cannot change ownership
       delete updateData.assignedRepId;
       delete updateData.assistingRepIds;
@@ -1000,8 +1006,12 @@ export class DealController {
     const existing = await prisma.deal.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Deal not found' });
 
+    if (!canAccessDeal(req.user, existing)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     // Rule #9: Closed deals locked — only admin can move
-    if (existing.stage === DealStage.CLOSED && req.user?.role !== 'ADMIN') {
+    if (existing.stage === DealStage.CLOSED && !isAdminLike(req.user)) {
       return res.status(403).json({ error: 'Closed deals are locked. Ask an admin to unlock.' });
     }
 
@@ -1371,6 +1381,10 @@ export class DealController {
     const deal = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     const amount = parseFloat(amountFunded);
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ error: 'Amount funded must be greater than 0' });
@@ -1497,6 +1511,10 @@ export class DealController {
     const deal = await prisma.deal.findUnique({ where: { id } });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     // Log completed action
     await prisma.dealEvent.create({
       data: {
@@ -1546,7 +1564,7 @@ export class DealController {
     const deal = await prisma.deal.findUnique({ where: { id } });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
-    if (req.user?.role !== 'ADMIN' && deal.assignedRepId !== req.user?.id) {
+    if (!canAdminOrPrimary(req.user, deal)) {
       return res.status(403).json({ error: 'Only the primary rep or admin can share deals' });
     }
 
@@ -1647,6 +1665,10 @@ export class DealController {
     const deal = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
 
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
     await prisma.dealEvent.create({
       data: {
         dealId: id,
@@ -1668,9 +1690,13 @@ export class DealController {
 
     const task = await prisma.renewalTask.findUnique({
       where: { id: taskId },
-      include: { deal: { select: { id: true, assignedRepId: true } } },
+      include: { deal: { select: { id: true, assignedRepId: true, assistingRepIds: true } } },
     });
     if (!task) return res.status(404).json({ error: 'Renewal task not found' });
+
+    if (!canAccessDeal(req.user, task.deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     const updated = await prisma.renewalTask.update({
       where: { id: taskId },
@@ -2374,9 +2400,13 @@ export class DealController {
     const { id } = req.params;
     const deal = await prisma.deal.findFirst({
       where: { id },
-      select: { leadId: true, client: { select: { phone: true } } },
+      select: { leadId: true, assignedRepId: true, assistingRepIds: true, client: { select: { phone: true } } },
     });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     let leadId = deal.leadId;
     if (!leadId && deal.client?.phone) {
@@ -2420,9 +2450,13 @@ export class DealController {
 
     const deal = await prisma.deal.findFirst({
       where: { id },
-      select: { leadId: true, client: { select: { phone: true } } },
+      select: { leadId: true, assignedRepId: true, assistingRepIds: true, client: { select: { phone: true } } },
     });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     let leadId = deal.leadId;
     if (!leadId && deal.client?.phone) {
@@ -2457,6 +2491,16 @@ export class DealController {
       sentByUserId: req.user!.id,
       preferredNumberId: conversation?.stickyNumberId || undefined,
       priority: 10,
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'sms_sent',
+        note: body.trim(),
+        metadata: { messageId },
+      },
     });
 
     if (conversation) {
@@ -2547,9 +2591,8 @@ export class DealController {
       select: { id: true, clientId: true, stage: true, assignedRepId: true },
     });
     if (!deal) return res.status(404).json({ error: 'Deal not found' });
-    const canDelete = isAdminLike(req.user) || deal.assignedRepId === req.user?.id;
-    if (!canDelete) {
-      return res.status(403).json({ error: 'Only admin/manager or primary rep can delete this deal' });
+    if (!isAdminLike(req.user)) {
+      return res.status(403).json({ error: 'Only admin/manager can delete deals' });
     }
     if (deal.stage === DealStage.FUNDED) {
       return res.status(400).json({ error: 'Funded deals cannot be deleted' });

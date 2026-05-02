@@ -249,7 +249,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   const isPrimaryRep = deal.assignedRepId === user?.id;
   const isAssistRep = !!user?.id && assistingIds.includes(user.id);
   const canEditDeal = isAdmin || isPrimaryRep || isAssistRep;
-  const canDeleteDeal = (isAdmin || isPrimaryRep) && deal.stage !== 'FUNDED';
+  const canDeleteDeal = isAdmin && deal.stage !== 'FUNDED';
   const canDeleteOffer = (isAdmin || isPrimaryRep || isAssistRep) && !['FUNDED', 'CLOSED'].includes(deal.stage);
   const duePreset = getDuePresetFromDate(deal.nextActionDue);
   const latestEvent = [...(deal.dealEvents || [])]

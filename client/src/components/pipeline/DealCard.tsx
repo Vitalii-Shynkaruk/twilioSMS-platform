@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useRef, type ReactNode } from 'react';
 import type { Deal, CommitSubStatus } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 import StackingChip from './StackingChip';
@@ -113,6 +113,12 @@ function simpleCardState(deal: Deal): string {
   if (due.isToday) return 'sc-today';
   if (deal.stage === 'FUNDED') return 'sc-good';
   return 'sc-normal';
+}
+
+function extractSmsCampaignSource(clientNotes?: string | null): string {
+  if (!clientNotes) return '';
+  const match = clientNotes.match(/Source:\s*SMS\s*[—-]\s*([^·\n\r]+)/i);
+  return match?.[1]?.trim() || '';
 }
 
 function cardPriority(deal: Deal): string {
@@ -239,6 +245,35 @@ function blockDragOnTextPointerDown(e: { stopPropagation: () => void }) {
   e.stopPropagation();
 }
 
+function blockCardTextClick(e: { stopPropagation: () => void }) {
+  e.stopPropagation();
+}
+
+function useGuardedCardClick(onClick?: () => void) {
+  const pointerRef = useRef({ x: 0, y: 0, textTarget: false });
+
+  return {
+    onPointerDownCapture: (event: React.PointerEvent<HTMLDivElement>) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      pointerRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        textTarget: !!target?.closest('.c-name,.c-biz,.sc-name'),
+      };
+    },
+    onClick: (event: React.MouseEvent<HTMLDivElement>) => {
+      const moved = Math.abs(event.clientX - pointerRef.current.x) > 4 || Math.abs(event.clientY - pointerRef.current.y) > 4;
+      const hasSelection = !!window.getSelection()?.toString().trim();
+      if (pointerRef.current.textTarget || moved || hasSelection) {
+        event.stopPropagation();
+        pointerRef.current.textTarget = false;
+        return;
+      }
+      onClick?.();
+    },
+  };
+}
+
 export default function DealCard({ deal, onClick, viewMode, compact, highlightTerm }: DealCardProps) {
   const mode = viewMode || (compact ? 'simple' : 'execution');
   if (mode === 'simple') return <SimpleCard deal={deal} onClick={onClick} highlightTerm={highlightTerm} />;
@@ -256,14 +291,20 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
   const due = simpleDueInfo(deal.nextActionDue);
   const hot = isDealHot(deal);
   const businessName = deal.client?.businessName || 'Unknown';
+  const cardClickHandlers = useGuardedCardClick(onClick);
 
   return (
-    <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} onClick={onClick}>
+    <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} {...cardClickHandlers}>
       <div style={{ padding: '10px 11px 8px' }}>
         {hot && <div className="sc-hot-badge">🔥 HOT</div>}
         <StackingChip signals={deal.pipelineAiSignals} compact className="sc-stacking-chip" />
         <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
-        <div className="sc-name" onMouseDown={blockDragOnTextPointerDown} onPointerDown={blockDragOnTextPointerDown}>
+        <div
+          className="sc-name"
+          onClick={blockCardTextClick}
+          onMouseDown={blockDragOnTextPointerDown}
+          onPointerDown={blockDragOnTextPointerDown}
+        >
           {renderHighlightedText(businessName, highlightTerm)}
         </div>
 
@@ -293,6 +334,8 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
   const { user } = useAuthStore();
   const businessName = deal.client?.businessName || 'Unknown';
   const contactName = deal.client?.contactName || '';
+  const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
+  const cardClickHandlers = useGuardedCardClick(onClick);
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
   const showSubmittedBadge =
@@ -318,7 +361,7 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
   const imAssisting = meId && assistIds.includes(meId);
 
   return (
-    <div className={`card ${priority}`} onClick={onClick}>
+    <div className={`card ${priority}`} {...cardClickHandlers}>
       {/* Staleness bar */}
       <div className={`sbar ${sbar}`} />
 
@@ -326,12 +369,18 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
         {/* Top: name + badges */}
         <div className="c-top">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="c-name" onMouseDown={blockDragOnTextPointerDown} onPointerDown={blockDragOnTextPointerDown}>
+            <div
+              className="c-name"
+              onClick={blockCardTextClick}
+              onMouseDown={blockDragOnTextPointerDown}
+              onPointerDown={blockDragOnTextPointerDown}
+            >
               {renderHighlightedText(businessName, highlightTerm)}
             </div>
             {contactName && (
               <div
                 className="c-biz"
+                onClick={blockCardTextClick}
                 onMouseDown={blockDragOnTextPointerDown}
                 onPointerDown={blockDragOnTextPointerDown}
               >
@@ -380,9 +429,15 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
                     {pb.icon} {PRODUCT_TAG[deal.productType]?.label || deal.productType}
                   </span>
                 )}
+                {smsCampaignSource && <span className="source-chip">SMS · {smsCampaignSource}</span>}
               </div>
             );
           })()}
+        {!deal.productType && smsCampaignSource && (
+          <div className="source-row">
+            <span className="source-chip">SMS · {smsCampaignSource}</span>
+          </div>
+        )}
 
         {/* HOT reason row */}
         {hot && (

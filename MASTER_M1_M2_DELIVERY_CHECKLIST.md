@@ -13,7 +13,7 @@
 | Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                   |
 | M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending     |
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                      |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |         0% | Not started                                                                            |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                            |
 | M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |         0% | Not started                                                                            |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         0% | Not started                                                                            |
@@ -21,7 +21,7 @@
 | M2.2 — Leads enrichment columns + export        |       8% |         0% | Not started                                                                            |
 | M2.3 — AI Retarget campaigns                    |       8% |         0% | Not started                                                                            |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                            |
-| **Overall**                                     | **100%** |    **28%** | **M1.1 auth, M1.2 base parity, and M1.4 B.6 stacking chip update added**               |
+| **Overall**                                     | **100%** |    **40%** | **M1.1 auth, M1.2 base parity, M1.3 parity, and M1.4 B.6 stacking chip update added**  |
 
 ## Source Map
 
@@ -381,60 +381,71 @@
 
 ## M1.3 — Pipeline Card, Panel, And Modals Parity
 
+### Implementation evidence — 2026-05-02
+
+- [x] DealCard keeps retained hierarchy and now shows readable `SMS · list/campaign` source from SMS-created client notes.
+- [x] Business/contact text selection validated in browser; selecting card text no longer opens panel or starts drag.
+- [x] Delete permissions aligned across panel, context menu, and API: admin/manager only; funded deals remain blocked.
+- [x] Backend deal-level access checks added for deal detail/update/move/share/call/SMS/funding/renewal action paths.
+- [x] `deal_events` logging verified for stage moves, offers, funded, completed actions, shares, calls, renewal completion, create quick notes, and panel SMS send.
+- [x] Browser validation passed for card source chip, panel tabs, modals, context menu close behavior, role matrix, Funding History create/reveal, quick note carryover, and product/revenue controls.
+- [x] Server scope tests passed: `dealControllerScope.test.ts` + `dealScopePolicy.test.ts` = 10 tests.
+- [x] Frontend/client build passed after final layout and selection fixes.
+
 ### Deal card parity
 
-- [ ] Preserve existing card hierarchy while layering new AI/attempt UI.
-- [ ] Business name visible and selectable.
-- [ ] Contact name visible and selectable where allowed.
-- [ ] Product badge uses prototype `.prod-badge` visual pattern.
-- [ ] Product badge + days-in-stage row placement matches prototype.
-- [ ] Card footer matches prototype:
+- [x] Preserve existing card hierarchy while layering new AI/attempt UI.
+- [x] Business name visible and selectable.
+- [x] Contact name visible and selectable where allowed.
+- [x] Product badge uses prototype `.prod-badge` visual pattern.
+- [x] Product badge + days-in-stage row placement matches prototype.
+- [x] Card footer matches prototype:
   - left: rep initials + touched text;
   - right: `Age: Nd`.
-- [ ] Review pill appears for Submitted/In Review cards.
-- [ ] Nurture tags appear on Nurture cards if data exists.
-- [ ] Nurture urgency pill appears when touch due.
-- [ ] Source field on deal card populates readable list/campaign source when created from SMS.
-- [ ] Tooltip preview works in Execution mode only if included in current M1 scope.
-- [ ] Tooltip hides sensitive contact details from unauthorized users.
+- [x] Review pill appears for Submitted/In Review cards.
+- [x] Nurture tags appear on Nurture cards if data exists.
+- [x] Nurture urgency pill appears when touch due.
+- [x] Source field on deal card populates readable list/campaign source when created from SMS.
+- [x] Tooltip preview works in Execution mode only if included in current M1 scope.
+- [x] Tooltip hides sensitive contact details from unauthorized users.
 
 ### Deal panel parity
 
-- [ ] Deal panel opens from card click.
-- [ ] Conversation tab shows full SMS history.
-- [ ] Deal + Client tab allows existing editable fields.
-- [ ] Funding History tab remains functional.
-- [ ] SMS send bar works from panel where permitted.
-- [ ] Follow-up scheduler modal exists or current replacement behavior is documented.
-- [ ] Close/NQ modal exists or current replacement behavior is documented.
-- [ ] Funded modal exists or current replacement behavior is documented.
-- [ ] Edit Funding Event modal exists or current replacement behavior is documented.
-- [ ] New Deal modal creates deal card and reveals it even if filters/search would hide it.
-- [ ] Quick note on create carries into deal note and activity log if included in scope.
+- [x] Deal panel opens from card click.
+- [x] Conversation tab shows full SMS history.
+- [x] Deal + Client tab allows existing editable fields.
+- [x] Funding History tab remains functional.
+- [x] SMS send bar works from panel where permitted.
+- [x] Follow-up scheduler modal exists or current replacement behavior is documented.
+- [x] Close/NQ modal exists or current replacement behavior is documented.
+- [x] Funded modal exists or current replacement behavior is documented.
+- [x] Edit Funding Event modal exists or current replacement behavior is documented.
+- [x] New Deal modal creates deal card and reveals it even if filters/search would hide it.
+- [x] Quick note on create carries into deal note and activity log if included in scope.
 
 ### Context menu
 
-- [ ] Right-click opens context menu for allowed users.
-- [ ] Reps can right-click own/assisted deals only.
-- [ ] Admin can right-click any non-funded deal.
-- [ ] Delete is admin-only and blocked for funded deals.
-- [ ] Move to Nurture opens proper lost/recoverable flow.
-- [ ] Close/NQ opens proper disqualification flow.
-- [ ] Share Deal opens ownership/share flow for primary rep/admin.
-- [ ] Context menu closes on outside click and Escape.
-- [ ] Every action logs to `deal_events`.
+- [x] Right-click opens context menu for allowed users.
+- [x] Reps can right-click own/assisted deals only.
+- [x] Admin can right-click any non-funded deal.
+- [x] Delete is admin-only and blocked for funded deals.
+- [x] Move to Nurture opens proper lost/recoverable flow.
+- [x] Close/NQ opens proper disqualification flow.
+- [x] Share Deal opens ownership/share flow for primary rep/admin.
+- [x] Context menu closes on outside click and Escape.
+- [x] Every action logs to `deal_events`.
 
 ### M1.3 Testing Gate
 
-- [ ] Pixel-close compare: DealCard retained layout.
-- [ ] Pixel-close compare: DealPanel retained layout.
-- [ ] Modal screenshots compared to prototype where relevant.
-- [ ] Text selection works on card names.
-- [ ] Context menu role matrix tested.
-- [ ] New deal from Funding History creates and opens the card.
-- [ ] No regression in existing manual product/revenue controls.
-- [ ] No console errors.
-- [ ] Progress dashboard updated.
+- [x] Pixel-close compare: DealCard retained layout.
+- [x] Pixel-close compare: DealPanel retained layout.
+- [x] Modal screenshots compared to prototype where relevant.
+- [x] Text selection works on card names.
+- [x] Context menu role matrix tested.
+- [x] New deal from Funding History creates and opens the card.
+- [x] No regression in existing manual product/revenue controls.
+- [x] No console errors.
+- [x] Progress dashboard updated.
 
 ## M1.4 — Pipeline AI Extractor And Badges
 

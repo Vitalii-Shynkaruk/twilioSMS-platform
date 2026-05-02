@@ -20,6 +20,7 @@ function createRequest(query: AuthRequest['query'], role = 'REP'): AuthRequest {
 function createResponse(): Response {
   const response = {
     json: vi.fn(),
+    status: vi.fn().mockReturnThis(),
   } as unknown as Response;
   return response;
 }
@@ -51,5 +52,40 @@ describe('DealController board scope', () => {
     await DealController.getBoard(createRequest({ teamView: 'true' }, 'ADMIN'), response);
 
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
+  });
+
+  it('не должен разрешать primary rep удалять deal', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue({
+      id: 'deal-1',
+      clientId: 'client-1',
+      stage: 'NEW_LEAD',
+      assignedRepId: 'rep-1',
+    } as never);
+    const response = createResponse();
+
+    await DealController.deleteDeal({ ...createRequest({}), params: { id: 'deal-1' } } as AuthRequest, response);
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(response.json).toHaveBeenCalledWith({ error: 'Only admin/manager can delete deals' });
+  });
+
+  it('не должен разрешать rep переносить чужой deal', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue({
+      id: 'deal-2',
+      clientId: 'client-2',
+      stage: 'NEW_LEAD',
+      stageLabel: 'New Lead',
+      assignedRepId: 'rep-2',
+      assistingRepIds: [],
+    } as never);
+    const response = createResponse();
+
+    await DealController.moveDeal(
+      { ...createRequest({}), params: { id: 'deal-2' }, body: { stage: 'QUALIFIED' } } as AuthRequest,
+      response,
+    );
+
+    expect(response.status).toHaveBeenCalledWith(403);
+    expect(response.json).toHaveBeenCalledWith({ error: 'Access denied' });
   });
 });

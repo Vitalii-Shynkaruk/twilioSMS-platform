@@ -28,6 +28,28 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const requestOtpSchema = z.object({
+  email: z
+    .string()
+    .email()
+    .transform((s) => s.toLowerCase().trim()),
+  channel: z
+    .enum(['sms', 'email'])
+    .default('sms')
+    .transform((channel) => channel.toUpperCase()),
+});
+
+export const verifyOtpSchema = z.object({
+  email: z
+    .string()
+    .email()
+    .transform((s) => s.toLowerCase().trim()),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Code must be 6 digits'),
+});
+
 export const registerSchema = z.object({
   email: z
     .string()

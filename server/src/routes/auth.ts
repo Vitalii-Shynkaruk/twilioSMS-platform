@@ -4,7 +4,13 @@ import { authenticate, requireRole } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../validation/middleware';
-import { loginSchema, registerSchema, updateUserSchema } from '../validation/schemas';
+import {
+  loginSchema,
+  registerSchema,
+  requestOtpSchema,
+  updateUserSchema,
+  verifyOtpSchema,
+} from '../validation/schemas';
 
 const router = Router();
 
@@ -20,6 +26,8 @@ const loginLimiter = rateLimit({
 
 // Public
 router.post('/login', loginLimiter, validate(loginSchema), asyncHandler(AuthController.login));
+router.post('/request-otp', loginLimiter, validate(requestOtpSchema), asyncHandler(AuthController.requestOtp));
+router.post('/verify-otp', loginLimiter, validate(verifyOtpSchema), asyncHandler(AuthController.verifyOtp));
 router.post('/refresh', asyncHandler(AuthController.refresh));
 
 // Protected
@@ -40,6 +48,7 @@ router.put(
   validate(updateUserSchema),
   asyncHandler(AuthController.updateUser),
 );
+router.post('/users/:id/unlock-otp', authenticate, requireRole('ADMIN'), asyncHandler(AuthController.unlockOtp));
 router.delete('/users/:id', authenticate, requireRole('ADMIN'), asyncHandler(AuthController.deleteUser));
 
 export default router;

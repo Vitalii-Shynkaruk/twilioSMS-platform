@@ -25,6 +25,8 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().default(''),
   TWILIO_AUTH_TOKEN: z.string().default(''),
   TWILIO_MESSAGING_SERVICE_SID: z.string().default(''),
+  RESEND_API_KEY: z.string().default(''),
+  RESEND_FROM_EMAIL: z.string().default(''),
   AI_CLASSIFICATION_ENABLED: z.string().default('false'),
 
   WEBHOOK_BASE_URL: z.string().default('http://localhost:3001'),
@@ -70,7 +72,9 @@ function isLocalUrl(raw: string): boolean {
   }
 }
 
-export function getProductionEnvValidationIssues(parsedEnv: Pick<ParsedEnv, 'NODE_ENV' | 'CLIENT_URL' | 'WEBHOOK_BASE_URL'>): string[] {
+export function getProductionEnvValidationIssues(
+  parsedEnv: Pick<ParsedEnv, 'NODE_ENV' | 'CLIENT_URL' | 'WEBHOOK_BASE_URL'>,
+): string[] {
   if (parsedEnv.NODE_ENV !== 'production') {
     return [];
   }

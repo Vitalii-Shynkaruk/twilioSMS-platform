@@ -7,6 +7,9 @@ export interface User {
   lastName: string;
   role: 'ADMIN' | 'MANAGER' | 'REP';
   isActive?: boolean;
+  mobilePhone?: string | null;
+  hotAlertsEnabled?: boolean;
+  otpLockedUntil?: string | null;
   lastLoginAt?: string;
   createdAt?: string;
 }
@@ -84,6 +87,10 @@ export interface Conversation {
   followupSetAt?: string | null;
   followupStatus?: 'scheduled' | 'due_now' | 'completed' | 'cleared' | null;
   emailReceived?: boolean;
+  emailRecipient?: string | null;
+  emailRecipientSource?: 'TEXTED' | 'LEAD' | 'CONTACT' | 'NONE' | null;
+  textedEmail?: string | null;
+  leadListEmail?: string | null;
   notes?: ConversationNote[];
   deals?: Array<{
     id: string;
@@ -109,6 +116,9 @@ export interface Conversation {
   };
   contactInfo?: {
     email?: string;
+    emailSource?: 'TEXTED' | 'LEAD' | 'CONTACT' | 'NONE';
+    textedEmail?: string;
+    leadListEmail?: string;
     phone?: string;
     company?: string;
     source?: string;

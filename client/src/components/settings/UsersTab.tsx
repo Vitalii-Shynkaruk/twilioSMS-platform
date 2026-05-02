@@ -1,11 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
-import { Plus, Edit3, Trash2, X } from 'lucide-react';
+import { Plus, Edit3, Trash2, X, UnlockKeyhole } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { PHASE1_LEAN } from '../../config/featureFlags';
+import { useAuthStore } from '../../stores/authStore';
+
+function isOtpLocked(user: any) {
+  return !!user.otpLockedUntil && new Date(user.otpLockedUntil) > new Date();
+}
 
 export default function UsersTab() {
   const [showCreate, setShowCreate] = useState(false);
@@ -14,6 +19,7 @@ export default function UsersTab() {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; user: any } | null>(null);
   const ctxRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const currentUser = useAuthStore((state) => state.user);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -39,6 +45,16 @@ export default function UsersTab() {
       setDeletingUser(null);
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to delete'),
+  });
+
+  const unlockOtpMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/auth/users/${id}/unlock-otp`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('OTP lock cleared');
+      setCtxMenu(null);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to clear OTP lock'),
   });
 
   const users = data?.users || [];
@@ -76,6 +92,9 @@ export default function UsersTab() {
             </div>
             <div className="flex items-center gap-2">
               {!user.isActive && <span className="badge bg-red-500/20 text-red-300 text-[10px]">Disabled</span>}
+              {isOtpLocked(user) && (
+                <span className="badge bg-amber-500/20 text-amber-300 text-[10px]">OTP Locked</span>
+              )}
               <span
                 className={clsx(
                   'badge text-[10px]',
@@ -88,6 +107,17 @@ export default function UsersTab() {
               >
                 {user.role}
               </span>
+              {currentUser?.role === 'ADMIN' && isOtpLocked(user) && (
+                <button
+                  onClick={() => unlockOtpMutation.mutate(user.id)}
+                  className="btn-ghost p-1.5 transition-opacity text-amber-300 hover:text-amber-200"
+                  title="Clear OTP lock"
+                  aria-label={`Clear OTP lock for ${user.firstName} ${user.lastName}`}
+                  disabled={unlockOtpMutation.isPending}
+                >
+                  <UnlockKeyhole className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button onClick={() => setEditingUser(user)} className="btn-ghost p-1.5 transition-opacity" title="Edit">
                 <Edit3 className="w-3.5 h-3.5 text-dark-400" />
               </button>
@@ -128,6 +158,15 @@ export default function UsersTab() {
           >
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
+          {currentUser?.role === 'ADMIN' && isOtpLocked(ctxMenu.user) && (
+            <button
+              onClick={() => unlockOtpMutation.mutate(ctxMenu.user.id)}
+              className="w-full text-left px-4 py-2 text-sm text-amber-300 hover:bg-dark-700 flex items-center gap-2"
+              disabled={unlockOtpMutation.isPending}
+            >
+              <UnlockKeyhole className="w-3.5 h-3.5" /> Clear OTP lock
+            </button>
+          )}
         </div>
       )}
 

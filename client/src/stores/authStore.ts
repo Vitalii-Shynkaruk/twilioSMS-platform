@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import { User } from '../types';
 import api from '../services/api';
 
+export type OtpChannel = 'sms' | 'email';
+
+export interface RequestOtpResponse {
+  channel: 'SMS' | 'EMAIL';
+  maskedDestination: string;
+  expiresInSeconds: number;
+  retryAfterSeconds?: number;
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -10,8 +19,27 @@ interface AuthState {
   isLoginLoading: boolean;
   initialized: boolean;
   login: (email: string, password: string) => Promise<void>;
+  requestOtp: (email: string, channel?: OtpChannel) => Promise<RequestOtpResponse>;
+  verifyOtp: (email: string, code: string) => Promise<User>;
   logout: () => void;
   checkAuth: () => Promise<void>;
+}
+
+function persistSession(
+  data: { token: string; refreshToken: string; user: User },
+  set: (state: Partial<AuthState>) => void,
+) {
+  localStorage.setItem('scl_token', data.token);
+  localStorage.setItem('scl_refresh_token', data.refreshToken);
+  localStorage.setItem('scl_user', JSON.stringify(data.user));
+  set({
+    user: data.user,
+    token: data.token,
+    isAuthenticated: true,
+    isLoading: false,
+    isLoginLoading: false,
+    initialized: true,
+  });
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -26,17 +54,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoginLoading: true });
     try {
       const { data } = await api.post('/auth/login', { email, password });
-      localStorage.setItem('scl_token', data.token);
-      localStorage.setItem('scl_refresh_token', data.refreshToken);
-      localStorage.setItem('scl_user', JSON.stringify(data.user));
-      set({
-        user: data.user,
-        token: data.token,
-        isAuthenticated: true,
-        isLoading: false,
-        isLoginLoading: false,
-        initialized: true,
+      persistSession(data, set);
+    } catch (err) {
+      set({ isLoginLoading: false });
+      throw err;
+    }
+  },
+
+  requestOtp: async (email: string, channel: OtpChannel = 'sms') => {
+    set({ isLoginLoading: true });
+    try {
+      const { data } = await api.post<RequestOtpResponse>('/auth/request-otp', { email, channel });
+      set({ isLoginLoading: false });
+      return data;
+    } catch (err) {
+      set({ isLoginLoading: false });
+      throw err;
+    }
+  },
+
+  verifyOtp: async (email: string, code: string) => {
+    set({ isLoginLoading: true });
+    try {
+      const { data } = await api.post<{ token: string; refreshToken: string; user: User }>('/auth/verify-otp', {
+        email,
+        code,
       });
+      persistSession(data, set);
+      return data.user;
     } catch (err) {
       set({ isLoginLoading: false });
       throw err;
@@ -59,20 +104,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkAuth: async () => {
     // Prevent multiple calls
     if (get().initialized) return;
-    
+
     const token = localStorage.getItem('scl_token');
     const userStr = localStorage.getItem('scl_user');
-    
+
     if (token && userStr) {
       try {
         // Verify token is still valid with the server
         const { data } = await api.get('/auth/me', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        set({ 
-          user: data.user, 
-          token, 
-          isAuthenticated: true, 
+        set({
+          user: data.user,
+          token,
+          isAuthenticated: true,
           isLoading: false,
           initialized: true,
         });

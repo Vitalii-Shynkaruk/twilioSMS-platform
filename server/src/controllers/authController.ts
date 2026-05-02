@@ -1,13 +1,37 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { OtpChannel } from '@prisma/client';
 import prisma from '../config/database';
 import { config } from '../config';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, invalidateUserCache } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import logger, { authLogger } from '../config/logger';
+import { AuthOtpService, OtpInvalidCodeError, OtpLockedError, OtpRateLimitError } from '../services/authOtpService';
 
 export class AuthController {
+  private static createSession(user: { id: string; email: string; firstName: string; lastName: string; role: string }) {
+    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, config.jwt.secret, {
+      expiresIn: config.jwt.expiresIn,
+    } as jwt.SignOptions);
+
+    const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, config.jwt.refreshSecret, {
+      expiresIn: config.jwt.refreshExpiresIn,
+    } as jwt.SignOptions);
+
+    return {
+      token,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+      },
+    };
+  }
+
   static async login(req: AuthRequest, res: Response): Promise<void> {
     const { email, password } = req.body;
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
@@ -41,14 +65,6 @@ export class AuthController {
       throw new AppError('Invalid credentials', 401);
     }
 
-    const token = jwt.sign({ userId: user.id, email: user.email, role: user.role }, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
-    } as jwt.SignOptions);
-
-    const refreshToken = jwt.sign({ userId: user.id, type: 'refresh' }, config.jwt.refreshSecret, {
-      expiresIn: config.jwt.refreshExpiresIn,
-    } as jwt.SignOptions);
-
     // Update last login
     await prisma.user.update({
       where: { id: user.id },
@@ -63,17 +79,83 @@ export class AuthController {
       ip,
     });
 
-    res.json({
-      token,
-      refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-      },
-    });
+    res.json(AuthController.createSession(user));
+  }
+
+  static async requestOtp(req: AuthRequest, res: Response): Promise<void> {
+    const { email, channel } = req.body;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    const requestId = req.requestId || '-';
+
+    try {
+      const result = await AuthOtpService.requestOtp({
+        email,
+        channel: channel as OtpChannel,
+        requestId,
+        ip,
+        userAgent,
+      });
+
+      res.json({
+        message: 'Sign-in code sent',
+        channel: result.channel,
+        maskedDestination: result.maskedDestination,
+        expiresInSeconds: result.expiresInSeconds,
+      });
+    } catch (error) {
+      if (error instanceof OtpRateLimitError) {
+        res.status(429).json({
+          error: error.message,
+          retryAfterSeconds: error.retryAfterSeconds,
+          retryAt: error.retryAt.toISOString(),
+        });
+        return;
+      }
+
+      if (error instanceof OtpLockedError) {
+        res.status(423).json({
+          error: error.message,
+          retryAfterSeconds: error.retryAfterSeconds,
+          lockedUntil: error.lockedUntil.toISOString(),
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  static async verifyOtp(req: AuthRequest, res: Response): Promise<void> {
+    const { email, code } = req.body;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const requestId = req.requestId || '-';
+
+    try {
+      const user = await AuthOtpService.verifyOtp({ email, code, requestId, ip });
+      await invalidateUserCache(user.id);
+
+      res.json(AuthController.createSession(user));
+    } catch (error) {
+      if (error instanceof OtpLockedError) {
+        res.status(423).json({
+          error: error.message,
+          retryAfterSeconds: error.retryAfterSeconds,
+          lockedUntil: error.lockedUntil.toISOString(),
+        });
+        return;
+      }
+
+      if (error instanceof OtpInvalidCodeError) {
+        res.status(401).json({
+          error: error.message,
+          attemptsRemaining: error.attemptsRemaining,
+        });
+        return;
+      }
+
+      throw error;
+    }
   }
 
   static async register(req: AuthRequest, res: Response): Promise<void> {
@@ -226,6 +308,7 @@ export class AuthController {
         isActive: true,
         mobilePhone: true,
         hotAlertsEnabled: true,
+        otpLockedUntil: true,
         lastLoginAt: true,
         createdAt: true,
       },
@@ -272,6 +355,7 @@ export class AuthController {
         isActive: true,
         mobilePhone: true,
         hotAlertsEnabled: true,
+        otpLockedUntil: true,
       },
     });
 
@@ -284,6 +368,28 @@ export class AuthController {
     });
 
     res.json({ user });
+  }
+
+  static async unlockOtp(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const requestId = req.requestId || '-';
+
+    const target = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
+    if (!target) {
+      throw new AppError('User not found', 404);
+    }
+
+    await AuthOtpService.unlockUser(id);
+    await invalidateUserCache(id);
+
+    authLogger.info('OTP lock cleared by admin', {
+      requestId,
+      targetUserId: id,
+      targetEmail: target.email,
+      unlockedBy: req.user?.id,
+    });
+
+    res.json({ message: 'OTP lock cleared' });
   }
 
   // PUT /auth/change-password - Self-service password change

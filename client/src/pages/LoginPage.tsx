@@ -1,59 +1,116 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../stores/authStore';
-import { Shield, LogIn, Eye, EyeOff, Lock } from 'lucide-react';
-import { useThemeStore } from '../stores/themeStore';
+import { OtpChannel, useAuthStore } from '../stores/authStore';
+import { KeyRound, Mail, RefreshCw, Send, Shield, Smartphone } from 'lucide-react';
+
+type LoginStep = 'email' | 'code';
+
+function formatCountdown(seconds: number) {
+  const safeSeconds = Math.max(0, seconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = safeSeconds % 60;
+  return `${minutes}:${remainder.toString().padStart(2, '0')}`;
+}
+
+function getRedirectPath(role?: string) {
+  return role === 'REP' ? '/pipeline' : '/command-center';
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<LoginStep>('email');
+  const [channel, setChannel] = useState<OtpChannel>('sms');
+  const [maskedDestination, setMaskedDestination] = useState('');
+  const [expiresRemaining, setExpiresRemaining] = useState(0);
+  const [resendRemaining, setResendRemaining] = useState(0);
   const [error, setError] = useState('');
-  const { login, isLoginLoading, isAuthenticated } = useAuthStore();
+  const { requestOtp, verifyOtp, isLoginLoading, isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/', { replace: true });
+      navigate(getRedirectPath(user?.role), { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, user?.role]);
+
+  useEffect(() => {
+    if (expiresRemaining <= 0 && resendRemaining <= 0) return;
+    const intervalId = window.setInterval(() => {
+      setExpiresRemaining((value) => Math.max(0, value - 1));
+      setResendRemaining((value) => Math.max(0, value - 1));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [expiresRemaining, resendRemaining]);
+
+  const parseOtpError = (err: any, fallback: string) => {
+    const response = err?.response?.data;
+    if (response?.retryAfterSeconds) {
+      setResendRemaining(Math.max(1, Number(response.retryAfterSeconds)));
+    }
+    if (err?.response?.status >= 500) {
+      return 'Sign-in service is temporarily unavailable. Please try again.';
+    }
+    return response?.error || err.message || fallback;
+  };
+
+  const sendCode = async (nextChannel: OtpChannel = 'sms') => {
+    setError('');
+    const normalizedEmail = email.trim().toLowerCase();
+    setEmail(normalizedEmail);
+
+    try {
+      const response = await requestOtp(normalizedEmail, nextChannel);
+      setChannel(nextChannel);
+      setMaskedDestination(response.maskedDestination);
+      setExpiresRemaining(response.expiresInSeconds || 300);
+      setResendRemaining(60);
+      setCode('');
+      setStep('code');
+    } catch (err: any) {
+      setError(parseOtpError(err, 'Unable to send sign-in code'));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+
+    if (step === 'email') {
+      await sendCode('sms');
+      return;
+    }
+
     try {
-      await login(email, password);
-      navigate('/', { replace: true });
+      const signedInUser = await verifyOtp(email.trim().toLowerCase(), code);
+      navigate(getRedirectPath(signedInUser.role), { replace: true });
     } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Invalid credentials';
-      setError(msg);
+      setError(parseOtpError(err, 'Invalid or expired sign-in code'));
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden" style={{ backgroundColor: '#060d1b' }}>
-      {/* Background effects */}
+    <main
+      className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
+      style={{ backgroundColor: '#070b14' }}
+    >
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Primary gradient orb */}
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-scl-600/8 rounded-full blur-[150px]" />
-        {/* Secondary accent */}
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-scl-800/10 rounded-full blur-[120px]" />
-        <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-scl-700/8 rounded-full blur-[100px]" />
-        {/* Subtle grid pattern */}
         <div
-          className="absolute inset-0 opacity-[0.03]"
+          className="absolute inset-0 opacity-[0.04]"
           style={{
-            backgroundImage: 'linear-gradient(rgba(76, 99, 230, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(76, 99, 230, 0.3) 1px, transparent 1px)',
+            backgroundImage:
+              'linear-gradient(rgba(184, 150, 62, 0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(184, 150, 62, 0.4) 1px, transparent 1px)',
             backgroundSize: '60px 60px',
           }}
         />
       </div>
 
       <div className="w-full max-w-md relative z-10">
-        {/* Logo & Branding */}
         <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-scl-500 to-scl-700 mb-5 shadow-scl-lg">
+          <div
+            className="inline-flex items-center justify-center w-16 h-16 rounded-lg mb-5"
+            style={{ backgroundColor: '#b8963e' }}
+          >
             <Shield className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight" style={{ color: '#dce4ef' }}>
@@ -64,27 +121,42 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Form Card */}
-        <div className="rounded-2xl border p-8 backdrop-blur-sm" style={{
-          backgroundColor: 'rgba(20, 32, 56, 0.8)',
-          borderColor: 'rgba(40, 59, 82, 0.5)',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 80px rgba(76, 99, 230, 0.06)',
-        }}>
+        <section
+          className="rounded-lg border p-8 backdrop-blur-sm"
+          style={{
+            backgroundColor: 'rgba(20, 32, 56, 0.8)',
+            borderColor: 'rgba(40, 59, 82, 0.5)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+          }}
+        >
           <div className="flex items-center gap-2 mb-6">
-            <Lock className="w-4 h-4" style={{ color: '#4e6a8a' }} />
-            <h2 className="text-lg font-semibold" style={{ color: '#b8c9df' }}>Sign in to your account</h2>
+            {step === 'email' ? (
+              <Smartphone className="w-4 h-4" style={{ color: '#b8963e' }} />
+            ) : (
+              <KeyRound className="w-4 h-4" style={{ color: '#b8963e' }} />
+            )}
+            <h2 className="text-lg font-semibold" style={{ color: '#b8c9df' }}>
+              {step === 'email' ? 'Sign in with a code' : 'Enter your sign-in code'}
+            </h2>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">
+            <div
+              id="login-error"
+              aria-live="polite"
+              className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300"
+            >
               {error}
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: '#6b87a8' }}>Email</label>
+              <label htmlFor="login-email" className="block text-sm font-medium mb-1.5" style={{ color: '#6b87a8' }}>
+                Email
+              </label>
               <input
+                id="login-email"
                 type="email"
                 className="input"
                 value={email}
@@ -92,48 +164,115 @@ export default function LoginPage() {
                 placeholder="admin@securecreditlines.com"
                 required
                 autoFocus
+                autoComplete="email"
+                disabled={step === 'code'}
+                aria-invalid={!!error && step === 'email'}
+                aria-describedby={error && step === 'email' ? 'login-error' : undefined}
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: '#6b87a8' }}>Password</label>
-              <div className="relative">
+            {step === 'code' && (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label htmlFor="login-code" className="block text-sm font-medium" style={{ color: '#6b87a8' }}>
+                    6-digit code
+                  </label>
+                  <span className="text-xs" style={{ color: '#6b87a8' }}>
+                    {formatCountdown(expiresRemaining)}
+                  </span>
+                </div>
                 <input
-                  type={showPw ? 'text' : 'password'}
-                  className="input pr-10"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  id="login-code"
+                  type="text"
+                  className="input text-center tracking-[0.4em] font-mono"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
                   required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  aria-invalid={!!error && step === 'code'}
+                  aria-describedby={error && step === 'code' ? 'login-error' : undefined}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-500 hover:text-dark-300 transition-colors"
-                >
-                  {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                <p className="text-xs mt-2" style={{ color: '#4e6a8a' }}>
+                  Sent to {maskedDestination}
+                </p>
               </div>
-            </div>
+            )}
 
             <button
               type="submit"
-              disabled={isLoginLoading || !email || !password}
+              disabled={isLoginLoading || !email || (step === 'code' && code.length !== 6)}
               className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-semibold text-sm text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                background: 'linear-gradient(135deg, #4c63e6 0%, #2f3fb3 100%)',
-                boxShadow: '0 4px 14px rgba(76, 99, 230, 0.35)',
+                backgroundColor: '#b8963e',
+                boxShadow: '0 4px 14px rgba(184, 150, 62, 0.25)',
               }}
             >
               {isLoginLoading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <LogIn className="w-4 h-4" />
-                  Sign In
+                  {step === 'email' ? <Send className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}
+                  {step === 'email' ? 'Send code' : 'Verify code'}
                 </>
               )}
             </button>
+
+            {step === 'email' && (
+              <button
+                type="button"
+                onClick={() => sendCode('email')}
+                disabled={isLoginLoading || !email}
+                className="w-full flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ color: '#8ea6c4' }}
+              >
+                <Mail className="w-4 h-4" />
+                Lost access to your phone? Use email instead
+              </button>
+            )}
+
+            {step === 'code' && (
+              <div className="flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => sendCode(channel)}
+                  disabled={isLoginLoading || resendRemaining > 0}
+                  className="w-full flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ color: '#8ea6c4' }}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {resendRemaining > 0 ? `Resend in ${formatCountdown(resendRemaining)}` : 'Resend code'}
+                </button>
+
+                {channel === 'sms' && (
+                  <button
+                    type="button"
+                    onClick={() => sendCode('email')}
+                    disabled={isLoginLoading}
+                    className="w-full flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ color: '#8ea6c4' }}
+                  >
+                    <Mail className="w-4 h-4" />
+                    Lost access to your phone? Use email instead
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('email');
+                    setCode('');
+                    setError('');
+                    setMaskedDestination('');
+                  }}
+                  className="text-xs font-medium transition-colors"
+                  style={{ color: '#4e6a8a' }}
+                >
+                  Change email
+                </button>
+              </div>
+            )}
           </form>
 
           <div className="mt-6 pt-4 border-t" style={{ borderColor: 'rgba(40, 59, 82, 0.5)' }}>
@@ -141,12 +280,12 @@ export default function LoginPage() {
               Contact your administrator if you need access
             </p>
           </div>
-        </div>
+        </section>
 
         <p className="text-xs text-center mt-8" style={{ color: '#283b52' }}>
           &copy; {new Date().getFullYear()} Secure Credit Lines. All rights reserved.
         </p>
       </div>
-    </div>
+    </main>
   );
 }

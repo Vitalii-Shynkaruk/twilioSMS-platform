@@ -21,6 +21,11 @@ enum UserRole {
   REP
 }
 
+enum OtpChannel {
+  SMS
+  EMAIL
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -44,6 +49,10 @@ model User {
   mobilePhone        String?   // E.164 format, set by admin in Settings
   hotAlertsEnabled   Boolean   @default(true)
 
+  otpFailedAttempts         Int       @default(0)
+  otpFailedWindowStartedAt  DateTime?
+  otpLockedUntil            DateTime?
+
   // Relations
   assignedLeads     Lead[]
   conversations     Conversation[]
@@ -58,10 +67,32 @@ model User {
   dealEvents        DealEvent[]
   fundingEvents     FundingEvent[]
   renewalTasks      RenewalTask[]
+  loginOtps         LoginOtp[]
 
   @@index([email])
   @@index([role, isActive])
   @@map("users")
+}
+
+model LoginOtp {
+  id                 String      @id @default(cuid())
+  userId             String
+  channel            OtpChannel
+  destinationKey     String
+  destinationMasked  String
+  codeHash           String
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  invalidatedAt      DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, channel, createdAt])
+  @@index([channel, destinationKey, createdAt])
+  @@index([expiresAt])
+  @@map("login_otps")
 }
 
 // ============================================

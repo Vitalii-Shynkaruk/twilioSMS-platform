@@ -83,6 +83,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   const [showChangePassword, setShowChangePassword] = useState(false);
   const commandInputRef = useRef<HTMLInputElement>(null);
   const isInboxRoute = location.pathname.startsWith('/inbox');
+  const isCampaignsPrototypeRoute = location.pathname === '/campaigns';
 
   // Auto-collapse sidebar on Pipeline / Command Center for maximum content visibility
   useEffect(() => {
@@ -443,7 +444,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >
       {/* Mobile overlay */}
-      {mobileOpen && (
+      {mobileOpen && !isCampaignsPrototypeRoute && (
         <div
           className="fixed inset-0 z-[140] bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
@@ -451,56 +452,62 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       )}
 
       {/* Sidebar — Desktop */}
-      <aside
-        className={clsx(
-          'hidden lg:flex flex-col border-r transition-all duration-300',
-          collapsed ? 'w-14' : 'w-[260px]',
-        )}
-        style={{
-          backgroundColor: 'var(--scl-sidebar)',
-          borderColor: 'var(--scl-border)',
-        }}
-      >
-        {sidebarContent}
-      </aside>
-
-      {/* Sidebar — Mobile */}
-      <aside
-        className={clsx(
-          'fixed inset-y-0 left-0 z-[150] flex flex-col w-[280px] border-r transition-transform duration-300 lg:hidden',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full',
-        )}
-        style={{
-          backgroundColor: 'var(--scl-sidebar)',
-          borderColor: 'var(--scl-border)',
-        }}
-      >
-        {sidebarContent}
-      </aside>
-
-      {/* Main content */}
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        {/* Mobile top bar */}
-        <div
-          className="sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b lg:hidden"
+      {!isCampaignsPrototypeRoute && (
+        <aside
+          className={clsx(
+            'hidden lg:flex flex-col border-r transition-all duration-300',
+            collapsed ? 'w-14' : 'w-[260px]',
+          )}
           style={{
             backgroundColor: 'var(--scl-sidebar)',
             borderColor: 'var(--scl-border)',
           }}
         >
-          <button onClick={() => setMobileOpen(true)} className="p-1.5 -ml-1" style={{ color: 'var(--text-muted)' }}>
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="flex items-center gap-2 flex-1">
-            <Shield className="w-5 h-5 text-scl-500" />
-            <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-              SCL
-            </span>
+          {sidebarContent}
+        </aside>
+      )}
+
+      {/* Sidebar — Mobile */}
+      {!isCampaignsPrototypeRoute && (
+        <aside
+          className={clsx(
+            'fixed inset-y-0 left-0 z-[150] flex flex-col w-[280px] border-r transition-transform duration-300 lg:hidden',
+            mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          )}
+          style={{
+            backgroundColor: 'var(--scl-sidebar)',
+            borderColor: 'var(--scl-border)',
+          }}
+        >
+          {sidebarContent}
+        </aside>
+      )}
+
+      {/* Main content */}
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        {/* Mobile top bar */}
+        {!isCampaignsPrototypeRoute && (
+          <div
+            className="sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b lg:hidden"
+            style={{
+              backgroundColor: 'var(--scl-sidebar)',
+              borderColor: 'var(--scl-border)',
+            }}
+          >
+            <button onClick={() => setMobileOpen(true)} className="p-1.5 -ml-1" style={{ color: 'var(--text-muted)' }}>
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 flex-1">
+              <Shield className="w-5 h-5 text-scl-500" />
+              <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                SCL
+              </span>
+            </div>
+            <button onClick={() => setCommandOpen(true)} className="p-1.5" style={{ color: 'var(--text-muted)' }}>
+              <Search className="w-5 h-5" />
+            </button>
           </div>
-          <button onClick={() => setCommandOpen(true)} className="p-1.5" style={{ color: 'var(--text-muted)' }}>
-            <Search className="w-5 h-5" />
-          </button>
-        </div>
+        )}
         <div className="flex-1 min-h-0 overflow-auto">{children || <Outlet />}</div>
       </main>
 

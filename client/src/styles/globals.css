@@ -437,11 +437,11 @@
 
 /* ─── SCL Auth Screen ─── */
 .scl-auth {
-  --auth-bg: #030812;
-  --auth-panel: rgba(7, 17, 32, 0.82);
-  --auth-panel-soft: rgba(13, 30, 53, 0.68);
-  --auth-border: rgba(64, 100, 145, 0.28);
-  --auth-border-strong: rgba(82, 137, 207, 0.48);
+  --auth-bg: #020711;
+  --auth-panel: rgba(5, 14, 29, 0.84);
+  --auth-panel-soft: rgba(11, 27, 50, 0.62);
+  --auth-border: rgba(70, 104, 148, 0.26);
+  --auth-border-strong: rgba(82, 137, 207, 0.52);
   --auth-blue: #0b56cf;
   --auth-blue-bright: #1684ff;
   --auth-gold: #d5a84a;
@@ -452,10 +452,12 @@
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 18%, rgba(26, 111, 224, 0.12), transparent 26%),
-    linear-gradient(116deg, rgba(5, 18, 36, 0.9) 0%, rgba(3, 8, 18, 0.97) 43%, rgba(10, 9, 8, 0.95) 100%),
-    repeating-linear-gradient(90deg, rgba(47, 86, 134, 0.055) 0 1px, transparent 1px 92px),
-    repeating-linear-gradient(0deg, rgba(47, 86, 134, 0.04) 0 1px, transparent 1px 82px),
+    radial-gradient(circle at 50% 24%, rgba(26, 111, 224, 0.16), transparent 18%),
+    radial-gradient(circle at 96% 6%, rgba(213, 168, 74, 0.16), transparent 22%),
+    radial-gradient(circle at 0% 95%, rgba(14, 95, 190, 0.24), transparent 28%),
+    linear-gradient(116deg, rgba(3, 13, 28, 0.98) 0%, rgba(2, 7, 17, 0.985) 48%, rgba(11, 9, 7, 0.98) 100%),
+    repeating-linear-gradient(90deg, rgba(47, 86, 134, 0.032) 0 1px, transparent 1px 92px),
+    repeating-linear-gradient(0deg, rgba(47, 86, 134, 0.028) 0 1px, transparent 1px 82px),
     var(--auth-bg);
   color: var(--auth-text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -467,7 +469,7 @@
   position: absolute;
   inset: 18px;
   pointer-events: none;
-  border: 1px solid rgba(45, 88, 142, 0.17);
+  border: 1px solid rgba(45, 88, 142, 0.16);
 }
 
 .scl-auth::before {
@@ -475,7 +477,7 @@
 }
 
 .scl-auth::after {
-  border-color: rgba(212, 166, 77, 0.18);
+  border-color: rgba(212, 166, 77, 0.28);
   clip-path: polygon(84% 0, 100% 0, 100% 32%, 90% 32%, 90% 100%, 67% 100%, 67% 97%, 88% 97%, 88% 30%, 98% 30%, 98% 2%, 84% 2%);
 }
 
@@ -486,9 +488,9 @@
 }
 
 .scl-auth__edge--top {
-  top: 20px;
-  left: 7%;
-  width: 26%;
+  top: 19px;
+  left: 4.8%;
+  width: 31%;
   height: 2px;
   background: linear-gradient(90deg, transparent, rgba(31, 132, 255, 0.72), rgba(212, 166, 77, 0.45), transparent);
 }
@@ -504,22 +506,22 @@
 }
 
 .scl-auth__edge--bottom {
-  right: 10%;
-  bottom: 18px;
-  width: 31%;
+  right: 7.8%;
+  bottom: 19px;
+  width: 34%;
   height: 3px;
   background: linear-gradient(90deg, transparent, rgba(212, 166, 77, 0.7), rgba(212, 166, 77, 0.34), transparent);
 }
 
 .scl-auth__ghost-mark {
   position: absolute;
-  left: 22px;
-  top: 15%;
+  left: 31px;
+  top: 12%;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   color: transparent;
   -webkit-text-stroke: 1px rgba(40, 78, 128, 0.12);
-  font-size: clamp(8rem, 16vw, 18rem);
+  font-size: clamp(9rem, 17vw, 19rem);
   font-weight: 800;
   letter-spacing: 0.08em;
   line-height: 0.78;
@@ -534,8 +536,8 @@
   min-height: 100vh;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 38px 18px 10px;
+  justify-content: flex-start;
+  padding: 116px 18px 18px;
 }
 
 .scl-auth__brand {
@@ -548,22 +550,23 @@
   display: inline-flex;
   align-items: baseline;
   justify-content: center;
-  gap: 2px;
+  gap: 9px;
   color: transparent;
-  font-size: clamp(3.7rem, 8vw, 5.7rem);
+  font-size: clamp(4.35rem, 8.1vw, 6rem);
   font-style: italic;
   font-weight: 900;
-  letter-spacing: -0.14em;
+  letter-spacing: -0.18em;
   line-height: 0.8;
-  text-shadow: 0 0 19px rgba(31, 132, 255, 0.28), 0 0 3px rgba(255, 255, 255, 0.48);
+  filter: drop-shadow(0 0 12px rgba(24, 126, 255, 0.24));
+  text-shadow: 0 0 18px rgba(31, 132, 255, 0.3), 0 0 3px rgba(255, 255, 255, 0.52);
 }
 
 .scl-auth__wordmark::after {
   content: "";
   position: absolute;
   left: 50%;
-  top: calc(100% + 11px);
-  width: 168px;
+  top: calc(100% + 10px);
+  width: 184px;
   height: 3px;
   transform: translateX(-50%);
   border-radius: 999px;
@@ -572,10 +575,12 @@
 }
 
 .scl-auth__wordmark span {
+  display: inline-block;
   background: linear-gradient(180deg, #ffffff 0%, #dbe6f4 34%, #8b9db5 62%, #f5f8ff 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  transform: skewX(-13deg) scaleX(1.24);
 }
 
 .scl-auth__wordmark span:last-child {
@@ -583,12 +588,13 @@
   -webkit-background-clip: text;
   background-clip: text;
   text-shadow: 0 0 16px rgba(212, 166, 77, 0.34);
+  transform: skewX(-13deg) scaleX(1.18);
 }
 
 .scl-auth__brand-subtitle {
-  margin-top: 8px;
+  margin-top: 6px;
   color: rgba(218, 229, 244, 0.62);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.58em;
   text-transform: uppercase;
@@ -618,14 +624,14 @@
 
 .scl-auth__panel {
   width: min(100%, 480px);
-  margin-top: 27px;
-  padding: 35px 36px 30px;
+  margin-top: 26px;
+  padding: 34px 36px 28px;
   border: 1px solid var(--auth-border);
-  border-radius: 14px;
+  border-radius: 13px;
   background:
     linear-gradient(180deg, rgba(14, 31, 56, 0.76), rgba(6, 16, 31, 0.86)),
     var(--auth-panel);
-  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  box-shadow: 0 24px 76px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.045);
   backdrop-filter: blur(18px);
 }
 
@@ -699,8 +705,8 @@
   margin-top: 9px;
   padding: 0 14px;
   border: 1px solid rgba(49, 77, 115, 0.52);
-  border-radius: 6px;
-  background: rgba(4, 12, 24, 0.72);
+  border-radius: 5px;
+  background: rgba(4, 11, 22, 0.72);
   box-shadow: inset 0 0 20px rgba(3, 9, 18, 0.34);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
@@ -758,7 +764,7 @@
   width: 100%;
   min-height: 48px;
   margin-top: 4px;
-  border-radius: 6px;
+  border-radius: 5px;
   background: linear-gradient(180deg, #106ef5 0%, #0b48bd 52%, #07368c 100%);
   color: rgba(241, 247, 255, 0.92);
   font-size: 0.83rem;
@@ -870,7 +876,7 @@
 }
 
 .scl-auth__footer {
-  margin-top: 12px;
+  margin-top: 51px;
   color: rgba(90, 111, 145, 0.64);
   font-size: 0.72rem;
   font-weight: 800;
@@ -892,6 +898,10 @@
   .scl-auth__shell {
     justify-content: flex-start;
     padding-top: 58px;
+  }
+
+  .scl-auth__wordmark {
+    letter-spacing: -0.17em;
   }
 
   .scl-auth__headline {
@@ -917,5 +927,472 @@
   .scl-auth__footer {
     margin-top: 46px;
     line-height: 1.8;
+  }
+}
+
+/* ─── M2 Leads/Campaigns Prototype Scope Layer ─── */
+.campaigns-prototype-shell {
+  min-height: 100vh;
+  background: #0a0f1c;
+  color: #f4f6fb;
+}
+
+.campaigns-prototype-topbar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid #2a3550;
+  background: #111827;
+  padding: 0 24px;
+}
+
+.campaigns-prototype-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #f4f6fb;
+  line-height: 1;
+}
+
+.campaigns-prototype-logo {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: #d4af37;
+  color: #0a0f1c;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.campaigns-prototype-brand strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.campaigns-prototype-brand small {
+  display: block;
+  margin-top: 4px;
+  color: #f0c850;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+}
+
+.campaigns-prototype-userbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.campaigns-prototype-toggle,
+.campaigns-prototype-user {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+  background: #111827;
+  color: #a8b3c7;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.campaigns-prototype-toggle {
+  padding: 0 12px;
+}
+
+.campaigns-prototype-toggle--active {
+  border-color: #4a9eff;
+  background: #4a9eff;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(74, 158, 255, 0.28);
+}
+
+.campaigns-prototype-user {
+  gap: 8px;
+  padding: 0 12px 0 4px;
+  color: #f4f6fb;
+}
+
+.campaigns-prototype-user span {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #d4af37;
+  color: #0a0f1c;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.campaigns-prototype-tabs {
+  display: flex;
+  height: 44px;
+  align-items: stretch;
+  gap: 20px;
+  border-bottom: 1px solid #2a3550;
+  background: #111827;
+  padding: 0 24px;
+}
+
+.campaigns-prototype-tabs button {
+  min-width: 80px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #a8b3c7;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.campaigns-prototype-tabs button:hover,
+.campaigns-prototype-tabs button.is-active {
+  border-bottom-color: #4a9eff;
+  color: #4a9eff;
+}
+
+.campaigns-scope {
+  --campaign-bg-0: #0a0f1c;
+  --campaign-bg-1: #111827;
+  --campaign-bg-2: #1a2337;
+  --campaign-bg-3: #232d44;
+  --campaign-border: #2a3550;
+  --campaign-border-soft: rgba(255, 255, 255, 0.06);
+  --campaign-text-1: #f4f6fb;
+  --campaign-text-2: #a8b3c7;
+  --campaign-text-3: #6b7891;
+  --campaign-blue: #4a9eff;
+  --campaign-blue-bright: #5fb0ff;
+  --campaign-gold: #d4af37;
+  --campaign-gold-bright: #f0c850;
+  --campaign-gold-dim: rgba(212, 175, 55, 0.14);
+  --campaign-purple: #a78bfa;
+  --campaign-purple-dim: rgba(167, 139, 250, 0.16);
+  --campaign-green: #34d399;
+  --campaign-orange: #fb923c;
+  --campaign-red: #f87171;
+  max-width: none;
+  min-height: 100%;
+  background: var(--campaign-bg-0);
+  color: var(--campaign-text-1);
+  font-size: 13px;
+}
+
+.campaigns-scope h1 {
+  color: var(--campaign-text-1);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.campaigns-scope h2 {
+  color: var(--campaign-text-1);
+}
+
+.campaigns-scope .text-dark-400,
+.campaigns-scope .text-dark-500 {
+  color: var(--campaign-text-3);
+}
+
+.campaigns-scope .text-dark-100,
+.campaigns-scope .text-dark-200,
+.campaigns-scope .text-dark-300 {
+  color: var(--campaign-text-2);
+}
+
+.campaigns-scope > .flex:first-child {
+  margin-bottom: 20px;
+}
+
+.campaigns-scope .btn-primary {
+  min-height: 34px;
+  border: 1px solid var(--campaign-blue);
+  border-radius: 6px;
+  background: var(--campaign-blue);
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(74, 158, 255, 0.3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.campaigns-scope .btn-primary:hover:not(:disabled) {
+  background: var(--campaign-blue-bright);
+  border-color: var(--campaign-blue-bright);
+}
+
+.campaigns-scope .btn-ghost {
+  min-height: 31px;
+  border: 1px solid var(--campaign-border);
+  border-radius: 5px;
+  background: var(--campaign-bg-2);
+  color: var(--campaign-text-1);
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.campaigns-scope .btn-ghost:hover:not(:disabled) {
+  background: var(--campaign-bg-3);
+  border-color: var(--campaign-text-3);
+}
+
+.campaigns-scope .input {
+  height: 34px;
+  border: 1px solid var(--campaign-border);
+  border-radius: 6px;
+  background: var(--campaign-bg-2);
+  color: var(--campaign-text-1);
+  font-size: 12px;
+  box-shadow: none;
+}
+
+.campaigns-scope .input::placeholder {
+  color: var(--campaign-text-3);
+}
+
+.campaigns-scope .badge {
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.campaigns-scope .card {
+  border: 1px solid var(--campaign-border);
+  border-radius: 8px;
+  background: var(--campaign-bg-1);
+  box-shadow: none;
+}
+
+.campaigns-scope .card-header {
+  border-bottom: 1px solid var(--campaign-border-soft);
+  padding: 16px 18px 14px;
+}
+
+.campaigns-scope .card-body {
+  padding: 0 18px 18px;
+}
+
+.campaigns-scope .campaigns-ai-zone {
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 20px;
+  border-color: var(--campaign-border);
+  border-top: 2px solid var(--campaign-purple);
+  background: linear-gradient(180deg, rgba(167, 139, 250, 0.06) 0%, transparent 100%), var(--campaign-bg-1);
+}
+
+.campaigns-scope .campaigns-ai-zone::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 220px;
+  pointer-events: none;
+  background: radial-gradient(circle at right, var(--campaign-purple-dim) 0%, transparent 70%);
+}
+
+.campaigns-scope .campaigns-ai-zone > * {
+  position: relative;
+  z-index: 1;
+}
+
+.campaigns-scope .campaigns-ai-zone .card-header svg {
+  color: var(--campaign-purple);
+}
+
+.campaigns-scope .campaigns-ai-pulse {
+  width: 8px;
+  height: 8px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--campaign-purple);
+  box-shadow: 0 0 16px rgba(167, 139, 250, 0.72);
+  flex: 0 0 auto;
+}
+
+.campaigns-scope .campaigns-ai-card {
+  border: 1px solid var(--campaign-border);
+  border-radius: 6px;
+  background: var(--campaign-bg-1);
+  padding: 14px 16px;
+  transition: border-color 0.15s ease;
+}
+
+.campaigns-scope .campaigns-ai-card:hover {
+  border-color: var(--campaign-purple);
+}
+
+.campaigns-scope .campaigns-ai-card h3 {
+  color: var(--campaign-text-1);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.campaigns-scope .campaigns-ai-card .grid.grid-cols-3 {
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 5px;
+  background: var(--campaign-bg-2);
+}
+
+.campaigns-scope .campaigns-ai-card .grid.grid-cols-3 > div {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: center;
+}
+
+.campaigns-scope .campaigns-ai-card .campaigns-ai-metrics > div:nth-child(1) p:last-child {
+  color: var(--campaign-gold) !important;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.campaigns-scope .campaigns-ai-card .campaigns-ai-metrics > div:nth-child(2) p:last-child {
+  color: var(--campaign-purple) !important;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.campaigns-scope .campaigns-ai-card .campaigns-ai-metrics > div:nth-child(3) p:last-child {
+  color: var(--campaign-green) !important;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.campaigns-scope .campaigns-ai-card .btn-primary {
+  border-color: var(--campaign-purple);
+  background: var(--campaign-purple);
+  color: #0a0f1c;
+  box-shadow: none;
+}
+
+.campaigns-scope .campaigns-ai-card .btn-primary:hover:not(:disabled) {
+  background: #b89cff;
+  border-color: #b89cff;
+}
+
+.campaigns-scope .campaigns-ai-card p {
+  font-size: 10.5px;
+}
+
+.campaigns-scope .campaigns-ai-card p:nth-of-type(2) {
+  border-left: 2px solid var(--campaign-purple);
+  border-radius: 0 4px 4px 0;
+  background: var(--campaign-bg-2);
+  padding: 9px 11px;
+  color: var(--campaign-text-2);
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.campaigns-scope .table-header {
+  border-bottom: 1px solid var(--campaign-border);
+  background: var(--campaign-bg-2);
+  color: var(--campaign-text-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 10px 14px;
+}
+
+.campaigns-scope .table-cell {
+  border-bottom: 1px solid var(--campaign-border-soft);
+  color: var(--campaign-text-2);
+  font-size: 12px;
+  padding: 14px;
+}
+
+.campaigns-scope .table-row {
+  border-bottom: 0;
+}
+
+.campaigns-scope .table-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.campaigns-scope .font-mono {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+}
+
+@media (min-width: 1024px) {
+  .campaigns-scope {
+    padding: 22px 24px 60px;
+  }
+}
+
+@media (max-width: 767px) {
+  .campaigns-prototype-topbar {
+    min-height: 56px;
+    gap: 10px;
+    padding: 0 12px;
+  }
+
+  .campaigns-prototype-brand {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .campaigns-prototype-brand strong {
+    max-width: 82px;
+    font-size: 12px;
+    line-height: 1.05;
+  }
+
+  .campaigns-prototype-brand small {
+    font-size: 7px;
+    letter-spacing: 0.2em;
+    white-space: nowrap;
+  }
+
+  .campaigns-prototype-userbar {
+    gap: 6px;
+  }
+
+  .campaigns-prototype-toggle {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 10px;
+  }
+
+  .campaigns-prototype-toggle--muted {
+    display: none;
+  }
+
+  .campaigns-prototype-user {
+    min-height: 34px;
+    max-width: 108px;
+    padding-right: 8px;
+    font-size: 10px;
+    line-height: 1.15;
+  }
+
+  .campaigns-prototype-tabs {
+    height: 44px;
+    padding: 0 12px;
+  }
+
+  .campaigns-scope {
+    padding: 14px 12px 32px;
+  }
+
+  .campaigns-scope .campaigns-ai-zone .card-header {
+    gap: 12px;
   }
 }

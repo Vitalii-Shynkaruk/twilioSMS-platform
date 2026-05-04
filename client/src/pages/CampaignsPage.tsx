@@ -25,7 +25,6 @@ import {
   Eye,
   Upload,
   RotateCcw,
-  Sparkles,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -56,6 +55,7 @@ type AiCohort = {
     name: string;
     messageTemplate: string;
   };
+  leadIds?: string[];
   sampleLeads?: Array<{
     id: string;
     firstName: string;
@@ -87,6 +87,7 @@ export default function CampaignsPage() {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; campaign: Campaign } | null>(null);
   const [retargetCampaign, setRetargetCampaign] = useState<Campaign | null>(null);
   const [previewCohortId, setPreviewCohortId] = useState<string | null>(null);
+  const [buildAiCohort, setBuildAiCohort] = useState<AiCohort | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -192,20 +193,6 @@ export default function CampaignsPage() {
     onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to delete'),
   });
 
-  const buildAiCohortMutation = useMutation({
-    mutationFn: (cohort: AiCohort) =>
-      api.post(`/campaigns/ai-cohorts/${cohort.id}/build`, {
-        name: cohort.defaults.name,
-        messageTemplate: cohort.defaults.messageTemplate,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-      queryClient.invalidateQueries({ queryKey: ['campaign-ai-cohorts'] });
-      toast.success('AI cohort campaign created as draft');
-    },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to build AI campaign'),
-  });
-
   const statuses: CampaignStatus[] = ['DRAFT', 'SCHEDULED', 'SENDING', 'PAUSED', 'COMPLETED', 'CANCELLED'];
   const canRetargetCampaign = useCallback(
     (campaign: Campaign) => {
@@ -286,510 +273,561 @@ export default function CampaignsPage() {
     </div>
   );
 
+  const derivedInitials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
+  const initials = derivedInitials || user?.email?.[0]?.toUpperCase() || 'JB';
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Jonathan';
+  const roleLabel = user?.role === 'REP' ? 'Rep view' : 'Admin';
+  const secondaryRoleLabel = user?.role === 'REP' ? 'Admin (JB)' : 'Rep view (HB)';
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 max-w-[1600px]">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-dark-50">Campaigns</h1>
-          <p className="text-sm text-dark-400 mt-1">Manage your SMS campaigns</p>
+    <div className="campaigns-prototype-shell">
+      <header className="campaigns-prototype-topbar">
+        <div className="campaigns-prototype-brand" aria-label="SCL Capital SMS Platform">
+          <span className="campaigns-prototype-logo">S</span>
+          <span>
+            <strong>SCL CAPITAL</strong>
+            <small>SMS PLATFORM</small>
+          </span>
         </div>
-        {canManage && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className={`btn-primary w-full sm:w-auto flex items-center justify-center gap-2 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={outboundLocked}
-            title={outboundLocked ? outboundLockMsg : undefined}
-          >
-            <Plus className="w-4 h-4" />
-            New Campaign
-          </button>
-        )}
-      </div>
-      {outboundLocked && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-          {outboundLockMsg}
+        <div className="campaigns-prototype-userbar">
+          <span className="campaigns-prototype-toggle campaigns-prototype-toggle--active">
+            {roleLabel} ({initials})
+          </span>
+          <span className="campaigns-prototype-toggle campaigns-prototype-toggle--muted">{secondaryRoleLabel}</span>
+          <span className="campaigns-prototype-user">
+            <span>{initials}</span>
+            {displayName}
+          </span>
         </div>
-      )}
+      </header>
 
-      {canManage && (
-        <AiRetargetSection
-          data={aiCohortsData}
-          isLoading={aiCohortsLoading}
-          onPreview={setPreviewCohortId}
-          onBuild={(cohort) => buildAiCohortMutation.mutate(cohort)}
-          buildingCohortId={buildAiCohortMutation.variables?.id || null}
-          isBuilding={buildAiCohortMutation.isPending}
-          outboundLocked={outboundLocked}
-          outboundLockMsg={outboundLockMsg}
-        />
-      )}
+      <nav className="campaigns-prototype-tabs" aria-label="Leads and campaigns navigation">
+        <button type="button" onClick={() => navigate('/leads')}>
+          Leads
+        </button>
+        <button type="button" className="is-active">
+          Campaigns
+        </button>
+      </nav>
 
-      <div>
-        <h2 className="text-lg font-semibold text-dark-100">All Campaigns</h2>
-        <p className="text-xs text-dark-500 mt-0.5">
-          {isRep ? 'Campaigns created by you' : 'All campaigns across reps'} · {total} total
-        </p>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-        <div className="relative w-full md:flex-1 md:max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
-          <input
-            type="text"
-            placeholder="Search campaigns..."
-            className="input pl-10"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-          <div className="flex gap-2 min-w-max">
+      <div className="campaigns-scope p-4 sm:p-6 lg:p-6 space-y-4 sm:space-y-6">
+        {/* Header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-dark-50">Campaigns</h1>
+            <p className="text-sm text-dark-400 mt-1">
+              {total} campaigns {isRep ? 'created by you' : 'across all reps'} · {isRep ? 'rep view' : 'admin view'}
+            </p>
+          </div>
+          {canManage && (
             <button
-              onClick={() => setStatusFilter('')}
-              className={`badge cursor-pointer shrink-0 ${!statusFilter ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400 hover:text-dark-300'}`}
+              onClick={() => setShowCreateModal(true)}
+              className={`btn-primary w-full sm:w-auto flex items-center justify-center gap-2 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={outboundLocked}
+              title={outboundLocked ? outboundLockMsg : undefined}
             >
-              All
+              <Plus className="w-4 h-4" />
+              New Campaign
             </button>
-            {statuses.map((s) => (
+          )}
+        </div>
+        {outboundLocked && (
+          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {outboundLockMsg}
+          </div>
+        )}
+
+        {canManage && (
+          <AiRetargetSection
+            data={aiCohortsData}
+            isLoading={aiCohortsLoading}
+            onPreview={setPreviewCohortId}
+            onBuild={setBuildAiCohort}
+            outboundLocked={outboundLocked}
+            outboundLockMsg={outboundLockMsg}
+          />
+        )}
+
+        <div>
+          <h2 className="text-lg font-semibold text-dark-100">All Campaigns</h2>
+          <p className="text-xs text-dark-500 mt-0.5">
+            {isRep ? 'Campaigns created by you' : 'All campaigns across reps'} · {total} total
+          </p>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+          <div className="relative w-full md:flex-1 md:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+            <input
+              type="text"
+              placeholder="Search campaigns..."
+              className="input pl-10"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+            <div className="flex gap-2 min-w-max">
               <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
-                className={`badge cursor-pointer shrink-0 ${statusFilter === s ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400 hover:text-dark-300'}`}
+                onClick={() => setStatusFilter('')}
+                className={`badge cursor-pointer shrink-0 ${!statusFilter ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400 hover:text-dark-300'}`}
               >
-                {s}
+                All
               </button>
-            ))}
+              {statuses.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={`badge cursor-pointer shrink-0 ${statusFilter === s ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400 hover:text-dark-300'}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Campaign List */}
-      <div className="card overflow-hidden">
-        <div className="md:hidden divide-y divide-dark-700/30">
-          {isLoading && <div className="p-8 text-center text-dark-500">Loading campaigns...</div>}
-          {data?.campaigns?.length === 0 && (
-            <div className="p-8 text-center text-dark-500">
-              <div className="flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center">
-                  <Send className="w-7 h-7 opacity-40" />
+        {/* Campaign List */}
+        <div className="card overflow-hidden">
+          <div className="md:hidden divide-y divide-dark-700/30">
+            {isLoading && <div className="p-8 text-center text-dark-500">Loading campaigns...</div>}
+            {data?.campaigns?.length === 0 && (
+              <div className="p-8 text-center text-dark-500">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center">
+                    <Send className="w-7 h-7 opacity-40" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-dark-300">No campaigns yet</p>
+                    <p className="text-xs mt-1">Create your first campaign to start reaching leads</p>
+                  </div>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className={`btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mt-1 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={outboundLocked}
+                    title={outboundLocked ? outboundLockMsg : undefined}
+                  >
+                    <Plus className="w-3.5 h-3.5" /> New Campaign
+                  </button>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-dark-300">No campaigns yet</p>
-                  <p className="text-xs mt-1">Create your first campaign to start reaching leads</p>
+              </div>
+            )}
+            {data?.campaigns?.map((campaign: Campaign) => {
+              const deliveryRate =
+                campaign.totalSent > 0 ? ((campaign.totalDelivered / campaign.totalSent) * 100).toFixed(1) : null;
+
+              return (
+                <div
+                  key={campaign.id}
+                  className="p-4 space-y-3"
+                  style={campaign.isRetarget ? { background: 'rgba(201,168,76,0.06)' } : undefined}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-dark-200 flex flex-wrap items-center gap-2">
+                        <span className="break-words">{campaign.name}</span>
+                        {campaign.aiBuilt ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/60 text-purple-300">
+                            AI
+                          </span>
+                        ) : campaign.isRetarget ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
+                            ↺ Retarget
+                          </span>
+                        ) : null}
+                      </p>
+                      {campaign.aiBuilt ? (
+                        <p className="text-[11px] mt-0.5 text-purple-300" style={{ opacity: 0.9 }}>
+                          ↻ from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
+                        </p>
+                      ) : campaign.isRetarget ? (
+                        <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
+                          ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                        </p>
+                      ) : (
+                        <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
+                      )}
+                      <p className="text-xs text-dark-500 mt-1">
+                        Created {format(new Date(campaign.createdAt), 'MMM d, yyyy')}
+                      </p>
+                    </div>
+                    <CampaignStatusBadge status={campaign.status} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <MetricCard
+                      label="Sent"
+                      value={campaign.totalSent.toLocaleString()}
+                      valueClassName="text-dark-200"
+                    />
+                    <MetricCard
+                      label="Delivered"
+                      value={campaign.totalDelivered.toLocaleString()}
+                      valueClassName="text-green-400"
+                    />
+                    <MetricCard
+                      label="Failed"
+                      value={campaign.totalFailed.toLocaleString()}
+                      valueClassName="text-red-400"
+                    />
+                    <MetricCard
+                      label="Blocked"
+                      value={campaign.totalBlocked.toLocaleString()}
+                      valueClassName="text-yellow-400"
+                    />
+                    <MetricCard
+                      label="Replied"
+                      value={campaign.totalReplied.toLocaleString()}
+                      valueClassName="text-purple-400"
+                    />
+                    <MetricCard
+                      label="Rate"
+                      value={deliveryRate !== null ? `${deliveryRate}%` : '—'}
+                      valueClassName={
+                        deliveryRate === null
+                          ? 'text-dark-500'
+                          : parseFloat(deliveryRate) >= 80
+                            ? 'text-green-400'
+                            : parseFloat(deliveryRate) >= 50
+                              ? 'text-yellow-400'
+                              : 'text-red-400'
+                      }
+                    />
+                  </div>
+
+                  {canManage && <div className="pt-1">{renderCampaignActions(campaign, true)}</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full min-w-[900px]">
+              <thead>
+                <tr>
+                  <th className="table-header">Campaign</th>
+                  <th className="table-header">Status</th>
+                  <th className="table-header text-center">Sent</th>
+                  <th className="table-header text-center">Delivered</th>
+                  <th className="table-header text-center">Failed</th>
+                  <th className="table-header text-center">Blocked</th>
+                  <th className="table-header text-center">Replied</th>
+                  <th className="table-header text-center">Rate</th>
+                  <th className="table-header">Created</th>
+                  {canManage && <th className="table-header">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading && (
+                  <tr>
+                    <td colSpan={10} className="p-8 text-center text-dark-500">
+                      Loading campaigns...
+                    </td>
+                  </tr>
+                )}
+                {data?.campaigns?.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="p-12 text-center text-dark-500">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center">
+                          <Send className="w-7 h-7 opacity-40" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-dark-300">No campaigns yet</p>
+                          <p className="text-xs mt-1">Create your first campaign to start reaching leads</p>
+                        </div>
+                        <button
+                          onClick={() => setShowCreateModal(true)}
+                          className={`btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mt-1 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          disabled={outboundLocked}
+                          title={outboundLocked ? outboundLockMsg : undefined}
+                        >
+                          <Plus className="w-3.5 h-3.5" /> New Campaign
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {data?.campaigns?.map((campaign: Campaign) => {
+                  const deliveryRate =
+                    campaign.totalSent > 0 ? ((campaign.totalDelivered / campaign.totalSent) * 100).toFixed(1) : null;
+
+                  return (
+                    <tr
+                      key={campaign.id}
+                      className="table-row cursor-context-menu"
+                      style={campaign.isRetarget ? { background: 'rgba(201,168,76,0.06)' } : undefined}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setCtxMenu({ x: e.clientX, y: e.clientY, campaign });
+                      }}
+                    >
+                      <td className="table-cell">
+                        <div>
+                          <p className="font-medium text-dark-200 flex items-center gap-2">
+                            <span>{campaign.name}</span>
+                            {campaign.aiBuilt ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/60 text-purple-300">
+                                AI
+                              </span>
+                            ) : campaign.isRetarget ? (
+                              <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
+                                ↺ Retarget
+                              </span>
+                            ) : null}
+                          </p>
+                          {campaign.aiBuilt ? (
+                            <p className="text-[11px] mt-0.5 text-purple-300" style={{ opacity: 0.9 }}>
+                              ↻ from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
+                            </p>
+                          ) : campaign.isRetarget ? (
+                            <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
+                              ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                            </p>
+                          ) : (
+                            <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <CampaignStatusBadge status={campaign.status} />
+                      </td>
+                      <CampaignSentTooltip campaign={campaign} />
+                      <td className="table-cell text-center font-mono text-green-400">
+                        {campaign.totalDelivered.toLocaleString()}
+                      </td>
+                      <CampaignFailedTooltip campaign={campaign} />
+                      <td className="table-cell text-center font-mono text-yellow-400">
+                        {campaign.totalBlocked.toLocaleString()}
+                      </td>
+                      <td className="table-cell text-center font-mono text-purple-400">
+                        {campaign.totalReplied > 0 ? (
+                          <button
+                            onClick={() => navigate(`/inbox?campaign=${campaign.id}`)}
+                            className="font-mono text-purple-400 hover:text-purple-300 hover:underline underline-offset-2 transition-colors"
+                            title="View replies in Inbox"
+                          >
+                            {campaign.totalReplied.toLocaleString()}
+                          </button>
+                        ) : (
+                          <span className="text-dark-600">0</span>
+                        )}
+                      </td>
+                      <td className="table-cell text-center">
+                        {deliveryRate !== null ? (
+                          <span
+                            className={`text-xs font-medium ${
+                              parseFloat(deliveryRate) >= 80
+                                ? 'text-green-400'
+                                : parseFloat(deliveryRate) >= 50
+                                  ? 'text-yellow-400'
+                                  : 'text-red-400'
+                            }`}
+                          >
+                            {deliveryRate}%
+                          </span>
+                        ) : (
+                          <span className="text-xs text-dark-500">—</span>
+                        )}
+                      </td>
+                      <td className="table-cell text-dark-500 text-xs">
+                        {format(new Date(campaign.createdAt), 'MMM d, yyyy')}
+                      </td>
+                      {canManage && <td className="table-cell">{renderCampaignActions(campaign)}</td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex flex-col gap-3 px-4 py-3 border-t border-dark-700/50 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-dark-500">{total} campaigns total</p>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="btn-ghost py-1 px-2 text-xs disabled:opacity-30"
+                >
+                  Previous
+                </button>
+                <div className="flex items-center gap-1">
+                  {paginationItems.map((item, idx) =>
+                    typeof item === 'number' ? (
+                      <button
+                        key={item}
+                        onClick={() => setPage(item)}
+                        className={`min-w-[24px] px-1.5 py-1 rounded text-xs transition-colors ${
+                          page === item
+                            ? 'bg-scl-600/25 text-scl-300 border border-scl-500/40'
+                            : 'text-dark-400 hover:text-dark-200 hover:bg-dark-700/60'
+                        }`}
+                        aria-label={`Go to page ${item}`}
+                      >
+                        {item}
+                      </button>
+                    ) : (
+                      <span key={`${item}-${idx}`} className="text-xs text-dark-500 px-1">
+                        …
+                      </span>
+                    ),
+                  )}
                 </div>
                 <button
-                  onClick={() => setShowCreateModal(true)}
-                  className={`btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mt-1 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  disabled={outboundLocked}
-                  title={outboundLocked ? outboundLockMsg : undefined}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="btn-ghost py-1 px-2 text-xs disabled:opacity-30"
                 >
-                  <Plus className="w-3.5 h-3.5" /> New Campaign
+                  Next
                 </button>
               </div>
             </div>
           )}
-          {data?.campaigns?.map((campaign: Campaign) => {
-            const deliveryRate =
-              campaign.totalSent > 0 ? ((campaign.totalDelivered / campaign.totalSent) * 100).toFixed(1) : null;
-
-            return (
-              <div
-                key={campaign.id}
-                className="p-4 space-y-3"
-                style={campaign.isRetarget ? { background: 'rgba(201,168,76,0.06)' } : undefined}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-dark-200 flex flex-wrap items-center gap-2">
-                      <span className="break-words">{campaign.name}</span>
-                      {campaign.aiBuilt ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/60 text-purple-300">
-                          AI
-                        </span>
-                      ) : campaign.isRetarget ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
-                          ↺ Retarget
-                        </span>
-                      ) : null}
-                    </p>
-                    {campaign.aiBuilt ? (
-                      <p className="text-[11px] mt-0.5 text-purple-300" style={{ opacity: 0.9 }}>
-                        ↻ from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
-                      </p>
-                    ) : campaign.isRetarget ? (
-                      <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
-                        ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
-                      </p>
-                    ) : (
-                      <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
-                    )}
-                    <p className="text-xs text-dark-500 mt-1">
-                      Created {format(new Date(campaign.createdAt), 'MMM d, yyyy')}
-                    </p>
-                  </div>
-                  <CampaignStatusBadge status={campaign.status} />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <MetricCard label="Sent" value={campaign.totalSent.toLocaleString()} valueClassName="text-dark-200" />
-                  <MetricCard
-                    label="Delivered"
-                    value={campaign.totalDelivered.toLocaleString()}
-                    valueClassName="text-green-400"
-                  />
-                  <MetricCard
-                    label="Failed"
-                    value={campaign.totalFailed.toLocaleString()}
-                    valueClassName="text-red-400"
-                  />
-                  <MetricCard
-                    label="Blocked"
-                    value={campaign.totalBlocked.toLocaleString()}
-                    valueClassName="text-yellow-400"
-                  />
-                  <MetricCard
-                    label="Replied"
-                    value={campaign.totalReplied.toLocaleString()}
-                    valueClassName="text-purple-400"
-                  />
-                  <MetricCard
-                    label="Rate"
-                    value={deliveryRate !== null ? `${deliveryRate}%` : '—'}
-                    valueClassName={
-                      deliveryRate === null
-                        ? 'text-dark-500'
-                        : parseFloat(deliveryRate) >= 80
-                          ? 'text-green-400'
-                          : parseFloat(deliveryRate) >= 50
-                            ? 'text-yellow-400'
-                            : 'text-red-400'
-                    }
-                  />
-                </div>
-
-                {canManage && <div className="pt-1">{renderCampaignActions(campaign, true)}</div>}
-              </div>
-            );
-          })}
         </div>
 
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr>
-                <th className="table-header">Campaign</th>
-                <th className="table-header">Status</th>
-                <th className="table-header text-center">Sent</th>
-                <th className="table-header text-center">Delivered</th>
-                <th className="table-header text-center">Failed</th>
-                <th className="table-header text-center">Blocked</th>
-                <th className="table-header text-center">Replied</th>
-                <th className="table-header text-center">Rate</th>
-                <th className="table-header">Created</th>
-                {canManage && <th className="table-header">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading && (
-                <tr>
-                  <td colSpan={10} className="p-8 text-center text-dark-500">
-                    Loading campaigns...
-                  </td>
-                </tr>
-              )}
-              {data?.campaigns?.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="p-12 text-center text-dark-500">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center">
-                        <Send className="w-7 h-7 opacity-40" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-dark-300">No campaigns yet</p>
-                        <p className="text-xs mt-1">Create your first campaign to start reaching leads</p>
-                      </div>
-                      <button
-                        onClick={() => setShowCreateModal(true)}
-                        className={`btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mt-1 ${outboundLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        disabled={outboundLocked}
-                        title={outboundLocked ? outboundLockMsg : undefined}
-                      >
-                        <Plus className="w-3.5 h-3.5" /> New Campaign
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {data?.campaigns?.map((campaign: Campaign) => {
-                const deliveryRate =
-                  campaign.totalSent > 0 ? ((campaign.totalDelivered / campaign.totalSent) * 100).toFixed(1) : null;
-
-                return (
-                  <tr
-                    key={campaign.id}
-                    className="table-row cursor-context-menu"
-                    style={campaign.isRetarget ? { background: 'rgba(201,168,76,0.06)' } : undefined}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setCtxMenu({ x: e.clientX, y: e.clientY, campaign });
-                    }}
-                  >
-                    <td className="table-cell">
-                      <div>
-                        <p className="font-medium text-dark-200 flex items-center gap-2">
-                          <span>{campaign.name}</span>
-                          {campaign.aiBuilt ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/60 text-purple-300">
-                              AI
-                            </span>
-                          ) : campaign.isRetarget ? (
-                            <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
-                              ↺ Retarget
-                            </span>
-                          ) : null}
-                        </p>
-                        {campaign.aiBuilt ? (
-                          <p className="text-[11px] mt-0.5 text-purple-300" style={{ opacity: 0.9 }}>
-                            ↻ from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
-                          </p>
-                        ) : campaign.isRetarget ? (
-                          <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
-                            ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
-                          </p>
-                        ) : (
-                          <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="table-cell">
-                      <CampaignStatusBadge status={campaign.status} />
-                    </td>
-                    <CampaignSentTooltip campaign={campaign} />
-                    <td className="table-cell text-center font-mono text-green-400">
-                      {campaign.totalDelivered.toLocaleString()}
-                    </td>
-                    <CampaignFailedTooltip campaign={campaign} />
-                    <td className="table-cell text-center font-mono text-yellow-400">
-                      {campaign.totalBlocked.toLocaleString()}
-                    </td>
-                    <td className="table-cell text-center font-mono text-purple-400">
-                      {campaign.totalReplied > 0 ? (
-                        <button
-                          onClick={() => navigate(`/inbox?campaign=${campaign.id}`)}
-                          className="font-mono text-purple-400 hover:text-purple-300 hover:underline underline-offset-2 transition-colors"
-                          title="View replies in Inbox"
-                        >
-                          {campaign.totalReplied.toLocaleString()}
-                        </button>
-                      ) : (
-                        <span className="text-dark-600">0</span>
-                      )}
-                    </td>
-                    <td className="table-cell text-center">
-                      {deliveryRate !== null ? (
-                        <span
-                          className={`text-xs font-medium ${
-                            parseFloat(deliveryRate) >= 80
-                              ? 'text-green-400'
-                              : parseFloat(deliveryRate) >= 50
-                                ? 'text-yellow-400'
-                                : 'text-red-400'
-                          }`}
-                        >
-                          {deliveryRate}%
-                        </span>
-                      ) : (
-                        <span className="text-xs text-dark-500">—</span>
-                      )}
-                    </td>
-                    <td className="table-cell text-dark-500 text-xs">
-                      {format(new Date(campaign.createdAt), 'MMM d, yyyy')}
-                    </td>
-                    {canManage && <td className="table-cell">{renderCampaignActions(campaign)}</td>}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex flex-col gap-3 px-4 py-3 border-t border-dark-700/50 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-dark-500">{total} campaigns total</p>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="btn-ghost py-1 px-2 text-xs disabled:opacity-30"
-              >
-                Previous
-              </button>
-              <div className="flex items-center gap-1">
-                {paginationItems.map((item, idx) =>
-                  typeof item === 'number' ? (
-                    <button
-                      key={item}
-                      onClick={() => setPage(item)}
-                      className={`min-w-[24px] px-1.5 py-1 rounded text-xs transition-colors ${
-                        page === item
-                          ? 'bg-scl-600/25 text-scl-300 border border-scl-500/40'
-                          : 'text-dark-400 hover:text-dark-200 hover:bg-dark-700/60'
-                      }`}
-                      aria-label={`Go to page ${item}`}
-                    >
-                      {item}
-                    </button>
-                  ) : (
-                    <span key={`${item}-${idx}`} className="text-xs text-dark-500 px-1">
-                      …
-                    </span>
-                  ),
-                )}
-              </div>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="btn-ghost py-1 px-2 text-xs disabled:opacity-30"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Right-Click Context Menu */}
-      {ctxMenu && (
-        <div
-          ref={ctxMenuRef}
-          className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
-        >
-          <button
-            onClick={() => {
-              navigate(`/campaigns/${ctxMenu.campaign.id}`);
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+        {/* Right-Click Context Menu */}
+        {ctxMenu && (
+          <div
+            ref={ctxMenuRef}
+            className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
           >
-            <Eye className="w-3.5 h-3.5" /> View Campaign
-          </button>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(ctxMenu.campaign.name);
-              toast.success('Name copied');
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Copy className="w-3.5 h-3.5" /> Copy Name
-          </button>
-          {canManage && (
             <button
               onClick={() => {
-                if (outboundLocked) {
-                  toast.error(outboundLockMsg);
-                  setCtxMenu(null);
-                  return;
-                }
-                if (!canRetargetCampaign(ctxMenu.campaign)) {
-                  toast.error('You can only retarget your own campaigns');
-                  setCtxMenu(null);
-                  return;
-                }
-                setRetargetCampaign(ctxMenu.campaign);
+                navigate(`/campaigns/${ctxMenu.campaign.id}`);
                 setCtxMenu(null);
               }}
               className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-              title={outboundLocked ? outboundLockMsg : undefined}
-              disabled={outboundLocked}
             >
-              <RotateCcw className="w-3.5 h-3.5 text-[#C9A84C]" /> Retarget Campaign
+              <Eye className="w-3.5 h-3.5" /> View Campaign
             </button>
-          )}
-          {canManage && (
-            <>
-              <div className="border-t border-dark-700 my-1" />
-              {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(ctxMenu.campaign.status) && (
-                <button
-                  onClick={() => {
-                    if (outboundLocked) {
-                      toast.error(outboundLockMsg);
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(ctxMenu.campaign.name);
+                toast.success('Name copied');
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Copy className="w-3.5 h-3.5" /> Copy Name
+            </button>
+            {canManage && (
+              <button
+                onClick={() => {
+                  if (outboundLocked) {
+                    toast.error(outboundLockMsg);
+                    setCtxMenu(null);
+                    return;
+                  }
+                  if (!canRetargetCampaign(ctxMenu.campaign)) {
+                    toast.error('You can only retarget your own campaigns');
+                    setCtxMenu(null);
+                    return;
+                  }
+                  setRetargetCampaign(ctxMenu.campaign);
+                  setCtxMenu(null);
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+                title={outboundLocked ? outboundLockMsg : undefined}
+                disabled={outboundLocked}
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-[#C9A84C]" /> Retarget Campaign
+              </button>
+            )}
+            {canManage && (
+              <>
+                <div className="border-t border-dark-700 my-1" />
+                {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(ctxMenu.campaign.status) && (
+                  <button
+                    onClick={() => {
+                      if (outboundLocked) {
+                        toast.error(outboundLockMsg);
+                        setCtxMenu(null);
+                        return;
+                      }
+                      startMutation.mutate(ctxMenu.campaign.id);
                       setCtxMenu(null);
-                      return;
-                    }
-                    startMutation.mutate(ctxMenu.campaign.id);
-                    setCtxMenu(null);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-green-400 hover:bg-dark-700/50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title={outboundLocked ? outboundLockMsg : undefined}
-                  disabled={outboundLocked}
-                >
-                  <Play className="w-3.5 h-3.5" /> Start Campaign
-                </button>
-              )}
-              {ctxMenu.campaign.status === 'SENDING' && (
-                <button
-                  onClick={() => {
-                    pauseMutation.mutate(ctxMenu.campaign.id);
-                    setCtxMenu(null);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-yellow-400 hover:bg-dark-700/50 flex items-center gap-2"
-                >
-                  <Pause className="w-3.5 h-3.5" /> Pause Campaign
-                </button>
-              )}
-              {['SENDING', 'PAUSED', 'SCHEDULED'].includes(ctxMenu.campaign.status) && (
-                <button
-                  onClick={() => {
-                    setCtxMenu(null);
-                    if (window.confirm('Cancel this campaign?')) cancelMutation.mutate(ctxMenu.campaign.id);
-                  }}
-                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
-                >
-                  <XCircle className="w-3.5 h-3.5" /> Cancel Campaign
-                </button>
-              )}
-              {canDeleteCampaign && ['DRAFT', 'COMPLETED', 'CANCELLED'].includes(ctxMenu.campaign.status) && (
-                <>
-                  <div className="border-t border-dark-700 my-1" />
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-green-400 hover:bg-dark-700/50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={outboundLocked ? outboundLockMsg : undefined}
+                    disabled={outboundLocked}
+                  >
+                    <Play className="w-3.5 h-3.5" /> Start Campaign
+                  </button>
+                )}
+                {ctxMenu.campaign.status === 'SENDING' && (
+                  <button
+                    onClick={() => {
+                      pauseMutation.mutate(ctxMenu.campaign.id);
+                      setCtxMenu(null);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-yellow-400 hover:bg-dark-700/50 flex items-center gap-2"
+                  >
+                    <Pause className="w-3.5 h-3.5" /> Pause Campaign
+                  </button>
+                )}
+                {['SENDING', 'PAUSED', 'SCHEDULED'].includes(ctxMenu.campaign.status) && (
                   <button
                     onClick={() => {
                       setCtxMenu(null);
-                      if (window.confirm('Delete this campaign?')) deleteMutation.mutate(ctxMenu.campaign.id);
+                      if (window.confirm('Cancel this campaign?')) cancelMutation.mutate(ctxMenu.campaign.id);
                     }}
                     className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
                   >
-                    <Trash2 className="w-3.5 h-3.5" /> Delete Campaign
+                    <XCircle className="w-3.5 h-3.5" /> Cancel Campaign
                   </button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
+                )}
+                {canDeleteCampaign && ['DRAFT', 'COMPLETED', 'CANCELLED'].includes(ctxMenu.campaign.status) && (
+                  <>
+                    <div className="border-t border-dark-700 my-1" />
+                    <button
+                      onClick={() => {
+                        setCtxMenu(null);
+                        if (window.confirm('Delete this campaign?')) deleteMutation.mutate(ctxMenu.campaign.id);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Campaign
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-      {/* Create Campaign Modal */}
-      {showCreateModal && (
-        <CreateCampaignModal
-          onClose={() => setShowCreateModal(false)}
-          outboundLocked={outboundLocked}
-          outboundLockMsg={outboundLockMsg}
-        />
-      )}
-      {retargetCampaign && (
-        <RetargetCampaignModal
-          campaign={retargetCampaign}
-          onClose={() => setRetargetCampaign(null)}
-          onCreated={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
-          outboundLocked={outboundLocked}
-          outboundLockMsg={outboundLockMsg}
-        />
-      )}
-      {previewCohortId && <AiCohortPreviewModal cohortId={previewCohortId} onClose={() => setPreviewCohortId(null)} />}
+        {/* Create Campaign Modal */}
+        {showCreateModal && (
+          <CreateCampaignModal
+            onClose={() => setShowCreateModal(false)}
+            outboundLocked={outboundLocked}
+            outboundLockMsg={outboundLockMsg}
+          />
+        )}
+        {buildAiCohort && (
+          <CreateCampaignModal
+            aiCohort={buildAiCohort}
+            onClose={() => setBuildAiCohort(null)}
+            outboundLocked={outboundLocked}
+            outboundLockMsg={outboundLockMsg}
+          />
+        )}
+        {retargetCampaign && (
+          <RetargetCampaignModal
+            campaign={retargetCampaign}
+            onClose={() => setRetargetCampaign(null)}
+            onCreated={() => queryClient.invalidateQueries({ queryKey: ['campaigns'] })}
+            outboundLocked={outboundLocked}
+            outboundLockMsg={outboundLockMsg}
+          />
+        )}
+        {previewCohortId && (
+          <AiCohortPreviewModal cohortId={previewCohortId} onClose={() => setPreviewCohortId(null)} />
+        )}
+      </div>
     </div>
   );
 }
@@ -803,8 +841,6 @@ function AiRetargetSection({
   isLoading,
   onPreview,
   onBuild,
-  buildingCohortId,
-  isBuilding,
   outboundLocked,
   outboundLockMsg,
 }: {
@@ -812,20 +848,16 @@ function AiRetargetSection({
   isLoading: boolean;
   onPreview: (cohortId: string) => void;
   onBuild: (cohort: AiCohort) => void;
-  buildingCohortId: string | null;
-  isBuilding: boolean;
   outboundLocked: boolean;
   outboundLockMsg: string;
 }) {
   const cohorts = data?.cohorts || [];
 
   return (
-    <section className="card border-purple-500/20 bg-purple-500/[0.04] overflow-hidden">
+    <section className="card campaigns-ai-zone border-purple-500/20 bg-purple-500/[0.04] overflow-hidden">
       <div className="card-header flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded-lg bg-purple-500/15 border border-purple-400/30 flex items-center justify-center shrink-0">
-            <Sparkles className="w-4 h-4 text-purple-300" />
-          </div>
+          <span className="campaigns-ai-pulse" aria-hidden="true" />
           <div>
             <h2 className="text-lg font-semibold text-dark-100">AI Retarget Suggestions</h2>
             <p className="text-xs text-dark-500 mt-0.5">
@@ -848,10 +880,12 @@ function AiRetargetSection({
         ) : (
           <div className="grid gap-3 lg:grid-cols-3">
             {cohorts.map((cohort) => {
-              const disabled =
-                outboundLocked || cohort.leadCount === 0 || (isBuilding && buildingCohortId === cohort.id);
+              const disabled = outboundLocked || cohort.leadCount === 0;
               return (
-                <div key={cohort.id} className="rounded-lg border border-dark-700/60 bg-dark-900/50 p-4 space-y-3">
+                <div
+                  key={cohort.id}
+                  className="campaigns-ai-card rounded-lg border border-dark-700/60 bg-dark-900/50 p-4 space-y-3"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <h3 className="text-sm font-semibold text-dark-100 leading-snug">{cohort.title}</h3>
                     <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/50 text-purple-300 whitespace-nowrap">
@@ -859,7 +893,7 @@ function AiRetargetSection({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="campaigns-ai-metrics grid grid-cols-3 gap-2">
                     <MetricCard
                       label="Leads"
                       value={formatCompactNumber(cohort.leadCount)}
@@ -905,7 +939,7 @@ function AiRetargetSection({
                       title={outboundLocked ? outboundLockMsg : undefined}
                       onClick={() => onBuild(cohort)}
                     >
-                      {isBuilding && buildingCohortId === cohort.id ? 'Building...' : 'Build Campaign →'}
+                      Build Campaign →
                     </button>
                   </div>
                 </div>
@@ -1177,18 +1211,20 @@ function RetargetCampaignModal({
 }
 
 function CreateCampaignModal({
+  aiCohort,
   onClose,
   outboundLocked,
   outboundLockMsg,
 }: {
+  aiCohort?: AiCohort;
   onClose: () => void;
   outboundLocked: boolean;
   outboundLockMsg: string;
 }) {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
-    name: '',
-    messageTemplate: '',
+    name: aiCohort?.defaults.name || '',
+    messageTemplate: aiCohort?.defaults.messageTemplate || '',
     numberPoolId: '',
     sendingSpeed: 4,
     dailyLimit: 0,
@@ -1197,7 +1233,7 @@ function CreateCampaignModal({
   const [leadFilter, setLeadFilter] = useState({ status: '', search: '', source: '', state: '', tag: '' });
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
-  const [leadSource, setLeadSource] = useState<'lists' | 'select' | 'csv'>('lists');
+  const [leadSource, setLeadSource] = useState<'lists' | 'select' | 'csv'>(aiCohort ? 'select' : 'lists');
   const [selectedLists, setSelectedLists] = useState<Set<string>>(new Set());
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<any>(null);
@@ -1234,6 +1270,23 @@ function CreateCampaignModal({
   const availablePools = poolsData?.pools || [];
   const poolCountLabel = (count: number) => `${count} ${count === 1 ? 'number' : 'numbers'}`;
 
+  const { data: aiPreviewData, isLoading: aiPreviewLoading } = useQuery<{ cohort: AiCohort }>({
+    queryKey: ['campaign-ai-cohort-preview', aiCohort?.id, 'build-modal'],
+    queryFn: async () => {
+      if (!aiCohort) throw new Error('AI cohort is required');
+      const { data } = await api.get(`/campaigns/ai-cohorts/${aiCohort.id}/preview`);
+      return data;
+    },
+    enabled: !!aiCohort,
+  });
+  const resolvedAiCohort = aiPreviewData?.cohort || aiCohort;
+
+  useEffect(() => {
+    if (!resolvedAiCohort?.leadIds?.length) return;
+    setSelectedLeadIds(new Set(resolvedAiCohort.leadIds));
+    setSelectAll(false);
+  }, [resolvedAiCohort?.id, resolvedAiCohort?.leadIds]);
+
   // Load available leads for selection
   const { data: leadsData } = useQuery({
     queryKey: [
@@ -1261,13 +1314,23 @@ function CreateCampaignModal({
   const totalAvailable = leadsData?.pagination?.total || 0;
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.post('/campaigns', data),
+    mutationFn: (data: any) => {
+      if (aiCohort) {
+        return api.post(`/campaigns/ai-cohorts/${aiCohort.id}/build`, {
+          name: data.name,
+          messageTemplate: data.messageTemplate,
+        });
+      }
+      return api.post('/campaigns', data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-      toast.success('Campaign created!');
+      queryClient.invalidateQueries({ queryKey: ['campaign-ai-cohorts'] });
+      toast.success(aiCohort ? 'AI cohort campaign created as draft' : 'Campaign created!');
       onClose();
     },
-    onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to create'),
+    onError: (err: any) =>
+      toast.error(err.response?.data?.error || (aiCohort ? 'Failed to build AI campaign' : 'Failed to create')),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1282,6 +1345,10 @@ function CreateCampaignModal({
       dailyLimit: formData.dailyLimit || null,
       scheduledAt: formData.scheduledAt || null,
     };
+    if (aiCohort) {
+      createMutation.mutate(payload);
+      return;
+    }
     if (leadSource === 'csv' && csvImported) {
       createMutation.mutate({
         ...payload,
@@ -1398,8 +1465,9 @@ function CreateCampaignModal({
     .filter((t: any) => selectedLists.has(t.id))
     .reduce((sum: number, t: any) => sum + (t._count?.leads || 0), 0);
 
-  const leadCount =
-    leadSource === 'csv'
+  const leadCount = aiCohort
+    ? resolvedAiCohort?.leadCount || selectedLeadIds.size || aiCohort.leadCount
+    : leadSource === 'csv'
       ? csvImported?.count || 0
       : leadSource === 'lists'
         ? selectedListsLeadCount
@@ -1411,7 +1479,7 @@ function CreateCampaignModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
       <div className="card w-full max-w-2xl mx-4 animate-fade-in">
         <div className="card-header flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-dark-100">New Campaign</h3>
+          <h3 className="text-lg font-semibold text-dark-100">{aiCohort ? 'Build AI Campaign' : 'New Campaign'}</h3>
           <button onClick={onClose} className="text-dark-500 hover:text-dark-300">
             <XCircle className="w-5 h-5" />
           </button>
@@ -1472,31 +1540,65 @@ function CreateCampaignModal({
               Leads ({leadCount} selected)
             </label>
             {/* Tabs: Lists / Select / Upload CSV */}
-            <div className="flex flex-wrap gap-1 mb-2">
-              <button
-                type="button"
-                onClick={() => setLeadSource('lists')}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'lists' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
-              >
-                Select Lists
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeadSource('select')}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'select' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
-              >
-                Select Leads
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeadSource('csv')}
-                className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'csv' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
-              >
-                Upload CSV
-              </button>
-            </div>
+            {!aiCohort && (
+              <div className="flex flex-wrap gap-1 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setLeadSource('lists')}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'lists' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+                >
+                  Select Lists
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeadSource('select')}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'select' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+                >
+                  Select Leads
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeadSource('csv')}
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${leadSource === 'csv' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+                >
+                  Upload CSV
+                </button>
+              </div>
+            )}
 
-            {leadSource === 'lists' ? (
+            {aiCohort ? (
+              <div className="bg-purple-500/[0.06] rounded-lg border border-purple-500/30 p-3 space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-dark-100">{resolvedAiCohort?.title || aiCohort.title}</p>
+                    <p className="text-xs text-dark-500 mt-1">
+                      {aiPreviewLoading ? 'Resolving cohort...' : `${leadCount.toLocaleString()} leads preloaded`}
+                    </p>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/50 text-purple-300 whitespace-nowrap">
+                    {resolvedAiCohort?.priorityLabel || aiCohort.priorityLabel}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <MetricCard label="Leads" value={leadCount.toLocaleString()} valueClassName="text-dark-100" />
+                  <MetricCard
+                    label="Reply"
+                    value={`${resolvedAiCohort?.predictedReplyRate || aiCohort.predictedReplyRate}%`}
+                    valueClassName="text-green-400"
+                  />
+                  <MetricCard
+                    label="Funded"
+                    value={`~${resolvedAiCohort?.expectedFunded || aiCohort.expectedFunded}`}
+                    valueClassName="text-purple-300"
+                  />
+                </div>
+                {(resolvedAiCohort?.warnings || aiCohort.warnings).map((warning) => (
+                  <p key={warning} className="text-xs text-yellow-300">
+                    {warning}
+                  </p>
+                ))}
+              </div>
+            ) : leadSource === 'lists' ? (
               <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-2">
                 {availableTags.length === 0 ? (
                   <p className="text-sm text-dark-500 text-center py-4">
@@ -1801,7 +1903,7 @@ function CreateCampaignModal({
               disabled={createMutation.isPending || leadCount === 0 || outboundLocked}
               title={outboundLocked ? outboundLockMsg : undefined}
             >
-              {createMutation.isPending ? 'Creating...' : 'Create Campaign'}
+              {createMutation.isPending ? 'Creating...' : aiCohort ? 'Create Draft Campaign' : 'Create Campaign'}
             </button>
           </div>
         </form>

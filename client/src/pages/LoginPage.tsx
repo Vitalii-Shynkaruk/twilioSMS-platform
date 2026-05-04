@@ -203,16 +203,6 @@ export default function LoginPage() {
 
             {step === 'email' && (
               <>
-                <button
-                  type="button"
-                  onClick={() => sendCode('email')}
-                  disabled={isLoginLoading || !email}
-                  className="scl-auth__link"
-                >
-                  <Mail className="w-4 h-4" />
-                  Lost access to your phone? Use email instead
-                </button>
-
                 {devModeLoginEnabled && (
                   <button
                     type="button"

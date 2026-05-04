@@ -23,7 +23,20 @@
     "vscodeDiagnostics": "No errors found in UsersTab.tsx, authController.ts, and defaultUsers.ts.",
     "focusedTests": "server npm test -- --run tests/authOtpPolicy.test.ts tests/authDevModeLogin.test.ts: 2 files passed, 8 tests passed.",
     "build": "npm run build passed: server tsc and client tsc/vite build.",
-    "productionUsersInspected": "Production user emails were listed for diagnosis only; no bulk email data migration was performed."
+    "productionUsersInspected": "Production user emails were listed for diagnosis only; no bulk email data migration was performed.",
+    "productionApiSmoke": "PUT /api/auth/users/:id was tested on a disabled QA user: email temporarily changed, persisted, then reverted to the original email."
+  },
+  "productionDeploy": {
+    "commit": "fee5e5f",
+    "host": "https://app.sclcapital.io/",
+    "method": "local git bundle to production with temporary stash/reapply; server/src/bootstrap/defaultUsers.ts was restored to HEAD after stash pop to remove the bad dirty email-sync code while preserving other pre-existing dirty files.",
+    "build": "production npm run build passed: server tsc, client tsc, and Vite production build.",
+    "pm2": "sms-api restarted and reported online.",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok.",
+      "login": "https://app.sclcapital.io/login returned HTTP 200.",
+      "emailUpdateApi": "QA user email update/revert smoke returned 200 and final email was restored."
+    }
   },
   "remainingClientAction": "Client/admin can now edit each user's email to the correct address in Settings -> Users after production deploy."
 }

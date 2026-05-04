@@ -104,6 +104,7 @@
 - [x] Startup safety reviewed: existing user emails must not be rewritten by default user bootstrap; production dirty email-sync code is treated as invalid and must not be reintroduced.
 - [x] Requirement audit completed: `docs/LOVABLE_PROMPT_A2P_FIX.md` asked to update public website/legal domain references and public `info@...` contact email only; it did not ask to change platform user login emails.
 - [x] Evidence added: `audit-screenshots/m30-user-email-edit-evidence.json`.
+- [x] Production deploy completed on `https://app.sclcapital.io/` at commit `fee5e5f`; production build, PM2 restart, `/api/health`, `/login`, and real API email update/revert smoke passed on a disabled QA user.
 
 ## Source Map
 

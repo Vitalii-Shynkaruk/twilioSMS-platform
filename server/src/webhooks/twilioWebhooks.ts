@@ -9,6 +9,7 @@ import { AIService } from '../services/aiService';
 import { MobileAlertService } from '../services/mobileAlertService';
 import { isRepOrTestPhoneNumber, parseRepTestPhoneAllowlist } from '../services/inboundPhoneSuppression';
 import { resetDealEngagement, resetDealEngagementForConversation } from '../services/dealEngagementService';
+import { queuePipelineExtractionForInboundSms } from '../services/pipelineAiService';
 import '../config/twilio';
 import { getLiveCredentials } from '../config/twilio';
 import { config } from '../config';
@@ -145,6 +146,13 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
       });
     }
   }
+
+  void queuePipelineExtractionForInboundSms({ conversationId, text: inboundBody }).catch((err) =>
+    logger.error('Failed to enqueue pipeline AI extraction from inbound classifier', {
+      conversationId,
+      error: err.message,
+    }),
+  );
 
   logger.info('AI classification processed via queue worker', {
     conversationId,
@@ -407,6 +415,17 @@ router.post('/inbound', async (req: Request, res: Response) => {
             error: err.message,
           }),
         );
+        void queuePipelineExtractionForInboundSms({
+          conversationId: conversation.id,
+          leadId: lead.id,
+          text: Body,
+        }).catch((err) =>
+          logger.error('Failed to enqueue pipeline AI extraction on inbound SMS', {
+            conversationId: conversation.id,
+            leadId: lead.id,
+            error: err.message,
+          }),
+        );
       }
 
       // Keep the explicit owner when that rep is still active.
@@ -636,6 +655,18 @@ router.post('/inbound', async (req: Request, res: Response) => {
         void resetDealEngagement({ dealId: matchedDeal.id, reason: 'inbound_sms' }).catch((err) =>
           logger.error('Failed to reset matched deal engagement on inbound SMS', {
             dealId: matchedDeal.id,
+            error: err.message,
+          }),
+        );
+        void queuePipelineExtractionForInboundSms({
+          conversationId: conversation.id,
+          leadId: newLead.id,
+          dealIds: [matchedDeal.id],
+          text: Body,
+        }).catch((err) =>
+          logger.error('Failed to enqueue pipeline AI extraction for matched deal inbound SMS', {
+            dealId: matchedDeal.id,
+            conversationId: conversation.id,
             error: err.message,
           }),
         );

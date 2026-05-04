@@ -4,6 +4,7 @@ import prisma from '../config/database';
 import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus, Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { OutboundGateService } from '../services/outboundGateService';
+import { extractPipelineSignals } from '../services/pipelineAiService';
 import {
   canUseUnscopedTeamScope,
   fundingRepScopeFilter,
@@ -1060,6 +1061,16 @@ export class DealController {
           note: nextNotes ? nextNotes : 'Note cleared',
         },
       });
+
+      if ((noteEventType === 'note_added' || noteEventType === 'note_updated') && nextNotes) {
+        void extractPipelineSignals({
+          dealId: id,
+          inputType: 'rep_note',
+          text: nextNotes,
+          stageAtTime: deal.stage,
+          productAtTime: deal.productType,
+        });
+      }
     }
 
     if (manualAttemptEvent) {

@@ -24,7 +24,7 @@ export default function StackingChip({ signals, compact = false, className = '' 
   return (
     <span className={classes} title={chip.title} aria-label={`Stacking status: ${chip.label}`}>
       {chip.isActive ? <span className="stacking-chip__pulse" aria-hidden="true" /> : null}
-      {chip.label}
+      <span className="stacking-chip__label">{chip.label}</span>
     </span>
   );
 }

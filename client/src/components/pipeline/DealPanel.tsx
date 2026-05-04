@@ -1,12 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { dealApi, repApi } from '../../services/api';
-import { MessageSquare, Plus } from 'lucide-react';
+import { aiApi, dealApi, repApi } from '../../services/api';
+import { MessageSquare, Plus, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
-import type { Deal, DealStage, Rep, Offer, ProductType, DealEvent } from '../../types';
+import type { Deal, DealStage, Rep, Offer, ProductType, DealEvent, PipelineAiSignals } from '../../types';
 import { formatCurrency } from './DealCard';
 import StackingChip from './StackingChip';
+import PipelineAiInlineBar from './PipelineAiInlineBar';
+import { getLatestPipelineNoteText } from './pipelineAiSignals';
 import CreateDealModal from './CreateDealModal';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -37,6 +39,7 @@ const STAGE_QUICK_ACTIONS: Record<DealStage, string[]> = {
 };
 
 type AttemptKind = 'no_answer' | 'texted' | 'voicemail' | 'connected' | 'not_interested';
+type ExtractPipelineResponse = { signals: PipelineAiSignals } | { skipped: true; reason: string };
 
 const QUICK_LOG_ACTIONS: Array<{ kind: AttemptKind; label: string }> = [
   { kind: 'no_answer', label: 'No answer' },
@@ -160,6 +163,37 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
     queryFn: async () => {
       const { data } = await dealApi.getDeal(dealId);
       return data as Deal;
+    },
+  });
+  const latestPipelineNote = useMemo(() => getLatestPipelineNoteText(deal), [deal]);
+
+  const rerunPipelineMutation = useMutation({
+    mutationFn: async (text: string): Promise<ExtractPipelineResponse> => {
+      const { data } = await aiApi.extractPipeline({ dealId, inputType: 'rep_note', text });
+      return data as ExtractPipelineResponse;
+    },
+    onSuccess: (result) => {
+      if ('signals' in result) {
+        queryClient.setQueryData<Deal | undefined>(['deal', dealId], (current) =>
+          current
+            ? {
+                ...current,
+                pipelineAiSignals: result.signals,
+                pipelineAiUpdatedAt: new Date().toISOString(),
+              }
+            : current,
+        );
+        queryClient.invalidateQueries({ queryKey: ['deals'] });
+        queryClient.invalidateQueries({ queryKey: ['board'] });
+        toast.success('Pipeline AI refreshed');
+        return;
+      }
+
+      toast.success(`Pipeline AI skipped: ${result.reason}`);
+    },
+    onError: (err: unknown) => {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error.response?.data?.error || 'Pipeline AI rerun failed');
     },
   });
 
@@ -286,6 +320,11 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   const attemptsRemaining = Math.max(0, contactAttemptThreshold - contactAttempts);
   const quickLogDisabled = !canEditDeal || ['FUNDED', 'CLOSED'].includes(deal.stage) || logAttemptMutation.isPending;
 
+  const handleRerunPipelineAi = () => {
+    if (!latestPipelineNote || rerunPipelineMutation.isPending) return;
+    rerunPipelineMutation.mutate(latestPipelineNote);
+  };
+
   const handleStageChange = (nextStage: DealStage) => {
     if (nextStage === deal.stage) return;
     if (nextStage === 'NURTURE' || nextStage === 'CLOSED') {
@@ -343,6 +382,17 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                   🗑
                 </button>
               )}
+              <button
+                type="button"
+                className="ph-ai-rerun"
+                onClick={handleRerunPipelineAi}
+                disabled={!latestPipelineNote || rerunPipelineMutation.isPending}
+                title={latestPipelineNote ? 'Re-run Pipeline AI from latest note' : 'Add a note before re-running AI'}
+                aria-label="Re-run Pipeline AI from latest note"
+              >
+                <RefreshCw size={13} aria-hidden className={rerunPipelineMutation.isPending ? 'spin-icon' : ''} />
+                <span>{rerunPipelineMutation.isPending ? 'Running' : 'Re-run AI'}</span>
+              </button>
               <button className="ph-close" onClick={onClose}>
                 ×
               </button>
@@ -367,6 +417,8 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               </div>
             ) : null}
           </div>
+
+          <PipelineAiInlineBar signals={deal.pipelineAiSignals} updatedAt={deal.pipelineAiUpdatedAt} />
 
           <div className="ph-stage-row">
             <select
@@ -768,6 +820,12 @@ function DealClientTab({
   const clientRevenue = deal.client?.monthlyRevenue ?? clientMeta.monthlyRevenue ?? '';
   const sourceType = (clientMeta.source || (smsCampaignSource ? 'SMS' : '')).trim();
   const leadSource = (clientMeta.leadSource ?? smsCampaignSource ?? '').trim();
+  const pipelineSignals = deal.pipelineAiSignals?.skip_reason ? null : deal.pipelineAiSignals;
+  const aiRevenueRaw = pipelineSignals?.monthly_revenue?.raw?.trim() || '';
+  const aiProductInterest = pipelineSignals?.product_interest || [];
+  const aiPrimaryProduct = !deal.productType ? aiProductInterest[0] : null;
+  const aiPendingAction = !deal.nextAction ? pipelineSignals?.pending_actions?.[0]?.action?.trim() || '' : '';
+  const aiRequestedAmount = pipelineSignals?.requested_amount || null;
   const fullDealNote = (deal.notes || '').trim();
   const isSubmittedProduct = ['SBA', 'CRE', 'EQUIPMENT'].includes(deal.productType || '');
   const amountLabel = isSubmittedProduct ? 'Submitted Amount' : 'Requested Amount';
@@ -779,9 +837,11 @@ function DealClientTab({
   const persistedDueLabel = deal.nextActionDue ? persistedDuePreset : 'No due';
 
   const revenueRanges = useMemo(() => {
-    if (!clientRevenue || baseRevenueRanges.includes(clientRevenue)) return baseRevenueRanges;
-    return [clientRevenue, ...baseRevenueRanges];
-  }, [baseRevenueRanges, clientRevenue]);
+    const ranges = [...baseRevenueRanges];
+    if (aiRevenueRaw && !ranges.includes(aiRevenueRaw)) ranges.unshift(aiRevenueRaw);
+    if (clientRevenue && !ranges.includes(clientRevenue)) ranges.unshift(clientRevenue);
+    return ranges;
+  }, [baseRevenueRanges, clientRevenue, aiRevenueRaw]);
 
   const sortedEvents = useMemo(
     () =>
@@ -836,7 +896,7 @@ function DealClientTab({
 
   function openNextActionEditor() {
     if (!canEdit || isClosed) return;
-    setNextActionDraft(deal.nextAction || '');
+    setNextActionDraft(deal.nextAction || aiPendingAction || '');
     setNextDuePreset(getDuePresetFromDate(deal.nextActionDue));
     setNextDueDate(deal.nextActionDue?.split('T')[0] || '');
     setSelectedPreset(null);
@@ -921,8 +981,9 @@ function DealClientTab({
               style={!canEdit || isClosed ? { cursor: 'default', opacity: 0.75 } : undefined}
             >
               <span className={clsx('na-current', !(deal.nextAction || '').trim() && 'empty')}>
-                {(deal.nextAction || '').trim() ? deal.nextAction : 'Tap to set next action'}
+                {(deal.nextAction || '').trim() ? deal.nextAction : aiPendingAction || 'Tap to set next action'}
               </span>
+              {aiPendingAction ? <span className="na-ai-hint">AI</span> : null}
               <span className={clsx('na-due-chip', dueClassName(persistedDueLabel as DuePreset | 'No due'))}>
                 {persistedDueLabel}
               </span>
@@ -1088,14 +1149,18 @@ function DealClientTab({
         <div className="pr">
           {dealTypeOptions.map((opt) => {
             const selected = deal.productType === opt.value;
+            const suggested = aiProductInterest.includes(opt.value);
+            const preselected = aiPrimaryProduct === opt.value;
             return (
               <button
                 key={opt.value}
                 type="button"
-                className={clsx('pill', selected && 'on')}
+                className={clsx('pill', (selected || preselected) && 'on', suggested && 'pill-ai-suggested')}
                 onClick={() => canEdit && onUpdate({ productType: selected ? null : opt.value })}
+                title={suggested ? 'AI product interest suggestion' : undefined}
               >
                 {opt.label}
+                {suggested ? <span className="pill-ai-mark">AI</span> : null}
               </button>
             );
           })}
@@ -1105,16 +1170,22 @@ function DealClientTab({
           Monthly Revenue
         </div>
         <div className="pr">
-          {revenueRanges.map((range) => (
-            <button
-              key={range}
-              type="button"
-              className={clsx('pill', clientRevenue === range && 'on')}
-              onClick={() => saveClientMeta({ monthlyRevenue: range }, true)}
-            >
-              {range}
-            </button>
-          ))}
+          {revenueRanges.map((range) => {
+            const isAiSuggestion = aiRevenueRaw === range;
+            const isSelected = clientRevenue ? clientRevenue === range : isAiSuggestion;
+            return (
+              <button
+                key={range}
+                type="button"
+                className={clsx('pill', isSelected && 'on', isAiSuggestion && 'pill-ai-suggested')}
+                onClick={() => saveClientMeta({ monthlyRevenue: range }, true)}
+                title={isAiSuggestion ? 'AI monthly revenue suggestion' : undefined}
+              >
+                {range}
+                {isAiSuggestion ? <span className="pill-ai-mark">AI</span> : null}
+              </button>
+            );
+          })}
         </div>
 
         <div style={{ marginTop: 10 }}>
@@ -1138,6 +1209,21 @@ function DealClientTab({
             placeholder={isSubmittedProduct ? 'Optional submitted amount' : 'Optional requested amount'}
             disabled={!canEdit}
           />
+          {aiRequestedAmount ? (
+            <button
+              type="button"
+              className="ai-suggestion-pill"
+              onClick={() => {
+                if (!canEdit || (deal[amountPayloadKey] || 0) > 0) return;
+                setAmountDraft(String(aiRequestedAmount.value_usd));
+                onUpdate({ [amountPayloadKey]: aiRequestedAmount.value_usd });
+              }}
+              disabled={!canEdit || (deal[amountPayloadKey] || 0) > 0}
+              title={(deal[amountPayloadKey] || 0) > 0 ? 'Manual amount is already set' : 'Apply AI requested amount'}
+            >
+              AI suggestion · {aiRequestedAmount.raw}
+            </button>
+          ) : null}
         </div>
 
         {deal.productType === 'HELOC' && (deal.stage === 'COMMITTED_FUNDING' || deal.stage === 'FUNDED') && (

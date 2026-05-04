@@ -407,33 +407,39 @@ export type CommitSubStatus = 'DOCS_REQUESTED' | 'DOCS_SIGNED' | 'FUNDING';
 export type RenewalTaskStatus = 'PENDING' | 'COMPLETED' | 'OVERDUE' | 'SKIPPED';
 
 export interface PipelineAiMoneySignal {
-  value_usd?: number | null;
-  raw?: string | null;
+  value_usd: number;
+  raw: string;
 }
 
 export interface PipelineAiUseOfFundsSignal {
-  category?: string | null;
-  detail?: string | null;
+  category: 'equipment' | 'working_capital' | 'debt_consolidation' | 'real_estate' | 'expansion' | 'unspecified';
+  detail: string | null;
 }
 
 export interface PipelineAiCurrentPositionsSignal {
-  count?: number | null;
-  total_debt_usd?: number | null;
+  count: number | null;
+  total_debt_usd: number | null;
 }
 
 export interface PipelineAiRecentStackingSignal {
-  active?: boolean;
-  window?: 'last_30d' | 'last_60d' | 'last_90d' | null;
+  active: boolean;
+  window: 'last_30d' | 'last_60d' | 'last_90d' | null;
 }
 
 export interface PipelineAiSignals {
-  industry?: string | null;
+  _extraction_scope: 'lead_only';
+  skip_reason: 'contact_info_only' | 'too_short' | 'unrelated' | 'unintelligible' | 'no_signal' | null;
+  industry: string;
   monthly_revenue?: PipelineAiMoneySignal | null;
   use_of_funds?: PipelineAiUseOfFundsSignal | null;
   requested_amount?: PipelineAiMoneySignal | null;
-  product_interest?: ProductType[];
-  pending_actions?: Array<Record<string, unknown>>;
-  has_stacked_history?: boolean;
+  product_interest: ProductType[];
+  pending_actions: Array<{
+    actor: 'rep' | 'lead';
+    action: string;
+    timing: 'today' | 'this_week' | 'next_week' | 'later' | null;
+  }>;
+  has_stacked_history: boolean;
   current_active_positions?: PipelineAiCurrentPositionsSignal | null;
   recent_stacking_activity?: PipelineAiRecentStackingSignal | null;
 }

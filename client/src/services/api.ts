@@ -131,6 +131,11 @@ export const dealApi = {
     api.put(`/deals/renewal-tasks/${taskId}/complete`, data || {}),
 };
 
+export const aiApi = {
+  extractPipeline: (data: { dealId: string; inputType: 'rep_note' | 'client_sms'; text: string }) =>
+    api.post('/ai/extract-pipeline', data),
+};
+
 export const commandCenterApi = {
   getMetrics: (params?: Record<string, string>) => api.get('/command-center/metrics', { params }),
   getOperatorQueue: (params?: Record<string, string>) => api.get('/command-center/operator-queue', { params }),

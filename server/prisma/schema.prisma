@@ -891,6 +891,8 @@ model Deal {
   notes             String?         @db.Text
   clientNotes       String?         @db.Text
   isHot             Boolean         @default(false)
+  pipelineAiSignals Json?
+  pipelineAiUpdatedAt DateTime?
 
   // Phase 1: SMS Inbox — deal создан из SMS
   createdFromSms      Boolean       @default(false)

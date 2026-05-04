@@ -2,6 +2,7 @@ import { Fragment, useRef, type ReactNode } from 'react';
 import type { Deal, CommitSubStatus } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
 import StackingChip from './StackingChip';
+import PipelineAiBadgeRow from './PipelineAiBadgeRow';
 
 // ─── Exported constants (used by DealPanel, CommandCenter, etc.) ───
 
@@ -310,6 +311,7 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
       <div style={{ padding: '10px 11px 8px' }}>
         {hot && <div className="sc-hot-badge">🔥 HOT</div>}
         <StackingChip signals={deal.pipelineAiSignals} compact className="sc-stacking-chip" />
+        <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact className="sc-ai-badges" />
         <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
         <div
           className="sc-name"
@@ -445,14 +447,17 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
                   </span>
                 )}
                 {smsCampaignSource && <span className="source-chip">SMS · {smsCampaignSource}</span>}
+                <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />
               </div>
             );
           })()}
         {!deal.productType && smsCampaignSource && (
           <div className="source-row">
             <span className="source-chip">SMS · {smsCampaignSource}</span>
+            <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />
           </div>
         )}
+        {!deal.productType && !smsCampaignSource && <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />}
 
         {/* HOT reason row */}
         {hot && (

@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { AIService } from '../services/aiService';
+import { canUserAccessPipelineDeal, extractPipelineSignals, getPipelineAiLocalSkipReason } from '../services/pipelineAiService';
 import { authenticate } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
@@ -201,6 +202,74 @@ router.post(
     });
 
     res.json(result);
+  }),
+);
+
+/**
+ * POST /api/ai/extract-pipeline
+ * Ручной запуск M1.4 Pipeline AI extractor для deal-level сигналов.
+ */
+router.post(
+  '/extract-pipeline',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { dealId, inputType, text } = req.body;
+    if (!dealId || typeof dealId !== 'string') {
+      res.status(400).json({ error: 'dealId required' });
+      return;
+    }
+    if (inputType !== 'rep_note' && inputType !== 'client_sms') {
+      res.status(400).json({ error: 'inputType must be rep_note or client_sms' });
+      return;
+    }
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ error: 'text required' });
+      return;
+    }
+
+    const deal = await prisma.deal.findUnique({
+      where: { id: dealId },
+      select: {
+        id: true,
+        assignedRepId: true,
+        assistingRepIds: true,
+        stage: true,
+        productType: true,
+      },
+    });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+    if (!canUserAccessPipelineDeal(req.user, deal)) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const localSkipReason = getPipelineAiLocalSkipReason(text);
+    if (localSkipReason) {
+      res.json({ skipped: true, reason: localSkipReason });
+      return;
+    }
+
+    const signals = await extractPipelineSignals({
+      dealId,
+      inputType,
+      text,
+      stageAtTime: deal.stage,
+      productAtTime: deal.productType,
+    });
+
+    if (!signals) {
+      res.status(503).json({ error: 'AI not configured, skipped, or extraction failed' });
+      return;
+    }
+    if (signals.skip_reason) {
+      res.json({ skipped: true, reason: signals.skip_reason });
+      return;
+    }
+
+    res.json({ signals });
   }),
 );
 

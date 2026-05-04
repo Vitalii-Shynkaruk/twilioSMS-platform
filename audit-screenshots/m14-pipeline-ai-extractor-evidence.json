@@ -1,0 +1,74 @@
+{
+  "module": "M1.4 Pipeline AI extractor + badges",
+  "date": "2026-05-04",
+  "status": "passed_with_environment_note",
+  "environment": {
+    "workspace": "/Users/oleksandr/Documents/GitHub/twilio-sms-platform",
+    "frontend": "http://127.0.0.1:5173/pipeline",
+    "api_validation_mode": "Vite proxy to deterministic local mock API on port 3001",
+    "prototype": "scl-pipeline-ai-handoff/scl_pipeline_v11.html"
+  },
+  "implementation": {
+    "database": [
+      "Deal.pipelineAiSignals Json?",
+      "Deal.pipelineAiUpdatedAt DateTime?"
+    ],
+    "backend": [
+      "server/src/services/pipelineAiService.ts with canonical prompt/schema/payload markers",
+      "per-deal extraction queue",
+      "local skip guards",
+      "conversation.aiSignals fallback when deal signals are absent",
+      "POST /api/ai/extract-pipeline",
+      "note_added/note_updated fire-and-forget extraction",
+      "inbound SMS queueing for allowed post-intake stages"
+    ],
+    "frontend": [
+      "PipelineAiSignals frontend type",
+      "DealCard industry/revenue/use badges",
+      "DealPanel AI inline bar above stage/product row",
+      "Re-run AI action with loading/success/skipped/error handling",
+      "AI visual suggestions for product, revenue, next action, and requested amount without silent manual overwrite"
+    ]
+  },
+  "validation": {
+    "prisma_generate": "passed",
+    "server_test": "npm test -- pipelineAiService.test.ts --run passed: 5/5",
+    "server_build": "npm run build passed",
+    "client_build": "npm run build passed after final stacking-chip overflow fix",
+    "problems_panel": "No errors in changed Pipeline AI TSX/CSS files; existing tsconfig deprecation warnings are unrelated"
+  },
+  "browser_visual_check": {
+    "method": "Opened v11 prototype and local Pipeline UI; fed deterministic mock deal with Pipeline AI signals through real React UI and Vite proxy.",
+    "retained_v11_patterns_checked": [
+      "compact card badge density and dark elevation",
+      "industry/revenue/use badge colors and mono-label styling",
+      "stacking chip warning styling and active modifier",
+      "DealPanel AI inline bar above stage/product row",
+      "source label with extracted age",
+      "quick-log/auto-nurture area coexistence",
+      "Re-run AI button in DealPanel header"
+    ],
+    "desktop_dom_metrics": {
+      "viewport": "918x667 integrated browser",
+      "pipeline_ai_badges": 3,
+      "inline_bar_overflow_x": false,
+      "card_stacking_chip_overflow_x_after_fix": false,
+      "ai_badge_overflow_x": false,
+      "ai_suggestion_pill_overflow_x": false,
+      "overlaps": 0,
+      "rerun_ai_result": "industry updated from trucking to auto repair and inline source changed to just now"
+    },
+    "screenshots": [
+      "audit-screenshots/m14-pipeline-ai-desktop-evidence.png",
+      "audit-screenshots/m14-pipeline-ai-mobile-evidence.png"
+    ]
+  },
+  "environment_notes": [
+    "Local real backend start was blocked by DATABASE_URL validation: Prisma requires a mysql:// URL. This is an environment configuration issue, not a TypeScript/build failure.",
+    "Because local real backend could not start, browser validation used a deterministic local mock API on port 3001 through the same Vite /api proxy. Production deploy smoke must validate the real API after migration."
+  ],
+  "known_deferred_items": [
+    "Golden grader parity against the full 15-case live Anthropic set is not run locally because it requires a live Anthropic API key/config and incurs model calls.",
+    "v11 prototype urgency/ask/confidence chips are intentionally not implemented because extractor-spec marks them outside retained v1 scope."
+  ]
+}

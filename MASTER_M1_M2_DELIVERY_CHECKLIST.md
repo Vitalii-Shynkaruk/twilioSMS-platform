@@ -62,6 +62,7 @@
 - [x] Leads keeps the old `/leads` route/page and now presents the prototype scope note, readable source comparison, Source/State/Last Contact filters, enrichment columns, and export-aware table inside the app shell.
 - [x] Browser QA at actual 918x667 viewport passed: sidebar width 260px on both pages, mobile topbar/drawer hidden, no prototype topbar/tabs, no horizontal overflow.
 - [x] Evidence added: `audit-screenshots/m27-sidebar-shell-correction-evidence.json`, `audit-screenshots/m27-sidebar-campaigns-after-fix.png`, `audit-screenshots/m27-sidebar-leads-after-fix.png`.
+- [x] Production deploy completed on `https://app.sclcapital.io/` at commit `42daf54`; production build passed, PM2 `sms-api` restarted, `/api/health`, `/leads`, and `/campaigns` smoke passed.
 
 ## Source Map
 
@@ -1231,7 +1232,7 @@
 
 | Date       | Progress | Area      | What changed                                                                                                                                                                                                                | Evidence                                                           |
 | ---------- | -------: | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 2026-05-04 |    99.5% | M27       | Corrected Leads/Campaigns shell after client review: retained app sidebar, removed separate prototype topbar/tabs, kept prototype content styling, and passed 918px browser QA/build.                                       | `audit-screenshots/m27-sidebar-shell-correction-evidence.json`     |
+| 2026-05-04 |    99.5% | M27       | Corrected Leads/Campaigns shell after client review: retained app sidebar, removed separate prototype topbar/tabs, kept prototype content styling, passed 918px browser QA/build, and deployed `42daf54` to production.     | `audit-screenshots/m27-sidebar-shell-correction-evidence.json`     |
 | 2026-05-04 |    99.5% | M26       | Re-audited full SCL Leads/Campaigns PDF/prototype scope, added Leads prototype shell/filter bar, Campaign AI cap/category/cooldown polish, API requirements doc, focused tests/build, and deployed `7fe9a7c` to production. | `audit-screenshots/m26-full-scl-requirements-evidence.json`        |
 | 2026-05-04 |    99.5% | M2.4      | Closed M2 release gate: 37/37 focused tests, root build, visual prototype smoke, production deploy `43f067a45`, live CSV import/export/enrichment smoke, health ok.                                                         | `audit-screenshots/m24-regression-bootstrap-evidence.json`         |
 | 2026-05-04 |    97.5% | M2.1/M2.2 | Closed live Leads/Campaigns gate: AN/HB/admin CSV visibility, readable source/export, company search parity, visual prototype screenshots, and cleanup passed.                                                              | `audit-screenshots/m21-m22-leads-campaigns-evidence.json`          |

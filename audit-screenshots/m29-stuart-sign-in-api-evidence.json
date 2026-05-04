@@ -53,6 +53,20 @@
       "screenshot": "audit-screenshots/m29-login-email-code-option.png"
     }
   },
+  "productionDeploy": {
+    "commit": "1105439",
+    "host": "https://app.sclcapital.io/",
+    "method": "local git bundle to production with temporary stash/reapply for existing dirty worktree",
+    "install": "server npm install completed and installed nodemailer dependency.",
+    "build": "production npm run build passed: server tsc, client tsc, and Vite production build.",
+    "pm2": "sms-api restarted and reported online.",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok.",
+      "root": "https://app.sclcapital.io/ returned HTTP 200.",
+      "login": "https://app.sclcapital.io/login returned HTTP 200.",
+      "loginBrowser": "After entering sb@securecreditlines.com on production login, Send SMS code and Use email code instead were enabled without sending a code."
+    }
+  },
   "remainingExternalDependency": {
     "serverSmtp": "Production server must have a working SMTP relay, or admin must save external SMTP credentials in Settings.",
     "smtpFromEmail": "Client/admin must confirm the sender email/domain is authorized for SMTP delivery.",

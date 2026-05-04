@@ -37,6 +37,27 @@
       "hasVerticalOverflow": false
     }
   },
+  "productionDeployment": {
+    "url": "https://app.sclcapital.io/",
+    "commit": "98ac6be8d",
+    "health": {
+      "status": "ok",
+      "database": "ok",
+      "redis": "ok"
+    },
+    "http": {
+      "root": 200,
+      "login": 200,
+      "devLogin": 404
+    },
+    "browserDom": {
+      "title": "SecureCreditLines - SMS Platform",
+      "devButtonCount": 0,
+      "sendCodeCount": 1,
+      "hasVerticalOverflow": false
+    },
+    "pm2": "sms-api online after restart"
+  },
   "securityChecks": [
     "Dev mode requires explicit backend flag and is disabled by default",
     "Production environment blocks backend dev-login regardless of flag value",

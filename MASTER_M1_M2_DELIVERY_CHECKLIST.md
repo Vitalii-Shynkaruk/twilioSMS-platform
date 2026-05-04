@@ -160,6 +160,7 @@
 - [x] Dev login rejects missing/inactive users, updates `lastLoginAt`, invalidates user cache, and returns the same JWT/refresh session shape as OTP login.
 - [x] Login UI shows `Dev mode login` only when `VITE_DEV_MODE_LOGIN_ENABLED=true` and `import.meta.env.PROD` is false.
 - [x] Production bundle/preview verified: `Dev mode login` button count is `0`; OTP `Send code` remains visible.
+- [x] Production deploy/smoke passed on `98ac6be8d`: `/api/health` database/Redis ok, `/` 200, `/login` 200, `/api/auth/dev-login` 404, live UI dev button count `0`.
 - [x] Env docs updated: `server/.env.example`, `.env.production.example`, and `client/.env.example`.
 - [x] Focused auth regression passed: `authDevModeLogin`, `authOtpPolicy`, `clientPreservationRequirements` — 11/11 tests.
 - [x] Root production build passed after dev login changes: server `tsc` plus client `tsc && vite build`.
@@ -1118,5 +1119,5 @@
 | 2026-05-02 |      74% | M1.6      | Added and deployed new deal creation/sharing/socket scoping evidence; production smoke passed on `01b6700d`.                                                                | `audit-screenshots/m16-deal-create-share-socket-evidence.json`     |
 | 2026-05-02 |      75% | M1.6      | Added visual regression evidence for Pipeline 1440/960, DealPanel, DealCard, overlap/layout-shift, and sidebar checks.                                                      | `audit-screenshots/m16-visual-regression-evidence.json`            |
 | 2026-05-04 |      76% | M1.4/M1.6 | Locked angry-client preservation requirements, restored Inbox Mark Unread/Note in action row, tightened login visual fit, and passed focused tests/build/prod access smoke. | `audit-screenshots/client-preservation-login-access-evidence.json` |
-| 2026-05-04 |      77% | M1.1      | Added safe dev-only login without OTP for local QA, with production backend/frontend guards, focused auth tests, build, and preview evidence.                               | `audit-screenshots/dev-mode-login-evidence.json`                   |
+| 2026-05-04 |      77% | M1.1      | Added and deployed safe dev-only login without OTP for local QA, with production backend/frontend guards, focused auth tests, build, and live smoke evidence.               | `audit-screenshots/dev-mode-login-evidence.json`                   |
 | 2026-05-02 |       6% | Planning  | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.                                          | This file                                                          |

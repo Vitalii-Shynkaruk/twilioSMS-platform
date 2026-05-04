@@ -932,7 +932,7 @@
 
 /* ─── M2 Leads/Campaigns Prototype Scope Layer ─── */
 .campaigns-prototype-shell {
-  min-height: 100vh;
+  min-height: 100%;
   background: #0a0f1c;
   color: #f4f6fb;
 }
@@ -1186,7 +1186,7 @@
 }
 
 .leads-prototype-scope {
-  min-height: calc(100vh - 102px);
+  min-height: 100%;
 }
 
 .leads-prototype-scope-note {

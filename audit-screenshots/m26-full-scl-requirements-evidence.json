@@ -13,12 +13,12 @@
   ],
   "implementedChecks": {
     "leadsPrototypeShell": true,
-    "leadsLegacySidebarHidden": true,
+    "leadsAppSidebarRetainedAfterM27": true,
     "leadsReadableSourceExample": true,
     "leadsSourceStateLastContactFilters": true,
     "leadsFilterAwareExport": true,
     "campaignsPrototypeShell": true,
-    "campaignsLegacySidebarHidden": true,
+    "campaignsAppSidebarRetainedAfterM27": true,
     "campaignsThreeAiCards": true,
     "campaignsCategoryLabels": true,
     "campaignsCapBarsAndDailyLimits": true,
@@ -33,8 +33,8 @@
     "focusedTests": "cd server && npm test -- --run tests/leadCampaignScope.test.ts tests/campaignAiCohorts.test.ts tests/leadEnrichmentExport.test.ts passed: 3 files, 19/19 tests. Local Redis ECONNREFUSED warnings are known test-environment noise.",
     "build": "cd /Users/oleksandr/Documents/GitHub/twilio-sms-platform && npm run build passed: server tsc, client tsc, Vite production build.",
     "browser": [
-      "Local /leads rendered prototype shell, topbar/tabs, Source/State/Last Contact filter bar, no legacy sidebar, no horizontal overflow.",
-      "Local /campaigns rendered prototype shell, 3 AI Retarget cards, category labels, cap bar, cooldown warnings, AI lineage, no legacy sidebar, no horizontal overflow.",
+      "Local /leads renders inside the normal app sidebar after M27, with Source/State/Last Contact filter bar and no separate prototype topbar/tabs.",
+      "Local /campaigns renders inside the normal app sidebar after M27, with 3 AI Retarget cards, category labels, cap bar, cooldown warnings, AI lineage, and no separate prototype topbar/tabs.",
       "Campaign AI capacity text spacing fixed after visual self-review."
     ]
   },
@@ -50,7 +50,7 @@
       "bodyScrollWidth": 918,
       "documentScrollWidth": 918,
       "hasHorizontalOverflow": false,
-      "hasLegacySidebar": false,
+      "hasAppSidebarAfterM27": true,
       "filterBar": "864px wide, 78px high at actual viewport; compact two-row layout",
       "hasPrototypeScopeBlock": true,
       "hasSourceReadabilityExample": true
@@ -60,7 +60,7 @@
       "bodyScrollWidth": 918,
       "documentScrollWidth": 918,
       "hasHorizontalOverflow": false,
-      "hasLegacySidebar": false,
+      "hasAppSidebarAfterM27": true,
       "hasPrototypeShell": true,
       "aiCardCount": 3,
       "capacityText": "148 leads · Daily capacity: 120 / 800 used · 15%",

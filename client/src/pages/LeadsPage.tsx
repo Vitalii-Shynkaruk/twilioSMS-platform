@@ -280,12 +280,6 @@ export default function LeadsPage() {
   });
   const sourceOptions = filterOptionsData?.sources || [];
   const stateOptions = filterOptionsData?.states || [];
-  const derivedInitials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
-  const initials = derivedInitials || user?.email?.[0]?.toUpperCase() || 'JB';
-  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Jonathan';
-  const roleLabel = user?.role === 'REP' ? 'Rep view' : 'Admin';
-  const secondaryRoleLabel = user?.role === 'REP' ? 'Admin (JB)' : 'Rep view (HB)';
-
   const exportMutation = useMutation({
     mutationFn: async () => {
       const params = new URLSearchParams();
@@ -313,35 +307,6 @@ export default function LeadsPage() {
 
   return (
     <div className="campaigns-prototype-shell">
-      <header className="campaigns-prototype-topbar">
-        <div className="campaigns-prototype-brand" aria-label="SCL Capital SMS Platform">
-          <span className="campaigns-prototype-logo">S</span>
-          <span>
-            <strong>SCL CAPITAL</strong>
-            <small>SMS PLATFORM</small>
-          </span>
-        </div>
-        <div className="campaigns-prototype-userbar">
-          <span className="campaigns-prototype-toggle campaigns-prototype-toggle--active">
-            {roleLabel} ({initials})
-          </span>
-          <span className="campaigns-prototype-toggle campaigns-prototype-toggle--muted">{secondaryRoleLabel}</span>
-          <span className="campaigns-prototype-user">
-            <span>{initials}</span>
-            {displayName}
-          </span>
-        </div>
-      </header>
-
-      <nav className="campaigns-prototype-tabs" aria-label="Leads and campaigns navigation">
-        <button type="button" className="is-active">
-          Leads
-        </button>
-        <button type="button" onClick={() => navigate('/campaigns')}>
-          Campaigns
-        </button>
-      </nav>
-
       <div className="campaigns-scope leads-prototype-scope p-4 sm:p-6 lg:p-6 space-y-4 sm:space-y-6">
         <section className="leads-prototype-scope-note" aria-label="Prototype scope">
           <p>Scope on this prototype — 4 fixes only</p>

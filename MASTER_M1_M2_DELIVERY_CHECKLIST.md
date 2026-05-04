@@ -14,14 +14,14 @@
 | M1.1 — Passwordless OTP Login/Auth              |      10% |       9.5% | Live SMS OTP + browser redirect/current-user passed; Resend email fallback blocked by missing production config            |
 | M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                                          |
 | M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                                |
-| M1.4 — Pipeline AI extractor + badges           |      14% |        13% | Core Pipeline extractor backend/UI/tests/build/pixel retained elements passed; live Anthropic golden parity remains gated  |
+| M1.4 — Pipeline AI extractor + badges           |      14% |        13% | Core Pipeline extractor backend/UI/tests/build/pixel retained elements deployed; live Anthropic golden parity remains gated |
 | M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                                      |
 | M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                                  |
 | M2.1 — Leads/Campaign access + source fixes     |       8% |         7% | API scope tests/build + mocked admin/rep browser smoke passed; live two-rep CSV smoke still pending                        |
 | M2.2 — Leads enrichment columns + export        |       8% |         7% | Enrichment/export tests/build + browser/responsive/export-column evidence passed; strict pixel-close still pending          |
 | M2.3 — AI Retarget campaigns                    |       8% |         8% | Done — LeadCohort DB/cache/cron, Build modal/list/actions, prod DB/health, and retained prototype compare passed           |
 | M2.4 — M2 regression, pixel-close, release gate |       4% |         2% | Focused M2 API regression, root build, and mocked Leads/Campaigns UI smoke for filters/import/add/create/actions passed     |
-| **Overall**                                     | **100%** |  **94.5%** | **M1.4 core shipped locally; remaining gaps: Resend config, live Pipeline golden parity, M2.1/M2.2 live/pixel, M2.4 gates** |
+| **Overall**                                     | **100%** |  **94.5%** | **M1.4 core deployed; remaining gaps: Resend config, live Pipeline golden parity, M2.1/M2.2 live/pixel, M2.4 gates**         |
 
 ## Source Map
 
@@ -509,6 +509,7 @@
 - [x] Frontend build passed after AI UI and stacking overflow fix.
 - [x] Browser retained-v11 comparison passed on deterministic mock API: badges, inline bar, source label, Re-run AI success, no AI-element overlaps, no AI badge/inline/pill overflow.
 - [x] Evidence JSON added: `audit-screenshots/m14-pipeline-ai-extractor-evidence.json`.
+- [x] Production deploy passed: `991f932` applied by git bundle, DB columns added, Prisma generate/server build/client build passed, PM2 restarted, health/frontend/protected route smoke passed.
 - [ ] Live Anthropic golden parity remains gated: local environment has no runnable real MySQL backend and no local live Anthropic golden-run config; documented in evidence instead of marking as passed.
 
 ### Client preservation lock — 2026-05-04
@@ -1187,6 +1188,7 @@
 
 | Date       | Progress | Area      | What changed                                                                                                                                                                     | Evidence                                                           |
 | ---------- | -------: | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-05-04 |    94.5% | M1.4      | Deployed `991f932` to production by git bundle, preserved existing prod dirty hotfixes, added Pipeline AI DB columns, rebuilt, restarted PM2, and passed health/route/frontend smoke. | `audit-screenshots/m14-pipeline-ai-extractor-evidence.json`        |
 | 2026-05-04 |    94.5% | M1.4      | Added Pipeline AI extractor backend, Deal JSON fields, note/SMS triggers, manual Re-run AI, card badges, DealPanel inline bar, focused tests/build, and retained-v11 visual evidence. | `audit-screenshots/m14-pipeline-ai-extractor-evidence.json`        |
 | 2026-05-02 |      71% | M1.6      | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.                                                          | `audit-screenshots/m16-drag-funding-evidence.json`                 |
 | 2026-05-02 |      72% | M1.6      | Deployed `1982fdb0` to `https://app.sclcapital.io/`, applied additive DB schema sync, rebuilt/restarted PM2, and passed production smoke.                                        | `audit-screenshots/m16-production-deploy-evidence.json`            |

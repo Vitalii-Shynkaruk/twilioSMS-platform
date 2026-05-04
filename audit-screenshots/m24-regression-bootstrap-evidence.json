@@ -98,6 +98,6 @@
     "liveSmokeEmailsMasked": true
   },
   "remainingRisks": [
-    "No M2.4 blocker remains. Overall project readiness is still gated by external M1.1 Resend production config for email OTP fallback."
+    "No M2.4 blocker remains. Overall project readiness is still gated by production SMTP smoke for email OTP fallback."
   ]
 }

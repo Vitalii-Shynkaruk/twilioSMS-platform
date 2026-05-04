@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { OtpChannel, UserRole } from '@prisma/client';
 import prisma from '../config/database';
 import logger, { authLogger } from '../config/logger';
@@ -18,6 +19,9 @@ import {
 } from './authOtpPolicy';
 
 const OTP_LENGTH = 6;
+const DEFAULT_SMTP_HOST = '127.0.0.1';
+const DEFAULT_SMTP_PORT = 25;
+const DEFAULT_SMTP_FROM_EMAIL = 'login@sclcapital.io';
 
 export interface AuthOtpUser {
   id: string;
@@ -102,6 +106,22 @@ function getOtpMessage(code: string): string {
   return `SCL Capital sign-in code: ${code}. It expires in 5 minutes. Do not share it.`;
 }
 
+function parseBooleanSetting(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  return fallback;
+}
+
+function getSettingString(settings: Map<string, unknown>, key: string, envKey: string, fallback = ''): string {
+  const settingValue = settings.get(key);
+  const rawValue = typeof settingValue === 'string' ? settingValue : process.env[envKey] || fallback;
+  return rawValue.trim();
+}
+
 function getGenericRequestOtpResult(channel: OtpChannel): RequestOtpResult {
   return {
     channel,
@@ -155,36 +175,39 @@ async function sendEmailOtp(destination: string, code: string): Promise<void> {
     return;
   }
 
-  const [apiKeySetting, fromSetting] = await Promise.all([
-    prisma.systemSetting.findUnique({ where: { key: 'resendApiKey' } }),
-    prisma.systemSetting.findUnique({ where: { key: 'resendFromEmail' } }),
-  ]);
-  const apiKey = (
-    typeof apiKeySetting?.value === 'string' ? apiKeySetting.value : process.env.RESEND_API_KEY || ''
-  ).trim();
-  const from = (
-    typeof fromSetting?.value === 'string' ? fromSetting.value : process.env.RESEND_FROM_EMAIL || ''
-  ).trim();
-  if (!apiKey || !from) throw new AppError('Email sign-in fallback is not configured', 503);
+  const settingRows = await prisma.systemSetting.findMany({
+    where: { key: { in: ['smtpHost', 'smtpPort', 'smtpUser', 'smtpPassword', 'smtpSecure', 'smtpFromEmail'] } },
+    select: { key: true, value: true },
+  });
+  const settings = new Map(settingRows.map((setting) => [setting.key, setting.value]));
+  const host = getSettingString(settings, 'smtpHost', 'SMTP_HOST', DEFAULT_SMTP_HOST);
+  const port = Number.parseInt(getSettingString(settings, 'smtpPort', 'SMTP_PORT', String(DEFAULT_SMTP_PORT)), 10);
+  const user = getSettingString(settings, 'smtpUser', 'SMTP_USER');
+  const password = getSettingString(settings, 'smtpPassword', 'SMTP_PASSWORD');
+  const secure = parseBooleanSetting(settings.get('smtpSecure') ?? process.env.SMTP_SECURE, port === 465);
+  const from = getSettingString(settings, 'smtpFromEmail', 'SMTP_FROM_EMAIL', DEFAULT_SMTP_FROM_EMAIL);
 
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+  if (!host || Number.isNaN(port) || port < 1 || port > 65535 || !from) {
+    throw new AppError('Email sign-in fallback is not configured', 503);
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: user && password ? { user, pass: password } : undefined,
+  });
+
+  try {
+    await transporter.sendMail({
       from,
       to: destination,
       subject: 'SCL Capital · Your sign-in code',
       text: `Your SCL Capital sign-in code is ${code}. It expires in 5 minutes. Do not share it.`,
       html: `<p>Your SCL Capital sign-in code is <strong>${code}</strong>.</p><p>It expires in 5 minutes. Do not share it.</p>`,
-    }),
-  });
-
-  if (!response.ok) {
-    const responseText = await response.text().catch(() => '');
-    logger.error('OTP email send failed', { status: response.status, responseText });
+    });
+  } catch (error) {
+    logger.error('OTP email send failed', { error: (error as Error).message });
     throw new AppError('Email sign-in fallback failed', 503);
   }
 }

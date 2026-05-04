@@ -53,9 +53,13 @@ export class SettingsController {
     // Twilio Test Credentials
     'twilioTestAccountSid',
     'twilioTestAuthToken',
-    // Email sign-in fallback (Resend)
-    'resendApiKey',
-    'resendFromEmail',
+    // Email fallback входа через локальный или внешний SMTP
+    'smtpFromEmail',
+    'smtpHost',
+    'smtpPort',
+    'smtpUser',
+    'smtpPassword',
+    'smtpSecure',
     // OpenAI
     'openaiApiKey',
     'openaiModel',
@@ -81,7 +85,7 @@ export class SettingsController {
   private static readonly SENSITIVE_KEYS = new Set([
     'twilioAuthToken',
     'twilioTestAuthToken',
-    'resendApiKey',
+    'smtpPassword',
     'openaiApiKey',
     'anthropicApiKey',
     'webhookSecret',
@@ -553,6 +557,7 @@ export class SettingsController {
       maxDailySmsPerNumber: { min: 1, max: 10000 },
       globalDailyLimit: { min: 1, max: 1000000 },
       defaultSendingSpeed: { min: 1, max: 60 },
+      smtpPort: { min: 1, max: 65535 },
       rampUpDailyIncrease: { min: 1, max: 500 },
       rampUpStartLimit: { min: 1, max: 1000 },
       coolingThreshold: { min: 1, max: 100 },
@@ -567,7 +572,7 @@ export class SettingsController {
     }
 
     // Boolean validations
-    const booleanKeys = ['autoTagEnabled', 'aiAutoReplyEnabled', 'rampUpEnabled'];
+    const booleanKeys = ['autoTagEnabled', 'aiAutoReplyEnabled', 'rampUpEnabled', 'smtpSecure'];
     if (booleanKeys.includes(key)) {
       if (value !== true && value !== false && value !== 'true' && value !== 'false') {
         throw new AppError(`${key} must be a boolean value`, 400);
@@ -582,10 +587,10 @@ export class SettingsController {
       }
     }
 
-    if (key === 'resendFromEmail' && typeof value === 'string') {
+    if (key === 'smtpFromEmail' && typeof value === 'string') {
       const trimmed = value.trim();
       if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) {
-        throw new AppError('resendFromEmail must be a valid email address', 400);
+        throw new AppError('smtpFromEmail must be a valid email address', 400);
       }
     }
   }

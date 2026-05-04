@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                                                                                                                                      |
-| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                                                                                                                        |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |       9.8% | Live SMS OTP + browser redirect/current-user passed; Resend API/settings/email-code UI added; production email delivery smoke still blocked until client Resend key/from-email are configured               |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                                                                                                                           |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                                                                                                                 |
-| M1.4 — Pipeline AI extractor + badges           |      14% |        14% | Done — extractor/backend/UI/tests/pixel, TS golden grader, and live Anthropic golden parity diff documented                                                                                                 |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                                                                                                                       |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                                                                                                                   |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         8% | Done — API scope, mocked admin/rep smoke, and production two-rep CSV import/visibility/export smoke passed                                                                                                  |
-| M2.2 — Leads enrichment columns + export        |       8% |         8% | Done — enrichment/export, company search parity, retained prototype columns, and visual evidence passed                                                                                                     |
-| M2.3 — AI Retarget campaigns                    |       8% |         8% | Done — LeadCohort DB/cache/cron, Build modal/list/actions, prod DB/health, and retained prototype compare passed                                                                                            |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         4% | Done — 37/37 focused regression, root build, visual gate, production deploy, live CSV smoke, and health passed                                                                                              |
-| **Overall**                                     | **100%** |  **99.8%** | **M1/M2 implementation, release gates, M25-M29 remediation code-side scope complete; true 100% still blocked by external production Resend email OTP credentials/domain smoke and original SCL logo asset** |
+| Направление                                     |      Вес | Готовность | Статус                                                                                                                                                                                                   |
+| ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                                                                                                                     |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |       9.8% | Live SMS OTP + browser redirect/current-user passed; SMTP settings/email-code UI added; production email delivery smoke still blocked until server SMTP relay or external SMTP credentials are confirmed |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                                                                                                                        |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                                                                                                              |
+| M1.4 — Pipeline AI extractor + badges           |      14% |        14% | Done — extractor/backend/UI/tests/pixel, TS golden grader, and live Anthropic golden parity diff documented                                                                                              |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                                                                                                                    |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                                                                                                                |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         8% | Done — API scope, mocked admin/rep smoke, and production two-rep CSV import/visibility/export smoke passed                                                                                               |
+| M2.2 — Leads enrichment columns + export        |       8% |         8% | Done — enrichment/export, company search parity, retained prototype columns, and visual evidence passed                                                                                                  |
+| M2.3 — AI Retarget campaigns                    |       8% |         8% | Done — LeadCohort DB/cache/cron, Build modal/list/actions, prod DB/health, and retained prototype compare passed                                                                                         |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         4% | Done — 37/37 focused regression, root build, visual gate, production deploy, live CSV smoke, and health passed                                                                                           |
+| **Overall**                                     | **100%** |  **99.8%** | **M1/M2 implementation, release gates, M25-M29 remediation code-side scope complete; true 100% still blocked by production SMTP email OTP smoke and original SCL logo asset**                            |
 
 ### M25 Visual Acceptance Gate — 2026-05-04
 
@@ -34,7 +34,7 @@
 - [x] Evidence JSON added: `audit-screenshots/m25-visual-regression-evidence.json`.
 - [x] Recommendation/API-key handoff document added: `docs/M25_UI_QA_RECOMMENDATIONS_2026-05-04.md`.
 - [ ] External dependency for absolute Login pixel-perfect: client must provide original SCL logo/wordmark SVG or high-resolution transparent PNG.
-- [ ] External dependency for final M1.1 100%: production `RESEND_API_KEY` and `RESEND_FROM_EMAIL` must be configured and email OTP delivery smoke must pass.
+- [ ] External dependency for final M1.1 100%: production SMTP relay or external SMTP credentials must be configured and email OTP delivery smoke must pass.
 
 ### M26 Full SCL Requirements Re-Audit — 2026-05-04
 
@@ -45,12 +45,12 @@
 - [x] Campaign AI cards expose the PDF-required category label, predicted reply/funded metrics, historical anchor, AI reasoning, daily capacity bar, cap trim warning, cooldown warning, and Build/Preview handoff.
 - [x] Server-side per-campaign and rolling 24h daily caps are enforced for manual campaign creation and AI cohort build flows.
 - [x] Browser self-review caught and fixed a Campaigns cap-row spacing defect (`leadsdaily capacity`).
-- [x] API dependency audit completed: no new external API is required for Leads/Campaigns; Resend is needed only for email OTP fallback, while Twilio and Anthropic are existing platform dependencies.
+- [x] API dependency audit completed: no new external API is required for Leads/Campaigns; SMTP is needed only for email OTP fallback, while Twilio and Anthropic are existing platform dependencies.
 - [x] Separate client-facing API/key instruction added: `docs/CLIENT_API_REQUIREMENTS_2026-05-04.md`.
 - [x] Evidence JSON added: `audit-screenshots/m26-full-scl-requirements-evidence.json`.
 - [x] Production deploy completed on `https://app.sclcapital.io/` at commit `7fe9a7c`; server build, client build, PM2 restart, `/api/health`, `/`, `/login`, `/leads`, and `/campaigns` smoke passed.
 - [ ] External dependency for absolute Login pixel-perfect remains original SCL logo/wordmark SVG or high-resolution transparent PNG.
-- [ ] External dependency for final M1.1 100% remains production `RESEND_API_KEY` and `RESEND_FROM_EMAIL` configuration plus email OTP smoke.
+- [ ] External dependency for final M1.1 100% remains production SMTP relay or external SMTP credentials plus email OTP smoke.
 
 ### M27 Sidebar/Shell Correction — 2026-05-04
 
@@ -76,22 +76,23 @@
 - [x] Evidence added: `audit-screenshots/m28-tabs-sidebar-parity-evidence.json`, `audit-screenshots/m28-tabs-leads.png`, `audit-screenshots/m28-tabs-campaigns.png`.
 - [x] Production deploy completed on `https://app.sclcapital.io/` at commit `701545c`; production build passed, PM2 `sms-api` restarted, `/api/health`, `/leads`, and `/campaigns` smoke passed.
 
-### M29 Stuart Sign-In + Resend API Settings - 2026-05-04
+### M29 Stuart Sign-In + SMTP Email Settings - 2026-05-04
 
 - [x] Production Stuart account diagnosis completed: `sb@securecreditlines.com` is active, phone ends in `2055`, OTP failed attempts are `0`, and no OTP lock is active.
 - [x] Production OTP history checked: no `LoginOtp` rows exist for Stuart, which means no successful code request was recorded for the exact account email.
 - [x] Twilio delivery check completed: recent platform SMS to Stuart's configured phone were delivered through the configured Messaging Service.
-- [x] Root gap identified: email sign-in fallback was not usable because production Resend credentials/sender were not configured.
-- [x] Backend now supports Resend credentials from `SystemSetting`: `resendApiKey` and `resendFromEmail`, with env fallback preserved.
-- [x] Settings API now whitelists Resend keys, masks `resendApiKey`, rejects masked secret saves, and validates `resendFromEmail` format.
-- [x] Settings UI now exposes `Email Sign-in` under Integrations so an admin can connect Resend without editing environment variables.
+- [x] SMS OTP remains on the existing Twilio API/Messaging Service path used by the rest of platform SMS sending.
+- [x] Root gap identified: email sign-in fallback needed a configurable mail transport.
+- [x] Backend now sends email OTP through SMTP: local server relay default `127.0.0.1:25`, with env/settings override for external SMTP.
+- [x] Settings API now whitelists SMTP keys, masks `smtpPassword`, rejects masked secret saves, and validates `smtpFromEmail`, `smtpPort`, and `smtpSecure`.
+- [x] Settings UI now exposes `Email Sign-in` under Integrations so an admin can use server SMTP or connect external SMTP without code changes.
 - [x] Login first screen now offers `Use email code instead` immediately after entering email, while keeping SMS as the primary button.
 - [x] Stuart/API setup instructions added: `docs/STUART_SIGN_IN_AND_API_SETUP_2026-05-04.md`.
 - [x] Focused auth tests passed: `authOtpPolicy` and `authDevModeLogin` — 8/8 tests.
 - [x] Root production build passed: server `tsc` plus client `tsc && vite build`.
 - [x] Browser smoke passed on local preview: after entering `sb@securecreditlines.com`, both `Send SMS code` and `Use email code instead` are enabled.
 - [x] Evidence added: `audit-screenshots/m29-stuart-sign-in-api-evidence.json`, `audit-screenshots/m29-login-email-code-option.png`.
-- [ ] Production email OTP delivery smoke remains blocked until client/admin provides and saves Resend API key plus verified sender email.
+- [ ] Production email OTP delivery smoke remains blocked until server SMTP relay is confirmed or external SMTP credentials are saved.
 
 ## Source Map
 
@@ -201,7 +202,7 @@
 
 ### Implementation evidence — 2026-05-02
 
-- [x] Auth code map completed before implementation: current auth was password-only, `User.mobilePhone` exists, Twilio config exists, Resend/email sender needed env config.
+- [x] Auth code map completed before implementation: current auth was password-only, `User.mobilePhone` exists, Twilio config exists, and email sender needed SMTP config.
 - [x] Prisma OTP schema added: `OtpChannel`, `LoginOtp`, user failed-attempt and lockout fields.
 - [x] Backend OTP service added with hashed 6-digit codes, 5-minute expiry, one-time use, prior-code invalidation, SMS default and email fallback.
 - [x] Public endpoints added: `POST /api/auth/request-otp`, `POST /api/auth/verify-otp`.
@@ -220,7 +221,7 @@
 - [x] Production Redis availability verified through `/api/health` after deploy restart.
 - [x] Live SMS OTP delivery validation passed on production: Twilio message delivered, `/api/auth/verify-otp` returned JWT/refresh token, latest `LoginOtp` row was consumed, and `/api/auth/me` returned the ADMIN user.
 - [x] Live browser OTP flow passed on production: `/login` -> `Send code` -> OTP state -> real SMS code verify -> `/command-center` redirect; fresh hard navigation loaded Command Center successfully.
-- [ ] Resend email delivery validation remains blocked: production `/api/auth/request-otp` with `channel=email` returns `503 Email sign-in fallback is not configured` because `RESEND_API_KEY` / `RESEND_FROM_EMAIL` are missing.
+- [ ] SMTP email delivery validation remains blocked until production server SMTP relay or external SMTP credentials are confirmed and email OTP smoke passes.
 - [x] Deployment note completed: production DB backup saved, additive schema sync applied, Prisma Client regenerated, and production build passed.
 
 ### Dev mode login gate — 2026-05-04
@@ -244,7 +245,7 @@
 - [x] Preserve existing password-based `/api/auth/login` fallback for production safety until demo/JB approval.
 - [ ] Confirm all 6 reps + admin have populated account `email` and `mobilePhone` values.
 - [ ] Confirm Twilio 10DLC can handle OTP volume of ~50-100/day peak.
-- [ ] Confirm Resend is configured for SCL-branded OTP sender. Blocked 2026-05-04: production email OTP returns 503 until `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are configured.
+- [ ] Confirm SMTP is configured for SCL-branded OTP sender. Blocked 2026-05-04 until server SMTP relay or external SMTP credentials are confirmed.
 - [x] Confirm old password column may only be dropped after demo pass and explicit JB approval.
 - [x] Redirect mapping implemented:
   - admin/manager -> current Dashboard surface `/command-center`;
@@ -319,7 +320,7 @@
 - [x] Add fallback link after the SMS code step: `Lost access to your phone? Use email instead`.
 - [x] Link is visible for all users after they request an SMS OTP, preserving the first-screen visual match to the SCL auth screenshot.
 - [x] Clicking sends OTP to account email.
-- [ ] Email OTP arrives within 30 seconds in test/demo conditions. Blocked by missing production Resend config.
+- [ ] Email OTP arrives within 30 seconds in test/demo conditions. Blocked until production SMTP relay or external SMTP credentials are confirmed.
 - [x] Email OTP uses same 5-minute expiration.
 - [x] Email OTP uses same 5-attempt lockout counter as SMS.
 - [x] Email OTP request uses separate 3/hour email fallback rate limit.
@@ -1278,7 +1279,7 @@
 | 2026-05-04 |      80% | M1.4      | Added and deployed Inbox AI latest-inbound repair, email priority, owner-action reclassification, inbound owner preservation, quiet-hours reply bypass, and live smoke evidence.                                            | `audit-screenshots/m14-ai-suggestion-repair-evidence.json`         |
 | 2026-05-04 |      82% | M2.1/M2.2 | Closed lead/campaign scope, readable source, enrichment/export, admin/rep browser smoke, and responsive overflow evidence; live two-rep CSV smoke and strict pixel-close remain.                                            | `audit-screenshots/m21-m22-leads-campaigns-evidence.json`          |
 | 2026-05-04 |      84% | M2.3      | Added LeadCohort DB/cache, Sonnet reasoning, cron, Build modal/list/actions smoke, tests/build, and production DB/health/frontend smoke.                                                                                    | `audit-screenshots/m23-ai-cohort-cache-cron-evidence.json`         |
-| 2026-05-04 |    84.5% | M1.1      | Passed live SMS OTP delivery, verify, consumed-code, `/auth/me`, browser redirect, and dev-login production guard; Resend email fallback remains blocked by missing env config.                                             | `audit-screenshots/m11-live-otp-evidence.json`                     |
+| 2026-05-04 |    84.5% | M1.1      | Passed live SMS OTP delivery, verify, consumed-code, `/auth/me`, browser redirect, and dev-login production guard; email fallback remains blocked pending production SMTP smoke.                                            | `audit-screenshots/m11-live-otp-evidence.json`                     |
 | 2026-05-04 |    85.5% | M2.3      | Closed retained Campaigns prototype compare with saved screenshots for AI Retarget cards, All Campaigns, AI badge/lineage, no scope creep, and desktop/mobile no-overflow.                                                  | `audit-screenshots/m23-ai-cohort-cache-cron-evidence.json`         |
 | 2026-05-04 |    87.5% | M2.4      | Passed M2 functional regression bootstrap: focused backend tests 15/15, root build, mocked UI smoke for search/filters/import/add/export/create/actions; deeper gates remain.                                               | `audit-screenshots/m24-regression-bootstrap-evidence.json`         |
 | 2026-05-02 |       6% | Planning  | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.                                                                                          | This file                                                          |

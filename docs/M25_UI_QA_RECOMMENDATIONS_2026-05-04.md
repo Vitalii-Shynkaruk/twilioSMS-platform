@@ -3,7 +3,7 @@
 # M25 UI QA Recommendations — Login/Auth + Campaigns
 
 Дата: 2026-05-04
-Статус: code-side визуальная и сценарная проверка завершена; внешний блокер остается только по production email OTP fallback без Resend конфигурации.
+Статус: code-side визуальная и сценарная проверка завершена; внешний блокер остается только по production email OTP fallback без подтвержденного SMTP.
 
 ## Что проверено
 
@@ -38,8 +38,8 @@ Evidence:
 5. AI Retarget карточки показывают предупреждения, но не объясняют источник ограничения.
    Рекомендация: добавить tooltip/expand details для `admin-override`, `capacity trim`, `retargeted in last 7d`, чтобы менеджер понимал, почему часть лидов не попала в кампанию.
 
-6. Email OTP fallback технически доступен в UI после SMS step, но production пока возвращает 503 без Resend.
-   Рекомендация: до настройки Resend либо оставить текущее поведение с понятной ошибкой, либо временно скрывать email fallback при health/config check. Лучшее решение — настроить Resend и закрыть блокер.
+6. Email OTP fallback технически доступен в UI после SMS step, но production требует рабочий SMTP relay или внешние SMTP credentials.
+   Рекомендация: до настройки SMTP либо оставить текущее поведение с понятной ошибкой, либо временно скрывать email fallback при health/config check. Лучшее решение — подтвердить серверный SMTP relay или подключить внешний SMTP и закрыть блокер.
 
 7. AI функции зависят от Anthropic/OpenAI ключей в `SystemSetting`, но пользователю не всегда видно, какой провайдер реально активен.
    Рекомендация: добавить admin-only Integration Health card: provider, model, last successful AI call, last error, masked key presence.
@@ -49,23 +49,21 @@ Evidence:
 
 ## API keys и где их получить
 
-### Resend — обязательно для email OTP fallback
+### SMTP — обязательно для email OTP fallback
 
 Нужно получить:
 
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL`, например `no-reply@securecreditlines.com` или другой verified sender на домене клиента.
+- sender email, например `login@sclcapital.io` или другой authorized sender на домене клиента;
+- подтверждение, что production server SMTP relay может отправлять письма с этого домена;
+- если используется внешний SMTP: host, port, username, password, secure TLS mode.
 
 Шаги:
 
-1. Перейти на `https://resend.com` и создать/открыть аккаунт клиента.
-2. Добавить домен отправки, например `securecreditlines.com` или согласованный subdomain.
-3. В DNS домена добавить записи, которые покажет Resend: DKIM, SPF/Return-Path; DMARC желательно иметь минимум в режиме мониторинга.
-4. Дождаться статуса verified в Resend.
-5. В Resend → API Keys создать production key с правом sending.
-6. Передать ключ безопасно, не через email/chat в открытом виде.
-7. На production сервере добавить `RESEND_API_KEY` и `RESEND_FROM_EMAIL`, перезапустить backend.
-8. Проверить `POST /api/auth/request-otp` с `channel=email`: письмо должно прийти в течение 30 секунд.
+1. Для серверного SMTP подтвердить, что на production доступен SMTP relay `127.0.0.1:25`.
+2. В DNS домена проверить SPF/DKIM/DMARC для выбранного отправителя.
+3. В Settings → Integrations → Email Sign-in сохранить `From Email`, `SMTP Host`, `SMTP Port` и `Secure TLS`.
+4. Для внешнего SMTP дополнительно сохранить username/password, полученные у провайдера.
+5. Проверить `POST /api/auth/request-otp` с `channel=email`: письмо должно прийти в течение 30 секунд.
 
 ### Anthropic — основной AI provider для AI Inbox / AI Retarget reasoning
 
@@ -152,17 +150,17 @@ All code-side visual and scenario checks are passing.
 
 There are two client-side items still needed for final production readiness:
 
-1. Resend email configuration for email OTP fallback.
-   Please create or provide access to a Resend account, verify the sending domain, and provide the production sending API key plus the verified sender email address. Required values:
-   - `RESEND_API_KEY`
-   - `RESEND_FROM_EMAIL`, for example `no-reply@securecreditlines.com`
+1. SMTP email configuration for email OTP fallback.
+   Please confirm the production server SMTP relay can send SCL login emails, or provide external SMTP credentials. Required values:
+   - sender email, for example `login@sclcapital.io`
+   - SMTP host and port
+   - SMTP username and password if external SMTP requires auth
+   - secure TLS mode, usually `false` for port `587` and `true` for port `465`
 
    How to get it:
-   - Go to `https://resend.com`.
-   - Add and verify the sending domain.
-   - Add the DNS records Resend provides: DKIM, SPF/Return-Path, and ideally DMARC.
-   - Create a production API key under API Keys.
-   - Send the key through a secure channel, not regular email or chat.
+   - Use the production server SMTP relay at `127.0.0.1:25`, or ask the mail provider/hosting provider for SMTP credentials.
+   - Confirm SPF/DKIM/DMARC records for the sender domain.
+   - Send any SMTP password through a secure channel, not regular email or chat.
 
 2. Original SCL logo/wordmark asset for exact pixel-perfect login matching.
    The current implementation recreates the SCL wordmark with CSS, which is close, but true pixel-perfect matching requires the original SVG or high-resolution transparent PNG used in the reference screenshot.
@@ -182,8 +180,8 @@ For Twilio, please make sure we have the account owner-approved production crede
   - `https://app.sclcapital.io/api/webhooks/twilio/inbound`
   - `https://app.sclcapital.io/api/webhooks/twilio/status`
 
-Once Resend is configured and the original SCL logo asset is provided, we can close the remaining acceptance gap and perform the final production smoke test.
+Once SMTP is confirmed and the original SCL logo asset is provided, we can close the remaining acceptance gap and perform the final production smoke test.
 
 ## 📌 Резюме (рус):
 
-Клиенту нужно отправить, что Login и Campaigns визуально доработаны и сценарии прошли. Для полного закрытия нужны: Resend API key + verified sender email для email OTP, оригинальный SCL logo/wordmark asset для абсолютного pixel-perfect, подтверждение Anthropic/OpenAI ключа для AI функций и Twilio production credentials/A2P/webhooks.
+Клиенту нужно отправить, что Login и Campaigns визуально доработаны и сценарии прошли. Для полного закрытия нужны: рабочий SMTP/authorized sender email для email OTP, оригинальный SCL logo/wordmark asset для абсолютного pixel-perfect, подтверждение Anthropic/OpenAI ключа для AI функций и Twilio production credentials/A2P/webhooks.

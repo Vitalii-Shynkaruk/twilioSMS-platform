@@ -109,7 +109,7 @@
   "environment_notes": [
     "Local real backend start was blocked by DATABASE_URL validation: Prisma requires a mysql:// URL. This is an environment configuration issue, not a TypeScript/build failure.",
     "Because local real backend could not start, browser validation used a deterministic local mock API on port 3001 through the same Vite /api proxy. Production deploy smoke validated the real API route, DB columns, health, and frontend after migration.",
-    "Production Anthropic config is present through SystemSetting anthropicApiKey/anthropicModel; RESEND_API_KEY and RESEND_FROM_EMAIL are still absent from production env."
+    "Production Anthropic config is present through SystemSetting anthropicApiKey/anthropicModel; email OTP fallback still requires production SMTP delivery smoke."
   ],
   "known_deferred_items": [
     "v11 prototype urgency/ask/confidence chips are intentionally not implemented because extractor-spec marks them outside retained v1 scope."

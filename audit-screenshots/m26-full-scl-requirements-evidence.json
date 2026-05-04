@@ -72,7 +72,7 @@
   },
   "apiRequirementConclusion": {
     "newApiForLeadsCampaigns": false,
-    "requiredForEmailOtpFallback": ["RESEND_API_KEY", "RESEND_FROM_EMAIL", "verified Resend sender/domain"],
+    "requiredForEmailOtpFallback": ["server SMTP relay or external SMTP credentials", "authorized sender email/domain"],
     "requiredForExactLoginPixelMatch": ["original SCL logo/wordmark SVG or high-resolution transparent PNG"],
     "confirmExistingProductionServices": [
       "Twilio Account SID/Auth Token",
@@ -96,7 +96,7 @@
     }
   },
   "remainingExternalBlockers": [
-    "Resend production email sender configuration for email OTP fallback smoke.",
+    "Production SMTP email sender configuration for email OTP fallback smoke.",
     "Original SCL logo/wordmark asset for absolute Login pixel-perfect match."
   ]
 }

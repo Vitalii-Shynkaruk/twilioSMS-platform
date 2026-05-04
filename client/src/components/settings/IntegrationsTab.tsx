@@ -89,7 +89,7 @@ export default function IntegrationsTab() {
   const queryClient = useQueryClient();
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showTestToken, setShowTestToken] = useState(false);
-  const [showResendKey, setShowResendKey] = useState(false);
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
 
@@ -224,28 +224,57 @@ export default function IntegrationsTab() {
           </div>
           <div>
             <h3 className="text-base font-semibold text-dark-100">Email Sign-in</h3>
-            <p className="text-xs text-dark-400">Resend API fallback for OTP login when a rep cannot receive SMS.</p>
+            <p className="text-xs text-dark-400">
+              SMTP fallback for OTP login. Uses the server SMTP relay by default; external SMTP can be connected here.
+            </p>
           </div>
         </div>
 
         <div className="rounded-lg border border-dark-700/50 bg-dark-800/30 p-4 space-y-4">
           <p className="text-xs text-dark-400">
-            After these fields are saved, reps can request a sign-in code by email from the login screen.
+            Leave host as <span className="font-mono text-dark-200">127.0.0.1</span> and port{' '}
+            <span className="font-mono text-dark-200">25</span> to send through the server SMTP relay. For an external
+            provider, enter its SMTP host, port, username, and password.
           </p>
           <IntegrationField
             {...fieldProps}
-            label="Resend API Key"
-            settingKey="resendApiKey"
-            isSecret
-            showSecret={showResendKey}
-            onToggle={() => setShowResendKey(!showResendKey)}
-          />
-          <IntegrationField
-            {...fieldProps}
-            label="From Email (verified Resend sender)"
-            settingKey="resendFromEmail"
+            label="From Email"
+            settingKey="smtpFromEmail"
             defaultValue="login@sclcapital.io"
           />
+          <IntegrationField {...fieldProps} label="SMTP Host" settingKey="smtpHost" defaultValue="127.0.0.1" />
+          <IntegrationField {...fieldProps} label="SMTP Port" settingKey="smtpPort" defaultValue="25" />
+          <IntegrationField {...fieldProps} label="SMTP Username" settingKey="smtpUser" />
+          <IntegrationField
+            {...fieldProps}
+            label="SMTP Password"
+            settingKey="smtpPassword"
+            isSecret
+            showSecret={showSmtpPassword}
+            onToggle={() => setShowSmtpPassword(!showSmtpPassword)}
+          />
+          <div>
+            <label className="label">Secure TLS</label>
+            <div className="flex items-center gap-2">
+              <select
+                className="input flex-1"
+                value={getVal('smtpSecure', 'false')}
+                onChange={(e) => handleChange('smtpSecure', e.target.value)}
+              >
+                <option value="false">Disabled / STARTTLS optional (25 or 587)</option>
+                <option value="true">Enabled (465)</option>
+              </select>
+              {dirty.has('smtpSecure') && (
+                <button
+                  onClick={() => handleSave('smtpSecure')}
+                  disabled={saveMutation.isPending}
+                  className="btn-primary py-2 px-3 text-xs"
+                >
+                  <Save className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

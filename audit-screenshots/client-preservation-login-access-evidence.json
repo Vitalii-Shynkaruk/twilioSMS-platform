@@ -73,6 +73,6 @@
   ],
   "knownLimitations": [
     "Full backend suite remains outside this focused gate because local full-env Redis/MySQL mismatch is already documented.",
-    "Twilio SMS and Resend live OTP delivery still require real account/device validation."
+    "Twilio SMS and SMTP email OTP delivery still require real account/device validation."
   ]
 }

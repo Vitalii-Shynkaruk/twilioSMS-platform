@@ -138,6 +138,6 @@
     "sampleRowVerified": "Restaurants,82000,CSV,readable import list source"
   },
   "remainingRisks": [
-    "No M2.1/M2.2 blocker remains after production live CSV smoke and visual prototype checks. M1.1 Resend email OTP fallback is still an external production config blocker."
+    "No M2.1/M2.2 blocker remains after production live CSV smoke and visual prototype checks. M1.1 email OTP fallback is still gated by production SMTP smoke."
   ]
 }

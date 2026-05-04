@@ -8,10 +8,11 @@ No new third-party API is required specifically for the Leads/Campaigns refineme
 
 ## Required From Client
 
-1. Resend email sending setup for email OTP fallback:
-   - `RESEND_API_KEY`
-   - `RESEND_FROM_EMAIL`, for example `no-reply@securecreditlines.com`
-   - Verified sending domain in Resend with DNS records completed.
+1. SMTP email sending setup for email OTP fallback:
+   - server SMTP relay at `127.0.0.1:25`, or external SMTP credentials;
+   - `smtpFromEmail`, for example `login@sclcapital.io`;
+   - optional external values: `smtpHost`, `smtpPort`, `smtpUser`, `smtpPassword`, `smtpSecure`;
+   - sender domain must be authorized for SMTP delivery with SPF/DKIM/DMARC where available.
 
 2. Original SCL logo/wordmark asset for exact Login pixel match:
    - SVG preferred, or high-resolution transparent PNG.
@@ -35,7 +36,7 @@ No new third-party API is required specifically for the Leads/Campaigns refineme
 - No separate API is needed for Source/State/Last Contact filters.
 - No separate API is needed for readable source names.
 - No separate API is needed for AI Suggested Campaign cards beyond the existing AI provider key.
-- No Gmail/email-sending integration is part of the current approved Leads/Campaigns scope.
+- No separate Gmail/API email integration is part of the current approved Leads/Campaigns scope. Email OTP uses server SMTP or an external SMTP relay.
 
 ## Secure Delivery Note
 
@@ -43,4 +44,4 @@ API keys should not be sent in regular chat. Use a secure password manager share
 
 ## Russian Summary
 
-Для Leads/Campaigns новый внешний API не нужен. Для полного закрытия нужны Resend для email OTP fallback, оригинальный SCL logo asset, подтверждение Twilio/A2P production settings и Anthropic key для AI-функций.
+Для Leads/Campaigns новый внешний API не нужен. Для полного закрытия нужны рабочий SMTP для email OTP fallback, оригинальный SCL logo asset, подтверждение Twilio/A2P production settings и Anthropic key для AI-функций.

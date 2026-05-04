@@ -1,0 +1,78 @@
+{
+  "gate": "client-preservation-login-access",
+  "date": "2026-05-04",
+  "scope": [
+    "Client escalation remarks",
+    "Login visual contract",
+    "Production access smoke",
+    "Inbox assignment controls preservation",
+    "Pipeline rep ownership preservation"
+  ],
+  "production": {
+    "url": "https://app.sclcapital.io/",
+    "health": {
+      "status": "ok",
+      "env": "production",
+      "services": {
+        "database": "ok",
+        "redis": "ok"
+      }
+    },
+    "loginHttpStatus": 200,
+    "checkedAt": "2026-05-04T04:52:28.895Z"
+  },
+  "localPreview": {
+    "url": "http://127.0.0.1:4173/login",
+    "httpStatus": 200,
+    "browserTitle": "SecureCreditLines - SMS Platform",
+    "viewport": {
+      "width": 918,
+      "height": 667
+    },
+    "scrollHeight": 667,
+    "clientHeight": 667,
+    "hasVerticalOverflow": false,
+    "footerText": "SCL Systems • Secure • Intelligent • Relentless",
+    "footerVisibleInViewport": true,
+    "visibleLoginContract": [
+      "SCL metallic wordmark",
+      "Sales Command Layer subtitle",
+      "Command your pipeline headline",
+      "Execution. Focus. Results. tagline",
+      "Sign in to SCL panel",
+      "Email address field",
+      "Send code button",
+      "Phone verification note",
+      "SCL Systems footer"
+    ]
+  },
+  "tests": [
+    {
+      "command": "cd server && npx vitest run tests/clientPreservationRequirements.test.ts tests/dealOwnershipPreservation.test.ts tests/dealControllerScope.test.ts",
+      "result": "passed",
+      "testFiles": 3,
+      "tests": 11
+    },
+    {
+      "command": "npm run build",
+      "result": "passed",
+      "coverage": ["server tsc", "client tsc", "vite production build"]
+    }
+  ],
+  "preservedSurfaces": [
+    "Inbox action row Assign Rep",
+    "Inbox action row Mark Unread",
+    "Inbox action row Note",
+    "Inbox CONTACT Assigned Rep field",
+    "Rep chip/avatar on conversation cards",
+    "Admin View / My Convs toggle for admin/manager",
+    "Non-admin My Convs lock",
+    "Deal.assignedRepId primary owner scope",
+    "Deal.assistingRepIds assisting owner scope",
+    "Deal share flow and scoped socket tests"
+  ],
+  "knownLimitations": [
+    "Full backend suite remains outside this focused gate because local full-env Redis/MySQL mismatch is already documented.",
+    "Twilio SMS and Resend live OTP delivery still require real account/device validation."
+  ]
+}

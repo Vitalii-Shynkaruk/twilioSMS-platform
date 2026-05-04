@@ -1073,6 +1073,21 @@ function MessageThread({
                 </button>
               )}
               <button
+                className="inbox-action-btn"
+                onClick={() => markUnreadMutation.mutate()}
+                disabled={!canAutoMarkRead || markUnreadMutation.isPending}
+                title={canAutoMarkRead ? 'Mark this conversation unread' : 'Unread is preserved for the assigned rep'}
+              >
+                <CheckCheck size={12} /> Mark Unread
+              </button>
+              <button
+                className="inbox-action-btn"
+                onClick={() => setShowNotePopover((p) => !p)}
+                title="Add an internal note"
+              >
+                <MessageSquare size={12} /> Note
+              </button>
+              <button
                 className="inbox-action-btn followup-btn"
                 onClick={() => setShowFollowupPopover((p) => !p)}
                 title="Schedule follow-up"

@@ -2,26 +2,26 @@
 
 # SCL Capital — Master M1/M2 Delivery Checklist
 
-Дата обновления: 2026-05-02
+Дата обновления: 2026-05-04
 
 ## Progress Dashboard
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                    |
-| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                      |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending        |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                         |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                               |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         2% | B.6 stacking chip rendering rules implemented; backend extractor/data plumbing pending    |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate     |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending            |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending       |
-| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                               |
-| **Overall**                                     | **100%** |    **75%** | **M1.6 visual gate complete; remaining work shifts to M1.1, M1.4, and M2 gates**          |
+| Направление                                     |      Вес | Готовность | Статус                                                                                                          |
+| ----------------------------------------------- | -------: | ---------: | --------------------------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                            |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending                              |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                               |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                     |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         3% | B.0 ownership preservation lock + B.6 stacking chip rules implemented; backend pending                          |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                           |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                       |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                                  |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending                             |
+| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending                       |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                                     |
+| **Overall**                                     | **100%** |    **76%** | **Client preservation remarks locked; remaining work shifts to M1.1 live delivery, M1.4 backend, and M2 gates** |
 
 ## Source Map
 
@@ -73,6 +73,8 @@
 
 ## Client Pain Points To Guard
 
+- [x] Login page must match the attached SCL visual contract: typography, dark HUD frame, metallic SCL wordmark, spacing, gradient button, phone verification footer, and SCL Systems footer.
+- [x] Platform access must be smoked before reps become active: `/api/health`, `/login`, database, Redis.
 - [ ] AI suggestions должны соответствовать последнему client message и full-thread context.
 - [ ] Email CTA должен брать email из conversation/client text прежде lead-list email.
 - [ ] Gmail compose должен открываться надежно и только с `to=` без subject/body.
@@ -83,6 +85,13 @@
 - [ ] Source column не должен показывать UUID там, где нужен readable list/campaign name.
 - [ ] Export CSV должен учитывать текущие filters и не выгружать чужие данные rep-у.
 - [ ] UI не должен выглядеть как “почти похоже”: retained prototype elements сравниваются pixel-close.
+- [x] Inbox action row must preserve existing buttons: Mark Interested, Not Interested, DNC, Email Rcv, Add to Pipeline, Follow-Up, Mark Unread/Note where present, and `Assign Rep` where role-allowed.
+- [x] Inbox CONTACT tab must preserve structured `Assigned Rep` field.
+- [x] Rep chip/avatar must remain visible on cards where assignment exists in both Admin and My Convs views.
+- [x] Admin/My Convs scope must remain unchanged: admins/managers can toggle; reps are locked to My Convs; totals follow the selected scope.
+- [x] Pipeline AI must never write or infer `Deal.assignedRepId` / `Deal.assistingRepIds`; badges are deal-level facts and must respect existing rep scope.
+- [x] Deal sharing must remain unchanged: primary rep can add assisting reps without admin involvement.
+- [x] Auto-reassignment between reps is explicitly out of scope.
 
 ## Phase 0 — Scope Consolidation And Setup
 
@@ -462,6 +471,22 @@
 - [x] Frontend build passed after B.6 chip update.
 - [x] Browser mock validation passed: DealCard rendered `1ST POSITION`, `1-POSITION`, `2-POSITIONS · $180k`, `3-STACKED · $240k · ACTIVE`; DealPanel rendered active stacked chip.
 - [ ] Backend extractor/data plumbing still pending: `Deal.pipelineAiSignals`, `Deal.pipelineAiUpdatedAt`, and live AI extraction endpoint.
+
+### Client preservation lock — 2026-05-04
+
+- [x] Added B.0 preservation requirement to Pipeline AI specs: `Deal.assignedRepId`, `Deal.assistingRepIds`, deal sharing, rep chips, Inbox `Assign Rep`, CONTACT `Assigned Rep`, Admin/My Convs scope, and auto-reassignment out of scope.
+- [x] Verified current code already preserves the Inbox action-row `Assign Rep` button for admin/manager assignment workflows.
+- [x] Verified current code already renders CONTACT `Assigned Rep` in the right panel when assignment data exists.
+- [x] Verified current code already renders rep chip/avatar on conversation cards where assignment data exists.
+- [x] Verified current backend Inbox scope keeps admin/manager Admin View vs My Convs and locks non-admin reps to owned conversations.
+- [x] Verified current backend Pipeline scope keeps reps on primary + assisting deals via `repScopeFilter` and admin/manager unscoped view only.
+- [x] Added focused preservation tests so future Pipeline AI work cannot silently remove the client-protected surfaces.
+- [x] Restored visible Inbox action-row `Mark Unread` and `Note` controls next to the existing assignment/follow-up actions.
+- [x] Focused preservation regression passed: `clientPreservationRequirements`, `dealOwnershipPreservation`, and `dealControllerScope` — 11/11 tests.
+- [x] Root production build passed after preservation + login visual changes: server `tsc` plus client `tsc && vite build`.
+- [x] Local production preview `/login` passed browser validation: HTTP 200, no vertical overflow at 918x667, footer visible in first viewport, SCL visual contract present.
+- [x] Production access smoke passed after client escalation: `/api/health` returned `database: ok` and `redis: ok`; live `/login` returned HTTP 200.
+- [x] Evidence JSON added: `audit-screenshots/client-preservation-login-access-evidence.json`.
 
 ### Backend foundation
 
@@ -1066,11 +1091,12 @@
 
 ## Progress Update Log
 
-| Date       | Progress | Area     | What changed                                                                                                                              | Evidence                                                       |
-| ---------- | -------: | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 2026-05-02 |      71% | M1.6     | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.                   | `audit-screenshots/m16-drag-funding-evidence.json`             |
-| 2026-05-02 |      72% | M1.6     | Deployed `1982fdb0` to `https://app.sclcapital.io/`, applied additive DB schema sync, rebuilt/restarted PM2, and passed production smoke. | `audit-screenshots/m16-production-deploy-evidence.json`        |
-| 2026-05-02 |      73% | M1.6     | Added and deployed Inbox AI/email CTA/follow-up/quiet-hours/inbound-owner regression evidence; production smoke passed on `2f665aaf`.     | `audit-screenshots/m16-inbox-ai-policy-evidence.json`          |
-| 2026-05-02 |      74% | M1.6     | Added and deployed new deal creation/sharing/socket scoping evidence; production smoke passed on `01b6700d`.                              | `audit-screenshots/m16-deal-create-share-socket-evidence.json` |
-| 2026-05-02 |      75% | M1.6     | Added visual regression evidence for Pipeline 1440/960, DealPanel, DealCard, overlap/layout-shift, and sidebar checks.                    | `audit-screenshots/m16-visual-regression-evidence.json`        |
-| 2026-05-02 |       6% | Planning | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.        | This file                                                      |
+| Date       | Progress | Area      | What changed                                                                                                                                                                | Evidence                                                           |
+| ---------- | -------: | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-05-02 |      71% | M1.6      | Added drag/drop + Funding History smoke evidence; moved M1.6 from 3/8 to 4/8 while keeping full-env/release gates open.                                                     | `audit-screenshots/m16-drag-funding-evidence.json`                 |
+| 2026-05-02 |      72% | M1.6      | Deployed `1982fdb0` to `https://app.sclcapital.io/`, applied additive DB schema sync, rebuilt/restarted PM2, and passed production smoke.                                   | `audit-screenshots/m16-production-deploy-evidence.json`            |
+| 2026-05-02 |      73% | M1.6      | Added and deployed Inbox AI/email CTA/follow-up/quiet-hours/inbound-owner regression evidence; production smoke passed on `2f665aaf`.                                       | `audit-screenshots/m16-inbox-ai-policy-evidence.json`              |
+| 2026-05-02 |      74% | M1.6      | Added and deployed new deal creation/sharing/socket scoping evidence; production smoke passed on `01b6700d`.                                                                | `audit-screenshots/m16-deal-create-share-socket-evidence.json`     |
+| 2026-05-02 |      75% | M1.6      | Added visual regression evidence for Pipeline 1440/960, DealPanel, DealCard, overlap/layout-shift, and sidebar checks.                                                      | `audit-screenshots/m16-visual-regression-evidence.json`            |
+| 2026-05-04 |      76% | M1.4/M1.6 | Locked angry-client preservation requirements, restored Inbox Mark Unread/Note in action row, tightened login visual fit, and passed focused tests/build/prod access smoke. | `audit-screenshots/client-preservation-login-access-evidence.json` |
+| 2026-05-02 |       6% | Planning  | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.                                          | This file                                                          |

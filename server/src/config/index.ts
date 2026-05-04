@@ -24,6 +24,11 @@ export const config = {
     refreshExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
   },
 
+  devModeLogin: {
+    enabled: env.DEV_MODE_LOGIN_ENABLED === 'true',
+    secret: env.DEV_MODE_LOGIN_SECRET,
+  },
+
   // Alias for backward compatibility
   get jwtSecret() {
     return this.jwt.secret;

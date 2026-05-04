@@ -50,6 +50,14 @@ export const verifyOtpSchema = z.object({
     .regex(/^\d{6}$/, 'Code must be 6 digits'),
 });
 
+export const devModeLoginSchema = z.object({
+  email: z
+    .string()
+    .email()
+    .transform((s) => s.toLowerCase().trim()),
+  devKey: z.string().trim().max(256).optional(),
+});
+
 export const registerSchema = z.object({
   email: z
     .string()

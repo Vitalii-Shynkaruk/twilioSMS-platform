@@ -21,6 +21,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   requestOtp: (email: string, channel?: OtpChannel) => Promise<RequestOtpResponse>;
   verifyOtp: (email: string, code: string) => Promise<User>;
+  devModeLogin: (email: string) => Promise<User>;
   logout: () => void;
   checkAuth: () => Promise<void>;
 }
@@ -79,6 +80,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { data } = await api.post<{ token: string; refreshToken: string; user: User }>('/auth/verify-otp', {
         email,
         code,
+      });
+      persistSession(data, set);
+      return data.user;
+    } catch (err) {
+      set({ isLoginLoading: false });
+      throw err;
+    }
+  },
+
+  devModeLogin: async (email: string) => {
+    set({ isLoginLoading: true });
+    try {
+      const { data } = await api.post<{ token: string; refreshToken: string; user: User }>('/auth/dev-login', {
+        email,
       });
       persistSession(data, set);
       return data.user;

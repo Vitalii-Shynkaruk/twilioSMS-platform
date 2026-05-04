@@ -39,6 +39,7 @@ api.interceptors.response.use(
       !url.includes('/auth/login') &&
       !url.includes('/auth/request-otp') &&
       !url.includes('/auth/verify-otp') &&
+      !url.includes('/auth/dev-login') &&
       !url.includes('/auth/refresh') &&
       !originalRequest._retry
     ) {

@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { asyncHandler } from '../utils/asyncHandler';
 import { validate } from '../validation/middleware';
 import {
+  devModeLoginSchema,
   loginSchema,
   registerSchema,
   requestOtpSchema,
@@ -28,6 +29,7 @@ const loginLimiter = rateLimit({
 router.post('/login', loginLimiter, validate(loginSchema), asyncHandler(AuthController.login));
 router.post('/request-otp', loginLimiter, validate(requestOtpSchema), asyncHandler(AuthController.requestOtp));
 router.post('/verify-otp', loginLimiter, validate(verifyOtpSchema), asyncHandler(AuthController.verifyOtp));
+router.post('/dev-login', loginLimiter, validate(devModeLoginSchema), asyncHandler(AuthController.devModeLogin));
 router.post('/refresh', asyncHandler(AuthController.refresh));
 
 // Protected

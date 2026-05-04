@@ -16,6 +16,9 @@ function getRedirectPath(role?: string) {
   return role === 'REP' ? '/pipeline' : '/command-center';
 }
 
+const devModeLoginEnabled =
+  String(import.meta.env.VITE_DEV_MODE_LOGIN_ENABLED || '').toLowerCase() === 'true' && !import.meta.env.PROD;
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -25,7 +28,7 @@ export default function LoginPage() {
   const [expiresRemaining, setExpiresRemaining] = useState(0);
   const [resendRemaining, setResendRemaining] = useState(0);
   const [error, setError] = useState('');
-  const { requestOtp, verifyOtp, isLoginLoading, isAuthenticated, user } = useAuthStore();
+  const { requestOtp, verifyOtp, devModeLogin, isLoginLoading, isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -86,6 +89,19 @@ export default function LoginPage() {
       navigate(getRedirectPath(signedInUser.role), { replace: true });
     } catch (err: any) {
       setError(parseOtpError(err, 'Invalid or expired sign-in code'));
+    }
+  };
+
+  const handleDevModeLogin = async () => {
+    setError('');
+    const normalizedEmail = email.trim().toLowerCase();
+    setEmail(normalizedEmail);
+
+    try {
+      const signedInUser = await devModeLogin(normalizedEmail);
+      navigate(getRedirectPath(signedInUser.role), { replace: true });
+    } catch (err: any) {
+      setError(parseOtpError(err, 'Dev mode login is not available'));
     }
   };
 
@@ -186,15 +202,29 @@ export default function LoginPage() {
             </button>
 
             {step === 'email' && (
-              <button
-                type="button"
-                onClick={() => sendCode('email')}
-                disabled={isLoginLoading || !email}
-                className="scl-auth__link"
-              >
-                <Mail className="w-4 h-4" />
-                Lost access to your phone? Use email instead
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => sendCode('email')}
+                  disabled={isLoginLoading || !email}
+                  className="scl-auth__link"
+                >
+                  <Mail className="w-4 h-4" />
+                  Lost access to your phone? Use email instead
+                </button>
+
+                {devModeLoginEnabled && (
+                  <button
+                    type="button"
+                    onClick={handleDevModeLogin}
+                    disabled={isLoginLoading || !email}
+                    className="scl-auth__dev"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    Dev mode login
+                  </button>
+                )}
+              </>
             )}
 
             {step === 'code' && (

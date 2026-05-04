@@ -7,6 +7,7 @@ import { config } from '../config';
 import { AuthRequest, invalidateUserCache } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import logger, { authLogger } from '../config/logger';
+import { AuthDevModeLoginService } from '../services/authDevModeLoginService';
 import { AuthOtpService, OtpInvalidCodeError, OtpLockedError, OtpRateLimitError } from '../services/authOtpService';
 
 export class AuthController {
@@ -156,6 +157,17 @@ export class AuthController {
 
       throw error;
     }
+  }
+
+  static async devModeLogin(req: AuthRequest, res: Response): Promise<void> {
+    const { email, devKey } = req.body;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const requestId = req.requestId || '-';
+
+    const user = await AuthDevModeLoginService.login({ email, devKey, requestId, ip });
+    await invalidateUserCache(user.id);
+
+    res.json(AuthController.createSession(user));
   }
 
   static async register(req: AuthRequest, res: Response): Promise<void> {

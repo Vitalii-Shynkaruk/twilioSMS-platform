@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                                          |
-| ----------------------------------------------- | -------: | ---------: | --------------------------------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                            |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         8% | OTP foundation + SCL auth visual parity implemented; live infra validation pending                              |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                               |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                     |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         3% | B.0 ownership preservation lock + B.6 stacking chip rules implemented; backend pending                          |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                           |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                       |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                                  |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending                             |
-| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending                       |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                                     |
-| **Overall**                                     | **100%** |    **76%** | **Client preservation remarks locked; remaining work shifts to M1.1 live delivery, M1.4 backend, and M2 gates** |
+| Направление                                     |      Вес | Готовность | Статус                                                                                                      |
+| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                        |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         9% | OTP foundation + SCL visual parity + dev-only QA login guard implemented; live delivery validation pending  |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                           |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                 |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         3% | B.0 ownership preservation lock + B.6 stacking chip rules implemented; backend pending                      |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                       |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                   |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                              |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending                         |
+| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending                   |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                                 |
+| **Overall**                                     | **100%** |    **77%** | **Dev-only QA login added safely; remaining work shifts to M1.1 live delivery, M1.4 backend, and M2 gates** |
 
 ## Source Map
 
@@ -75,6 +75,8 @@
 
 - [x] Login page must match the attached SCL visual contract: typography, dark HUD frame, metallic SCL wordmark, spacing, gradient button, phone verification footer, and SCL Systems footer.
 - [x] Platform access must be smoked before reps become active: `/api/health`, `/login`, database, Redis.
+- [x] Local QA needs a controlled `dev_mode_login` path so testers can enter the app without waiting for SMS/email OTP.
+- [x] `dev_mode_login` must never be available in production, even if env flags are accidentally set.
 - [ ] AI suggestions должны соответствовать последнему client message и full-thread context.
 - [ ] Email CTA должен брать email из conversation/client text прежде lead-list email.
 - [ ] Gmail compose должен открываться надежно и только с `to=` без subject/body.
@@ -149,6 +151,20 @@
 - [ ] Live delivery validation pending: Twilio SMS delivery and Resend email delivery.
 - [x] Deployment note completed: production DB backup saved, additive schema sync applied, Prisma Client regenerated, and production build passed.
 
+### Dev mode login gate — 2026-05-04
+
+- [x] Added `POST /api/auth/dev-login` for local QA login without OTP code.
+- [x] Backend dev login requires `DEV_MODE_LOGIN_ENABLED=true` and is disabled by default.
+- [x] Backend blocks dev login when `NODE_ENV=production`, even if `DEV_MODE_LOGIN_ENABLED=true` is accidentally set.
+- [x] Optional `DEV_MODE_LOGIN_SECRET` support added for shared non-production environments.
+- [x] Dev login rejects missing/inactive users, updates `lastLoginAt`, invalidates user cache, and returns the same JWT/refresh session shape as OTP login.
+- [x] Login UI shows `Dev mode login` only when `VITE_DEV_MODE_LOGIN_ENABLED=true` and `import.meta.env.PROD` is false.
+- [x] Production bundle/preview verified: `Dev mode login` button count is `0`; OTP `Send code` remains visible.
+- [x] Env docs updated: `server/.env.example`, `.env.production.example`, and `client/.env.example`.
+- [x] Focused auth regression passed: `authDevModeLogin`, `authOtpPolicy`, `clientPreservationRequirements` — 11/11 tests.
+- [x] Root production build passed after dev login changes: server `tsc` plus client `tsc && vite build`.
+- [x] Evidence JSON added: `audit-screenshots/dev-mode-login-evidence.json`.
+
 ### Scope decision
 
 - [x] Implement passwordless OTP as primary login flow.
@@ -176,6 +192,7 @@
 - [x] Keyboard flow works: email -> send -> OTP digits -> submit.
 - [x] OTP input supports paste of 6-digit code.
 - [x] OTP input rejects non-numeric characters.
+- [x] Dev-only login button can bypass OTP in local QA only and is hidden in production builds.
 
 ### Backend OTP model and storage
 
@@ -267,6 +284,7 @@
 ### M1.1 Testing Gate
 
 - [ ] Unit/backend tests for auth middleware.
+- [x] Unit/backend tests for dev-mode login production guard and optional dev key.
 - [ ] Unit/backend tests for OTP generation, hash storage, expiration, reuse rejection.
 - [ ] Unit/backend tests for rolling failed-attempt lockout.
 - [x] Unit/backend tests for OTP destination normalization/masking and send rate-limit helper.
@@ -305,6 +323,7 @@
 - [x] Frontend build passed after OTP implementation.
 - [x] Production preview login page rendered correctly.
 - [x] Production preview server-unavailable error state shows friendly message.
+- [x] Production preview confirms dev-mode login UI is hidden while OTP UI remains visible.
 - [x] Progress dashboard updated.
 
 ## M1.2 — Pipeline v2 Base Parity
@@ -1099,4 +1118,5 @@
 | 2026-05-02 |      74% | M1.6      | Added and deployed new deal creation/sharing/socket scoping evidence; production smoke passed on `01b6700d`.                                                                | `audit-screenshots/m16-deal-create-share-socket-evidence.json`     |
 | 2026-05-02 |      75% | M1.6      | Added visual regression evidence for Pipeline 1440/960, DealPanel, DealCard, overlap/layout-shift, and sidebar checks.                                                      | `audit-screenshots/m16-visual-regression-evidence.json`            |
 | 2026-05-04 |      76% | M1.4/M1.6 | Locked angry-client preservation requirements, restored Inbox Mark Unread/Note in action row, tightened login visual fit, and passed focused tests/build/prod access smoke. | `audit-screenshots/client-preservation-login-access-evidence.json` |
+| 2026-05-04 |      77% | M1.1      | Added safe dev-only login without OTP for local QA, with production backend/frontend guards, focused auth tests, build, and preview evidence.                               | `audit-screenshots/dev-mode-login-evidence.json`                   |
 | 2026-05-02 |       6% | Planning  | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.                                          | This file                                                          |

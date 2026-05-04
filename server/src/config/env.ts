@@ -21,6 +21,10 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(1, 'JWT_REFRESH_SECRET is required'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
 
+  // Dev-only обход OTP. Production блокируется в коде даже при случайном включении.
+  DEV_MODE_LOGIN_ENABLED: z.string().default('false'),
+  DEV_MODE_LOGIN_SECRET: z.string().default(''),
+
   // Twilio — optional in dev
   TWILIO_ACCOUNT_SID: z.string().default(''),
   TWILIO_AUTH_TOKEN: z.string().default(''),

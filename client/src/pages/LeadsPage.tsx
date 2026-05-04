@@ -45,6 +45,19 @@ const STATUSES = [
   'DNC',
 ];
 
+type LeadFilterOption = {
+  value: string;
+  label: string;
+  count?: number;
+};
+
+const LAST_CONTACTED_OPTIONS: LeadFilterOption[] = [
+  { value: '', label: 'Any contact' },
+  { value: 'never', label: 'Never contacted' },
+  { value: '30d', label: '30+ days' },
+  { value: '90d', label: '90+ days' },
+];
+
 function sourceLooksOpaque(value: string): boolean {
   return (
     value === 'csv_import' ||
@@ -103,6 +116,9 @@ export default function LeadsPage() {
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [listFilter, setListFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [lastContactedFilter, setLastContactedFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showImport, setShowImport] = useState(false);
@@ -140,7 +156,16 @@ export default function LeadsPage() {
   }, [openMenuId, ctxMenu]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['leads', debouncedSearch, statusFilter, listFilter, page],
+    queryKey: [
+      'leads',
+      debouncedSearch,
+      statusFilter,
+      listFilter,
+      sourceFilter,
+      stateFilter,
+      lastContactedFilter,
+      page,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('page', page.toString());
@@ -148,6 +173,9 @@ export default function LeadsPage() {
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (listFilter) params.set('tags', listFilter);
+      if (sourceFilter) params.set('source', sourceFilter);
+      if (stateFilter) params.set('state', stateFilter);
+      if (lastContactedFilter) params.set('lastContactedBefore', lastContactedFilter);
       const { data } = await api.get(`/leads?${params}`);
       return data;
     },
@@ -243,6 +271,20 @@ export default function LeadsPage() {
   const importLists = importListsData?.tags || [];
   const { user } = useAuthStore();
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
+  const { data: filterOptionsData } = useQuery<{ sources: LeadFilterOption[]; states: LeadFilterOption[] }>({
+    queryKey: ['lead-filter-options', user?.id, user?.role],
+    queryFn: async () => {
+      const { data } = await api.get('/leads/filter-options');
+      return data;
+    },
+  });
+  const sourceOptions = filterOptionsData?.sources || [];
+  const stateOptions = filterOptionsData?.states || [];
+  const derivedInitials = `${user?.firstName?.[0] || ''}${user?.lastName?.[0] || ''}`;
+  const initials = derivedInitials || user?.email?.[0]?.toUpperCase() || 'JB';
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Jonathan';
+  const roleLabel = user?.role === 'REP' ? 'Rep view' : 'Admin';
+  const secondaryRoleLabel = user?.role === 'REP' ? 'Admin (JB)' : 'Rep view (HB)';
 
   const exportMutation = useMutation({
     mutationFn: async () => {
@@ -250,6 +292,9 @@ export default function LeadsPage() {
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (listFilter) params.set('tags', listFilter);
+      if (sourceFilter) params.set('source', sourceFilter);
+      if (stateFilter) params.set('state', stateFilter);
+      if (lastContactedFilter) params.set('lastContactedBefore', lastContactedFilter);
       return api.get(`/leads/export?${params}`, { responseType: 'blob' });
     },
     onSuccess: (response) => {
@@ -267,434 +312,547 @@ export default function LeadsPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-dark-50">Leads</h1>
-          <p className="text-sm text-dark-400 mt-1">{total} total leads</p>
+    <div className="campaigns-prototype-shell">
+      <header className="campaigns-prototype-topbar">
+        <div className="campaigns-prototype-brand" aria-label="SCL Capital SMS Platform">
+          <span className="campaigns-prototype-logo">S</span>
+          <span>
+            <strong>SCL CAPITAL</strong>
+            <small>SMS PLATFORM</small>
+          </span>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            Add Lead
-          </button>
-          {canManage && (
-            <button onClick={() => setShowImport(true)} className="btn-ghost flex items-center gap-2">
-              <Upload className="w-4 h-4" />
-              Import CSV
-            </button>
-          )}
-          <button
-            onClick={() => exportMutation.mutate()}
-            className="btn-ghost flex items-center gap-2"
-            disabled={exportMutation.isPending}
-          >
-            <Download className="w-4 h-4" />
-            {exportMutation.isPending ? 'Exporting...' : `Export CSV ${total} leads`}
-          </button>
+        <div className="campaigns-prototype-userbar">
+          <span className="campaigns-prototype-toggle campaigns-prototype-toggle--active">
+            {roleLabel} ({initials})
+          </span>
+          <span className="campaigns-prototype-toggle campaigns-prototype-toggle--muted">{secondaryRoleLabel}</span>
+          <span className="campaigns-prototype-user">
+            <span>{initials}</span>
+            {displayName}
+          </span>
         </div>
-      </div>
+      </header>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
-          <input
-            type="text"
-            placeholder="Search by name, phone, email..."
-            className="input pl-10"
-            value={search}
+      <nav className="campaigns-prototype-tabs" aria-label="Leads and campaigns navigation">
+        <button type="button" className="is-active">
+          Leads
+        </button>
+        <button type="button" onClick={() => navigate('/campaigns')}>
+          Campaigns
+        </button>
+      </nav>
+
+      <div className="campaigns-scope leads-prototype-scope p-4 sm:p-6 lg:p-6 space-y-4 sm:space-y-6">
+        <section className="leads-prototype-scope-note" aria-label="Prototype scope">
+          <p>Scope on this prototype — 4 fixes only</p>
+          <div>
+            <span>
+              <strong>Phase 1 · Bug fixes</strong> — Reps see only leads they uploaded; reps see only campaigns they
+              created.
+            </span>
+            <span>
+              <strong>Phase 2.1 · Source readable</strong> — Source column shows list name, not UUID.
+            </span>
+            <span>
+              <strong>Phase 2.2–6 · Industry + Revenue + Last Contact + Export CSV</strong> — Columns are wired from AI
+              classifier and existing data.
+            </span>
+            <span>
+              <strong>Phase 3 · AI Retarget</strong> — Campaigns tab shows AI cohorts and AI-built campaign lineage.
+            </span>
+          </div>
+        </section>
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-dark-50">Leads</h1>
+            <p className="text-sm text-dark-400 mt-1">{total} total leads</p>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              Add Lead
+            </button>
+            {canManage && (
+              <button onClick={() => setShowImport(true)} className="btn-ghost flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                Import CSV
+              </button>
+            )}
+            <button
+              onClick={() => exportMutation.mutate()}
+              className="btn-ghost flex items-center gap-2"
+              disabled={exportMutation.isPending}
+            >
+              <Download className="w-4 h-4" />
+              {exportMutation.isPending ? 'Exporting...' : `Export CSV ${total} leads`}
+            </button>
+          </div>
+        </div>
+
+        <div className="leads-source-comparison" aria-label="Source readability example">
+          <div>
+            <span>BEFORE — Source column today</span>
+            <strong>ce83f1d9-6c5f-452f-9bc3-0e988ff8f223</strong>
+          </div>
+          <div>
+            <span>AFTER — Phase 2.1 fix</span>
+            <strong>CJ 10.8 12K — Verizon</strong>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="leads-filter-bar">
+          <div className="leads-filter-search relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+            <input
+              type="text"
+              placeholder="Search by name, phone, email..."
+              className="input pl-10"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <select
+            className="input w-auto"
+            value={statusFilter}
             onChange={(e) => {
-              setSearch(e.target.value);
+              setStatusFilter(e.target.value);
               setPage(1);
             }}
-          />
-        </div>
-        <select
-          className="input w-auto"
-          value={statusFilter}
-          onChange={(e) => {
-            setStatusFilter(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All Statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          className="input w-auto max-w-[200px] truncate"
-          value={listFilter}
-          onChange={(e) => {
-            setListFilter(e.target.value);
-            setPage(1);
-          }}
-        >
-          <option value="">All Lists</option>
-          {importLists.map((t: any) => (
-            <option key={t.id} value={t.id}>
-              {t.name} ({t._count?.leads || 0})
-            </option>
-          ))}
-        </select>
-        {/* View mode toggle */}
-        <div className="flex items-center gap-1 ml-auto bg-dark-800/50 rounded-lg p-0.5">
-          <button
-            onClick={() => setViewMode('all')}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'all' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
           >
-            All Leads
-          </button>
-          <button
-            onClick={() => setViewMode('lists')}
-            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'lists' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
+            <option value="">All Statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-auto max-w-[200px] truncate"
+            value={listFilter}
+            onChange={(e) => {
+              setListFilter(e.target.value);
+              setPage(1);
+            }}
           >
-            By Lists
-          </button>
-        </div>
-      </div>
-
-      {/* Bulk Actions Bar */}
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 bg-scl-600/10 border border-scl-600/30 rounded-lg px-4 py-2.5">
-          <span className="text-sm font-medium text-scl-300">{selected.size} selected</span>
-          <div className="flex items-center gap-2 ml-auto">
-            <select
-              className="input w-auto text-sm py-1.5"
-              defaultValue=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  bulkMutation.mutate({
-                    action: 'change_status',
-                    leadIds: Array.from(selected),
-                    data: { status: e.target.value },
-                  });
-                }
-              }}
-            >
-              <option value="">Change Status</option>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <option value="">All Lists</option>
+            {importLists.map((t: any) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t._count?.leads || 0})
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-auto max-w-[220px] truncate"
+            value={sourceFilter}
+            onChange={(e) => {
+              setSourceFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Source filter"
+          >
+            <option value="">All Sources</option>
+            {sourceOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+                {option.count ? ` (${option.count})` : ''}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-auto max-w-[180px] truncate"
+            value={stateFilter}
+            onChange={(e) => {
+              setStateFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="State filter"
+          >
+            <option value="">All States</option>
+            {stateOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-auto max-w-[190px] truncate"
+            value={lastContactedFilter}
+            onChange={(e) => {
+              setLastContactedFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Last contacted filter"
+          >
+            {LAST_CONTACTED_OPTIONS.map((option) => (
+              <option key={option.value || 'any'} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {/* View mode toggle */}
+          <div className="leads-view-toggle flex items-center gap-1 bg-dark-800/50 rounded-lg p-0.5">
             <button
-              onClick={() => setShowEnroll(true)}
-              className="btn-ghost text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1.5"
+              onClick={() => setViewMode('all')}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'all' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
             >
-              <Zap className="w-4 h-4" />
-              Start Automation
+              All Leads
             </button>
             <button
-              onClick={() =>
-                bulkMutation.mutate({
-                  action: 'suppress',
-                  leadIds: Array.from(selected),
-                })
-              }
-              className="btn-ghost text-sm text-orange-400 hover:text-orange-300"
+              onClick={() => setViewMode('lists')}
+              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${viewMode === 'lists' ? 'bg-scl-600/20 text-scl-400 font-medium' : 'text-dark-400 hover:text-dark-200'}`}
             >
-              Suppress
+              By Lists
+            </button>
+          </div>
+        </div>
+
+        {/* Bulk Actions Bar */}
+        {selected.size > 0 && (
+          <div className="flex items-center gap-3 bg-scl-600/10 border border-scl-600/30 rounded-lg px-4 py-2.5">
+            <span className="text-sm font-medium text-scl-300">{selected.size} selected</span>
+            <div className="flex items-center gap-2 ml-auto">
+              <select
+                className="input w-auto text-sm py-1.5"
+                defaultValue=""
+                onChange={(e) => {
+                  if (e.target.value) {
+                    bulkMutation.mutate({
+                      action: 'change_status',
+                      leadIds: Array.from(selected),
+                      data: { status: e.target.value },
+                    });
+                  }
+                }}
+              >
+                <option value="">Change Status</option>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => setShowEnroll(true)}
+                className="btn-ghost text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1.5"
+              >
+                <Zap className="w-4 h-4" />
+                Start Automation
+              </button>
+              <button
+                onClick={() =>
+                  bulkMutation.mutate({
+                    action: 'suppress',
+                    leadIds: Array.from(selected),
+                  })
+                }
+                className="btn-ghost text-sm text-orange-400 hover:text-orange-300"
+              >
+                Suppress
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm(`Delete ${selected.size} leads? This action cannot be undone.`)) {
+                    bulkMutation.mutate({
+                      action: 'delete',
+                      leadIds: Array.from(selected),
+                    });
+                  }
+                }}
+                className="btn-ghost text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+              <button onClick={() => setSelected(new Set())} className="btn-ghost text-sm">
+                <X className="w-4 h-4" />
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Lead Content */}
+        {viewMode === 'lists' && !listFilter ? (
+          /* Grouped by lists view */
+          <div className="space-y-3">
+            {importLists.length === 0 && !isLoading && (
+              <div className="card p-12 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center mx-auto mb-3">
+                  <FileSpreadsheet className="w-7 h-7 text-dark-500" />
+                </div>
+                <p className="text-sm font-medium text-dark-300">No lists yet</p>
+                <p className="text-xs text-dark-500 mt-1">Import a CSV file to create your first lead list</p>
+                {canManage && (
+                  <button
+                    onClick={() => setShowImport(true)}
+                    className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mx-auto mt-3"
+                  >
+                    <Upload className="w-3.5 h-3.5" /> Import CSV
+                  </button>
+                )}
+              </div>
+            )}
+            {importLists.map((tag: any) => (
+              <LeadListGroup
+                key={tag.id}
+                tag={tag}
+                isExpanded={expandedLists.has(tag.id)}
+                onToggle={() => {
+                  setExpandedLists((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(tag.id)) next.delete(tag.id);
+                    else next.add(tag.id);
+                    return next;
+                  });
+                }}
+                selected={selected}
+                setSelected={setSelected}
+                toggleSelect={toggleSelect}
+                setDetailLeadId={setDetailLeadId}
+                setCtxMenu={setCtxMenu}
+                setOpenMenuId={setOpenMenuId}
+                openMenuId={openMenuId}
+                menuRef={menuRef}
+                setEditLead={setEditLead}
+                statusMutation={statusMutation}
+                deleteMutation={deleteMutation}
+                navigate={navigate}
+                setEnrollLeadId={setEnrollLeadId}
+                setShowEnroll={setShowEnroll}
+                removeTagMutation={removeTagMutation}
+                addTagMutation={addTagMutation}
+                allTags={allTags}
+                tagPickerLead={tagPickerLead}
+                setTagPickerLead={setTagPickerLead}
+                tagPickerRef={tagPickerRef}
+                searchFilter={debouncedSearch}
+                statusFilter={statusFilter}
+                sourceFilter={sourceFilter}
+                stateFilter={stateFilter}
+                lastContactedFilter={lastContactedFilter}
+              />
+            ))}
+          </div>
+        ) : (
+          /* Default: flat table of all leads */
+          <div className="card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1120px]">
+                <thead>
+                  <tr className="border-b border-dark-700/50">
+                    <th className="table-th w-10">
+                      <input
+                        type="checkbox"
+                        checked={selected.size === leads.length && leads.length > 0}
+                        onChange={toggleAll}
+                        className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
+                      />
+                    </th>
+                    <th className="table-th">Name</th>
+                    <th className="table-th">Phone</th>
+                    <th className="table-th">Status</th>
+                    <th className="table-th">Last Contact</th>
+                    <th className="table-th">Industry</th>
+                    <th className="table-th">Monthly Revenue</th>
+                    <th className="table-th">Source</th>
+                    <th className="table-th">Added</th>
+                    <th className="table-th">Tags</th>
+                    <th className="table-th w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isLoading &&
+                    [...Array(10)].map((_, i) => (
+                      <tr key={i}>
+                        {[...Array(10)].map((_, j) => (
+                          <td key={j} className="table-td">
+                            <div className="h-4 bg-dark-700 rounded animate-pulse" />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  {!isLoading && leads.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="py-16 text-center">
+                        <p className="text-sm text-dark-500">No leads found</p>
+                      </td>
+                    </tr>
+                  )}
+                  {leads.map((lead: any) => (
+                    <LeadRow
+                      key={lead.id}
+                      lead={lead}
+                      selected={selected}
+                      toggleSelect={toggleSelect}
+                      setDetailLeadId={setDetailLeadId}
+                      setCtxMenu={setCtxMenu}
+                      setOpenMenuId={setOpenMenuId}
+                      openMenuId={openMenuId}
+                      menuRef={menuRef}
+                      setEditLead={setEditLead}
+                      statusMutation={statusMutation}
+                      deleteMutation={deleteMutation}
+                      navigate={navigate}
+                      setEnrollLeadId={setEnrollLeadId}
+                      setShowEnroll={setShowEnroll}
+                      removeTagMutation={removeTagMutation}
+                      addTagMutation={addTagMutation}
+                      allTags={allTags}
+                      tagPickerLead={tagPickerLead}
+                      setTagPickerLead={setTagPickerLead}
+                      tagPickerRef={tagPickerRef}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Pagination */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-dark-700/50">
+              <p className="text-sm text-dark-500">
+                Showing {leads.length} of {total}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="btn-ghost p-2 disabled:opacity-30"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-sm text-dark-300">
+                  {page} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="btn-ghost p-2 disabled:opacity-30"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Right-Click Context Menu */}
+        {ctxMenu && (
+          <div
+            ref={ctxMenuRef}
+            className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          >
+            <button
+              onClick={() => {
+                setEditLead(ctxMenu.lead);
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit Lead
             </button>
             <button
               onClick={() => {
-                if (confirm(`Delete ${selected.size} leads? This action cannot be undone.`)) {
-                  bulkMutation.mutate({
-                    action: 'delete',
-                    leadIds: Array.from(selected),
-                  });
-                }
+                navigate(`/inbox?lead=${ctxMenu.lead.id}`);
+                setCtxMenu(null);
               }}
-              className="btn-ghost text-sm text-red-400 hover:text-red-300 flex items-center gap-1"
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
             >
-              <Trash2 className="w-4 h-4" />
-              Delete
+              <MessageSquare className="w-3.5 h-3.5" /> Open Conversation
             </button>
-            <button onClick={() => setSelected(new Set())} className="btn-ghost text-sm">
-              <X className="w-4 h-4" />
-              Clear
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Lead Content */}
-      {viewMode === 'lists' && !listFilter ? (
-        /* Grouped by lists view */
-        <div className="space-y-3">
-          {importLists.length === 0 && !isLoading && (
-            <div className="card p-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-dark-800/80 flex items-center justify-center mx-auto mb-3">
-                <FileSpreadsheet className="w-7 h-7 text-dark-500" />
-              </div>
-              <p className="text-sm font-medium text-dark-300">No lists yet</p>
-              <p className="text-xs text-dark-500 mt-1">Import a CSV file to create your first lead list</p>
-              {canManage && (
-                <button
-                  onClick={() => setShowImport(true)}
-                  className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 mx-auto mt-3"
-                >
-                  <Upload className="w-3.5 h-3.5" /> Import CSV
-                </button>
-              )}
-            </div>
-          )}
-          {importLists.map((tag: any) => (
-            <LeadListGroup
-              key={tag.id}
-              tag={tag}
-              isExpanded={expandedLists.has(tag.id)}
-              onToggle={() => {
-                setExpandedLists((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(tag.id)) next.delete(tag.id);
-                  else next.add(tag.id);
-                  return next;
-                });
+            <button
+              onClick={() => {
+                navigate(`/pipeline?lead=${ctxMenu.lead.id}`);
+                setCtxMenu(null);
               }}
-              selected={selected}
-              setSelected={setSelected}
-              toggleSelect={toggleSelect}
-              setDetailLeadId={setDetailLeadId}
-              setCtxMenu={setCtxMenu}
-              setOpenMenuId={setOpenMenuId}
-              openMenuId={openMenuId}
-              menuRef={menuRef}
-              setEditLead={setEditLead}
-              statusMutation={statusMutation}
-              deleteMutation={deleteMutation}
-              navigate={navigate}
-              setEnrollLeadId={setEnrollLeadId}
-              setShowEnroll={setShowEnroll}
-              removeTagMutation={removeTagMutation}
-              addTagMutation={addTagMutation}
-              allTags={allTags}
-              tagPickerLead={tagPickerLead}
-              setTagPickerLead={setTagPickerLead}
-              tagPickerRef={tagPickerRef}
-              searchFilter={debouncedSearch}
-              statusFilter={statusFilter}
-            />
-          ))}
-        </div>
-      ) : (
-        /* Default: flat table of all leads */
-        <div className="card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px]">
-              <thead>
-                <tr className="border-b border-dark-700/50">
-                  <th className="table-th w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === leads.length && leads.length > 0}
-                      onChange={toggleAll}
-                      className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-scl-500 focus:ring-scl-500"
-                    />
-                  </th>
-                  <th className="table-th">Name</th>
-                  <th className="table-th">Phone</th>
-                  <th className="table-th">Status</th>
-                  <th className="table-th">Last Contact</th>
-                  <th className="table-th">Industry</th>
-                  <th className="table-th">Monthly Revenue</th>
-                  <th className="table-th">Source</th>
-                  <th className="table-th">Added</th>
-                  <th className="table-th">Tags</th>
-                  <th className="table-th w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading &&
-                  [...Array(10)].map((_, i) => (
-                    <tr key={i}>
-                      {[...Array(10)].map((_, j) => (
-                        <td key={j} className="table-td">
-                          <div className="h-4 bg-dark-700 rounded animate-pulse" />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                {!isLoading && leads.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="py-16 text-center">
-                      <p className="text-sm text-dark-500">No leads found</p>
-                    </td>
-                  </tr>
-                )}
-                {leads.map((lead: any) => (
-                  <LeadRow
-                    key={lead.id}
-                    lead={lead}
-                    selected={selected}
-                    toggleSelect={toggleSelect}
-                    setDetailLeadId={setDetailLeadId}
-                    setCtxMenu={setCtxMenu}
-                    setOpenMenuId={setOpenMenuId}
-                    openMenuId={openMenuId}
-                    menuRef={menuRef}
-                    setEditLead={setEditLead}
-                    statusMutation={statusMutation}
-                    deleteMutation={deleteMutation}
-                    navigate={navigate}
-                    setEnrollLeadId={setEnrollLeadId}
-                    setShowEnroll={setShowEnroll}
-                    removeTagMutation={removeTagMutation}
-                    addTagMutation={addTagMutation}
-                    allTags={allTags}
-                    tagPickerLead={tagPickerLead}
-                    setTagPickerLead={setTagPickerLead}
-                    tagPickerRef={tagPickerRef}
-                  />
-                ))}
-              </tbody>
-            </table>
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" /> View in Pipeline
+            </button>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(ctxMenu.lead.phone);
+                toast.success('Phone copied');
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Copy className="w-3.5 h-3.5" /> Copy Phone
+            </button>
+            <button
+              onClick={() => {
+                setEnrollLeadId(ctxMenu.lead.id);
+                setShowEnroll(true);
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-purple-300 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Zap className="w-3.5 h-3.5" /> Start Automation
+            </button>
+            <div className="border-t border-dark-700 my-1" />
+            <button
+              onClick={() => {
+                statusMutation.mutate({ id: ctxMenu.lead.id, status: 'CONTACTED' });
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Phone className="w-3.5 h-3.5" /> Mark Contacted
+            </button>
+            <button
+              onClick={() => {
+                statusMutation.mutate({ id: ctxMenu.lead.id, status: 'DNC' });
+                setCtxMenu(null);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Ban className="w-3.5 h-3.5" /> Mark DNC
+            </button>
+            <div className="border-t border-dark-700 my-1" />
+            <button
+              onClick={() => {
+                setCtxMenu(null);
+                if (window.confirm('Delete this lead?')) deleteMutation.mutate(ctxMenu.lead.id);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete Lead
+            </button>
           </div>
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-dark-700/50">
-            <p className="text-sm text-dark-500">
-              Showing {leads.length} of {total}
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="btn-ghost p-2 disabled:opacity-30"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-sm text-dark-300">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="btn-ghost p-2 disabled:opacity-30"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Right-Click Context Menu */}
-      {ctxMenu && (
-        <div
-          ref={ctxMenuRef}
-          className="fixed z-[100] w-52 bg-dark-800 border border-dark-700 rounded-lg shadow-2xl py-1 animate-in fade-in"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
-        >
-          <button
-            onClick={() => {
-              setEditLead(ctxMenu.lead);
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Pencil className="w-3.5 h-3.5" /> Edit Lead
-          </button>
-          <button
-            onClick={() => {
-              navigate(`/inbox?lead=${ctxMenu.lead.id}`);
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <MessageSquare className="w-3.5 h-3.5" /> Open Conversation
-          </button>
-          <button
-            onClick={() => {
-              navigate(`/pipeline?lead=${ctxMenu.lead.id}`);
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" /> View in Pipeline
-          </button>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(ctxMenu.lead.phone);
-              toast.success('Phone copied');
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Copy className="w-3.5 h-3.5" /> Copy Phone
-          </button>
-          <button
-            onClick={() => {
-              setEnrollLeadId(ctxMenu.lead.id);
-              setShowEnroll(true);
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-purple-300 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Zap className="w-3.5 h-3.5" /> Start Automation
-          </button>
-          <div className="border-t border-dark-700 my-1" />
-          <button
-            onClick={() => {
-              statusMutation.mutate({ id: ctxMenu.lead.id, status: 'CONTACTED' });
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-dark-200 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Phone className="w-3.5 h-3.5" /> Mark Contacted
-          </button>
-          <button
-            onClick={() => {
-              statusMutation.mutate({ id: ctxMenu.lead.id, status: 'DNC' });
-              setCtxMenu(null);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Ban className="w-3.5 h-3.5" /> Mark DNC
-          </button>
-          <div className="border-t border-dark-700 my-1" />
-          <button
-            onClick={() => {
-              setCtxMenu(null);
-              if (window.confirm('Delete this lead?')) deleteMutation.mutate(ctxMenu.lead.id);
-            }}
-            className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-dark-700/50 flex items-center gap-2"
-          >
-            <Trash2 className="w-3.5 h-3.5" /> Delete Lead
-          </button>
-        </div>
-      )}
+        {/* Import Modal */}
+        {showImport && <ImportModal onClose={() => setShowImport(false)} />}
 
-      {/* Import Modal */}
-      {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+        {/* Create Modal */}
+        {showCreate && <CreateLeadModal onClose={() => setShowCreate(false)} />}
 
-      {/* Create Modal */}
-      {showCreate && <CreateLeadModal onClose={() => setShowCreate(false)} />}
+        {/* Edit Lead Modal */}
+        {editLead && <EditLeadModal lead={editLead} onClose={() => setEditLead(null)} />}
 
-      {/* Edit Lead Modal */}
-      {editLead && <EditLeadModal lead={editLead} onClose={() => setEditLead(null)} />}
+        {/* Enroll Automation Modal */}
+        {showEnroll && (
+          <EnrollAutomationModal
+            leadIds={enrollLeadId ? [enrollLeadId] : Array.from(selected)}
+            onClose={() => {
+              setShowEnroll(false);
+              setEnrollLeadId(null);
+            }}
+            onSuccess={() => {
+              setSelected(new Set());
+              setEnrollLeadId(null);
+            }}
+          />
+        )}
 
-      {/* Enroll Automation Modal */}
-      {showEnroll && (
-        <EnrollAutomationModal
-          leadIds={enrollLeadId ? [enrollLeadId] : Array.from(selected)}
-          onClose={() => {
-            setShowEnroll(false);
-            setEnrollLeadId(null);
-          }}
-          onSuccess={() => {
-            setSelected(new Set());
-            setEnrollLeadId(null);
-          }}
-        />
-      )}
-
-      {/* Lead Detail Drawer */}
-      {detailLeadId && <LeadDetailDrawer leadId={detailLeadId} onClose={() => setDetailLeadId(null)} />}
+        {/* Lead Detail Drawer */}
+        {detailLeadId && <LeadDetailDrawer leadId={detailLeadId} onClose={() => setDetailLeadId(null)} />}
+      </div>
     </div>
   );
 }
@@ -933,17 +1091,23 @@ function LeadListGroup({
   toggleSelect,
   searchFilter,
   statusFilter,
+  sourceFilter,
+  stateFilter,
+  lastContactedFilter,
   ...rowProps
 }: any) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['list-leads', tag.id, searchFilter, statusFilter],
+    queryKey: ['list-leads', tag.id, searchFilter, statusFilter, sourceFilter, stateFilter, lastContactedFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('tags', tag.id);
       params.set('limit', '500');
       if (searchFilter) params.set('search', searchFilter);
       if (statusFilter) params.set('status', statusFilter);
+      if (sourceFilter) params.set('source', sourceFilter);
+      if (stateFilter) params.set('state', stateFilter);
+      if (lastContactedFilter) params.set('lastContactedBefore', lastContactedFilter);
       const { data } = await api.get(`/leads?${params}`);
       return data;
     },

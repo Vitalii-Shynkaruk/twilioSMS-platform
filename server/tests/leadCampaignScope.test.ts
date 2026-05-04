@@ -72,7 +72,30 @@ describe('M2.1 lead/campaign scope policy', () => {
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 
+  it('blocks a rep from opening another rep campaign analytics', async () => {
+    vi.spyOn(prisma.campaign, 'findUnique').mockResolvedValue({
+      id: 'campaign-1',
+      name: 'Other rep campaign',
+      createdById: 'rep-2',
+      status: 'DRAFT',
+      totalLeads: 1,
+      totalSent: 0,
+      totalDelivered: 0,
+      totalFailed: 0,
+      totalBlocked: 0,
+      totalReplied: 0,
+      totalOptedOut: 0,
+      startedAt: null,
+      completedAt: null,
+    } as never);
+
+    await expect(
+      CampaignController.getAnalytics(createRequest({ params: { id: 'campaign-1' } }), createResponse()),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
   it('filters campaign lead selection to the current rep leads', async () => {
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.campaign, 'create').mockResolvedValue({ id: 'campaign-1', totalLeads: 0 } as never);
     const findMany = vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([{ id: 'lead-1' }] as never);
     vi.spyOn(prisma.campaignLead, 'createMany').mockResolvedValue({ count: 1 } as never);

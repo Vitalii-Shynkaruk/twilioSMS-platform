@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database';
 import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -8,6 +9,13 @@ import { NumberService } from '../services/numberService';
 import { OutboundGateService } from '../services/outboundGateService';
 import { getActiveTwilioClient } from '../config/twilio';
 import logger from '../config/logger';
+import { AIService, CohortReasoningLeadSample } from '../services/aiService';
+import {
+  MAX_BULK_SEND_PER_ADMIN,
+  MAX_BULK_SEND_PER_REP,
+  MAX_DAILY_TOTAL_PER_ADMIN,
+  MAX_DAILY_TOTAL_PER_REP,
+} from '../config/limits';
 
 const AI_COHORT_IDS = {
   MULTI_RETARGET: 'multi-retarget',
@@ -20,6 +28,8 @@ type AiCohortId = (typeof AI_COHORT_IDS)[keyof typeof AI_COHORT_IDS];
 type AiCohortSpec = {
   id: AiCohortId;
   title: string;
+  categoryLabel: string;
+  description: string;
   priorityLabel: string;
   cohortType: 'multi-retarget' | 'new-cohort' | 'renewal';
   adminOnly: boolean;
@@ -32,10 +42,51 @@ type AiCohortSpec = {
   defaultMessageTemplate: string;
 };
 
+interface AiCohortCapacity {
+  campaignCap: number;
+  dailyCap: number;
+  dailyUsed: number;
+  dailyRemaining: number;
+  nearlyFull: boolean;
+}
+
+interface AiCohortLeadRow {
+  id: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  company?: string | null;
+  source?: string | null;
+  status: string;
+  assignedRep?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    initials?: string | null;
+  } | null;
+  conversations?: Array<{
+    extractedIndustry?: string | null;
+    extractedRevenue?: number | null;
+  }>;
+}
+
+interface AiCohortResolveOptions {
+  persistSnapshot?: boolean;
+  forceReasoningRefresh?: boolean;
+}
+
+interface AiCohortJobUser {
+  id: string;
+  email: string;
+  role: string;
+  firstName: string;
+  lastName: string;
+}
+
 const AI_COHORT_SPECS: Record<AiCohortId, AiCohortSpec> = {
   [AI_COHORT_IDS.MULTI_RETARGET]: {
     id: AI_COHORT_IDS.MULTI_RETARGET,
     title: 'Cross-rep retarget — replied with $80K+ revenue, stalled at docs',
+    categoryLabel: 'Multi-Campaign Retarget',
+    description: 'Find stalled warm replies across prior campaigns and re-engage them with a new funding angle.',
     priorityLabel: 'HIGH PRIORITY',
     cohortType: 'multi-retarget',
     adminOnly: false,
@@ -52,6 +103,8 @@ const AI_COHORT_SPECS: Record<AiCohortId, AiCohortSpec> = {
   [AI_COHORT_IDS.NEW_RESTAURANTS]: {
     id: AI_COHORT_IDS.NEW_RESTAURANTS,
     title: 'Restaurants · $80K+ rev · never contacted across all rep imports',
+    categoryLabel: 'New Cohort',
+    description: 'Build a fresh audience from imported lists using industry, revenue, source, and contact history.',
     priorityLabel: 'OPPORTUNITY',
     cohortType: 'new-cohort',
     adminOnly: false,
@@ -68,6 +121,8 @@ const AI_COHORT_SPECS: Record<AiCohortId, AiCohortSpec> = {
   [AI_COHORT_IDS.RENEWAL]: {
     id: AI_COHORT_IDS.RENEWAL,
     title: 'Funded 8-12 mo ago · likely renewals · admin-only',
+    categoryLabel: 'Renewal',
+    description: 'Surface previously funded businesses that are likely ready for a renewal conversation.',
     priorityLabel: 'RENEWAL',
     cohortType: 'renewal',
     adminOnly: true,
@@ -92,24 +147,18 @@ export class CampaignController {
   }
 
   private static getCampaignCaps(req: AuthRequest): { campaignCap: number; dailyCap: number } {
-    return req.user?.role === 'REP' ? { campaignCap: 500, dailyCap: 800 } : { campaignCap: 3000, dailyCap: 4500 };
+    return req.user?.role === 'REP'
+      ? { campaignCap: MAX_BULK_SEND_PER_REP, dailyCap: MAX_DAILY_TOTAL_PER_REP }
+      : { campaignCap: MAX_BULK_SEND_PER_ADMIN, dailyCap: MAX_DAILY_TOTAL_PER_ADMIN };
   }
 
-  private static async getAiCampaignCapacity(req: AuthRequest): Promise<{
-    campaignCap: number;
-    dailyCap: number;
-    dailyUsed: number;
-    dailyRemaining: number;
-    nearlyFull: boolean;
-  }> {
+  private static async getAiCampaignCapacity(req: AuthRequest): Promise<AiCohortCapacity> {
     const { campaignCap, dailyCap } = CampaignController.getCampaignCaps(req);
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const dailyUsed = await prisma.message.count({
+    const dailyUsed = await prisma.campaignLead.count({
       where: {
-        direction: 'OUTBOUND',
-        sentByUserId: req.user!.id,
+        campaign: { createdById: req.user!.id },
         createdAt: { gte: since },
-        status: { in: [...CampaignController.SEND_ATTEMPT_STATUSES] },
       },
     });
     const dailyRemaining = Math.max(0, dailyCap - dailyUsed);
@@ -121,6 +170,41 @@ export class CampaignController {
       dailyRemaining,
       nearlyFull: dailyRemaining <= Math.ceil(dailyCap * 0.1),
     };
+  }
+
+  private static async respondIfCampaignCapsExceeded(
+    req: AuthRequest,
+    res: Response,
+    requestedLeadCount: number,
+  ): Promise<boolean> {
+    const capacity = await CampaignController.getAiCampaignCapacity(req);
+    const role = CampaignController.isAdminLike(req) ? 'admin' : 'rep';
+
+    if (requestedLeadCount > capacity.campaignCap) {
+      res.status(400).json({
+        error: 'PER_CAMPAIGN_CAP_EXCEEDED',
+        message: `Campaign size (${requestedLeadCount}) exceeds the ${capacity.campaignCap}-lead per-campaign limit. Reduce the cohort.`,
+        requested: requestedLeadCount,
+        cap: capacity.campaignCap,
+        role,
+      });
+      return true;
+    }
+
+    if (capacity.dailyUsed + requestedLeadCount > capacity.dailyCap) {
+      const remaining = Math.max(0, capacity.dailyCap - capacity.dailyUsed);
+      res.status(400).json({
+        error: 'DAILY_TOTAL_CAP_EXCEEDED',
+        message: `Daily capacity: ${capacity.dailyUsed} of ${capacity.dailyCap} used in last 24h. Adding ${requestedLeadCount} would push over. Remaining capacity: ${remaining}.`,
+        dailyUsed: capacity.dailyUsed,
+        dailyTotalCap: capacity.dailyCap,
+        remaining,
+        requested: requestedLeadCount,
+      });
+      return true;
+    }
+
+    return false;
   }
 
   private static assertAiCohortAllowed(spec: AiCohortSpec, req: AuthRequest): void {
@@ -216,11 +300,171 @@ export class CampaignController {
     };
   }
 
+  private static buildAiCohortCriteriaMetadata(spec: AiCohortSpec, req: AuthRequest): Record<string, unknown> {
+    const scope = req.user?.role === 'REP' ? { type: 'rep', userId: req.user.id } : { type: 'all-reps' };
+
+    const baseCriteria = {
+      activeOnly: true,
+      excludes: ['deleted', 'opted_out', 'suppressed', 'DNC'],
+      cooldownDays: spec.cooldownDays,
+      scope,
+    };
+
+    if (spec.id === AI_COHORT_IDS.MULTI_RETARGET) {
+      return {
+        ...baseCriteria,
+        status: ['REPLIED', 'INTERESTED', 'DOCS_REQUESTED'],
+        revenueMin: 80000,
+        requiresInboundReply: true,
+        excludesExistingDeals: true,
+      };
+    }
+
+    if (spec.id === AI_COHORT_IDS.NEW_RESTAURANTS) {
+      return {
+        ...baseCriteria,
+        industrySignals: ['Restaurant', 'Cafe', 'Food'],
+        revenueMin: 80000,
+        neverContacted: true,
+        noCampaignHistory: true,
+      };
+    }
+
+    return {
+      ...baseCriteria,
+      dealStage: 'FUNDED',
+      fundedWindowMonthsAgo: { min: 8, max: 12 },
+      adminOnly: true,
+    };
+  }
+
+  private static toCohortReasoningLeadSamples(leadRows: AiCohortLeadRow[]): CohortReasoningLeadSample[] {
+    return leadRows.slice(0, 5).map((lead) => {
+      const conversation = lead.conversations?.[0];
+      return {
+        company: lead.company || lead.source || null,
+        source: lead.source || null,
+        status: lead.status,
+        industry: conversation?.extractedIndustry || null,
+        revenue: conversation?.extractedRevenue || null,
+        assignedRepInitials: lead.assignedRep?.initials || null,
+      };
+    });
+  }
+
+  private static async fetchAiCohortSampleLeads(where: any, take: number): Promise<AiCohortLeadRow[]> {
+    if (take <= 0) return [];
+
+    return prisma.lead.findMany({
+      where,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        company: true,
+        source: true,
+        status: true,
+        assignedRep: { select: { firstName: true, lastName: true, initials: true } },
+        conversations: {
+          take: 1,
+          orderBy: { updatedAt: 'desc' },
+          select: { extractedIndustry: true, extractedRevenue: true },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take,
+    });
+  }
+
+  private static async getCachedAiCohortReasoning(
+    req: AuthRequest,
+    spec: AiCohortSpec,
+    forceRefresh: boolean,
+  ): Promise<string | null> {
+    if (forceRefresh || !req.user?.id) return null;
+
+    try {
+      const cached = await prisma.leadCohort.findFirst({
+        where: {
+          userId: req.user.id,
+          cohortType: spec.cohortType,
+          title: spec.title,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { aiReasoning: true },
+      });
+      return cached?.aiReasoning || null;
+    } catch (error) {
+      logger.warn('AI cohort cache read failed', {
+        userId: req.user.id,
+        cohortId: spec.id,
+        error: (error as Error).message,
+      });
+      return null;
+    }
+  }
+
+  private static async persistAiCohortSnapshot(args: {
+    req: AuthRequest;
+    spec: AiCohortSpec;
+    criteria: Record<string, unknown>;
+    sourceAttribution: Record<string, unknown>;
+    capacity: AiCohortCapacity;
+    totalMatchCount: number;
+    eligibleCount: number;
+    resolvedLeadCount: number;
+    expectedFunded: number;
+    capTrimmed: number;
+    warnings: string[];
+    reasoningText: string;
+    sampleLeads: CohortReasoningLeadSample[];
+    leadIds: string[];
+  }): Promise<void> {
+    if (!args.req.user?.id) return;
+
+    try {
+      await prisma.leadCohort.create({
+        data: {
+          userId: args.req.user.id,
+          cohortType: args.spec.cohortType,
+          title: args.spec.title,
+          description: args.spec.reasoningLead,
+          queryJson: args.criteria as Prisma.InputJsonValue,
+          sourceAttribution: args.sourceAttribution as Prisma.InputJsonValue,
+          predictedReplyRate: args.spec.predictedReplyRate,
+          expectedFundedCount: args.expectedFunded,
+          historicalAnchor: args.spec.historicalAnchor,
+          aiReasoning: args.reasoningText,
+          resolvedLeadCount: args.resolvedLeadCount,
+          totalMatchCount: args.totalMatchCount,
+          eligibleCount: args.eligibleCount,
+          capTrimmedCount: args.capTrimmed,
+          dailyRemainingCapacity: args.capacity.dailyRemaining,
+          dailyCap: args.capacity.dailyCap,
+          campaignCap: args.capacity.campaignCap,
+          cooldownDays: args.spec.cooldownDays,
+          warningJson: args.warnings as Prisma.InputJsonValue,
+          sampleLeadJson: args.sampleLeads as unknown as Prisma.InputJsonValue,
+          resolvedLeadIdsJson: args.leadIds as unknown as Prisma.InputJsonValue,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        },
+      });
+    } catch (error) {
+      logger.warn('AI cohort cache write failed', {
+        userId: args.req.user.id,
+        cohortId: args.spec.id,
+        error: (error as Error).message,
+      });
+    }
+  }
+
   private static async resolveAiCohort(
     cohortId: string,
     req: AuthRequest,
-    capacity: Awaited<ReturnType<typeof CampaignController.getAiCampaignCapacity>>,
+    capacity: AiCohortCapacity,
     includeLeads = false,
+    options: AiCohortResolveOptions = {},
   ): Promise<any> {
     const spec = AI_COHORT_SPECS[cohortId as AiCohortId];
     if (!spec) throw new AppError('AI cohort not found', 404);
@@ -249,33 +493,80 @@ export class CampaignController {
       warnings.push(`Daily capacity nearly full: ${capacity.dailyRemaining} of ${capacity.dailyCap} remaining`);
     }
 
-    const leadRows =
+    const leadRows: AiCohortLeadRow[] =
       includeLeads && resolvedLeadCount > 0
-        ? await prisma.lead.findMany({
-            where: eligibleWhere,
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              company: true,
-              source: true,
-              status: true,
-              assignedRep: { select: { firstName: true, lastName: true, initials: true } },
-              conversations: {
-                take: 1,
-                orderBy: { updatedAt: 'desc' },
-                select: { extractedIndustry: true, extractedRevenue: true },
-              },
-            },
-            orderBy: { updatedAt: 'desc' },
-            take: resolvedLeadCount,
-          })
+        ? await CampaignController.fetchAiCohortSampleLeads(eligibleWhere, resolvedLeadCount)
         : [];
+    const criteria = CampaignController.buildAiCohortCriteriaMetadata(spec, req);
+    const sourceAttribution = {
+      origin: spec.cohortType,
+      scope: req.user?.role === 'REP' ? 'rep-owned-leads' : 'all-reps',
+      userId: req.user?.id || null,
+      generatedFrom: 'campaigns-leads-deals-conversations',
+    };
+    let reasoningText = spec.reasoningText;
+    const shouldPersistSnapshot = options.persistSnapshot !== false;
+    const cachedReasoning = shouldPersistSnapshot
+      ? await CampaignController.getCachedAiCohortReasoning(req, spec, !!options.forceReasoningRefresh)
+      : null;
+    const sampleRowsForReasoning =
+      !cachedReasoning && shouldPersistSnapshot && leadRows.length > 0
+        ? leadRows.slice(0, 5)
+        : !cachedReasoning && shouldPersistSnapshot
+          ? await CampaignController.fetchAiCohortSampleLeads(eligibleWhere, Math.min(resolvedLeadCount, 5))
+          : [];
+    const sampleLeads = CampaignController.toCohortReasoningLeadSamples(sampleRowsForReasoning);
+
+    if (cachedReasoning) {
+      reasoningText = cachedReasoning;
+    } else if (shouldPersistSnapshot) {
+      const generatedReasoning = await AIService.generateCohortReasoning({
+        cohortId: spec.id,
+        cohortType: spec.cohortType,
+        title: spec.title,
+        criteria,
+        counts: {
+          totalMatchCount,
+          eligibleCount,
+          resolvedLeadCount,
+          cooldownExcluded,
+          capTrimmed,
+        },
+        capacity: {
+          campaignCap: capacity.campaignCap,
+          dailyCap: capacity.dailyCap,
+          dailyUsed: capacity.dailyUsed,
+          dailyRemaining: capacity.dailyRemaining,
+        },
+        historicalAnchor: spec.historicalAnchor,
+        sampleLeads,
+      });
+      reasoningText = generatedReasoning?.text || spec.reasoningText;
+
+      await CampaignController.persistAiCohortSnapshot({
+        req,
+        spec,
+        criteria,
+        sourceAttribution,
+        capacity,
+        totalMatchCount,
+        eligibleCount,
+        resolvedLeadCount,
+        expectedFunded,
+        capTrimmed,
+        warnings,
+        reasoningText,
+        sampleLeads,
+        leadIds: leadRows.map((lead) => lead.id),
+      });
+    }
 
     return {
       id: spec.id,
       cohortType: spec.cohortType,
       title: spec.title,
+      categoryLabel: spec.categoryLabel,
+      description: spec.description,
       priorityLabel: spec.priorityLabel,
       adminOnly: spec.adminOnly,
       leadCount: resolvedLeadCount,
@@ -285,9 +576,10 @@ export class CampaignController {
       expectedFunded,
       historicalAnchor: spec.historicalAnchor,
       reasoningLead: spec.reasoningLead,
-      reasoningText: spec.reasoningText,
+      reasoningText,
       warnings,
       cooldownDays: spec.cooldownDays,
+      cachedUntil: shouldPersistSnapshot ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null,
       cap: {
         campaignCap: capacity.campaignCap,
         dailyCap: capacity.dailyCap,
@@ -630,6 +922,36 @@ export class CampaignController {
     });
   }
 
+  static async warmAiCohortsForUser(user: AiCohortJobUser): Promise<{
+    attempted: number;
+    refreshed: number;
+    failures: number;
+  }> {
+    const req = { user } as AuthRequest;
+    const capacity = await CampaignController.getAiCampaignCapacity(req);
+    const specs = Object.values(AI_COHORT_SPECS).filter(
+      (spec) => !spec.adminOnly || user.role === 'ADMIN' || user.role === 'MANAGER',
+    );
+    let refreshed = 0;
+    let failures = 0;
+
+    for (const spec of specs) {
+      try {
+        await CampaignController.resolveAiCohort(spec.id, req, capacity, false, { persistSnapshot: true });
+        refreshed += 1;
+      } catch (error) {
+        failures += 1;
+        logger.warn('AI cohort warm failed', {
+          userId: user.id,
+          cohortId: spec.id,
+          error: (error as Error).message,
+        });
+      }
+    }
+
+    return { attempted: specs.length, refreshed, failures };
+  }
+
   static async previewAiCohort(req: AuthRequest, res: Response): Promise<void> {
     const { cohortId } = req.params;
     const capacity = await CampaignController.getAiCampaignCapacity(req);
@@ -649,6 +971,10 @@ export class CampaignController {
         `AI cohort capacity exceeded: requested ${cohort.eligibleCount}, role ${req.user?.role || 'UNKNOWN'}, per-campaign cap ${capacity.campaignCap}, daily used ${capacity.dailyUsed}/${capacity.dailyCap}, remaining ${capacity.dailyRemaining}`,
         400,
       );
+    }
+
+    if (await CampaignController.respondIfCampaignCapsExceeded(req, res, cohort.leadIds.length)) {
+      return;
     }
 
     await OutboundGateService.ensureCanLaunchOutbound(req.user);
@@ -995,21 +1321,6 @@ export class CampaignController {
       throw new AppError('Name and message template are required', 400);
     }
 
-    // Create campaign
-    const campaign = await prisma.campaign.create({
-      data: {
-        name,
-        description,
-        messageTemplate,
-        numberPoolId,
-        sendingSpeed: sendingSpeed || 60,
-        dailyLimit,
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
-        createdById: req.user!.id,
-        status: scheduledAt ? 'SCHEDULED' : 'DRAFT',
-      },
-    });
-
     // Add leads to campaign
     let leadQuery: any = {
       optedOut: false,
@@ -1054,6 +1365,25 @@ export class CampaignController {
         select: { id: true },
       });
     }
+
+    if (leads.length > 0 && (await CampaignController.respondIfCampaignCapsExceeded(req, res, leads.length))) {
+      return;
+    }
+
+    // Create campaign only after safety/cap checks pass.
+    const campaign = await prisma.campaign.create({
+      data: {
+        name,
+        description,
+        messageTemplate,
+        numberPoolId,
+        sendingSpeed: sendingSpeed || 60,
+        dailyLimit,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        createdById: req.user!.id,
+        status: scheduledAt ? 'SCHEDULED' : 'DRAFT',
+      },
+    });
 
     if (leads.length > 0) {
       await prisma.campaignLead.createMany({
@@ -1321,6 +1651,10 @@ export class CampaignController {
 
     if (preview.summary.willReceive === 0) {
       throw new AppError('No eligible recipients. All delivered contacts have replied or are on DNC.', 400);
+    }
+
+    if (await CampaignController.respondIfCampaignCapsExceeded(req, res, preview.eligibleLeadIds.length)) {
+      return;
     }
 
     if (await ComplianceService.isQuietHours()) {

@@ -312,6 +312,33 @@ function withLeadEnrichment<T extends Record<string, unknown>>(
   };
 }
 
+function buildLastContactedWhere(value: unknown): Record<string, unknown> | null {
+  const filter = String(value || '').trim();
+  if (!filter) return null;
+  if (filter === 'never') return { lastContactedAt: null };
+
+  const cutoff = new Date();
+  if (filter === '30d') {
+    cutoff.setDate(cutoff.getDate() - 30);
+  } else if (filter === '90d') {
+    cutoff.setDate(cutoff.getDate() - 90);
+  } else {
+    const parsed = new Date(filter);
+    if (Number.isNaN(parsed.getTime())) throw new AppError('Invalid lastContactedBefore filter', 400);
+    cutoff.setTime(parsed.getTime());
+  }
+
+  return {
+    OR: [{ lastContactedAt: null }, { lastContactedAt: { lt: cutoff } }],
+  };
+}
+
+function appendAnd(where: Record<string, unknown>, condition: Record<string, unknown> | null): void {
+  if (!condition) return;
+  const existing = Array.isArray(where.AND) ? where.AND : [];
+  where.AND = [...existing, condition];
+}
+
 export class LeadController {
   static async list(req: AuthRequest, res: Response): Promise<void> {
     const {
@@ -321,6 +348,9 @@ export class LeadController {
       status,
       tags,
       assignedRepId,
+      source,
+      state,
+      lastContactedBefore,
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = req.query;
@@ -330,13 +360,15 @@ export class LeadController {
     const where: any = { deletedAt: null };
 
     if (search) {
-      where.OR = [
-        { firstName: { contains: search as string } },
-        { lastName: { contains: search as string } },
-        { phone: { contains: search as string } },
-        { email: { contains: search as string } },
-        { company: { contains: search as string } },
-      ];
+      appendAnd(where, {
+        OR: [
+          { firstName: { contains: search as string } },
+          { lastName: { contains: search as string } },
+          { phone: { contains: search as string } },
+          { email: { contains: search as string } },
+          { company: { contains: search as string } },
+        ],
+      });
     }
 
     if (status) {
@@ -353,13 +385,15 @@ export class LeadController {
       where.assignedRepId = assignedRepId;
     }
 
-    if (req.query.source) {
-      where.source = { contains: req.query.source as string };
+    if (source) {
+      where.source = { contains: source as string };
     }
 
-    if (req.query.state) {
-      where.state = { contains: req.query.state as string };
+    if (state) {
+      where.state = { contains: state as string };
     }
+
+    appendAnd(where, buildLastContactedWhere(lastContactedBefore));
 
     // Rep can only see their leads
     if (req.user?.role === 'REP') {
@@ -430,6 +464,52 @@ export class LeadController {
         total,
         pages: Math.ceil(total / parseInt(limit as string)),
       },
+    });
+  }
+
+  static async filterOptions(req: AuthRequest, res: Response): Promise<void> {
+    const where: any = { deletedAt: null };
+    if (req.user?.role === 'REP') where.assignedRepId = req.user.id;
+
+    const [sourceRows, stateRows] = await Promise.all([
+      prisma.lead.findMany({
+        where: { ...where, source: { not: null } },
+        select: {
+          source: true,
+          tags: { include: { tag: true } },
+          campaignLeads: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+            include: { campaign: { select: { id: true, name: true, isRetarget: true } } },
+          },
+        },
+        orderBy: { source: 'asc' },
+        take: 10000,
+      }),
+      prisma.lead.findMany({
+        where: { ...where, state: { not: null } },
+        select: { state: true },
+        distinct: ['state'],
+        orderBy: { state: 'asc' },
+        take: 200,
+      }),
+    ]);
+
+    const sourceMap = new Map<string, { value: string; label: string; count: number }>();
+    for (const row of sourceRows) {
+      const value = String(row.source || '').trim();
+      if (!value) continue;
+      const label = resolveLeadSource(row).primary;
+      const existing = sourceMap.get(value);
+      sourceMap.set(value, { value, label, count: (existing?.count || 0) + 1 });
+    }
+
+    res.json({
+      sources: Array.from(sourceMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+      states: stateRows
+        .map((row) => String(row.state || '').trim())
+        .filter(Boolean)
+        .map((stateValue) => ({ value: stateValue, label: stateValue })),
     });
   }
 
@@ -1340,23 +1420,26 @@ export class LeadController {
    * GET /leads/export — Export leads as streaming CSV (cursor-based, OOM-safe)
    */
   static async exportCSV(req: AuthRequest, res: Response): Promise<void> {
-    const { status, tags, assignedRepId, search, source, state } = req.query;
+    const { status, tags, assignedRepId, search, source, state, lastContactedBefore } = req.query;
 
     const where: any = {};
 
     if (search) {
-      where.OR = [
-        { firstName: { contains: search as string } },
-        { lastName: { contains: search as string } },
-        { phone: { contains: search as string } },
-        { email: { contains: search as string } },
-        { company: { contains: search as string } },
-      ];
+      appendAnd(where, {
+        OR: [
+          { firstName: { contains: search as string } },
+          { lastName: { contains: search as string } },
+          { phone: { contains: search as string } },
+          { email: { contains: search as string } },
+          { company: { contains: search as string } },
+        ],
+      });
     }
     if (status) where.status = { in: (status as string).split(',') };
     if (tags) where.tags = { some: { tagId: { in: (tags as string).split(',') } } };
     if (source) where.source = { contains: source as string };
     if (state) where.state = { contains: state as string };
+    appendAnd(where, buildLastContactedWhere(lastContactedBefore));
     if (assignedRepId) where.assignedRepId = assignedRepId;
     if (req.user?.role === 'REP') where.assignedRepId = req.user.id;
     // Exclude soft-deleted

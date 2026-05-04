@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                                                                                                               |
-| ----------------------------------------------- | -------: | ---------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                                                                                                 |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |       9.5% | Live SMS OTP + browser redirect/current-user passed; Resend email fallback blocked by missing production config                                                                      |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                                                                                                    |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                                                                                          |
-| M1.4 — Pipeline AI extractor + badges           |      14% |        14% | Done — extractor/backend/UI/tests/pixel, TS golden grader, and live Anthropic golden parity diff documented                                                                          |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                                                                                                |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                                                                                            |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         8% | Done — API scope, mocked admin/rep smoke, and production two-rep CSV import/visibility/export smoke passed                                                                           |
-| M2.2 — Leads enrichment columns + export        |       8% |         8% | Done — enrichment/export, company search parity, retained prototype columns, and visual evidence passed                                                                              |
-| M2.3 — AI Retarget campaigns                    |       8% |         8% | Done — LeadCohort DB/cache/cron, Build modal/list/actions, prod DB/health, and retained prototype compare passed                                                                     |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         4% | Done — 37/37 focused regression, root build, visual gate, production deploy, live CSV smoke, and health passed                                                                       |
-| **Overall**                                     | **100%** |  **99.5%** | **M1/M2 implementation, release gates, and M25 visual acceptance code-side scope complete; true 100% still blocked by external Resend email OTP config and original SCL logo asset** |
+| Направление                                     |      Вес | Готовность | Статус                                                                                                                                                                                                                    |
+| ----------------------------------------------- | -------: | ---------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                                                                                                                                      |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |       9.5% | Live SMS OTP + browser redirect/current-user passed; Resend email fallback blocked by missing production config                                                                                                           |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                                                                                                                                         |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                                                                                                                               |
+| M1.4 — Pipeline AI extractor + badges           |      14% |        14% | Done — extractor/backend/UI/tests/pixel, TS golden grader, and live Anthropic golden parity diff documented                                                                                                               |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                                                                                                                                     |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                                                                                                                                 |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         8% | Done — API scope, mocked admin/rep smoke, and production two-rep CSV import/visibility/export smoke passed                                                                                                                |
+| M2.2 — Leads enrichment columns + export        |       8% |         8% | Done — enrichment/export, company search parity, retained prototype columns, and visual evidence passed                                                                                                                   |
+| M2.3 — AI Retarget campaigns                    |       8% |         8% | Done — LeadCohort DB/cache/cron, Build modal/list/actions, prod DB/health, and retained prototype compare passed                                                                                                          |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         4% | Done — 37/37 focused regression, root build, visual gate, production deploy, live CSV smoke, and health passed                                                                                                            |
+| **Overall**                                     | **100%** |  **99.5%** | **M1/M2 implementation, release gates, M25 visual acceptance, and M26 full SCL PDF/prototype re-audit code-side scope complete; true 100% still blocked by external Resend email OTP config and original SCL logo asset** |
 
 ### M25 Visual Acceptance Gate — 2026-05-04
 
@@ -35,6 +35,21 @@
 - [x] Recommendation/API-key handoff document added: `docs/M25_UI_QA_RECOMMENDATIONS_2026-05-04.md`.
 - [ ] External dependency for absolute Login pixel-perfect: client must provide original SCL logo/wordmark SVG or high-resolution transparent PNG.
 - [ ] External dependency for final M1.1 100%: production `RESEND_API_KEY` and `RESEND_FROM_EMAIL` must be configured and email OTP delivery smoke must pass.
+
+### M26 Full SCL Requirements Re-Audit — 2026-05-04
+
+- [x] Re-read and reconciled the full Leads/Campaigns PDF-derived checklist against the v3 prototype and current implementation.
+- [x] Leads route now uses the same prototype shell/topbar/tabs treatment as Campaigns, with legacy sidebar hidden on `/leads` and `/campaigns` only.
+- [x] Leads filter bar includes Source, State, and Last Contacted filters, with compact responsive layout instead of a long stacked desktop column.
+- [x] Backend supports `lastContactedBefore` and `/api/leads/filter-options`; focused export/enrichment tests cover filter-aware CSV behavior.
+- [x] Campaign AI cards expose the PDF-required category label, predicted reply/funded metrics, historical anchor, AI reasoning, daily capacity bar, cap trim warning, cooldown warning, and Build/Preview handoff.
+- [x] Server-side per-campaign and rolling 24h daily caps are enforced for manual campaign creation and AI cohort build flows.
+- [x] Browser self-review caught and fixed a Campaigns cap-row spacing defect (`leadsdaily capacity`).
+- [x] API dependency audit completed: no new external API is required for Leads/Campaigns; Resend is needed only for email OTP fallback, while Twilio and Anthropic are existing platform dependencies.
+- [x] Separate client-facing API/key instruction added: `docs/CLIENT_API_REQUIREMENTS_2026-05-04.md`.
+- [x] Evidence JSON added: `audit-screenshots/m26-full-scl-requirements-evidence.json`.
+- [ ] External dependency for absolute Login pixel-perfect remains original SCL logo/wordmark SVG or high-resolution transparent PNG.
+- [ ] External dependency for final M1.1 100% remains production `RESEND_API_KEY` and `RESEND_FROM_EMAIL` configuration plus email OTP smoke.
 
 ## Source Map
 
@@ -1204,6 +1219,7 @@
 
 | Date       | Progress | Area      | What changed                                                                                                                                                                          | Evidence                                                           |
 | ---------- | -------: | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| 2026-05-04 |    99.5% | M26       | Re-audited full SCL Leads/Campaigns PDF/prototype scope, added Leads prototype shell/filter bar, Campaign AI cap/category/cooldown polish, API requirements doc, focused tests/build. | `audit-screenshots/m26-full-scl-requirements-evidence.json`        |
 | 2026-05-04 |    99.5% | M2.4      | Closed M2 release gate: 37/37 focused tests, root build, visual prototype smoke, production deploy `43f067a45`, live CSV import/export/enrichment smoke, health ok.                   | `audit-screenshots/m24-regression-bootstrap-evidence.json`         |
 | 2026-05-04 |    97.5% | M2.1/M2.2 | Closed live Leads/Campaigns gate: AN/HB/admin CSV visibility, readable source/export, company search parity, visual prototype screenshots, and cleanup passed.                        | `audit-screenshots/m21-m22-leads-campaigns-evidence.json`          |
 | 2026-05-04 |    95.5% | M1.4      | Added TS golden grader, fixture/corpus sync tests, live Anthropic golden parity run, and documented exact field diffs for the remaining golden divergences.                           | `audit-screenshots/m14-pipeline-ai-extractor-evidence.json`        |

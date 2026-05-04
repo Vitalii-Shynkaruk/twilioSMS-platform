@@ -33,6 +33,9 @@ import { useAuthStore } from '../stores/authStore';
 type AiCohort = {
   id: string;
   title: string;
+  categoryLabel?: string;
+  description?: string;
+  cohortType?: 'multi-retarget' | 'new-cohort' | 'renewal';
   priorityLabel: string;
   leadCount: number;
   totalMatchCount: number;
@@ -73,6 +76,36 @@ type AiCohortsResponse = {
   refreshedAt: string;
   summary: { cohortCount: number; expectedFunded: number };
 };
+
+function getAiCohortMeta(cohort: AiCohort): { categoryLabel: string; description: string } {
+  if (cohort.categoryLabel && cohort.description) {
+    return { categoryLabel: cohort.categoryLabel, description: cohort.description };
+  }
+
+  if (cohort.cohortType === 'new-cohort' || cohort.id === 'new-restaurants') {
+    return {
+      categoryLabel: 'New Cohort',
+      description: 'Build a fresh audience from imported lists using industry, revenue, source, and contact history.',
+    };
+  }
+
+  if (cohort.cohortType === 'renewal' || cohort.id === 'renewal') {
+    return {
+      categoryLabel: 'Renewal',
+      description: 'Surface previously funded businesses that are likely ready for a renewal conversation.',
+    };
+  }
+
+  return {
+    categoryLabel: 'Multi-Campaign Retarget',
+    description: 'Find stalled warm replies across prior campaigns and re-engage them with a new funding angle.',
+  };
+}
+
+function getCapacityPercent(cohort: AiCohort): number {
+  if (!cohort.cap.dailyCap) return 0;
+  return Math.min(100, Math.round((cohort.cap.dailyUsed / cohort.cap.dailyCap) * 100));
+}
 
 export default function CampaignsPage() {
   const { user } = useAuthStore();
@@ -881,17 +914,24 @@ function AiRetargetSection({
           <div className="grid gap-3 lg:grid-cols-3">
             {cohorts.map((cohort) => {
               const disabled = outboundLocked || cohort.leadCount === 0;
+              const meta = getAiCohortMeta(cohort);
+              const capacityPercent = getCapacityPercent(cohort);
               return (
                 <div
                   key={cohort.id}
                   className="campaigns-ai-card rounded-lg border border-dark-700/60 bg-dark-900/50 p-4 space-y-3"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-dark-100 leading-snug">{cohort.title}</h3>
+                    <div className="min-w-0">
+                      <span className="campaigns-ai-category">{meta.categoryLabel}</span>
+                      <h3 className="text-sm font-semibold text-dark-100 leading-snug mt-1">{cohort.title}</h3>
+                    </div>
                     <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/50 text-purple-300 whitespace-nowrap">
                       {cohort.priorityLabel}
                     </span>
                   </div>
+
+                  <p className="text-xs text-dark-400 leading-relaxed">{meta.description}</p>
 
                   <div className="campaigns-ai-metrics grid grid-cols-3 gap-2">
                     <MetricCard
@@ -913,9 +953,26 @@ function AiRetargetSection({
                     <strong className="text-dark-200">{cohort.reasoningLead}</strong> {cohort.reasoningText}
                   </p>
 
+                  <div className="campaigns-ai-capacity" aria-label="Daily capacity">
+                    <div className="campaigns-ai-capacity__summary">
+                      <span className="campaigns-ai-capacity__count">
+                        {formatCompactNumber(cohort.leadCount)} leads
+                      </span>
+                      <span className="campaigns-ai-capacity__usage">
+                        {' · '}Daily capacity: {formatCompactNumber(cohort.cap.dailyUsed)} /{' '}
+                        {formatCompactNumber(cohort.cap.dailyCap)} used · {capacityPercent}%
+                      </span>
+                    </div>
+                    <div className="campaigns-ai-capacity-bar" aria-hidden="true">
+                      <span style={{ width: `${capacityPercent}%` }} />
+                    </div>
+                  </div>
+
                   {cohort.cap.trimmed > 0 && (
                     <p className="text-xs text-orange-300">
-                      Capacity trim: {cohort.cap.trimmed} eligible leads held back.
+                      Capacity trim: {formatCompactNumber(cohort.leadCount)} of{' '}
+                      {formatCompactNumber(cohort.eligibleCount)} leads selected;{' '}
+                      {formatCompactNumber(cohort.cap.trimmed)} held back by per-campaign or daily caps.
                     </p>
                   )}
                   {cohort.warnings.map((warning) => (
@@ -1330,7 +1387,11 @@ function CreateCampaignModal({
       onClose();
     },
     onError: (err: any) =>
-      toast.error(err.response?.data?.error || (aiCohort ? 'Failed to build AI campaign' : 'Failed to create')),
+      toast.error(
+        ['PER_CAMPAIGN_CAP_EXCEEDED', 'DAILY_TOTAL_CAP_EXCEEDED'].includes(err.response?.data?.error)
+          ? err.response?.data?.message || 'Campaign capacity limit exceeded'
+          : err.response?.data?.error || (aiCohort ? 'Failed to build AI campaign' : 'Failed to create'),
+      ),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

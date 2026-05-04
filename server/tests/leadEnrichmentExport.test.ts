@@ -113,7 +113,9 @@ describe('M2.2 Leads enrichment/export', () => {
           assignedRepId: 'rep-1',
           status: { in: ['REPLIED'] },
           tags: { some: { tagId: { in: ['tag-1'] } } },
-          OR: expect.arrayContaining([{ company: { contains: 'Ana' } }]),
+          AND: expect.arrayContaining([
+            expect.objectContaining({ OR: expect.arrayContaining([{ company: { contains: 'Ana' } }]) }),
+          ]),
         }),
       }),
     );
@@ -126,5 +128,46 @@ describe('M2.2 Leads enrichment/export', () => {
       expect.stringContaining('Restaurants,82000,CSV,CJ 10.8 12K,Verizon list'),
     );
     expect(response.end).toHaveBeenCalled();
+  });
+
+  it('должен применять Last Contacted фильтр без перезаписи search OR', async () => {
+    const findMany = vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([createLeadFixture()] as never);
+    vi.spyOn(prisma.lead, 'count').mockResolvedValue(1);
+    const response = createResponse();
+
+    await LeadController.list(createRequest({ search: 'Ana', lastContactedBefore: '30d' }, 'ADMIN'), response);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ OR: expect.arrayContaining([{ company: { contains: 'Ana' } }]) }),
+            expect.objectContaining({
+              OR: expect.arrayContaining([{ lastContactedAt: null }, { lastContactedAt: { lt: expect.any(Date) } }]),
+            }),
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('должен отдавать динамические Source и State options с REP scope', async () => {
+    vi.spyOn(prisma.lead, 'findMany')
+      .mockResolvedValueOnce([createLeadFixture()] as never)
+      .mockResolvedValueOnce([{ state: 'CA' }] as never);
+    const response = createResponse();
+
+    await LeadController.filterOptions(createRequest(), response);
+
+    expect(prisma.lead.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: expect.objectContaining({ assignedRepId: 'rep-1' }) }),
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [expect.objectContaining({ value: 'CJ 10.8 12K', label: 'CJ 10.8 12K', count: 1 })],
+        states: [{ value: 'CA', label: 'CA' }],
+      }),
+    );
   });
 });

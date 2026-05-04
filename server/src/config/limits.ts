@@ -1,0 +1,4 @@
+export const MAX_BULK_SEND_PER_REP = 500;
+export const MAX_BULK_SEND_PER_ADMIN = 3000;
+export const MAX_DAILY_TOTAL_PER_REP = 800;
+export const MAX_DAILY_TOTAL_PER_ADMIN = 4500;

@@ -83,7 +83,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
   const [showChangePassword, setShowChangePassword] = useState(false);
   const commandInputRef = useRef<HTMLInputElement>(null);
   const isInboxRoute = location.pathname.startsWith('/inbox');
-  const isCampaignsPrototypeRoute = location.pathname === '/campaigns';
+  const isLeadsCampaignsPrototypeRoute = location.pathname === '/campaigns' || location.pathname === '/leads';
 
   // Auto-collapse sidebar on Pipeline / Command Center for maximum content visibility
   useEffect(() => {
@@ -444,7 +444,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >
       {/* Mobile overlay */}
-      {mobileOpen && !isCampaignsPrototypeRoute && (
+      {mobileOpen && !isLeadsCampaignsPrototypeRoute && (
         <div
           className="fixed inset-0 z-[140] bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
@@ -452,7 +452,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       )}
 
       {/* Sidebar — Desktop */}
-      {!isCampaignsPrototypeRoute && (
+      {!isLeadsCampaignsPrototypeRoute && (
         <aside
           className={clsx(
             'hidden lg:flex flex-col border-r transition-all duration-300',
@@ -468,7 +468,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       )}
 
       {/* Sidebar — Mobile */}
-      {!isCampaignsPrototypeRoute && (
+      {!isLeadsCampaignsPrototypeRoute && (
         <aside
           className={clsx(
             'fixed inset-y-0 left-0 z-[150] flex flex-col w-[280px] border-r transition-transform duration-300 lg:hidden',
@@ -486,7 +486,7 @@ export default function AppLayout({ children }: { children?: React.ReactNode }) 
       {/* Main content */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Mobile top bar */}
-        {!isCampaignsPrototypeRoute && (
+        {!isLeadsCampaignsPrototypeRoute && (
           <div
             className="sticky top-0 z-30 flex items-center gap-3 px-4 h-14 border-b lg:hidden"
             style={{

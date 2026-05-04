@@ -56,6 +56,19 @@
     "vscodeProblems": "No errors in LeadsPage.tsx, CampaignsPage.tsx, globals.css, checklist, or evidence JSON after final Link tab implementation.",
     "build": "npm run build passed after restoring page-level tabs and converting tab navigation to React Router Links."
   },
+  "productionDeploy": {
+    "commit": "701545c",
+    "host": "https://app.sclcapital.io/",
+    "method": "full local git bundle to production because non-interactive GitHub HTTPS fetch requires credentials",
+    "merge": "production fast-forwarded from 0a802a0 to 701545c with existing dirty production worktree stashed and restored",
+    "build": "production npm run build passed: server tsc, client tsc, Vite production build",
+    "pm2": "sms-api restarted and reported online after warm-up",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok",
+      "leads": "https://app.sclcapital.io/leads returned HTTP 200 with updated frontend timestamp",
+      "campaigns": "https://app.sclcapital.io/campaigns returned HTTP 200 with updated frontend timestamp"
+    }
+  },
   "notes": [
     "M28 supersedes the M27 note that removed page-level tabs. The sidebar fix remains intact; only the prototype tabs were restored."
   ]

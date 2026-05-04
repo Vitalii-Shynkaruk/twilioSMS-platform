@@ -74,6 +74,7 @@
 - [x] Leads regression passed in browser: scope note, source readability comparison, Source/State/Last Contact filters, and leads table remain visible under the restored tabs.
 - [x] Campaigns regression passed in browser: AI Retarget Suggestions, daily capacity, cooldown warning, AI lineage row, and campaign list remain visible under the restored tabs.
 - [x] Evidence added: `audit-screenshots/m28-tabs-sidebar-parity-evidence.json`, `audit-screenshots/m28-tabs-leads.png`, `audit-screenshots/m28-tabs-campaigns.png`.
+- [x] Production deploy completed on `https://app.sclcapital.io/` at commit `701545c`; production build passed, PM2 `sms-api` restarted, `/api/health`, `/leads`, and `/campaigns` smoke passed.
 
 ## Source Map
 

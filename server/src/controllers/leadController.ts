@@ -1350,6 +1350,7 @@ export class LeadController {
         { lastName: { contains: search as string } },
         { phone: { contains: search as string } },
         { email: { contains: search as string } },
+        { company: { contains: search as string } },
       ];
     }
     if (status) where.status = { in: (status as string).split(',') };

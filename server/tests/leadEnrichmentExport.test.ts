@@ -113,6 +113,7 @@ describe('M2.2 Leads enrichment/export', () => {
           assignedRepId: 'rep-1',
           status: { in: ['REPLIED'] },
           tags: { some: { tagId: { in: ['tag-1'] } } },
+          OR: expect.arrayContaining([{ company: { contains: 'Ana' } }]),
         }),
       }),
     );

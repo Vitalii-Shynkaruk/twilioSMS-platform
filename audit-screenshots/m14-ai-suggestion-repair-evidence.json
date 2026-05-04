@@ -55,6 +55,32 @@
       "errors": 0
     }
   ],
+  "productionDeployment": {
+    "url": "https://app.sclcapital.io/",
+    "commit": "c30692315",
+    "deployNotes": [
+      "Production dirty AI WIP patch was saved before deploy.",
+      "The saved patch conflicted only against the already-merged verified AI repair files, so conflicts were resolved to the committed tested version.",
+      "Production worktree was clean after conflict resolution, build, and restart."
+    ],
+    "health": {
+      "status": "ok",
+      "database": "ok",
+      "redis": "ok"
+    },
+    "http": {
+      "root": 200,
+      "login": 200,
+      "devLogin": 404
+    },
+    "browserDom": {
+      "title": "SecureCreditLines - SMS Platform",
+      "devButtonCount": 0,
+      "sendCodeCount": 1,
+      "hasVerticalOverflow": false
+    },
+    "pm2": "sms-api online after restart"
+  },
   "remainingM14Work": [
     "Deal.pipelineAiSignals and Deal.pipelineAiUpdatedAt schema/data plumbing",
     "Dedicated pipelineAiService with exact handoff prompt/schema",

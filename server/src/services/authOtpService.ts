@@ -155,8 +155,16 @@ async function sendEmailOtp(destination: string, code: string): Promise<void> {
     return;
   }
 
-  const apiKey = (process.env.RESEND_API_KEY || '').trim();
-  const from = (process.env.RESEND_FROM_EMAIL || '').trim();
+  const [apiKeySetting, fromSetting] = await Promise.all([
+    prisma.systemSetting.findUnique({ where: { key: 'resendApiKey' } }),
+    prisma.systemSetting.findUnique({ where: { key: 'resendFromEmail' } }),
+  ]);
+  const apiKey = (
+    typeof apiKeySetting?.value === 'string' ? apiKeySetting.value : process.env.RESEND_API_KEY || ''
+  ).trim();
+  const from = (
+    typeof fromSetting?.value === 'string' ? fromSetting.value : process.env.RESEND_FROM_EMAIL || ''
+  ).trim();
   if (!apiKey || !from) throw new AppError('Email sign-in fallback is not configured', 503);
 
   const response = await fetch('https://api.resend.com/emails', {

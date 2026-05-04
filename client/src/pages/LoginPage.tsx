@@ -195,7 +195,7 @@ export default function LoginPage() {
                 <span className="scl-auth__spinner" aria-label="Loading" />
               ) : (
                 <>
-                  <span>{step === 'email' ? 'Send code' : 'Verify code'}</span>
+                  <span>{step === 'email' ? 'Send SMS code' : 'Verify code'}</span>
                   <ArrowRight aria-hidden="true" />
                 </>
               )}
@@ -203,6 +203,16 @@ export default function LoginPage() {
 
             {step === 'email' && (
               <>
+                <button
+                  type="button"
+                  onClick={() => sendCode('email')}
+                  disabled={isLoginLoading || !email}
+                  className="scl-auth__link"
+                >
+                  <Mail className="w-4 h-4" />
+                  Use email code instead
+                </button>
+
                 {devModeLoginEnabled && (
                   <button
                     type="button"
@@ -259,7 +269,7 @@ export default function LoginPage() {
 
           <div className="scl-auth__panel-footer">
             <Smartphone aria-hidden="true" />
-            <p>We’ll send a verification code to your phone</p>
+            <p>We’ll send a verification code to your phone or email</p>
           </div>
         </section>
 

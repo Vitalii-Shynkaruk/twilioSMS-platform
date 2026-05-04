@@ -53,6 +53,9 @@ export class SettingsController {
     // Twilio Test Credentials
     'twilioTestAccountSid',
     'twilioTestAuthToken',
+    // Email sign-in fallback (Resend)
+    'resendApiKey',
+    'resendFromEmail',
     // OpenAI
     'openaiApiKey',
     'openaiModel',
@@ -78,6 +81,7 @@ export class SettingsController {
   private static readonly SENSITIVE_KEYS = new Set([
     'twilioAuthToken',
     'twilioTestAuthToken',
+    'resendApiKey',
     'openaiApiKey',
     'anthropicApiKey',
     'webhookSecret',
@@ -575,6 +579,13 @@ export class SettingsController {
       const allowed = ['live', 'twilio_test', 'simulation'];
       if (!allowed.includes(value as string)) {
         throw new AppError(`smsMode must be one of: ${allowed.join(', ')}`, 400);
+      }
+    }
+
+    if (key === 'resendFromEmail' && typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(trimmed)) {
+        throw new AppError('resendFromEmail must be a valid email address', 400);
       }
     }
   }

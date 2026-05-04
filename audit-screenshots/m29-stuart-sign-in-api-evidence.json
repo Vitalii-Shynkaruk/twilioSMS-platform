@@ -1,0 +1,61 @@
+{
+  "date": "2026-05-04",
+  "scope": "M29 Stuart sign-in support and Resend email OTP API settings",
+  "productionDiagnosis": {
+    "user": {
+      "email": "sb@securecreditlines.com",
+      "isActive": true,
+      "mobilePhoneEnding": "2055",
+      "otpFailedAttempts": 0,
+      "otpLockedUntil": null,
+      "lastLoginAt": "2026-04-30T12:28:09.647Z"
+    },
+    "otpRowsForStuart": 0,
+    "twilioStatus": {
+      "settingsAccountSidConfigured": true,
+      "settingsMessagingServiceSidConfigured": true,
+      "recentMessagesToStuartPhoneDelivered": true
+    },
+    "resendStatusBeforeFix": {
+      "resendApiKeyEnvConfigured": false,
+      "resendFromEmailEnvConfigured": false,
+      "settingsResendApiKeyConfigured": false,
+      "settingsResendFromEmailConfigured": false
+    },
+    "finding": "Stuart is active and not OTP locked. No LoginOtp rows exist for Stuart, so the user likely did not complete a successful code request with the exact account email. SMS delivery to the same phone is working for HOT alerts. Email fallback was not usable until Resend credentials were made configurable."
+  },
+  "implementation": {
+    "backend": [
+      "AuthOtpService email OTP now reads resendApiKey and resendFromEmail from SystemSetting with env fallback.",
+      "SettingsController now whitelists resendApiKey and resendFromEmail.",
+      "resendApiKey is masked as a sensitive setting.",
+      "resendFromEmail is validated as an email address when non-empty."
+    ],
+    "frontend": [
+      "Settings -> Integrations now includes Email Sign-in / Resend fields.",
+      "Login first screen now offers Send SMS code and Use email code instead after an email is entered.",
+      "Login footer copy now reflects phone or email code delivery."
+    ],
+    "documentation": "docs/STUART_SIGN_IN_AND_API_SETUP_2026-05-04.md"
+  },
+  "validation": {
+    "typeErrors": "No errors found in changed files via VS Code diagnostics.",
+    "focusedTests": "server npm test -- --run tests/authOtpPolicy.test.ts tests/authDevModeLogin.test.ts: 2 files passed, 8 tests passed.",
+    "build": "npm run build passed: server tsc and client tsc/vite build.",
+    "browserSmoke": {
+      "url": "http://127.0.0.1:4174/login",
+      "steps": [
+        "Opened login page in local Vite preview.",
+        "Entered sb@securecreditlines.com.",
+        "Confirmed Send SMS code is enabled.",
+        "Confirmed Use email code instead is enabled on the first screen."
+      ],
+      "screenshot": "audit-screenshots/m29-login-email-code-option.png"
+    }
+  },
+  "remainingExternalDependency": {
+    "resendApiKey": "Client/admin must provide a production Resend Sending access API key.",
+    "resendFromEmail": "Client/admin must provide a verified sender email/domain in Resend.",
+    "productionEmailSmoke": "Must be run after Resend credentials are saved in Settings."
+  }
+}

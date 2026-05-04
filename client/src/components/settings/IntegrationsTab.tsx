@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
-import { Phone, Brain, Shield, Webhook, Eye, EyeOff, Save, CheckCircle2 } from 'lucide-react';
+import { Phone, Brain, Shield, Webhook, Eye, EyeOff, Save, CheckCircle2, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clsx } from 'clsx';
 import { PHASE1_LEAN } from '../../config/featureFlags';
@@ -89,6 +89,7 @@ export default function IntegrationsTab() {
   const queryClient = useQueryClient();
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showTestToken, setShowTestToken] = useState(false);
+  const [showResendKey, setShowResendKey] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
 
@@ -212,6 +213,39 @@ export default function IntegrationsTab() {
               onToggle={() => setShowTestToken(!showTestToken)}
             />
           </div>
+        </div>
+      </div>
+
+      {/* Email Sign-in */}
+      <div className="card p-6 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+            <Mail className="w-5 h-5 text-blue-400" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-dark-100">Email Sign-in</h3>
+            <p className="text-xs text-dark-400">Resend API fallback for OTP login when a rep cannot receive SMS.</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-dark-700/50 bg-dark-800/30 p-4 space-y-4">
+          <p className="text-xs text-dark-400">
+            After these fields are saved, reps can request a sign-in code by email from the login screen.
+          </p>
+          <IntegrationField
+            {...fieldProps}
+            label="Resend API Key"
+            settingKey="resendApiKey"
+            isSecret
+            showSecret={showResendKey}
+            onToggle={() => setShowResendKey(!showResendKey)}
+          />
+          <IntegrationField
+            {...fieldProps}
+            label="From Email (verified Resend sender)"
+            settingKey="resendFromEmail"
+            defaultValue="login@sclcapital.io"
+          />
         </div>
       </div>
 

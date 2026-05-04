@@ -57,12 +57,23 @@
 - [x] Client review issue reproduced: `/campaigns` and `/leads` felt like a separate app because route-level sidebar suppression replaced the main shell with prototype topbar/tabs.
 - [x] Fixed AppLayout: `/campaigns` and `/leads` keep the normal sidebar and auto-expand it.
 - [x] Fixed responsive shell: on `/campaigns` and `/leads`, sidebar is visible from `md` breakpoint so it remains present at the 918px QA viewport.
-- [x] Removed internal prototype topbar and Leads/Campaigns tab nav from both pages; switching between Leads and Campaigns now uses the app sidebar, not a second page-level nav.
+- [x] Removed internal prototype topbar and Leads/Campaigns tab nav during M27 sidebar correction; this tab-nav decision is superseded by M28 after client clarified duplicated page tabs are required.
 - [x] Campaigns still keeps prototype styling/fon inside the content area: dark background, AI cards, caps, cooldowns, lineage, filters, and campaign table.
 - [x] Leads keeps the old `/leads` route/page and now presents the prototype scope note, readable source comparison, Source/State/Last Contact filters, enrichment columns, and export-aware table inside the app shell.
 - [x] Browser QA at actual 918x667 viewport passed: sidebar width 260px on both pages, mobile topbar/drawer hidden, no prototype topbar/tabs, no horizontal overflow.
 - [x] Evidence added: `audit-screenshots/m27-sidebar-shell-correction-evidence.json`, `audit-screenshots/m27-sidebar-campaigns-after-fix.png`, `audit-screenshots/m27-sidebar-leads-after-fix.png`.
 - [x] Production deploy completed on `https://app.sclcapital.io/` at commit `42daf54`; production build passed, PM2 `sms-api` restarted, `/api/health`, `/leads`, and `/campaigns` smoke passed.
+
+### M28 Leads/Campaigns Page Tabs Restoration - 2026-05-04
+
+- [x] Client clarification applied: page-level Leads/Campaigns tabs must exist like the prototype while the same destinations remain duplicated in the app sidebar menu.
+- [x] Restored `.campaigns-prototype-tabs` inside the existing `/leads` and `/campaigns` content shell without undoing the M27 app sidebar restoration.
+- [x] Leads tab is active with `aria-current="page"` on `/leads`; Campaigns tab navigates to `/campaigns`.
+- [x] Campaigns tab is active with `aria-current="page"` on `/campaigns`; Leads tab navigates to `/leads`.
+- [x] Browser QA at actual 918x667 viewport passed: sidebar width 260px remains visible on both pages, tabs are visible, tab click Leads -> Campaigns works, and no horizontal overflow was detected.
+- [x] Leads regression passed in browser: scope note, source readability comparison, Source/State/Last Contact filters, and leads table remain visible under the restored tabs.
+- [x] Campaigns regression passed in browser: AI Retarget Suggestions, daily capacity, cooldown warning, AI lineage row, and campaign list remain visible under the restored tabs.
+- [x] Evidence added: `audit-screenshots/m28-tabs-sidebar-parity-evidence.json`, `audit-screenshots/m28-tabs-leads.png`, `audit-screenshots/m28-tabs-campaigns.png`.
 
 ## Source Map
 

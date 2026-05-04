@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from '../hooks/useDebounce';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -307,6 +307,13 @@ export default function LeadsPage() {
 
   return (
     <div className="campaigns-prototype-shell">
+      <nav className="campaigns-prototype-tabs" aria-label="Leads and campaigns navigation">
+        <Link to="/leads" className="is-active" aria-current="page">
+          Leads
+        </Link>
+        <Link to="/campaigns">Campaigns</Link>
+      </nav>
+
       <div className="campaigns-scope leads-prototype-scope p-4 sm:p-6 lg:p-6 space-y-4 sm:space-y-6">
         <section className="leads-prototype-scope-note" aria-label="Prototype scope">
           <p>Scope on this prototype — 4 fixes only</p>

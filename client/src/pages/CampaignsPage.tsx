@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { dealApi } from '../services/api';
 import { Campaign, CampaignStatus } from '../types';
@@ -308,6 +308,13 @@ export default function CampaignsPage() {
 
   return (
     <div className="campaigns-prototype-shell">
+      <nav className="campaigns-prototype-tabs" aria-label="Leads and campaigns navigation">
+        <Link to="/leads">Leads</Link>
+        <Link to="/campaigns" className="is-active" aria-current="page">
+          Campaigns
+        </Link>
+      </nav>
+
       <div className="campaigns-scope p-4 sm:p-6 lg:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

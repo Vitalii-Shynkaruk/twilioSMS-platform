@@ -1,0 +1,62 @@
+{
+  "id": "m28-tabs-sidebar-parity",
+  "generatedAt": "2026-05-04T20:33:00Z",
+  "scope": "Restore prototype-style Leads/Campaigns page tabs while keeping the normal app sidebar visible on both routes.",
+  "reason": "Client clarified that Leads and Campaigns tabs must appear inside the page like the prototype, even though the same destinations are duplicated in the sidebar menu.",
+  "changes": {
+    "appLayout": [
+      "Kept the M27 sidebar behavior unchanged for /leads and /campaigns.",
+      "The main app sidebar remains visible from the md breakpoint and auto-expanded on both routes."
+    ],
+    "leadsPage": [
+      "Restored page-level tabs at the top of the prototype content shell.",
+      "Marked Leads as the active tab with aria-current=page.",
+      "Campaigns tab navigates to /campaigns via a React Router Link."
+    ],
+    "campaignsPage": [
+      "Restored page-level tabs at the top of the prototype content shell.",
+      "Marked Campaigns as the active tab with aria-current=page.",
+      "Leads tab navigates to /leads via a React Router Link."
+    ],
+    "styles": [
+      "Extended the existing .campaigns-prototype-tabs styling to support anchor elements as tabs while preserving the previous button styling."
+    ]
+  },
+  "browserValidation": {
+    "viewport": "918x667 actual integrated-browser viewport",
+    "leads": {
+      "path": "/leads",
+      "desktopSidebarWidth": 260,
+      "hasPrototypeTabs": true,
+      "activeTab": "Leads",
+      "inactiveTab": "Campaigns",
+      "hasScopeNote": true,
+      "hasSourceReadability": true,
+      "hasSourceFilter": true,
+      "hasStateFilter": true,
+      "hasLastContactedFilter": true,
+      "hasHorizontalOverflow": false
+    },
+    "campaigns": {
+      "path": "/campaigns",
+      "desktopSidebarWidth": 260,
+      "hasPrototypeTabs": true,
+      "activeTab": "Campaigns",
+      "inactiveTab": "Leads",
+      "tabClickFromLeadsWorked": true,
+      "hasAiSection": true,
+      "hasDailyCapacity": true,
+      "hasCooldown": true,
+      "hasLineageRow": true,
+      "hasHorizontalOverflow": false
+    }
+  },
+  "screenshots": ["audit-screenshots/m28-tabs-leads.png", "audit-screenshots/m28-tabs-campaigns.png"],
+  "validation": {
+    "vscodeProblems": "No errors in LeadsPage.tsx, CampaignsPage.tsx, globals.css, checklist, or evidence JSON after final Link tab implementation.",
+    "build": "npm run build passed after restoring page-level tabs and converting tab navigation to React Router Links."
+  },
+  "notes": [
+    "M28 supersedes the M27 note that removed page-level tabs. The sidebar fix remains intact; only the prototype tabs were restored."
+  ]
+}

@@ -155,6 +155,82 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
   });
 }
 
+async function persistOptOutInboxTrace(input: {
+  leadId: string;
+  assignedRepId: string | null;
+  existingConversationId: string | null;
+  existingStickyNumberId: string | null;
+  inboundTwilioNumberId: string | null;
+  fromNumber: string;
+  toNumber: string;
+  body: string;
+  messageSid?: string;
+}): Promise<void> {
+  const {
+    leadId,
+    assignedRepId,
+    existingConversationId,
+    existingStickyNumberId,
+    inboundTwilioNumberId,
+    fromNumber,
+    toNumber,
+    body,
+    messageSid,
+  } = input;
+
+  let conversationId = existingConversationId;
+  let stickyNumberId = existingStickyNumberId;
+
+  if (!conversationId) {
+    const createdConversation = await prisma.conversation.create({
+      data: {
+        leadId,
+        assignedRepId,
+        twilioNumberId: inboundTwilioNumberId,
+        stickyNumberId: inboundTwilioNumberId,
+        isActive: true,
+      },
+      select: { id: true, stickyNumberId: true },
+    });
+    conversationId = createdConversation.id;
+    stickyNumberId = createdConversation.stickyNumberId;
+  }
+
+  try {
+    await prisma.message.create({
+      data: {
+        conversationId,
+        direction: 'INBOUND',
+        status: 'RECEIVED',
+        fromNumber,
+        toNumber,
+        body,
+        twilioMessageSid: messageSid,
+        sentAt: new Date(),
+      },
+    });
+  } catch (err: any) {
+    // Twilio may retry inbound webhooks. If the same MessageSid already exists, skip duplicate trace.
+    if (err?.code !== 'P2002') {
+      throw err;
+    }
+  }
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: {
+      lastMessageAt: new Date(),
+      lastDirection: 'inbound',
+      ...(inboundTwilioNumberId
+        ? {
+            twilioNumberId: inboundTwilioNumberId,
+            stickyNumberId: stickyNumberId || inboundTwilioNumberId,
+          }
+        : {}),
+    },
+  });
+}
+
 /**
  * Twilio webhook signature validation middleware
  * Validates that incoming requests are genuinely from Twilio.
@@ -215,12 +291,6 @@ router.post('/inbound', async (req: Request, res: Response) => {
     // STOP/opt-out keywords are processed for compliance, but hidden from inbox
     // and do not trigger unread/new-message notifications.
     const suppressInboxMessage = keywordResult.isKeyword && keywordResult.action === 'opt_out';
-    if (suppressInboxMessage) {
-      logger.info('Inbound opt-out keyword processed without inbox record', { from: From, to: To });
-      res.type('text/xml');
-      res.send(twimlResponse);
-      return;
-    }
     const shouldResetDealEngagement = String(Body || '').trim().length > 0;
 
     const inboundTwilioNumber = await prisma.phoneNumber.findUnique({
@@ -250,6 +320,31 @@ router.post('/inbound', async (req: Request, res: Response) => {
       include: { conversations: true },
       orderBy: { updatedAt: 'desc' },
     });
+
+    if (suppressInboxMessage) {
+      if (lead) {
+        const existingConversation = lead.conversations[0] || null;
+        await persistOptOutInboxTrace({
+          leadId: lead.id,
+          assignedRepId: lead.assignedRepId || null,
+          existingConversationId: existingConversation?.id || null,
+          existingStickyNumberId: existingConversation?.stickyNumberId || null,
+          inboundTwilioNumberId: inboundTwilioNumber?.id || null,
+          fromNumber: From,
+          toNumber: To,
+          body: Body,
+          messageSid: MessageSid,
+        });
+      }
+      logger.info('Inbound opt-out keyword processed without unread/notifications', {
+        from: From,
+        to: To,
+        leadId: lead?.id || null,
+      });
+      res.type('text/xml');
+      res.send(twimlResponse);
+      return;
+    }
 
     if (lead) {
       // Get or create conversation

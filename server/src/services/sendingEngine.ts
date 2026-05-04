@@ -57,6 +57,7 @@ interface SendMessageOptions {
   sentByUserId?: string;
   preferredNumberId?: string;
   priority?: number;
+  enforceQuietHours?: boolean;
 }
 
 interface BulkSendOptions {
@@ -161,7 +162,9 @@ export class SendingEngine {
     }
 
     // Compliance checks
-    const complianceCheck = await ComplianceService.canSendTo(options.toNumber);
+    const complianceCheck = await ComplianceService.canSendTo(options.toNumber, {
+      enforceQuietHours: options.enforceQuietHours ?? true,
+    });
     if (!complianceCheck.allowed) {
       logger.warn(`Message blocked by compliance: ${complianceCheck.reason}`, {
         toNumber: options.toNumber,

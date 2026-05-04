@@ -658,6 +658,85 @@ function suggestionLooksContradictoryToFollowupWindow(text: string): boolean {
   return true;
 }
 
+function parseMoneyToken(amountRaw: string, suffixRaw?: string | null): number | null {
+  const normalized = String(amountRaw || '')
+    .replace(/,/g, '')
+    .trim();
+  if (!normalized) return null;
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const suffix = String(suffixRaw || '')
+    .trim()
+    .toLowerCase();
+  if (suffix === 'm') return Math.round(amount * 1_000_000);
+  if (suffix === 'k') return Math.round(amount * 1_000);
+  return Math.round(amount);
+}
+
+function extractDisclosedMoneyAmount(text: string): number | null {
+  const normalized = String(text || '').trim();
+  if (!normalized) return null;
+
+  const withSuffixPattern = /\$?\s*([\d,.]+)\s*([kKmM])\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = withSuffixPattern.exec(normalized)) !== null) {
+    const parsed = parseMoneyToken(match[1], match[2]);
+    if (parsed && parsed >= 1000) return parsed;
+  }
+
+  const dollarPattern = /\$\s*([\d,.]+)\b/g;
+  while ((match = dollarPattern.exec(normalized)) !== null) {
+    const parsed = parseMoneyToken(match[1], '');
+    if (parsed && parsed >= 1000) return parsed;
+  }
+
+  const plainPattern = /\b(\d{4,8})\b/g;
+  while ((match = plainPattern.exec(normalized)) !== null) {
+    const parsed = parseMoneyToken(match[1], '');
+    if (parsed && parsed >= 1000) return parsed;
+  }
+
+  return null;
+}
+
+function formatCompactMoneyLabel(amount: number): string {
+  if (amount >= 1_000_000) {
+    return `$${(amount / 1_000_000).toFixed(amount % 1_000_000 === 0 ? 0 : 1)}M`;
+  }
+  if (amount >= 1_000) {
+    return `$${Math.round(amount / 1_000)}k`;
+  }
+  return `$${Math.round(amount)}`;
+}
+
+function extractAmountDisclosureFromContext(latestInboundText: string, previousOutboundText: string): number | null {
+  const amount = extractDisclosedMoneyAmount(latestInboundText);
+  if (!amount) return null;
+
+  const inboundLower = String(latestInboundText || '').toLowerCase();
+  const previousOutboundLower = String(previousOutboundText || '').toLowerCase();
+
+  const outboundAsksRevenue =
+    /monthly\s+gross\s+revenue|monthly\s+revenue|gross\s+revenue|revenue\s+per\s+month|annual\s+revenue|yearly\s+revenue|what(?:'s| is)\s+your\s+monthly/.test(
+      previousOutboundLower,
+    );
+  const outboundAsksRequestedAmount =
+    /how\s+much\s+(?:are\s+you|do\s+you|would\s+you|you)\s+(?:looking|seek|seeking|need|want)|looking\s+to\s+receive|amount\s+are\s+you|what\s+amount|how\s+much\s+capital/.test(
+      previousOutboundLower,
+    );
+  const inboundRevenueCue = /\b(monthly|revenue|gross|sales|annual|yearly|per\s*month|per\s*year)\b/.test(inboundLower);
+  const inboundAskCue =
+    /\b(need|looking|seek|seeking|want|amount|capital|equipment|inventory|expansion|working capital|debt|payoff|loan)\b/.test(
+      inboundLower,
+    );
+  const amountOnlyReply = /^\s*\$?\s*[\d,.]+\s*[kKmM]?\s*$/.test(String(latestInboundText || '').trim());
+
+  if (outboundAsksRequestedAmount) return amount;
+  if (!outboundAsksRevenue && !inboundRevenueCue && (inboundAskCue || amountOnlyReply)) return amount;
+  return null;
+}
+
 function hasPaymentTermsContext(latestInboundLower: string): boolean {
   return /monthly payments?|low monthly|interest rate|%\s*interest|how many years|\brate\b|\brates\b|\bterm\b|\bterms\b|\bpayment\b|\bpayments\b|\bcost\b/.test(
     latestInboundLower,
@@ -734,8 +813,24 @@ function suggestionLooksStaleForPhoneCallLogistics(text: string): boolean {
   return true;
 }
 
+function suggestionLooksStaleForAmountDisclosure(text: string): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+
+  if (/\$\s*\d[\d.,]*(?:\s?[kKmM])?\b/.test(lower)) return false;
+  if (
+    /working capital|equipment|inventory|pay(?:ing)? down debt|debt payoff|use of funds|what would you use/.test(lower)
+  )
+    return false;
+
+  return true;
+}
+
 function hasSubstantiveCurrentTopicContext(latestInboundLower: string, previousOutboundLower: string): boolean {
   return (
+    extractAmountDisclosureFromContext(latestInboundLower, previousOutboundLower) != null ||
     hasPaymentTermsContext(latestInboundLower) ||
     hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower) ||
     hasCreditScoreContext(latestInboundLower, previousOutboundLower) ||
@@ -773,6 +868,10 @@ function buildDeterministicFallbackSuggestionText(input: {
     );
   const scheduledCallLabel = extractScheduledCallLabel(latestInboundText);
   const followupWindowLabel = extractFollowupWindowLabel(latestInboundText);
+  const disclosedAmount = extractAmountDisclosureFromContext(
+    latestInboundText,
+    String(input.previousOutboundText || ''),
+  );
   const hasCallContext = /\b(call|callback|call back|quick call|phone)\b/.test(
     `${latestInboundLower} ${previousOutboundLower}`,
   );
@@ -834,6 +933,14 @@ function buildDeterministicFallbackSuggestionText(input: {
       return `No problem, take your time. I'll follow up in ${followupWindowLabel} to answer any questions once you've had a chance to review the docs.`;
     }
     return `No problem, take your time. I'll follow up in ${followupWindowLabel}.`;
+  }
+
+  if (disclosedAmount != null) {
+    const amountLabel = formatCompactMoneyLabel(disclosedAmount);
+    if (hasEmailContext) {
+      return `Perfect, ${amountLabel} noted. I can send options to your email now. Is this mainly for working capital, equipment, or paying down debt?`;
+    }
+    return `Perfect, ${amountLabel} noted. What is the best email to send options to, and is this mainly for working capital, equipment, or paying down debt?`;
   }
 
   if (
@@ -1032,6 +1139,11 @@ function repairSuggestionsForInboundContext(input: {
       `${latestInboundLower} ${String(input.previousOutboundText || '').toLowerCase()}`,
     );
   const followupWindowContext = !!followupWindowLabel;
+  const amountDisclosureContext =
+    extractAmountDisclosureFromContext(
+      String(input.latestInboundText || ''),
+      String(input.previousOutboundText || ''),
+    ) != null;
   const paymentTermsContext = hasPaymentTermsContext(latestInboundLower);
   const phoneCallLogisticsContext = hasPhoneCallLogisticsContext(
     latestInboundLower,
@@ -1057,6 +1169,7 @@ function repairSuggestionsForInboundContext(input: {
     !!input.emailReceived ||
     scheduledCallContext ||
     followupWindowContext ||
+    amountDisclosureContext ||
     paymentTermsContext ||
     phoneCallLogisticsContext ||
     creditScoreContext ||
@@ -1088,6 +1201,7 @@ function repairSuggestionsForInboundContext(input: {
       suggestionRequestsEmail(suggestion.text) ||
       (scheduledCallContext && suggestionLooksContradictoryToScheduledCall(suggestion.text)) ||
       (followupWindowContext && suggestionLooksContradictoryToFollowupWindow(suggestion.text)) ||
+      (amountDisclosureContext && suggestionLooksStaleForAmountDisclosure(suggestion.text)) ||
       (paymentTermsContext && suggestionLooksStaleForPaymentTerms(suggestion.text)) ||
       (phoneCallLogisticsContext && suggestionLooksStaleForPhoneCallLogistics(suggestion.text)) ||
       (creditScoreContext && suggestionLooksStaleForCreditScore(suggestion.text)) ||
@@ -1453,6 +1567,108 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     return Math.round(n);
   }
 
+  private static parseMoneyToken(amountRaw: string, suffixRaw?: string | null): number | null {
+    const normalized = String(amountRaw || '')
+      .replace(/,/g, '')
+      .trim();
+    if (!normalized) return null;
+    const amount = Number(normalized);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+
+    const suffix = String(suffixRaw || '')
+      .trim()
+      .toLowerCase();
+    if (suffix === 'm') return Math.round(amount * 1_000_000);
+    if (suffix === 'k') return Math.round(amount * 1_000);
+    return Math.round(amount);
+  }
+
+  private static extractMoneyAmountFromText(text: string): number | null {
+    if (!text) return null;
+    const pattern = /\$?\s*([\d,.]+)\s*([kKmM])\b|\$\s*([\d,.]+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match[1]) {
+        const parsed = AIService.parseMoneyToken(match[1], match[2]);
+        if (parsed) return parsed;
+      }
+      if (match[3]) {
+        const parsed = AIService.parseMoneyToken(match[3], '');
+        if (parsed && parsed >= 1000) return parsed;
+      }
+    }
+    return null;
+  }
+
+  private static formatRevenueLabelFromMonthly(monthly: number): string {
+    if (monthly >= 1_000_000) {
+      return `$${(monthly / 1_000_000).toFixed(monthly % 1_000_000 === 0 ? 0 : 1)}M/mo`;
+    }
+    if (monthly >= 1_000) {
+      return `$${Math.round(monthly / 1_000)}k/mo`;
+    }
+    return `$${Math.round(monthly)}/mo`;
+  }
+
+  private static formatMoneyCompact(amount: number): string {
+    if (amount >= 1_000_000) {
+      return `$${(amount / 1_000_000).toFixed(amount % 1_000_000 === 0 ? 0 : 1)}M`;
+    }
+    if (amount >= 1_000) {
+      return `$${Math.round(amount / 1_000)}k`;
+    }
+    return `$${Math.round(amount)}`;
+  }
+
+  private static applyDeterministicMoneySignalFallback(input: {
+    latestInboundText: string;
+    previousOutboundText: string;
+    signals: Record<string, unknown>;
+  }): void {
+    const inbound = String(input.latestInboundText || '');
+    if (!inbound.trim()) return;
+
+    const moneyAmount = AIService.extractMoneyAmountFromText(inbound);
+    if (!moneyAmount) return;
+
+    const outbound = String(input.previousOutboundText || '').toLowerCase();
+    const inboundLower = inbound.toLowerCase();
+
+    const outboundAsksRevenue =
+      /(monthly\s+gross\s+revenue|monthly\s+revenue|gross\s+revenue|revenue\s+per\s+month|what(?:'s| is)\s+your\s+monthly)/i.test(
+        outbound,
+      );
+    const outboundAsksAsk =
+      /(how\s+much\s+(?:are\s+you|do\s+you|would\s+you|you)\s+(?:looking|seek|seeking|need|want)|looking\s+to\s+receive|amount\s+are\s+you|what\s+amount)/i.test(
+        outbound,
+      );
+    const inboundHasRevenueCue = /\b(monthly|gross|revenue|sales|per\s*month|\/\s*mo)\b/i.test(inboundLower);
+    const inboundHasAskCue =
+      /\b(need|looking|seek|seeking|want|amount|funding|capital|line of credit|loc|equipment|inventory|expansion|expense|working capital|receive)\b/i.test(
+        inboundLower,
+      );
+
+    const hasRevenueSignal =
+      typeof input.signals.revenueMonthly === 'number' && Number.isFinite(input.signals.revenueMonthly);
+    const hasAskSignal = typeof input.signals.ask === 'string' && String(input.signals.ask || '').trim().length > 0;
+
+    const preferRevenueContext = outboundAsksRevenue || inboundHasRevenueCue;
+
+    if (!hasRevenueSignal && preferRevenueContext) {
+      input.signals.revenueMonthly = moneyAmount;
+      input.signals.revenueAnnual = moneyAmount * 12;
+      if (!input.signals.revenueConfidence) input.signals.revenueConfidence = 'inferred';
+      if (!input.signals.revenue) input.signals.revenue = AIService.formatRevenueLabelFromMonthly(moneyAmount);
+    }
+
+    const shouldSetAsk =
+      !hasAskSignal &&
+      ((outboundAsksAsk && moneyAmount > 0) || (!preferRevenueContext && inboundHasAskCue && moneyAmount > 0));
+    if (shouldSetAsk) {
+      input.signals.ask = AIService.formatMoneyCompact(moneyAmount);
+    }
+  }
+
   /**
    * Классифицирует inbound-сообщение и генерирует BEST+ALT предложения ответа.
    * Возвращает структурированный результат + рассчитанный leadScore.
@@ -1639,7 +1855,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
           revenueMonthly: parsed.revenueMonthly,
           revenueAnnual: parsed.revenueAnnual,
           revenueConfidence: parsed.revenueConfidence,
-          ask: typeof parsed.amountRequested === 'number' ? `$${parsed.amountRequested}` : null,
+          ask: typeof parsed.amountRequested === 'number' ? AIService.formatMoneyCompact(parsed.amountRequested) : null,
           amountRequested: parsed.amountRequested,
           useOfFunds: parsed.useOfFunds,
           product: parsed.product,
@@ -1664,13 +1880,20 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     // Защита от случаев, когда LLM недооценивает "контактный" ответ (email, телефон,
     // короткое "yes / send it"). Email-share — самый сильный сигнал интента.
     const lastInboundBody = (lastInbound?.body || '').trim();
+    const previousOutboundText = extractPreviousOutboundText(
+      messagesAsc.map((message) => ({
+        direction: message.direction,
+        body: message.body,
+      })),
+    );
+
+    AIService.applyDeterministicMoneySignalFallback({
+      latestInboundText: lastInboundBody,
+      previousOutboundText,
+      signals: rawSignals,
+    });
+
     if (lastInboundBody) {
-      const previousOutboundText = extractPreviousOutboundText(
-        messagesAsc.map((message) => ({
-          direction: message.direction,
-          body: message.body,
-        })),
-      );
       const resolved = resolveDeterministicClassification({
         classification,
         latestInboundText: lastInboundBody,
@@ -1798,7 +2021,10 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const finalPreviousOutboundText = extractPreviousOutboundText(messageTextContext);
     const finalSuggestedReplyText = String(signals.suggestedReply || '');
     const finalLatestInboundLower = lastInboundBody.toLowerCase();
+    const hasAmountDisclosureContext =
+      extractAmountDisclosureFromContext(lastInboundBody, finalPreviousOutboundText) != null;
     const shouldForceCurrentTopicReply =
+      (hasAmountDisclosureContext && suggestionLooksStaleForAmountDisclosure(finalSuggestedReplyText)) ||
       (hasPaymentTermsContext(finalLatestInboundLower) &&
         suggestionLooksStaleForPaymentTerms(finalSuggestedReplyText)) ||
       (hasPhoneCallLogisticsContext(finalLatestInboundLower, finalPreviousOutboundText.toLowerCase()) &&

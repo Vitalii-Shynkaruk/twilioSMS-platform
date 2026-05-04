@@ -67,9 +67,14 @@ export class ComplianceService {
   /**
    * Check if we can send to a number (with Redis caching)
    */
-  static async canSendTo(phone: string): Promise<{ allowed: boolean; reason?: string }> {
+  static async canSendTo(
+    phone: string,
+    options?: { enforceQuietHours?: boolean },
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    const enforceQuietHours = options?.enforceQuietHours ?? true;
+
     // Check Redis cache first
-    const cacheKey = `compliance:${phone}`;
+    const cacheKey = enforceQuietHours ? `compliance:${phone}` : `compliance:${phone}:noq`;
     const cached = await redis.get(cacheKey);
     if (cached) {
       return JSON.parse(cached);
@@ -105,9 +110,11 @@ export class ComplianceService {
     }
 
     // Check quiet hours (not cached — time-dependent)
-    const quietHours = await this.getQuietHoursStatus();
-    if (quietHours.active) {
-      return { allowed: false, reason: quietHours.reason };
+    if (enforceQuietHours) {
+      const quietHours = await this.getQuietHoursStatus();
+      if (quietHours.active) {
+        return { allowed: false, reason: quietHours.reason };
+      }
     }
 
     const result = { allowed: true };
@@ -119,7 +126,7 @@ export class ComplianceService {
    * Invalidate compliance cache for a phone (call after opt-out/opt-in/suppression changes)
    */
   static async invalidateCache(phone: string): Promise<void> {
-    await redis.del(`compliance:${phone}`);
+    await redis.del(`compliance:${phone}`, `compliance:${phone}:noq`);
   }
 
   /**

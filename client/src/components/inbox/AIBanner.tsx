@@ -6,7 +6,15 @@ import type { AISignals, Conversation } from '../../types';
 interface AIBannerProps {
   conversation: Pick<
     Conversation,
-    'aiClassification' | 'aiSignals' | 'isCaliforniaNumber' | 'aiClassifiedAt' | 'assignedRep'
+    | 'aiClassification'
+    | 'aiSignals'
+    | 'isCaliforniaNumber'
+    | 'aiClassifiedAt'
+    | 'assignedRep'
+    | 'extractedRevenue'
+    | 'extractedAsk'
+    | 'extractedIndustry'
+    | 'helocFitFlag'
   > & { assignedRep?: { firstName?: string; lastName?: string } };
 }
 
@@ -26,11 +34,39 @@ const formatElapsed = (s: number) => {
   return `${m}:${String(sec).padStart(2, '0')}`;
 };
 
+const formatRevenueLabel = (signals: AISignals, extractedRevenue?: number | null): string | null => {
+  if (typeof signals.revenue === 'string' && signals.revenue.trim()) return signals.revenue.trim();
+  const monthlyRaw =
+    typeof signals.revenueMonthly === 'number'
+      ? signals.revenueMonthly
+      : typeof extractedRevenue === 'number'
+        ? extractedRevenue
+        : null;
+  if (typeof monthlyRaw !== 'number' || !Number.isFinite(monthlyRaw) || monthlyRaw <= 0) return null;
+  const monthly = Math.round(monthlyRaw);
+  if (monthly >= 1_000_000) {
+    return `$${(monthly / 1_000_000).toFixed(monthly % 1_000_000 === 0 ? 0 : 1)}M/mo`;
+  }
+  if (monthly >= 1_000) {
+    return `$${Math.round(monthly / 1_000)}k/mo`;
+  }
+  return `$${monthly}/mo`;
+};
+
 export default function AIBanner({ conversation }: AIBannerProps) {
   const cls = conversation.aiClassification;
   const isHot = cls === 'HOT';
   const isCa = !!conversation.isCaliforniaNumber;
   const signals = (conversation.aiSignals || {}) as AISignals;
+  const askLabel = (typeof signals.ask === 'string' && signals.ask.trim()) || conversation.extractedAsk || null;
+  const industryLabel =
+    (typeof signals.industry === 'string' && signals.industry.trim()) || conversation.extractedIndustry || null;
+  const helocFitValue =
+    typeof signals.helocFitFlag === 'boolean'
+      ? signals.helocFitFlag
+      : typeof conversation.helocFitFlag === 'boolean'
+        ? conversation.helocFitFlag
+        : null;
   const rep = conversation.assignedRep
     ? `${conversation.assignedRep.firstName || ''} ${conversation.assignedRep.lastName || ''}`.trim() || '—'
     : 'Unassigned';
@@ -60,7 +96,7 @@ export default function AIBanner({ conversation }: AIBannerProps) {
         : 'status-warm';
 
   const stateLabel = isHot
-    ? `🔥 HOT${signals.ask ? ` · ${signals.ask} DEAL` : ''}`
+    ? `🔥 HOT${askLabel ? ` · ${askLabel} DEAL` : ''}`
     : isCa
       ? '⚠ CA COMPLIANCE · NO APR/RATE DISCUSSION'
       : cls === 'NURTURE'
@@ -76,11 +112,46 @@ export default function AIBanner({ conversation }: AIBannerProps) {
 
   const chips = SIGNAL_DEFS.map((def) => {
     const v = signals[def.key];
+    if (def.key === 'helocFitFlag') {
+      if (typeof helocFitValue !== 'boolean') return null;
+      const display = helocFitValue ? 'HELOC fit' : 'No HELOC fit';
+      return (
+        <span key={def.key} className="signal-chip">
+          <span className="sig-icon">{def.icon}</span>
+          <span className="sig-val">{display}</span>
+        </span>
+      );
+    }
+    if (def.key === 'revenue') {
+      const revenueDisplay = formatRevenueLabel(signals, conversation.extractedRevenue);
+      if (!revenueDisplay) return null;
+      return (
+        <span key={def.key} className="signal-chip">
+          <span className="sig-icon">{def.icon}</span>
+          <span className="sig-val">{revenueDisplay}</span>
+        </span>
+      );
+    }
+    if (def.key === 'ask') {
+      if (!askLabel) return null;
+      return (
+        <span key={def.key} className="signal-chip">
+          <span className="sig-icon">{def.icon}</span>
+          <span className="sig-val">{`${askLabel}${def.suffix || ''}`}</span>
+        </span>
+      );
+    }
+    if (def.key === 'industry') {
+      if (!industryLabel) return null;
+      return (
+        <span key={def.key} className="signal-chip">
+          <span className="sig-icon">{def.icon}</span>
+          <span className="sig-val">{industryLabel}</span>
+        </span>
+      );
+    }
     if (!v) return null;
-    // helocFitFlag = boolean: показываем в виде фиксированной подписи "HELOC fit"
-    const display = def.key === 'helocFitFlag'
-      ? 'HELOC fit'
-      : def.quote ? `"${v}"` : `${v}${def.suffix || ''}`;
+    const display = def.quote ? `"${v}"` : `${v}${def.suffix || ''}`;
     return (
       <span key={def.key} className="signal-chip">
         <span className="sig-icon">{def.icon}</span>

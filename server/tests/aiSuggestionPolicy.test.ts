@@ -333,6 +333,66 @@ describe('AI suggestion policy', () => {
     expect(suggestions[0].text).not.toMatch(/funding link|i have your email|what problem are you trying to solve/i);
   });
 
+  it('должна чинить stale suggestion, если lead уже дал сумму после прямого вопроса про amount', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Yes! How much are you looking to receive for the business?',
+        },
+        {
+          direction: 'INBOUND',
+          body: '75k',
+        },
+      ],
+      knownEmail: 'owner@example.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/\$75k/i);
+    expect(suggestions[0].text).toMatch(/working capital|equipment|paying down debt/i);
+    expect(suggestions[0].text).not.toMatch(
+      /about how much capital would actually fix it|what problem are you trying/i,
+    );
+  });
+
+  it('должна в amount-context просить email, если email ещё не известен, но не повторять вопрос про сумму', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Got it. How much are you looking to receive for the business?',
+        },
+        {
+          direction: 'INBOUND',
+          body: '$100k',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/\$100k/i);
+    expect(suggestions[0].text).toMatch(/best email to send options/i);
+    expect(suggestions[0].text).not.toMatch(/about how much capital would actually fix it|how much capital/i);
+  });
+
   it('должна чинить stale email/funding suggestion, если текущий inbound про credit score objection', () => {
     const suggestions = resolveAiSuggestions({
       suggestions: [

@@ -8,20 +8,20 @@
 
 > Этот файл является главным рабочим чеклистом по текущему объединенному scope: **M1: Pipeline v2 + Login/Auth** и **M2: Campaigns/Lead Doc**. Процент готовности обновляется после каждого завершенного блока и после каждого testing gate.
 
-| Направление                                     |      Вес | Готовность | Статус                                                                                                      |
-| ----------------------------------------------- | -------: | ---------: | ----------------------------------------------------------------------------------------------------------- |
-| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                        |
-| M1.1 — Passwordless OTP Login/Auth              |      10% |         9% | OTP foundation + SCL visual parity + dev-only QA login guard implemented; live delivery validation pending  |
-| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                           |
-| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                 |
-| M1.4 — Pipeline AI extractor + badges           |      14% |         3% | B.0 ownership preservation lock + B.6 stacking chip rules implemented; backend pending                      |
-| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                       |
-| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                   |
-| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                              |
-| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending                         |
-| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending                   |
-| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                                 |
-| **Overall**                                     | **100%** |    **77%** | **Dev-only QA login added safely; remaining work shifts to M1.1 live delivery, M1.4 backend, and M2 gates** |
+| Направление                                     |      Вес | Готовность | Статус                                                                                                                     |
+| ----------------------------------------------- | -------: | ---------: | -------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 — Scope consolidation и source map      |       6% |         6% | Done                                                                                                                       |
+| M1.1 — Passwordless OTP Login/Auth              |      10% |         9% | OTP foundation + SCL visual parity + dev-only QA login guard implemented; live delivery validation pending                 |
+| M1.2 — Pipeline v2 base parity                  |      12% |        12% | Done — stage/visual/scope/metrics/search/drag-drop gates verified                                                          |
+| M1.3 — Pipeline card/panel/modals parity        |      12% |        12% | Done — card/panel/modal/context-menu/browser gates verified                                                                |
+| M1.4 — Pipeline AI extractor + badges           |      14% |         6% | Inbox AI repair + owner-action reclassification gate passed; dedicated Pipeline extractor backend pending                  |
+| M1.5 — Auto-nurture attempt mechanic            |      10% |        10% | Done — attempt mechanic, UI, reset paths, manual override, browser/pixel, Revive gate                                      |
+| M1.6 — M1 regression, pixel-close, release gate |       8% |         8% | Done — functional and visual gates verified; full-env suite limitation remains documented                                  |
+| M2.1 — Leads/Campaign access + source fixes     |       8% |         6% | Implementation + API scope tests/build passed; browser admin/rep smoke pending                                             |
+| M2.2 — Leads enrichment columns + export        |       8% |         6% | Implementation + focused tests/build passed; browser/pixel/manual CSV smoke pending                                        |
+| M2.3 — AI Retarget campaigns                    |       8% |         5% | Live cohort API/UI/build-draft foundation + cap tests/build passed; DB/cron/pixel pending                                  |
+| M2.4 — M2 regression, pixel-close, release gate |       4% |         0% | Not started                                                                                                                |
+| **Overall**                                     | **100%** |    **80%** | **Inbox AI client-pain repair gate passed; remaining work shifts to M1.1 live delivery, Pipeline extractor, and M2 gates** |
 
 ## Source Map
 
@@ -77,12 +77,12 @@
 - [x] Platform access must be smoked before reps become active: `/api/health`, `/login`, database, Redis.
 - [x] Local QA needs a controlled `dev_mode_login` path so testers can enter the app without waiting for SMS/email OTP.
 - [x] `dev_mode_login` must never be available in production, even if env flags are accidentally set.
-- [ ] AI suggestions должны соответствовать последнему client message и full-thread context.
-- [ ] Email CTA должен брать email из conversation/client text прежде lead-list email.
+- [x] AI suggestions должны соответствовать последнему client message и full-thread context.
+- [x] Email CTA должен брать email из conversation/client text прежде lead-list email.
 - [ ] Gmail compose должен открываться надежно и только с `to=` без subject/body.
-- [ ] Follow-up suggestions не должны ставить 5 AM или quiet-hours-conflicting times.
+- [x] Follow-up suggestions не должны ставить 5 AM или quiet-hours-conflicting times.
 - [ ] Quiet hours должны блокировать отправку корректно, но UI должен объяснять причину.
-- [ ] Inbound conversation owner не должен самопроизвольно переassignиваться на текущего пользователя.
+- [x] Inbound conversation owner не должен самопроизвольно переassignиваться на текущего пользователя.
 - [ ] Reps не должны видеть чужие leads/campaigns/deals без явного права.
 - [ ] Source column не должен показывать UUID там, где нужен readable list/campaign name.
 - [ ] Export CSV должен учитывать текущие filters и не выгружать чужие данные rep-у.
@@ -508,6 +508,22 @@
 - [x] Production access smoke passed after client escalation: `/api/health` returned `database: ok` and `redis: ok`; live `/login` returned HTTP 200.
 - [x] Evidence JSON added: `audit-screenshots/client-preservation-login-access-evidence.json`.
 
+### Inbox AI suggestion repair / owner-action gate — 2026-05-04
+
+- [x] AI suggestions now repair stale/generic draft copy against the latest inbound message and full-thread context.
+- [x] Deterministic repair covers email shares, amount disclosures, fees/rate/payment questions, credit-score objections, callback logistics, HELOC/LOC clarification, term-range replies, and explicit follow-up windows.
+- [x] AI suggestions no longer reuse the client email as the rep sender address in draft copy.
+- [x] Conversation detail resolves email priority as texted/conversation email -> lead email -> contact email and passes `knownEmail` / `emailReceived` into suggestion repair.
+- [x] Reply sent, status changes, note added, and add-to-pipeline actions trigger safe async reclassification.
+- [x] Note-added path performs a fast local signal refresh for revenue, ask, industry, and HELOC fit before the full LLM refresh finishes.
+- [x] Manual rep actions that contradict AI classification are logged into classification feedback for future correction corpus.
+- [x] Inbound webhook preserves the current active conversation/lead owner before considering the latest active human sender.
+- [x] Manual replies in threads with inbound history can bypass quiet hours; cold/manual outreach still enforces quiet hours.
+- [x] Inbox AI card/banner render persisted `extractedRevenue`, `extractedAsk`, `extractedIndustry`, and `helocFitFlag` fallbacks when `aiSignals` are partial.
+- [x] Expanded focused regression passed: AI suggestions, owner reclassification, disagreement feedback, inbound ownership, email policy, follow-up policy, preservation, compliance parser, eligibility, and scoring — 79/79 tests.
+- [x] Root production build passed after AI repair changes: server `tsc` plus client `tsc && vite build`.
+- [x] Evidence JSON added: `audit-screenshots/m14-ai-suggestion-repair-evidence.json`.
+
 ### Backend foundation
 
 - [ ] Add `Deal.pipelineAiSignals`.
@@ -569,7 +585,14 @@
 
 ### M1.4 Testing Gate
 
-- [ ] Server build passes.
+- [x] Server build passes after Inbox AI repair gate.
+- [x] Inbox AI suggestion policy tests pass for latest-inbound repair, email priority, contextual callbacks, amount disclosures, credit-score objections, fees/rates/payments, and client-email misuse.
+- [x] Owner-action reclassification tests pass for reply-sent and unassigned-thread rep fallback.
+- [x] Classification disagreement feedback tests pass for rep action vs AI mismatch logging.
+- [x] Inbound ownership policy tests pass: current active owner is preserved and unassigned threads fall back to latest active sender.
+- [x] Conversation email priority tests pass: texted email -> lead email -> contact email.
+- [x] Follow-up policy tests pass for explicit 2-hour windows, exact call times/timezones, next-day noon, and cleared statuses.
+- [x] Client preservation tests pass after AI repair gate.
 - [ ] Pipeline AI unit tests pass.
 - [ ] Golden tests pass or differences documented with exact fields.
 - [ ] Note save works when Anthropic API fails.
@@ -580,7 +603,7 @@
 - [ ] DealPanel AI inline bar renders full/partial/empty states.
 - [ ] Re-run AI tested with note, no-note, API error.
 - [ ] Pixel-close compare with `scl_pipeline_v11.html` retained elements.
-- [ ] Progress dashboard updated.
+- [x] Progress dashboard updated for Inbox AI repair gate.
 
 ## M1.5 — Auto-Nurture Attempt Mechanic
 
@@ -1120,4 +1143,5 @@
 | 2026-05-02 |      75% | M1.6      | Added visual regression evidence for Pipeline 1440/960, DealPanel, DealCard, overlap/layout-shift, and sidebar checks.                                                      | `audit-screenshots/m16-visual-regression-evidence.json`            |
 | 2026-05-04 |      76% | M1.4/M1.6 | Locked angry-client preservation requirements, restored Inbox Mark Unread/Note in action row, tightened login visual fit, and passed focused tests/build/prod access smoke. | `audit-screenshots/client-preservation-login-access-evidence.json` |
 | 2026-05-04 |      77% | M1.1      | Added and deployed safe dev-only login without OTP for local QA, with production backend/frontend guards, focused auth tests, build, and live smoke evidence.               | `audit-screenshots/dev-mode-login-evidence.json`                   |
+| 2026-05-04 |      80% | M1.4      | Added Inbox AI latest-inbound repair, email priority, owner-action reclassification, inbound owner preservation, quiet-hours reply bypass, and focused 79-test evidence.    | `audit-screenshots/m14-ai-suggestion-repair-evidence.json`         |
 | 2026-05-02 |       6% | Planning  | Consolidated M1/M2 sources, previous checklists, Pipeline v11 handoff, and Leads/Campaigns v3 prototype into one master checklist.                                          | This file                                                          |

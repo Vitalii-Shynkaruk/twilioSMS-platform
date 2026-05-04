@@ -25,6 +25,7 @@ describe('InboxController.sendReply', () => {
     vi.spyOn(prisma.conversation, 'findUnique').mockResolvedValue(conversation as never);
     vi.spyOn(prisma.conversation, 'update').mockResolvedValue({ id: 'conv-1' } as never);
     vi.spyOn(prisma.lead, 'update').mockResolvedValue({ id: 'lead-1' } as never);
+    vi.spyOn(prisma.message, 'count').mockResolvedValue(1 as never);
 
     const queueSpy = vi.spyOn(SendingEngine, 'queueMessage').mockResolvedValue('msg-1');
     const triggerSpy = vi

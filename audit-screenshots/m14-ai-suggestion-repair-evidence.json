@@ -1,0 +1,68 @@
+{
+  "gate": "m1-4-ai-suggestion-repair-owner-action",
+  "date": "2026-05-04",
+  "progress": {
+    "before": 77,
+    "afterLocalGate": 80,
+    "area": "M1.4 Pipeline AI / Inbox AI policy preservation"
+  },
+  "scope": [
+    "AI suggestions must follow the latest client message and full-thread context",
+    "Email CTA must prefer texted/conversation email before lead-list email",
+    "Follow-up suggestions must respect explicit callback windows and not stale funding-link copy",
+    "Inbound conversation owner must not auto-reassign away from existing active owner",
+    "Active inbound threads can be replied to during quiet hours while cold outbound remains blocked",
+    "AI extracted fields must persist and render from stable conversation fields"
+  ],
+  "implementation": {
+    "aiSuggestionRepair": [
+      "Context-aware deterministic repair for email shares, amount disclosures, fees/rate/payment questions, credit-score objections, callback logistics, HELOC/LOC clarification, term-range replies, and follow-up windows",
+      "Client email is no longer reused as the rep sender address in AI draft copy",
+      "Stale generic/funding-link suggestions are replaced when the latest inbound topic changed"
+    ],
+    "emailPolicy": "Conversation detail resolves recipient priority as texted email -> lead email -> contact email and passes knownEmail/emailReceived into AI suggestion repair.",
+    "ownerActionReclassification": [
+      "Reply sent, status changes, note added, and add-to-pipeline actions trigger safe async reclassification",
+      "Note-added path performs fast local extraction for revenue, ask, industry, and HELOC fit before full LLM refresh",
+      "Rep classification disagreement is logged for future feedback corpus when manual actions contradict AI classification"
+    ],
+    "ownershipPolicy": "Inbound webhook preserves current active conversation/lead owner before considering latest active human sender.",
+    "quietHoursPolicy": "Manual replies in threads with inbound history bypass quiet hours; cold/manual outreach still enforces quiet hours.",
+    "uiRendering": "Inbox AI card/banner render persisted extractedRevenue, extractedAsk, extractedIndustry, and helocFitFlag fallbacks when aiSignals are partial."
+  },
+  "validation": [
+    {
+      "command": "cd server && npx vitest run tests/aiSuggestionPolicy.test.ts tests/inboxReplyReclassification.test.ts tests/classificationFeedbackDisagreement.test.ts tests/inboundOwnershipPolicy.test.ts tests/conversationEmailPolicy.test.ts tests/followupPolicy.test.ts tests/clientPreservationRequirements.test.ts tests/dealOwnershipPreservation.test.ts tests/dealControllerScope.test.ts tests/complianceKeywordParser.test.ts tests/aiClassificationEligibility.test.ts tests/aiServiceComplianceScoring.test.ts",
+      "result": "passed",
+      "testFiles": 12,
+      "tests": 79
+    },
+    {
+      "command": "cd server && npx vitest run tests/aiSuggestionPolicy.test.ts tests/compliance.test.ts tests/inboxReplyReclassification.test.ts && npm run build",
+      "result": "passed",
+      "testFiles": "2 passed, 1 skipped",
+      "tests": "35 passed, 12 skipped",
+      "note": "compliance.test DB-backed cases are skipped without a local MySQL DATABASE_URL"
+    },
+    {
+      "command": "npm run build",
+      "result": "passed",
+      "coverage": ["server tsc", "client tsc", "vite production build"]
+    },
+    {
+      "command": "VS Code get_errors on changed AI/Inbox files",
+      "result": "passed",
+      "errors": 0
+    }
+  ],
+  "remainingM14Work": [
+    "Deal.pipelineAiSignals and Deal.pipelineAiUpdatedAt schema/data plumbing",
+    "Dedicated pipelineAiService with exact handoff prompt/schema",
+    "Golden extractor grading and per-deal serialization queue",
+    "DealPanel AI inline bar and re-run AI action"
+  ],
+  "knownLimitations": [
+    "This gate repairs Inbox AI policy and owner-action AI refresh; it does not complete the dedicated Pipeline AI extractor backend.",
+    "Local DB-backed compliance integration tests remain skipped because local DATABASE_URL is not MySQL in this environment."
+  ]
+}

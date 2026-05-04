@@ -9,13 +9,19 @@ import { ComplianceService } from '../src/services/complianceService';
 const TEST_PHONE = '+10005550001';
 const TEST_PHONE_2 = '+10005550002';
 const TEST_PHONE_3 = '+10005550003';
+const TEST_PHONE_4 = '+10005550004';
 const hasMysqlDatabaseUrl = (process.env.DATABASE_URL || '').startsWith('mysql://');
 const describeWithDb = hasMysqlDatabaseUrl ? describe : describe.skip;
+let quietHoursSpy: ReturnType<typeof vi.spyOn>;
 
 describeWithDb('ComplianceService', () => {
   beforeAll(async () => {
-    // Mock isQuietHours so tests don't depend on current time
-    vi.spyOn(ComplianceService, 'isQuietHours').mockResolvedValue(false);
+    // Mock quiet-hours status so tests don't depend on current time
+    quietHoursSpy = vi.spyOn(ComplianceService as any, 'getQuietHoursStatus').mockResolvedValue({
+      active: false,
+      reason: 'Quiet hours until 8:00 AM ET',
+      timezone: 'America/New_York',
+    });
 
     // Clean up test data
     await prisma.suppressionEntry.deleteMany({
@@ -114,6 +120,25 @@ describeWithDb('ComplianceService', () => {
       const result = await ComplianceService.canSendTo('+10005550077');
 
       expect(result.allowed).toBe(true);
+    });
+
+    it('allows bypassing quiet hours for active-reply paths only', async () => {
+      await prisma.lead.create({
+        data: { firstName: 'QuietBypass', phone: TEST_PHONE_4, source: 'test' },
+      });
+      await ComplianceService.invalidateCache(TEST_PHONE_4);
+
+      quietHoursSpy.mockResolvedValueOnce({
+        active: true,
+        reason: 'Quiet hours until 8:00 AM ET',
+        timezone: 'America/New_York',
+      });
+      const blocked = await ComplianceService.canSendTo(TEST_PHONE_4);
+      const bypassed = await ComplianceService.canSendTo(TEST_PHONE_4, { enforceQuietHours: false });
+
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.reason).toContain('Quiet hours');
+      expect(bypassed.allowed).toBe(true);
     });
   });
 

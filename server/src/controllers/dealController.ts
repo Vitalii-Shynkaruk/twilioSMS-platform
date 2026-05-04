@@ -2716,12 +2716,13 @@ export class DealController {
     // Find existing conversation or let SendingEngine create one
     const conversation = await prisma.conversation.findFirst({ where: { leadId } });
 
+    const inboundCount = conversation
+      ? await prisma.message.count({
+          where: { conversationId: conversation.id, direction: 'INBOUND' },
+        })
+      : 0;
+
     if (req.user?.role === 'REP') {
-      const inboundCount = conversation
-        ? await prisma.message.count({
-            where: { conversationId: conversation.id, direction: 'INBOUND' },
-          })
-        : 0;
       // Critical exception: never block replies in existing inbound threads.
       if (inboundCount === 0) {
         await OutboundGateService.ensureCanLaunchOutbound(req.user);
@@ -2736,6 +2737,7 @@ export class DealController {
       sentByUserId: req.user!.id,
       preferredNumberId: conversation?.stickyNumberId || undefined,
       priority: 10,
+      enforceQuietHours: inboundCount === 0,
     });
 
     await prisma.dealEvent.create({

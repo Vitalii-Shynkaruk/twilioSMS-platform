@@ -3,10 +3,32 @@ import { clsx } from 'clsx';
 import type { AISignals, Conversation } from '../../types';
 import { PHASE1_LEAN } from '../../config/featureFlags';
 
-type ConvSlice = Pick<Conversation, 'aiClassification' | 'aiSignals' | 'aiLeadScore' | 'nextFollowupAt'>;
+type ConvSlice = Pick<
+  Conversation,
+  | 'aiClassification'
+  | 'aiSignals'
+  | 'aiLeadScore'
+  | 'nextFollowupAt'
+  | 'followupTime'
+  | 'extractedRevenue'
+  | 'extractedAsk'
+  | 'extractedIndustry'
+  | 'helocFitFlag'
+>;
 
 interface AICardProps {
   conversation: ConvSlice;
+}
+
+function formatRevenueLabel(monthlyRevenue: number | null): string | null {
+  if (monthlyRevenue == null || !Number.isFinite(monthlyRevenue) || monthlyRevenue <= 0) return null;
+  if (monthlyRevenue >= 1_000_000) {
+    return `$${(monthlyRevenue / 1_000_000).toFixed(monthlyRevenue % 1_000_000 === 0 ? 0 : 1)}M/mo`;
+  }
+  if (monthlyRevenue >= 1_000) {
+    return `$${Math.round(monthlyRevenue / 1_000)}k/mo`;
+  }
+  return `$${Math.round(monthlyRevenue)}/mo`;
 }
 
 /**
@@ -18,21 +40,35 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
   const cls = conversation.aiClassification;
   const signals = (conversation.aiSignals || {}) as AISignals;
   const isHot = cls === 'HOT';
-  const hasRevenue = !!signals.revenue;
-  const hasAsk = !!signals.ask;
+  const revenueMonthly =
+    typeof signals.revenueMonthly === 'number'
+      ? Math.round(signals.revenueMonthly)
+      : conversation.extractedRevenue || null;
+  const revenueLabel = signals.revenue || formatRevenueLabel(revenueMonthly);
+  const askLabel = signals.ask || conversation.extractedAsk || null;
+  const industryLabel = signals.industry || conversation.extractedIndustry || null;
+  const helocFitValue =
+    typeof signals.helocFitFlag === 'boolean'
+      ? signals.helocFitFlag
+      : typeof conversation.helocFitFlag === 'boolean'
+        ? conversation.helocFitFlag
+        : null;
+  const hasRevenue = !!revenueLabel;
+  const hasAsk = !!askLabel;
   const hasUrgency = !!signals.urgency;
-  const hasIndustry = !!signals.industry;
-  const hasHelocFit = !!signals.helocFitFlag;
+  const hasIndustry = !!industryLabel;
+  const hasHelocFit = typeof helocFitValue === 'boolean';
+  const followupAt = conversation.followupTime || conversation.nextFollowupAt;
   const followupLabel =
     (typeof signals.suggestedFollowupReason === 'string' && signals.suggestedFollowupReason.trim()) ||
-    (conversation.nextFollowupAt ? 'scheduled' : '');
+    (followupAt ? 'scheduled' : '');
 
   if (PHASE1_LEAN) {
     if (!hasRevenue) return null;
     return (
       <div className="ai-card-chips" aria-label="AI revenue signal">
         <span className="chip rev" title="Monthly revenue (extracted)">
-          💰<strong>{signals.revenue}</strong>
+          💰<strong>{revenueLabel}</strong>
         </span>
       </div>
     );
@@ -45,12 +81,12 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
       {isHot && <span className="badge-hot">🔥 HOT</span>}
       {hasRevenue && (
         <span className="chip rev" title="Monthly revenue (extracted)">
-          💰<strong>{signals.revenue}</strong>
+          💰<strong>{revenueLabel}</strong>
         </span>
       )}
       {hasAsk && (
         <span className="chip" title="Capital ask (extracted)">
-          📊<strong>{signals.ask}</strong>
+          📊<strong>{askLabel}</strong>
         </span>
       )}
       {hasUrgency && (
@@ -60,12 +96,12 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
       )}
       {hasIndustry && (
         <span className="chip" title="Industry">
-          🏗{signals.industry}
+          🏗{industryLabel}
         </span>
       )}
       {hasHelocFit && (
         <span className="chip" title="HELOC fit">
-          🏦HELOC fit
+          {helocFitValue ? '🏦HELOC fit' : '🏦No HELOC fit'}
         </span>
       )}
       {followupLabel && (

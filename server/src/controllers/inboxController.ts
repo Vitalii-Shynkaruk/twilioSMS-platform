@@ -23,6 +23,7 @@ type InboxFilter =
   | 'in_pipeline'
   | 'dnc';
 type InboxSort = 'ai_priority' | 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
+type RepFeedbackAction = 'mark_interested' | 'mark_not_interested' | 'mark_dnc' | 'email_rcv' | 'pipeline_added';
 
 const DEAL_STAGE_LABELS: Record<string, string> = {
   NEW_LEAD: 'New Lead',
@@ -78,6 +79,68 @@ export class InboxController {
       data: { avgFirstResponseSec: number | null; aiUsageRatePct: number | null; aiConversionsCount: number };
     }
   >();
+
+  private static normalizeAiClass(
+    value: string | null | undefined,
+  ): 'HOT' | 'WARM' | 'NURTURE' | 'DEAD' | 'WRONG_NUMBER' | null {
+    const normalized = String(value || '')
+      .trim()
+      .toUpperCase();
+    if (
+      normalized === 'HOT' ||
+      normalized === 'WARM' ||
+      normalized === 'NURTURE' ||
+      normalized === 'DEAD' ||
+      normalized === 'WRONG_NUMBER'
+    ) {
+      return normalized;
+    }
+    return null;
+  }
+
+  private static expectedClassesForRepAction(
+    action: RepFeedbackAction,
+  ): Array<'HOT' | 'WARM' | 'NURTURE' | 'DEAD' | 'WRONG_NUMBER'> {
+    switch (action) {
+      case 'mark_interested':
+      case 'email_rcv':
+      case 'pipeline_added':
+        return ['HOT'];
+      case 'mark_not_interested':
+        return ['NURTURE', 'DEAD', 'WRONG_NUMBER'];
+      case 'mark_dnc':
+        return ['DEAD', 'WRONG_NUMBER'];
+      default:
+        return ['HOT'];
+    }
+  }
+
+  private static async logRepClassificationDisagreement(input: {
+    conversationId: string;
+    repId: string | null | undefined;
+    aiClassification: string | null | undefined;
+    repAction: RepFeedbackAction;
+    source: string;
+  }): Promise<void> {
+    if (!input.repId) return;
+
+    const aiClass = InboxController.normalizeAiClass(input.aiClassification);
+    const expected = InboxController.expectedClassesForRepAction(input.repAction);
+    const isDisagreement = !aiClass || !expected.includes(aiClass);
+    if (!isDisagreement) return;
+
+    await prisma.classificationFeedback.create({
+      data: {
+        conversationId: input.conversationId,
+        createdById: input.repId,
+        // NOTE: action stores rep_action semantics for disagreement corpus
+        // (manual suggestion feedback still uses skip/use/override values).
+        action: `rep_${input.repAction}`,
+        reason: `source=${input.source}; expected=${expected.join('|')}; ai=${aiClass || 'UNCLASSIFIED'}`,
+        aiClassification: aiClass || null,
+      },
+    });
+  }
 
   /**
    * Считает performance-метрики rep'а для отображения в правой панели Inbox:
@@ -162,6 +225,259 @@ export class InboxController {
       extractedRevenue,
       extractedAsk,
     };
+  }
+
+  private static readonly FAST_INDUSTRY_KEYWORDS: Array<{ key: string; label: string }> = [
+    { key: 'plumb', label: 'plumbing' },
+    { key: 'truck', label: 'trucking' },
+    { key: 'transport', label: 'transportation' },
+    { key: 'logistic', label: 'logistics' },
+    { key: 'restaurant', label: 'restaurant' },
+    { key: 'diner', label: 'restaurant' },
+    { key: 'cafe', label: 'restaurant' },
+    { key: 'construction', label: 'construction' },
+    { key: 'roof', label: 'construction' },
+    { key: 'electric', label: 'construction' },
+    { key: 'hvac', label: 'construction' },
+    { key: 'medical', label: 'medical' },
+    { key: 'dental', label: 'medical' },
+    { key: 'clinic', label: 'medical' },
+    { key: 'retail', label: 'retail' },
+    { key: 'ecom', label: 'ecommerce' },
+    { key: 'salon', label: 'beauty' },
+    { key: 'beauty', label: 'beauty' },
+    { key: 'auto repair', label: 'auto repair' },
+    { key: 'automotive', label: 'automotive' },
+  ];
+
+  private static parseMoneyToken(amountRaw: string, suffixRaw: string | undefined): number | null {
+    const normalized = String(amountRaw || '')
+      .replace(/,/g, '')
+      .trim();
+    if (!normalized) return null;
+    const amount = Number(normalized);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+
+    const suffix = String(suffixRaw || '')
+      .trim()
+      .toLowerCase();
+    if (suffix === 'm') return Math.round(amount * 1_000_000);
+    if (suffix === 'k') return Math.round(amount * 1_000);
+    return Math.round(amount);
+  }
+
+  private static extractRevenueMonthlyFromText(text: string): number | null {
+    const monthlyPatterns = [
+      /(?:monthly|per\s*month|\/\s*mo\b)[^$\d]{0,18}\$?\s*([\d,.]+)\s*([kKmM]?)/gi,
+      /\$?\s*([\d,.]+)\s*([kKmM]?)\s*(?:monthly|per\s*month|\/\s*mo\b)/gi,
+      /(?:monthly\s*gross|gross\s*monthly)[^$\d]{0,18}\$?\s*([\d,.]+)\s*([kKmM]?)/gi,
+    ];
+    for (const pattern of monthlyPatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text)) !== null) {
+        const parsed = InboxController.parseMoneyToken(match[1], match[2]);
+        if (parsed) return parsed;
+      }
+    }
+
+    const annualPatterns = [
+      /(?:annual|yearly|per\s*year|\/\s*yr\b)[^$\d]{0,18}\$?\s*([\d,.]+)\s*([kKmM]?)/gi,
+      /\$?\s*([\d,.]+)\s*([kKmM]?)\s*(?:annual|yearly|per\s*year|\/\s*yr\b)/gi,
+    ];
+    for (const pattern of annualPatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text)) !== null) {
+        const annual = InboxController.parseMoneyToken(match[1], match[2]);
+        if (annual) return Math.round(annual / 12);
+      }
+    }
+
+    return null;
+  }
+
+  private static extractAskFromText(text: string): string | null {
+    const askPatterns = [
+      /(?:need|needs|looking\s*for|request(?:ed)?|asking\s*for|want|wants|seeking)[^$\d]{0,24}\$?\s*([\d,.]+)\s*([kKmM]?)/gi,
+      /(?:funding|amount|ask|target)[^$\d]{0,24}\$?\s*([\d,.]+)\s*([kKmM]?)/gi,
+    ];
+    for (const pattern of askPatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text)) !== null) {
+        const parsed = InboxController.parseMoneyToken(match[1], match[2]);
+        if (parsed && parsed >= 1000) {
+          if (parsed >= 1_000_000) return `$${(parsed / 1_000_000).toFixed(parsed % 1_000_000 === 0 ? 0 : 1)}M`;
+          if (parsed >= 1_000) return `$${Math.round(parsed / 1_000)}k`;
+          return `$${parsed}`;
+        }
+      }
+    }
+
+    const hasAskContext =
+      /\b(looking\s+to\s+receive|how\s+much\s+are\s+you\s+looking|how\s+much\s+do\s+you\s+need|need|want|funding|capital|amount|ask|target|equipment|inventory|expansion|working capital|line of credit|loc)\b/i.test(
+        text,
+      );
+    if (!hasAskContext) return null;
+
+    const fallbackPatterns = [/(?:^|[\s:])\$?\s*([\d,.]+)\s*([kKmM])\b/gi, /(?:^|[\s:])\$\s*([\d,.]+)\b/gi];
+    for (const pattern of fallbackPatterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(text)) !== null) {
+        const parsed = InboxController.parseMoneyToken(match[1], match[2]);
+        if (parsed && parsed >= 1000) {
+          if (parsed >= 1_000_000) return `$${(parsed / 1_000_000).toFixed(parsed % 1_000_000 === 0 ? 0 : 1)}M`;
+          if (parsed >= 1_000) return `$${Math.round(parsed / 1_000)}k`;
+          return `$${parsed}`;
+        }
+      }
+    }
+    return null;
+  }
+
+  private static extractIndustryFromText(text: string): string | null {
+    const normalized = text.toLowerCase();
+    for (const item of InboxController.FAST_INDUSTRY_KEYWORDS) {
+      if (normalized.includes(item.key)) {
+        return item.label;
+      }
+    }
+    return null;
+  }
+
+  private static extractHelocFitFromText(text: string): boolean | null {
+    const normalized = text.toLowerCase();
+    if (/\b(heloc|home equity|home-equity)\b/.test(normalized)) return true;
+    if (/\b(line of credit|loc)\b/.test(normalized)) return false;
+    return null;
+  }
+
+  private static formatRevenueLabel(monthly: number | null): string | null {
+    if (monthly == null || !Number.isFinite(monthly) || monthly <= 0) return null;
+    if (monthly >= 1_000_000) return `$${(monthly / 1_000_000).toFixed(monthly % 1_000_000 === 0 ? 0 : 1)}M/mo`;
+    if (monthly >= 1_000) return `$${Math.round(monthly / 1_000)}k/mo`;
+    return `$${Math.round(monthly)}/mo`;
+  }
+
+  private static async applyFastOwnerSignalRefresh(req: AuthRequest, conversationId: string): Promise<void> {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: {
+        id: true,
+        assignedRepId: true,
+        aiClassification: true,
+        aiLeadScore: true,
+        aiSignals: true,
+        extractedRevenue: true,
+        extractedAsk: true,
+        extractedIndustry: true,
+        helocFitFlag: true,
+        notes: {
+          orderBy: { createdAt: 'asc' },
+          select: { body: true },
+        },
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: { direction: true, body: true },
+        },
+      },
+    });
+    if (!conversation) return;
+
+    const textCorpus = [
+      ...conversation.messages.map((message) => `[${message.direction}] ${message.body || ''}`),
+      ...conversation.notes.map((note) => `[NOTE] ${note.body || ''}`),
+    ].join('\n');
+    if (!textCorpus.trim()) return;
+
+    const monthlyRevenue =
+      InboxController.extractRevenueMonthlyFromText(textCorpus) ?? conversation.extractedRevenue ?? null;
+    const askValue = InboxController.extractAskFromText(textCorpus) ?? conversation.extractedAsk ?? null;
+    const industry = InboxController.extractIndustryFromText(textCorpus) ?? conversation.extractedIndustry ?? null;
+    const helocFitFlag =
+      InboxController.extractHelocFitFromText(textCorpus) ??
+      (typeof conversation.helocFitFlag === 'boolean' ? conversation.helocFitFlag : null);
+
+    const currentSignals = ((conversation.aiSignals as Record<string, unknown> | null) || {}) as Record<
+      string,
+      unknown
+    >;
+    const nextSignals: Record<string, unknown> = { ...currentSignals };
+
+    if (monthlyRevenue != null) {
+      nextSignals.revenueMonthly = monthlyRevenue;
+      nextSignals.revenueAnnual = monthlyRevenue * 12;
+      nextSignals.revenueConfidence = nextSignals.revenueConfidence || 'inferred';
+      nextSignals.revenue = InboxController.formatRevenueLabel(monthlyRevenue);
+    }
+    if (askValue) nextSignals.ask = askValue;
+    if (industry) nextSignals.industry = industry;
+    if (typeof helocFitFlag === 'boolean') nextSignals.helocFitFlag = helocFitFlag;
+
+    nextSignals.reclassificationReason = 'note_added_fastpath';
+    nextSignals.reclassifiedAt = new Date().toISOString();
+    nextSignals.reclassifiedByUserId = req.user?.id || null;
+
+    const updateData: Record<string, unknown> = {
+      aiSignals: nextSignals as object,
+      extractedRevenue: monthlyRevenue,
+      extractedAsk: askValue,
+      extractedIndustry: industry,
+      helocFitFlag,
+    };
+
+    let nextClassification = conversation.aiClassification;
+    if (!nextClassification) {
+      if (monthlyRevenue != null && askValue) {
+        nextClassification = 'HOT';
+      } else if (monthlyRevenue != null || !!askValue || !!industry || helocFitFlag === true) {
+        nextClassification = 'WARM';
+      }
+    }
+
+    if (nextClassification && nextClassification !== conversation.aiClassification) {
+      updateData.aiClassification = nextClassification;
+      updateData.aiClassifiedAt = new Date();
+      updateData.aiLeadScore =
+        (conversation.aiLeadScore || 0) > 0 ? conversation.aiLeadScore : nextClassification === 'HOT' ? 78 : 58;
+    }
+
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: updateData,
+    });
+
+    await InboxController.logAuditEvent({
+      conversationId,
+      actorId: req.user?.id,
+      eventType: 'ai_state_changed',
+      source: 'owner_action_note_added_fastpath',
+      oldValue: { reason: 'note_added_fastpath' },
+      newValue: {
+        aiClassification: nextClassification,
+        extractedRevenue: monthlyRevenue,
+        extractedAsk: askValue,
+        extractedIndustry: industry,
+        helocFitFlag,
+      },
+    });
+
+    const io = (req.app as any).io;
+    if (io) {
+      const payload = {
+        conversationId,
+        classification: nextClassification,
+        leadScore: (updateData.aiLeadScore as number | undefined) ?? conversation.aiLeadScore ?? 0,
+        signals: nextSignals,
+        suggestions: null,
+        promptVersion: 'fastpath_note',
+        isCaliforniaNumber: false,
+        source: 'owner_action',
+        reason: 'note_added_fastpath',
+      };
+      if (conversation.assignedRepId) {
+        io.to(`inbox:${conversation.assignedRepId}`).emit('ai-classified', payload);
+      }
+      io.to(`conversation:${conversationId}`).emit('ai-classified', payload);
+    }
   }
 
   private static async logAuditEvent(input: {
@@ -1684,10 +2000,11 @@ export class InboxController {
       throw new AppError('Not authorized to message this conversation', 403);
     }
 
+    const inboundCount = await prisma.message.count({
+      where: { conversationId: id, direction: 'INBOUND' },
+    });
+
     if (req.user?.role === 'REP') {
-      const inboundCount = await prisma.message.count({
-        where: { conversationId: id, direction: 'INBOUND' },
-      });
       // Critical exception: never block replies in existing inbound threads.
       if (inboundCount === 0) {
         await OutboundGateService.ensureCanLaunchOutbound(req.user);
@@ -1706,6 +2023,9 @@ export class InboxController {
         sentByUserId: req.user!.id,
         preferredNumberId: conversation.twilioNumberId || conversation.stickyNumberId || undefined,
         priority: 10, // High priority for manual replies
+        // Active conversations (already replied inbound) may be answered during quiet hours.
+        // Cold/manual outreach (no inbound yet) still obeys quiet hours.
+        enforceQuietHours: inboundCount === 0,
       });
     } catch (err: any) {
       if (err.message?.startsWith('Cannot send:')) {
@@ -1931,6 +2251,36 @@ export class InboxController {
       followupStatus: updated.followupStatus || null,
     };
 
+    const feedbackActions: RepFeedbackAction[] = [];
+    if (leadStatus !== undefined && leadStatus !== conversation.leadStatus) {
+      if (leadStatus === 'Interested') feedbackActions.push('mark_interested');
+      if (leadStatus === 'Not Interested') feedbackActions.push('mark_not_interested');
+      if (leadStatus === 'DNC') feedbackActions.push('mark_dnc');
+    }
+    if (emailReceived === true && conversation.emailReceived !== true) {
+      feedbackActions.push('email_rcv');
+    }
+
+    if (feedbackActions.length > 0) {
+      for (const action of feedbackActions) {
+        try {
+          await InboxController.logRepClassificationDisagreement({
+            conversationId: id,
+            repId: req.user?.id || null,
+            aiClassification: conversation.aiClassification,
+            repAction: action,
+            source: 'inbox_status_patch',
+          });
+        } catch (error) {
+          logger.warn('Failed to persist classification disagreement feedback', {
+            conversationId: id,
+            repAction: action,
+            error: (error as Error).message,
+          });
+        }
+      }
+    }
+
     const changedStatusFields = Object.keys(afterState).filter(
       (key) => JSON.stringify((beforeState as any)[key]) !== JSON.stringify((afterState as any)[key]),
     );
@@ -2123,6 +2473,14 @@ export class InboxController {
 
     const [note] = await prisma.$transaction(txOps);
 
+    // Fast-path (<5s UX): immediately refresh extracted AI signals from notes/messages,
+    // then run full LLM reclassification asynchronously.
+    await InboxController.applyFastOwnerSignalRefresh(req, id).catch((error) => {
+      logger.warn('Fast owner-action signal refresh failed', {
+        conversationId: id,
+        error: (error as Error).message,
+      });
+    });
     InboxController.triggerOwnerActionReclassification(req, id, 'note_added', conversation.assignedRepId || null);
 
     res.status(201).json({ note });
@@ -2596,6 +2954,21 @@ export class InboxController {
         stageId: resolvedStageId,
       },
     });
+
+    try {
+      await InboxController.logRepClassificationDisagreement({
+        conversationId: id,
+        repId: req.user?.id || null,
+        aiClassification: conversation.aiClassification,
+        repAction: 'pipeline_added',
+        source: 'inbox_add_to_pipeline',
+      });
+    } catch (error) {
+      logger.warn('Failed to persist pipeline classification disagreement feedback', {
+        conversationId: id,
+        error: (error as Error).message,
+      });
+    }
 
     InboxController.triggerOwnerActionReclassification(req, id, 'pipeline_added', conversation.assignedRepId || null);
 

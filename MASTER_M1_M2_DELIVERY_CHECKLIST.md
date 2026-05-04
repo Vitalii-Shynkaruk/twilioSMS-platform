@@ -95,6 +95,16 @@
 - [x] Production deploy completed on `https://app.sclcapital.io/` at commit `1105439`; server build, client build, `npm install`, PM2 restart, `/api/health`, `/`, `/login`, and live browser login-button smoke passed.
 - [ ] Production email OTP delivery smoke remains blocked until server SMTP relay is confirmed or external SMTP credentials are saved.
 
+### M30 User Email Edit + Domain-Change Audit - 2026-05-05
+
+- [x] Client issue reproduced from code path: Settings -> Users showed email in edit modal but the field was disabled and update payload did not send email.
+- [x] Backend gap identified: `updateUserSchema` accepted `email`, but `AuthController.updateUser` ignored it and therefore could not persist email edits.
+- [x] Root guard added: ADMIN user updates can now persist email, duplicate emails are rejected, and user cache is invalidated after update.
+- [x] Frontend fix added: email is editable in the user edit modal and is included in the update request.
+- [x] Startup safety reviewed: existing user emails must not be rewritten by default user bootstrap; production dirty email-sync code is treated as invalid and must not be reintroduced.
+- [x] Requirement audit completed: `docs/LOVABLE_PROMPT_A2P_FIX.md` asked to update public website/legal domain references and public `info@...` contact email only; it did not ask to change platform user login emails.
+- [x] Evidence added: `audit-screenshots/m30-user-email-edit-evidence.json`.
+
 ## Source Map
 
 ### M1 sources

@@ -215,6 +215,7 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
         const payload: any = {
           firstName: form.firstName,
           lastName: form.lastName,
+          email: form.email,
           role: form.role,
           isActive: form.isActive,
           mobilePhone: form.mobilePhone,
@@ -277,7 +278,6 @@ function UserFormModal({ user, onClose, onDelete }: { user?: any; onClose: () =>
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
-              disabled={isEdit}
             />
           </div>
           <div>

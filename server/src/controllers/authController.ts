@@ -334,7 +334,7 @@ export class AuthController {
 
   static async updateUser(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const { firstName, lastName, role, isActive, password, mobilePhone, hotAlertsEnabled } = req.body;
+    const { firstName, lastName, email, role, isActive, password, mobilePhone, hotAlertsEnabled } = req.body;
     const requestId = req.requestId || '-';
 
     authLogger.info('User update attempt', {
@@ -347,6 +347,13 @@ export class AuthController {
     const data: any = {};
     if (firstName) data.firstName = firstName;
     if (lastName) data.lastName = lastName;
+    if (email && req.user?.role === 'ADMIN') {
+      const emailOwner = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (emailOwner && emailOwner.id !== id) {
+        throw new AppError('Email is already in use', 409);
+      }
+      data.email = email;
+    }
     if (role && req.user?.role === 'ADMIN') data.role = role;
     if (isActive !== undefined && req.user?.role === 'ADMIN') data.isActive = isActive;
     if (password) data.passwordHash = await bcrypt.hash(password, 12);
@@ -370,6 +377,8 @@ export class AuthController {
         otpLockedUntil: true,
       },
     });
+
+    await invalidateUserCache(id);
 
     authLogger.info('User updated successfully', {
       requestId,

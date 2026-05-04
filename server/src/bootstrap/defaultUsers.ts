@@ -15,7 +15,7 @@ type DefaultUser = {
 
 const DEFAULT_TEAM_USERS: DefaultUser[] = [
   {
-    email: 'jb@securecreditlines.com',
+    email: 'jb@sclcapital.io',
     firstName: 'Jonathan',
     lastName: 'Baker',
     initials: 'JB',

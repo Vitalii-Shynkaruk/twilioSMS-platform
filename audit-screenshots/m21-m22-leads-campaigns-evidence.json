@@ -1,0 +1,143 @@
+{
+  "gate": "M2.1/M2.2 Leads and Campaigns verification",
+  "date": "2026-05-04",
+  "status": "passed_production_live",
+  "scope": [
+    "Lead/campaign REP scope",
+    "Admin all-record visibility",
+    "Readable lead source display",
+    "Lead enrichment fields in list",
+    "Lead export enrichment columns and REP scope",
+    "Campaign list role scope",
+    "AI retarget cohort UI presence",
+    "Desktop, half-width, and mobile horizontal overflow smoke",
+    "Production live CSV import/list/export cleanup smoke"
+  ],
+  "localValidation": {
+    "focusedTests": {
+      "command": "cd server && npx vitest run tests/leadCampaignScope.test.ts tests/leadEnrichmentExport.test.ts tests/campaignAiCohorts.test.ts",
+      "result": "passed",
+      "testFiles": 3,
+      "tests": 12,
+      "notes": [
+        "Redis ECONNREFUSED warnings are expected in local test environment and did not fail the focused suites."
+      ]
+    },
+    "exportSearchParityRegression": {
+      "command": "cd server && npx vitest run tests/leadEnrichmentExport.test.ts tests/leadCampaignScope.test.ts",
+      "result": "passed",
+      "testFiles": 2,
+      "tests": 8,
+      "fix": "/api/leads/export search now includes company, matching /api/leads list search behavior."
+    },
+    "build": {
+      "command": "npm run build",
+      "result": "passed",
+      "steps": ["server tsc", "client tsc", "vite production build"]
+    }
+  },
+  "productionLiveCsvSmoke": {
+    "host": "198.199.91.174",
+    "commit": "43f067a45",
+    "apiBaseUrl": "http://127.0.0.1:3001/api",
+    "result": "passed",
+    "users": {
+      "uploader": {
+        "idSuffix": "wn5mrm",
+        "initials": "AN",
+        "email": "an***@securecreditlines.com",
+        "role": "REP"
+      },
+      "isolatedRep": {
+        "idSuffix": "c623o4",
+        "initials": "HB",
+        "email": "hb***@securecreditlines.com",
+        "role": "REP"
+      },
+      "admin": {
+        "idSuffix": "0kuvsf",
+        "initials": "AS",
+        "email": "ad***@securecreditlines.com",
+        "role": "ADMIN"
+      }
+    },
+    "import": {
+      "status": 200,
+      "imported": 1,
+      "eligibleLeadIds": 1,
+      "campaignReadyLeadCount": 1
+    },
+    "visibility": {
+      "uploaderTotal": 1,
+      "isolatedRepTotal": 0,
+      "adminTotal": 1
+    },
+    "enrichment": {
+      "industry": "Restaurants",
+      "monthlyRevenue": 82000
+    },
+    "export": {
+      "status": 200,
+      "containsIndustry": true,
+      "containsRevenue": true,
+      "containsSource": true
+    },
+    "cleanup": {
+      "leadTags": 1,
+      "pipelineCards": 1,
+      "campaignLeads": 0,
+      "leads": 1,
+      "tags": 1
+    }
+  },
+  "visualPrototypeCheck": {
+    "prototypeUrl": "https://papaya-swan-76d714.netlify.app/scl_leads_campaigns_scope_v3.html",
+    "tooling": "Playwright chromium against Vite dev server with deterministic API mocks",
+    "appUrl": "http://127.0.0.1:5176",
+    "screenshots": {
+      "leadsAdminDesktop": "audit-screenshots/m24-leads-admin-desktop.png",
+      "leadsRepDesktop": "audit-screenshots/m24-leads-rep-desktop.png",
+      "campaignsAdminDesktop": "audit-screenshots/m24-campaigns-admin-desktop.png",
+      "campaignsRepDesktop": "audit-screenshots/m24-campaigns-rep-desktop.png",
+      "leadsAdminHalf": "audit-screenshots/m24-leads-admin-half.png",
+      "campaignsAdminMobile": "audit-screenshots/m24-campaigns-admin-mobile.png",
+      "prototypeDesktop": "audit-screenshots/m24-leads-campaigns-prototype-desktop.png"
+    },
+    "assertions": {
+      "leadsAdminColumns": true,
+      "leadsRepColumns": true,
+      "campaignsAdminAi": true,
+      "campaignsRepAi": true,
+      "sidebarUnchanged": true,
+      "noPageOverflow": true,
+      "prototypeLoaded": true
+    },
+    "notes": [
+      "Leads table keeps the retained prototype column set: Name, Phone, Status, Last Contact, Industry, Monthly Revenue, Source, Added.",
+      "Campaigns page keeps retained prototype scope: AI Retarget Suggestions above All Campaigns, role-scoped campaign list, and no suppressed/list-management scope creep.",
+      "Wide tables are intentionally contained in horizontal table scroll containers; document-level page overflow is false across checked viewports."
+    ]
+  },
+  "exportCsvEvidence": {
+    "coveredBy": "server/tests/leadEnrichmentExport.test.ts and production live CSV smoke",
+    "columnsVerified": [
+      "Last Contact",
+      "Last Contact Rep",
+      "Industry",
+      "Monthly Revenue",
+      "Revenue Source",
+      "Readable Source"
+    ],
+    "scopeVerified": [
+      "REP assignedRepId filter",
+      "status filter",
+      "import-list tag filter",
+      "search filter including company",
+      "production AN/HB/Admin visibility split"
+    ],
+    "sampleRowVerified": "Restaurants,82000,CSV,readable import list source"
+  },
+  "remainingRisks": [
+    "No M2.1/M2.2 blocker remains after production live CSV smoke and visual prototype checks. M1.1 Resend email OTP fallback is still an external production config blocker."
+  ]
+}

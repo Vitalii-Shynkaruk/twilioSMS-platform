@@ -81,6 +81,20 @@
       "Anthropic API key for AI features"
     ]
   },
+  "productionDeploy": {
+    "commit": "7fe9a7c",
+    "host": "https://app.sclcapital.io/",
+    "method": "full local git bundle to production because non-interactive GitHub HTTPS fetch requires credentials",
+    "build": "production npm run build passed: server tsc, client tsc, Vite production build",
+    "pm2": "sms-api restarted and reported online",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok",
+      "root": "https://app.sclcapital.io/ returned HTTP 200",
+      "login": "https://app.sclcapital.io/login returned HTTP 200",
+      "leads": "https://app.sclcapital.io/leads returned HTTP 200",
+      "campaigns": "https://app.sclcapital.io/campaigns returned HTTP 200"
+    }
+  },
   "remainingExternalBlockers": [
     "Resend production email sender configuration for email OTP fallback smoke.",
     "Original SCL logo/wordmark asset for absolute Login pixel-perfect match."

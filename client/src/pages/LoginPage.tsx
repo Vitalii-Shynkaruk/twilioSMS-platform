@@ -112,10 +112,16 @@ export default function LoginPage() {
 
   return (
     <main className="scl-auth" aria-labelledby="scl-auth-title">
-      <div className="scl-auth__edge scl-auth__edge--top-left" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--top-right" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--bottom-left" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--bottom-right" aria-hidden="true" />
+      {/* HUD Frame */}
+      <div className="scl-auth__frame" aria-hidden="true" />
+      {/* Animated running border beams */}
+      <div className="scl-auth__beam" aria-hidden="true" />
+      <div className="scl-auth__beam scl-auth__beam--gold" aria-hidden="true" />
+      {/* Corner accent brackets */}
+      <div className="scl-auth__edge scl-auth__edge--tl" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--tr" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--bl" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--br" aria-hidden="true" />
       <div className="scl-auth__ghost-mark" aria-hidden="true">
         SCL
       </div>

@@ -318,18 +318,18 @@ export default function LeadsPage() {
         <section className="leads-prototype-scope-note" aria-label="Prototype scope">
           <p>Scope on this prototype — 4 fixes only</p>
           <div>
-            <span>
+            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--blue">
               <strong>Phase 1 · Bug fixes</strong> — Reps see only leads they uploaded; reps see only campaigns they
               created.
             </span>
-            <span>
+            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--gold">
               <strong>Phase 2.1 · Source readable</strong> — Source column shows list name, not UUID.
             </span>
-            <span>
+            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--green">
               <strong>Phase 2.2–6 · Industry + Revenue + Last Contact + Export CSV</strong> — Columns are wired from AI
               classifier and existing data.
             </span>
-            <span>
+            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--purple">
               <strong>Phase 3 · AI Retarget</strong> — Campaigns tab shows AI cohorts and AI-built campaign lineage.
             </span>
           </div>
@@ -342,33 +342,25 @@ export default function LeadsPage() {
             <p className="text-sm text-dark-400 mt-1">{total} total leads</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Add Lead
-            </button>
             {canManage && (
               <button onClick={() => setShowImport(true)} className="btn-ghost flex items-center gap-2">
                 <Upload className="w-4 h-4" />
                 Import CSV
               </button>
             )}
-            <button
-              onClick={() => exportMutation.mutate()}
-              className="btn-ghost flex items-center gap-2"
-              disabled={exportMutation.isPending}
-            >
-              <Download className="w-4 h-4" />
-              {exportMutation.isPending ? 'Exporting...' : `Export CSV ${total} leads`}
+            <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              Add Lead
             </button>
           </div>
         </div>
 
         <div className="leads-source-comparison" aria-label="Source readability example">
-          <div>
+          <div className="leads-source-comparison__item leads-source-comparison__item--before">
             <span>BEFORE — Source column today</span>
             <strong>ce83f1d9-6c5f-452f-9bc3-0e988ff8f223</strong>
           </div>
-          <div>
+          <div className="leads-source-comparison__item leads-source-comparison__item--after">
             <span>AFTER — Phase 2.1 fix</span>
             <strong>CJ 10.8 12K — Verizon</strong>
           </div>
@@ -482,6 +474,15 @@ export default function LeadsPage() {
               By Lists
             </button>
           </div>
+          <button
+            onClick={() => exportMutation.mutate()}
+            className="leads-filter-export"
+            disabled={exportMutation.isPending}
+          >
+            <Download className="w-4 h-4" />
+            <span>{exportMutation.isPending ? 'Exporting...' : 'Export CSV'}</span>
+            <small>{total} leads</small>
+          </button>
         </div>
 
         {/* Bulk Actions Bar */}

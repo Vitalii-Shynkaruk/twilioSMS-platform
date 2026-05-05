@@ -21,6 +21,24 @@ export class NumberService {
   private static roundRobinIndex = 0; // In-memory round-robin counter
   private static readonly SEND_ATTEMPT_STATUSES = ['SENT', 'DELIVERED', 'FAILED', 'UNDELIVERED', 'BLOCKED'] as const;
 
+  private static getRoutableNumbers<T extends Pick<PhoneNumber, 'id' | 'messagingServiceSid'>>(
+    numbers: T[],
+    activeMessagingServiceSid: string | null,
+  ): T[] {
+    const requireMessagingServiceRouting = Boolean(activeMessagingServiceSid);
+    const a2pNumbers = numbers.filter(
+      (number) =>
+        Boolean(number.messagingServiceSid) &&
+        (!activeMessagingServiceSid || number.messagingServiceSid === activeMessagingServiceSid),
+    );
+
+    if (requireMessagingServiceRouting) {
+      return a2pNumbers;
+    }
+
+    return a2pNumbers.length > 0 ? a2pNumbers : numbers;
+  }
+
   private static getDatePartsInTimezone(
     date: Date,
     timeZone: string,
@@ -133,12 +151,7 @@ export class NumberService {
     // In live routing mode, enforce Messaging Service-linked senders only.
     const activeMessagingServiceSid = await getActiveMessagingServiceSid();
     const requireMessagingServiceRouting = Boolean(activeMessagingServiceSid);
-    const a2pNumbers = numbers.filter(
-      (n) =>
-        Boolean(n.messagingServiceSid) &&
-        (!activeMessagingServiceSid || n.messagingServiceSid === activeMessagingServiceSid),
-    );
-    const pool = requireMessagingServiceRouting ? a2pNumbers : a2pNumbers.length > 0 ? a2pNumbers : numbers;
+    const pool = this.getRoutableNumbers(numbers, activeMessagingServiceSid);
 
     // Filter by daily limit (considering ramp-up) and delivery rate
     const eligible = pool.filter((number) => {
@@ -193,10 +206,107 @@ export class NumberService {
     return rows.map((r) => r.phoneNumberId);
   }
 
+  static async getAssignedNumberCapacity(userId: string): Promise<{
+    phoneNumberIds: string[];
+    dailyCap: number;
+    dailyUsed: number;
+    dailyRemaining: number;
+  } | null> {
+    try {
+      const now = new Date();
+      const assignments = await prisma.numberAssignment.findMany({
+        where: {
+          userId,
+          isActive: true,
+          phoneNumber: {
+            OR: [{ status: 'ACTIVE' }, { status: 'COOLING', coolingUntil: { lt: now } }],
+          },
+        },
+        select: {
+          phoneNumber: {
+            select: {
+              id: true,
+              messagingServiceSid: true,
+              dailySentCount: true,
+              dailyLimit: true,
+              isRamping: true,
+              rampDay: true,
+              status: true,
+              coolingUntil: true,
+            },
+          },
+        },
+      });
+
+      if (assignments.length === 0) {
+        return null;
+      }
+
+      const assignedNumbers = assignments.map((assignment) => assignment.phoneNumber);
+      const activeMessagingServiceSid = await getActiveMessagingServiceSid();
+      const routableNumbers = this.getRoutableNumbers(assignedNumbers, activeMessagingServiceSid);
+
+      if (routableNumbers.length === 0) {
+        return {
+          phoneNumberIds: [],
+          dailyCap: 0,
+          dailyUsed: 0,
+          dailyRemaining: 0,
+        };
+      }
+
+      const todayStart = this.getBusinessDayStart();
+      const sentTodayCounts = await prisma.message.groupBy({
+        by: ['phoneNumberId'],
+        where: {
+          direction: 'OUTBOUND',
+          status: { in: [...this.SEND_ATTEMPT_STATUSES] },
+          OR: [{ sentAt: { gte: todayStart } }, { failedAt: { gte: todayStart } }],
+          phoneNumberId: { in: routableNumbers.map((number) => number.id) },
+        },
+        _count: { id: true },
+      });
+
+      const sentTodayMap = new Map<string, number>();
+      for (const row of sentTodayCounts) {
+        if (row.phoneNumberId) {
+          sentTodayMap.set(row.phoneNumberId, row._count.id);
+        }
+      }
+
+      const summary = routableNumbers.reduce(
+        (acc, number) => {
+          const limit = this.getDailyLimit(number);
+          const used = sentTodayMap.get(number.id) ?? number.dailySentCount;
+
+          acc.phoneNumberIds.push(number.id);
+          acc.dailyCap += limit;
+          acc.dailyUsed += used;
+          acc.dailyRemaining += Math.max(0, limit - used);
+          return acc;
+        },
+        {
+          phoneNumberIds: [] as string[],
+          dailyCap: 0,
+          dailyUsed: 0,
+          dailyRemaining: 0,
+        },
+      );
+
+      return summary;
+    } catch (error) {
+      logger.warn('Assigned number capacity lookup failed', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   /**
    * Get daily limit considering ramp-up schedule
    */
-  static getDailyLimit(number: PhoneNumber): number {
+  static getDailyLimit(number: Pick<PhoneNumber, 'dailyLimit' | 'isRamping' | 'rampDay'>): number {
     if (!number.isRamping || !config.sms.rampUpEnabled) {
       return number.dailyLimit;
     }
@@ -449,7 +559,9 @@ export class NumberService {
         },
       });
 
-      const invalidNumbers = selectedNumbers.filter((number) => number.messagingServiceSid !== activeMessagingServiceSid);
+      const invalidNumbers = selectedNumbers.filter(
+        (number) => number.messagingServiceSid !== activeMessagingServiceSid,
+      );
       if (invalidNumbers.length > 0) {
         throw new AppError(
           `Cannot assign numbers that are not linked to the active Messaging Service: ${invalidNumbers
@@ -549,12 +661,13 @@ export class NumberService {
 
     // Получаем имена репов
     const repIds = [...new Set(repCounts.map((r) => r.sentByUserId).filter(Boolean))] as string[];
-    const reps = repIds.length > 0
-      ? await prisma.user.findMany({
-          where: { id: { in: repIds } },
-          select: { id: true, firstName: true, lastName: true },
-        })
-      : [];
+    const reps =
+      repIds.length > 0
+        ? await prisma.user.findMany({
+            where: { id: { in: repIds } },
+            select: { id: true, firstName: true, lastName: true },
+          })
+        : [];
     const repNameMap = new Map(reps.map((r) => [r.id, `${r.firstName} ${r.lastName?.[0] || ''}.`]));
 
     const sentTodayMap = new Map<string, number>();

@@ -5,6 +5,7 @@ import prisma from '../src/config/database';
 import type { AuthRequest } from '../src/middleware/auth';
 import { OutboundGateService } from '../src/services/outboundGateService';
 import { AIService } from '../src/services/aiService';
+import * as twilioConfig from '../src/config/twilio';
 
 function createRequest(overrides: Partial<AuthRequest> = {}): AuthRequest {
   return {
@@ -39,6 +40,7 @@ describe('M2.3 AI retarget cohorts', () => {
     } as never);
     vi.spyOn(prisma.leadCohort, 'create').mockResolvedValue({ id: 'lead-cohort-cache' } as never);
     vi.spyOn(AIService, 'generateCohortReasoning').mockResolvedValue(null);
+    vi.spyOn(twilioConfig, 'getActiveMessagingServiceSid').mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -223,6 +225,133 @@ describe('M2.3 AI retarget cohorts', () => {
           dailyCap: 800,
           dailyUsed: 529,
           dailyRemaining: 271,
+        }),
+      }),
+    );
+  });
+
+  it('использует capacity активных assigned numbers в retarget preview для rep', async () => {
+    vi.spyOn(twilioConfig, 'getActiveMessagingServiceSid').mockResolvedValue('MG123');
+    vi.spyOn(prisma.numberAssignment, 'findMany').mockResolvedValue([
+      {
+        phoneNumber: {
+          id: 'num-1',
+          messagingServiceSid: 'MG123',
+          dailySentCount: 143,
+          dailyLimit: 400,
+          isRamping: false,
+          rampDay: 8,
+          status: 'ACTIVE',
+          coolingUntil: null,
+        },
+      },
+      {
+        phoneNumber: {
+          id: 'num-2',
+          messagingServiceSid: 'MG123',
+          dailySentCount: 144,
+          dailyLimit: 400,
+          isRamping: false,
+          rampDay: 8,
+          status: 'ACTIVE',
+          coolingUntil: null,
+        },
+      },
+      {
+        phoneNumber: {
+          id: 'num-3',
+          messagingServiceSid: 'MG123',
+          dailySentCount: 143,
+          dailyLimit: 400,
+          isRamping: false,
+          rampDay: 8,
+          status: 'ACTIVE',
+          coolingUntil: null,
+        },
+      },
+      {
+        phoneNumber: {
+          id: 'num-4',
+          messagingServiceSid: 'MG123',
+          dailySentCount: 144,
+          dailyLimit: 400,
+          isRamping: false,
+          rampDay: 8,
+          status: 'ACTIVE',
+          coolingUntil: null,
+        },
+      },
+    ] as never);
+    vi.spyOn(prisma.message, 'groupBy').mockResolvedValue([
+      { phoneNumberId: 'num-1', _count: { id: 143 } },
+      { phoneNumberId: 'num-2', _count: { id: 144 } },
+      { phoneNumberId: 'num-3', _count: { id: 143 } },
+      { phoneNumberId: 'num-4', _count: { id: 144 } },
+    ] as never);
+    vi.spyOn(prisma.campaign, 'findUnique').mockResolvedValue({
+      id: 'campaign-1',
+      name: 'Spidey LLP Pt 3 AN',
+      messageTemplate: 'Hello {{firstName}}',
+      numberPoolId: null,
+      sendingSpeed: 30,
+      dailyLimit: 400,
+      createdById: 'rep-1',
+    } as never);
+    vi.spyOn(prisma.campaignLead, 'findMany').mockResolvedValue(
+      Array.from({ length: 301 }, (_, index) => ({
+        status: index < 286 ? 'DELIVERED' : 'BLOCKED',
+        leadId: `lead-${index}`,
+        lead: {
+          id: `lead-${index}`,
+          phone: `+1555000${String(index).padStart(4, '0')}`,
+          status: 'NEW',
+          optedOut: false,
+          isSuppressed: false,
+        },
+      })) as never,
+    );
+    vi.spyOn(prisma.message, 'findMany')
+      .mockResolvedValueOnce(
+        Array.from({ length: 286 }, (_, index) => ({
+          status: 'DELIVERED',
+          sentAt: new Date(`2026-05-05T10:${String(index % 60).padStart(2, '0')}:00.000Z`),
+          createdAt: new Date(`2026-05-05T10:${String(index % 60).padStart(2, '0')}:00.000Z`),
+          conversation: { leadId: `lead-${index}` },
+        })) as never,
+      )
+      .mockResolvedValueOnce([] as never);
+    vi.spyOn(prisma.suppressionEntry, 'findMany').mockResolvedValue([] as never);
+
+    const response = createResponse();
+
+    await CampaignController.retargetPreview(
+      createRequest({
+        params: { id: 'campaign-1' },
+        user: {
+          id: 'rep-1',
+          email: 'rep@sclcapital.io',
+          role: 'REP',
+          firstName: 'Rep',
+          lastName: 'One',
+        },
+      }),
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          totalDelivered: 286,
+          replied: 0,
+          failedBlocked: 0,
+          dncFiltered: 0,
+          willReceive: 286,
+        }),
+        capacity: expect.objectContaining({
+          campaignCap: 500,
+          dailyCap: 1600,
+          dailyUsed: 574,
+          dailyRemaining: 1026,
         }),
       }),
     );
@@ -430,6 +559,11 @@ describe('M2.3 AI retarget cohorts', () => {
         dailyTotalCap: 4500,
         remaining: 5,
         requested: 10,
+      }),
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Daily capacity: 4495 of 4500 already used. Adding 10 would push over. Remaining capacity: 5.',
       }),
     );
     expect(campaignCreate).not.toHaveBeenCalled();

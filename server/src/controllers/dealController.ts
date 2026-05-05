@@ -540,8 +540,10 @@ export class DealController {
 
     const fundingHistory = fundedDeals
       .flatMap((fundedDeal) => {
-        if (fundedDeal.fundingEvents.length > 0) {
-          return fundedDeal.fundingEvents.map((event) => ({
+        const fundingEvents = fundedDeal.fundingEvents || [];
+
+        if (fundingEvents.length > 0) {
+          return fundingEvents.map((event) => ({
             id: event.id,
             dealId: fundedDeal.id,
             amountFunded: event.amountFunded,

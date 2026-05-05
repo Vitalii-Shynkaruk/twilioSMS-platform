@@ -1180,9 +1180,10 @@ function RetargetCampaignModal({
   const summary = data?.summary;
   const capacity = data?.capacity;
   const hasEligibleRecipients = (summary?.willReceive || 0) > 0;
-  const exceedsDailyCapacity = typeof capacity?.dailyRemaining === 'number' && (summary?.willReceive || 0) > capacity.dailyRemaining;
+  const exceedsDailyCapacity =
+    typeof capacity?.dailyRemaining === 'number' && (summary?.willReceive || 0) > capacity.dailyRemaining;
   const capacityWarning = exceedsDailyCapacity
-    ? `Daily capacity: ${capacity?.dailyUsed || 0} of ${capacity?.dailyCap || 0} used in the last 24 hours. Remaining capacity: ${capacity?.dailyRemaining || 0}. This retarget needs ${summary?.willReceive || 0}.`
+    ? `Daily capacity: ${capacity?.dailyUsed || 0} of ${capacity?.dailyCap || 0} already used. Remaining capacity: ${capacity?.dailyRemaining || 0}. This retarget needs ${summary?.willReceive || 0}.`
     : null;
 
   const createMutation = useMutation({
@@ -1257,7 +1258,9 @@ function RetargetCampaignModal({
                 <p className="text-lg font-semibold text-sky-200">
                   {capacity?.dailyRemaining || 0} / {capacity?.dailyCap || 0}
                 </p>
-                <p className="mt-1 text-[11px] text-sky-100/80">Rolling 24-hour window for this rep.</p>
+                <p className="mt-1 text-[11px] text-sky-100/80">
+                  Based on currently available assigned sending numbers.
+                </p>
               </div>
 
               {!hasEligibleRecipients && (

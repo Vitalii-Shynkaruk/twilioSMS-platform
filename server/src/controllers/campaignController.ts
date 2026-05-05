@@ -153,14 +153,26 @@ export class CampaignController {
   }
 
   private static async getAiCampaignCapacity(req: AuthRequest): Promise<AiCohortCapacity> {
-    const { campaignCap, dailyCap } = CampaignController.getCampaignCaps(req);
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const dailyUsed = await prisma.campaignLead.count({
-      where: {
-        campaign: { createdById: req.user!.id },
-        createdAt: { gte: since },
-      },
-    });
+    const { campaignCap, dailyCap: defaultDailyCap } = CampaignController.getCampaignCaps(req);
+    const userId = req.user?.id;
+    const assignedCapacity = userId ? await NumberService.getAssignedNumberCapacity(userId) : null;
+
+    let dailyCap = defaultDailyCap;
+    let dailyUsed: number;
+
+    if (assignedCapacity) {
+      dailyCap = assignedCapacity.dailyCap;
+      dailyUsed = assignedCapacity.dailyUsed;
+    } else {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      dailyUsed = await prisma.campaignLead.count({
+        where: {
+          campaign: { createdById: userId },
+          createdAt: { gte: since },
+        },
+      });
+    }
+
     const dailyRemaining = Math.max(0, dailyCap - dailyUsed);
 
     return {
@@ -195,7 +207,7 @@ export class CampaignController {
       const remaining = Math.max(0, capacity.dailyCap - capacity.dailyUsed);
       res.status(400).json({
         error: 'DAILY_TOTAL_CAP_EXCEEDED',
-        message: `Daily capacity: ${capacity.dailyUsed} of ${capacity.dailyCap} used in last 24h. Adding ${requestedLeadCount} would push over. Remaining capacity: ${remaining}.`,
+        message: `Daily capacity: ${capacity.dailyUsed} of ${capacity.dailyCap} already used. Adding ${requestedLeadCount} would push over. Remaining capacity: ${remaining}.`,
         dailyUsed: capacity.dailyUsed,
         dailyTotalCap: capacity.dailyCap,
         remaining,
@@ -506,9 +518,11 @@ export class CampaignController {
     };
     let reasoningText = spec.reasoningText;
     const shouldPersistSnapshot = options.persistSnapshot !== false;
-    const cachedReasoning = shouldPersistSnapshot
-      ? await CampaignController.getCachedAiCohortReasoning(req, spec, !!options.forceReasoningRefresh)
-      : null;
+    const cachedReasoning = await CampaignController.getCachedAiCohortReasoning(
+      req,
+      spec,
+      !!options.forceReasoningRefresh,
+    );
     const sampleRowsForReasoning =
       !cachedReasoning && shouldPersistSnapshot && leadRows.length > 0
         ? leadRows.slice(0, 5)

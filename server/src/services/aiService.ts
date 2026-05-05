@@ -22,6 +22,37 @@ export interface AIConfig {
   model: string;
 }
 
+export interface CohortReasoningLeadSample {
+  company?: string | null;
+  source?: string | null;
+  status: string;
+  industry?: string | null;
+  revenue?: number | null;
+  assignedRepInitials?: string | null;
+}
+
+export interface CohortReasoningInput {
+  cohortId: string;
+  cohortType: string;
+  title: string;
+  criteria: Record<string, unknown>;
+  counts: {
+    totalMatchCount: number;
+    eligibleCount: number;
+    resolvedLeadCount: number;
+    cooldownExcluded: number;
+    capTrimmed: number;
+  };
+  capacity: {
+    campaignCap: number;
+    dailyCap: number;
+    dailyUsed: number;
+    dailyRemaining: number;
+  };
+  historicalAnchor: string;
+  sampleLeads: CohortReasoningLeadSample[];
+}
+
 // Дефолтные модели если в Settings не выбрано
 const DEFAULT_MODELS: Record<AIProvider, string> = {
   anthropic: 'claude-sonnet-4-5',
@@ -169,6 +200,18 @@ function normalizeLockedUrgency(value: unknown, classification: string): string 
   return classification === 'HOT' ? 'medium' : 'low';
 }
 
+function normalizeCohortReasoningText(raw: string | null | undefined): string | null {
+  const normalized = String(raw || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim();
+  if (!normalized) return null;
+
+  const sentenceMatches = normalized.match(/[^.!?]+[.!?]+/g);
+  const oneOrTwoSentences = sentenceMatches?.slice(0, 2).join(' ').trim() || normalized;
+  return oneOrTwoSentences.slice(0, 700).trim() || null;
+}
+
 export function normalizeLockedClassifierPayload(payload: unknown): Record<string, unknown> | null {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
 
@@ -262,6 +305,14 @@ export function extractEmailAddress(text: string | null | undefined): string | n
     return match[0].trim().replace(/[>,.;:!?]+$/u, '');
   }
 
+  // Recover emails where SMS spacing breaks tokens:
+  // "john @ gmail . com", "john.doe @ domain.com", etc.
+  const compactAroundEmailSeparators = normalized.replace(/\s*@\s*/g, '@').replace(/\s*\.\s*/g, '.');
+  const compactMatch = compactAroundEmailSeparators.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  if (compactMatch?.[0]) {
+    return compactMatch[0].trim().replace(/[>,.;:!?]+$/u, '');
+  }
+
   // Some short SMS replies replace @ with ? (for example: Billprichard07?gmail.com).
   // When the whole token still looks like an email address, normalize it back to @.
   for (const rawToken of normalized.split(/\s+/u)) {
@@ -335,6 +386,7 @@ export function resolveDeterministicClassification(input: DeterministicClassific
       lower,
     );
   const sharesAltPhone = /(?:^|\D)(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})(?:\D|$)/.test(latestInboundText);
+  const strongYesWithProductContext = strongYes && hasProductOutreachContext;
   const affirmativeWithContext =
     strongYes &&
     (asksRealBuyingQuestion ||
@@ -371,6 +423,7 @@ export function resolveDeterministicClassification(input: DeterministicClassific
     termPreference,
     givesUrgency,
     sharesAltPhone,
+    strongYesWithProductContext,
     affirmativeWithContext,
     contactInfoWithContext,
     emailConfirmationWithContext,
@@ -385,6 +438,7 @@ export function resolveDeterministicClassification(input: DeterministicClassific
     contextualClarifyingQuestion ||
     termPreference ||
     givesUrgency ||
+    strongYesWithProductContext ||
     affirmativeWithContext ||
     contactInfoWithContext ||
     emailConfirmationWithContext;
@@ -463,6 +517,32 @@ function extractLatestInboundText(messages: SuggestionResolutionMessage[]): stri
     if (body) return body;
   }
   return '';
+}
+
+function extractRecentInboundContextText(messages: SuggestionResolutionMessage[], maxMessages = 3): string {
+  if (!Array.isArray(messages) || messages.length === 0) return '';
+
+  const collected: string[] = [];
+  let foundInbound = false;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const direction = String(message.direction || '').toUpperCase();
+    const body = String(message.body || '').trim();
+
+    if (direction === 'INBOUND') {
+      if (body) {
+        foundInbound = true;
+        collected.push(body);
+        if (collected.length >= maxMessages) break;
+      }
+      continue;
+    }
+
+    if (foundInbound) break;
+  }
+
+  return collected.reverse().join('\n').trim();
 }
 
 function extractPreviousOutboundText(messages: SuggestionResolutionMessage[]): string {
@@ -738,18 +818,61 @@ function extractAmountDisclosureFromContext(latestInboundText: string, previousO
 }
 
 function hasPaymentTermsContext(latestInboundLower: string): boolean {
+  if (hasSendTermsIntent(latestInboundLower)) {
+    return false;
+  }
+  if (hasPayoffPenaltyContext(latestInboundLower)) {
+    return true;
+  }
   return /monthly payments?|low monthly|interest rate|%\s*interest|how many years|\brate\b|\brates\b|\bterm\b|\bterms\b|\bpayment\b|\bpayments\b|\bcost\b/.test(
     latestInboundLower,
   );
 }
 
-function hasPhoneCallLogisticsContext(latestInboundLower: string, previousOutboundLower: string): boolean {
-  const merged = `${latestInboundLower} ${previousOutboundLower}`;
+function hasSendTermsIntent(latestInboundLower: string): boolean {
+  const normalized = String(latestInboundLower || '').toLowerCase();
+  if (!normalized) return false;
+
+  const asksToSendTerms =
+    /\b(send|sending|sent|email|emailed|forward|forwarded|shoot|drop)\b.{0,80}\b(terms?|funding link|link|details|docs?|breakdown)\b/.test(
+      normalized,
+    ) ||
+    /\b(terms?|funding link|link|details|docs?|breakdown)\b.{0,40}\b(to|at)\b/.test(normalized) ||
+    /\bcan you send\b.{0,40}\b(terms?|link|details|docs?)\b/.test(normalized);
+
+  return asksToSendTerms;
+}
+
+function hasPayoffPenaltyContext(latestInboundLower: string): boolean {
+  const normalized = String(latestInboundLower || '').toLowerCase();
+  if (!normalized) return false;
+
+  return /\b(early\s+payoff|payoff\s+early|pay(?:ing)?\s+off\s+early|prepay(?:ment)?(?:\s+penalty)?|payoff\s+penalty|penalty\s+for\s+pay(?:ing)?\s+off)\b/.test(
+    normalized,
+  );
+}
+
+function hasPhoneCallLogisticsContext(
+  latestInboundLower: string,
+  previousOutboundLower: string,
+  recentInboundLower?: string,
+): boolean {
+  const recentLower = String(recentInboundLower || latestInboundLower || '').toLowerCase();
+  const merged = `${recentLower} ${previousOutboundLower}`;
   const hasCallContext = /\b(call|called|calling|quick call|phone|number)\b/.test(merged);
+  const hasPhoneNumberInLatest = /(?:^|\D)(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?:\D|$)/.test(
+    latestInboundLower,
+  );
+  const hasRecentCallNowIntent =
+    /\b(can we do a call now|can we (?:do )?a quick call|call now|can you call now|give me a call now|talk now|available now)\b/.test(
+      recentLower,
+    );
   const hasLogisticsSignal =
     /heads?\s*up|save(?:d)? (?:the )?(?:number|phone)|number not saved|not saved|declines?|blocked|does(?:n'?t| not) go through|go through|still available|right now|quick call/.test(
-      latestInboundLower,
+      `${recentLower} ${latestInboundLower}`,
     );
+
+  if (hasPhoneNumberInLatest && hasRecentCallNowIntent) return true;
 
   return hasCallContext && hasLogisticsSignal;
 }
@@ -798,7 +921,22 @@ function suggestionLooksStaleForPaymentTerms(text: string): boolean {
     return true;
   }
 
-  return !/rate|payment|monthly|interest|years?|collateral|debt|prepayment|30yr|10yr|term/.test(lower);
+  return !/rate|payment|monthly|interest|years?|collateral|debt|prepayment|payoff|penalty|30yr|10yr|term/.test(lower);
+}
+
+function suggestionLooksStaleForSendTermsIntent(text: string, hasKnownEmailContext: boolean): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+
+  if (hasKnownEmailContext) {
+    return !/funding link|i have your email|sending (?:the )?(?:funding link|terms)|send options to your email/.test(
+      lower,
+    );
+  }
+
+  return !/best email|email to send|send terms right away|what is the best email/.test(lower);
 }
 
 function suggestionLooksStaleForPhoneCallLogistics(text: string): boolean {
@@ -828,14 +966,21 @@ function suggestionLooksStaleForAmountDisclosure(text: string): boolean {
   return true;
 }
 
-function hasSubstantiveCurrentTopicContext(latestInboundLower: string, previousOutboundLower: string): boolean {
+function hasSubstantiveCurrentTopicContext(
+  latestInboundLower: string,
+  previousOutboundLower: string,
+  recentInboundLower?: string,
+): boolean {
+  const recentLower = String(recentInboundLower || latestInboundLower || '').toLowerCase();
+
   return (
     extractAmountDisclosureFromContext(latestInboundLower, previousOutboundLower) != null ||
     hasPaymentTermsContext(latestInboundLower) ||
-    hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower) ||
+    hasPayoffPenaltyContext(latestInboundLower) ||
+    hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower, recentLower) ||
     hasCreditScoreContext(latestInboundLower, previousOutboundLower) ||
-    /hard pull|credit pull|hard credit|predatory|another mca|stacked mca|daily pay|weekly pay|\bfee|fees\b|statement|bank statement|tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording|what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
-      latestInboundLower,
+    /hard pull|credit pull|hard credit|predatory|another mca|stacked mca|daily pay|weekly pay|\bfee|fees\b|payoff|prepay|penalty|statement|bank statement|tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording|what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
+      recentLower,
     )
   );
 }
@@ -843,6 +988,7 @@ function hasSubstantiveCurrentTopicContext(latestInboundLower: string, previousO
 function buildDeterministicFallbackSuggestionText(input: {
   classification?: string | null;
   latestInboundText?: string;
+  recentInboundContextText?: string;
   previousOutboundText?: string;
   sharedEmail?: string | null;
   noteBodies?: string[];
@@ -853,6 +999,8 @@ function buildDeterministicFallbackSuggestionText(input: {
   const classification = String(input.classification || '').toUpperCase();
   const latestInboundText = String(input.latestInboundText || '').trim();
   const latestInboundLower = latestInboundText.toLowerCase();
+  const recentInboundContextText = String(input.recentInboundContextText || latestInboundText).trim();
+  const recentInboundLower = recentInboundContextText.toLowerCase();
   const previousOutboundLower = String(input.previousOutboundText || '').toLowerCase();
   const availableEmail =
     extractEmailAddress(latestInboundText) ||
@@ -866,17 +1014,25 @@ function buildDeterministicFallbackSuggestionText(input: {
     /^(yes|yeah|yep|yup|sure|ok(ay)?|sounds good|i('?m| am)? in|let'?s (do it|go)|send (it|the)?|i'?m interested|interested|please send|send me|go ahead)\b/.test(
       latestInboundLower,
     );
-  const scheduledCallLabel = extractScheduledCallLabel(latestInboundText);
-  const followupWindowLabel = extractFollowupWindowLabel(latestInboundText);
+  const scheduledCallLabel = extractScheduledCallLabel(recentInboundContextText);
+  const followupWindowLabel = extractFollowupWindowLabel(recentInboundContextText);
   const disclosedAmount = extractAmountDisclosureFromContext(
     latestInboundText,
     String(input.previousOutboundText || ''),
   );
   const hasCallContext = /\b(call|callback|call back|quick call|phone)\b/.test(
-    `${latestInboundLower} ${previousOutboundLower}`,
+    `${recentInboundLower} ${previousOutboundLower}`,
   );
-  const phoneCallLogisticsContext = hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower);
-  const hasCurrentTopicContext = hasSubstantiveCurrentTopicContext(latestInboundLower, previousOutboundLower);
+  const phoneCallLogisticsContext = hasPhoneCallLogisticsContext(
+    latestInboundLower,
+    previousOutboundLower,
+    recentInboundLower,
+  );
+  const hasCurrentTopicContext = hasSubstantiveCurrentTopicContext(
+    latestInboundLower,
+    previousOutboundLower,
+    recentInboundLower,
+  );
 
   if (classification === 'WRONG_NUMBER') {
     return 'Got it - sorry about that. Is there a better contact for the business, or should I close this out?';
@@ -906,16 +1062,24 @@ function buildDeterministicFallbackSuggestionText(input: {
 
   if (phoneCallLogisticsContext) {
     if (
+      /(?:^|\D)(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?:\D|$)/.test(latestInboundText) &&
+      /\b(can we do a call now|can we (?:do )?a quick call|call now|can you call now|give me a call now|talk now|available now)\b/.test(
+        recentInboundLower,
+      )
+    ) {
+      return 'Perfect, I can call now on that number. Save this number first if your phone blocks unknown callers, and I will call right away.';
+    }
+    if (
       /heads?\s*up|number not saved|not saved|declines?|blocked|save(?:d)? (?:the )?(?:number|phone)/.test(
-        latestInboundLower,
+        recentInboundLower,
       )
     ) {
       return 'Got it. I will text you a heads-up before I call so you can save this number and the call does not get blocked. Is now still good for a 2 minute call?';
     }
-    if (/does(?:n'?t| not) go through|go through|called yours/.test(latestInboundLower)) {
+    if (/does(?:n'?t| not) go through|go through|called yours/.test(recentInboundLower)) {
       return 'Thanks for trying. The call may not connect from that number. I can text you right before I call from the direct number, or you can send the best number to reach you on.';
     }
-    if (/right now|still available|quick call/.test(latestInboundLower)) {
+    if (/right now|still available|quick call|call now|talk now/.test(recentInboundLower)) {
       return 'Yes, I can call now. If your phone blocks unknown numbers, save this number first and I will call right away.';
     }
     return 'Got it. I will text you before I call so you know it is me and the call does not get blocked.';
@@ -933,6 +1097,10 @@ function buildDeterministicFallbackSuggestionText(input: {
       return `No problem, take your time. I'll follow up in ${followupWindowLabel} to answer any questions once you've had a chance to review the docs.`;
     }
     return `No problem, take your time. I'll follow up in ${followupWindowLabel}.`;
+  }
+
+  if (hasPayoffPenaltyContext(latestInboundLower)) {
+    return 'No early payoff penalty on this structure. You can pay down early without a fee. If you want, I can text the exact payoff terms and payment options side-by-side.';
   }
 
   if (disclosedAmount != null) {
@@ -971,7 +1139,7 @@ function buildDeterministicFallbackSuggestionText(input: {
     return 'That range makes sense. Longer-term options are exactly the lane we would look at here. What is the best email to send options to, and about what monthly revenue is the business doing?';
   }
 
-  if (/tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording/.test(latestInboundLower)) {
+  if (/tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording/.test(recentInboundLower)) {
     const noteAwareCallbackSuggestion = buildNoteAwareCallbackSuggestion(noteBodies);
     if (noteAwareCallbackSuggestion) return noteAwareCallbackSuggestion;
     return 'I just tried again. Are you trying to lower an existing payment or add fresh working capital?';
@@ -989,7 +1157,14 @@ function buildDeterministicFallbackSuggestionText(input: {
     return 'Fair question. Fees depend on structure, risk, and how long you need the money out. To give you the cleanest quote, about how much do you need and is the goal to lower payment pressure or add working capital?';
   }
 
-  if (/rate|rates|term|terms|payment|cost/.test(latestInboundLower)) {
+  if (hasSendTermsIntent(latestInboundLower)) {
+    if (hasEmailContext) {
+      return 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?';
+    }
+    return 'Absolutely. I can send terms right away. What is the best email to send them to?';
+  }
+
+  if (/rate|rates|term|terms|payment|cost|payoff|prepay|penalty/.test(latestInboundLower)) {
     return 'Fair question. Rate depends on credit and collateral, but the bigger issue is what problem the capital needs to solve so we size the right option. Are you trying to clear expensive debt, cover working capital, or fund growth?';
   }
 
@@ -1115,6 +1290,7 @@ function repairSuggestionsForInboundContext(input: {
   suggestions: ResolvedAISuggestion[];
   classification?: string | null;
   latestInboundText?: string;
+  recentInboundContextText?: string;
   previousOutboundText?: string;
   sharedEmail?: string | null;
   noteBodies?: string[];
@@ -1123,6 +1299,7 @@ function repairSuggestionsForInboundContext(input: {
   productContext?: string | null;
 }): ResolvedAISuggestion[] {
   const latestInboundLower = String(input.latestInboundText || '').toLowerCase();
+  const recentInboundLower = String(input.recentInboundContextText || input.latestInboundText || '').toLowerCase();
   const sharedEmail = String(input.sharedEmail || '').trim();
   const noteBodies = normalizeAiNoteBodies(input.noteBodies);
   const knownEmail = extractEmailAddress(String(input.knownEmail || '').trim());
@@ -1131,12 +1308,16 @@ function repairSuggestionsForInboundContext(input: {
     sharedEmail,
     knownEmail,
   });
-  const scheduledCallLabel = extractScheduledCallLabel(String(input.latestInboundText || ''));
-  const followupWindowLabel = extractFollowupWindowLabel(String(input.latestInboundText || ''));
+  const scheduledCallLabel = extractScheduledCallLabel(
+    String(input.recentInboundContextText || input.latestInboundText || ''),
+  );
+  const followupWindowLabel = extractFollowupWindowLabel(
+    String(input.recentInboundContextText || input.latestInboundText || ''),
+  );
   const scheduledCallContext =
     !!scheduledCallLabel &&
     /\b(call|callback|call back|quick call|phone)\b/.test(
-      `${latestInboundLower} ${String(input.previousOutboundText || '').toLowerCase()}`,
+      `${recentInboundLower} ${String(input.previousOutboundText || '').toLowerCase()}`,
     );
   const followupWindowContext = !!followupWindowLabel;
   const amountDisclosureContext =
@@ -1145,24 +1326,28 @@ function repairSuggestionsForInboundContext(input: {
       String(input.previousOutboundText || ''),
     ) != null;
   const paymentTermsContext = hasPaymentTermsContext(latestInboundLower);
+  const sendTermsIntentContext = hasSendTermsIntent(latestInboundLower);
+  const hasKnownEmailContext = !!(
+    extractEmailAddress(String(input.latestInboundText || '').trim()) ||
+    extractEmailAddress(sharedEmail) ||
+    knownEmail ||
+    input.emailReceived
+  );
   const phoneCallLogisticsContext = hasPhoneCallLogisticsContext(
     latestInboundLower,
     String(input.previousOutboundText || '').toLowerCase(),
+    recentInboundLower,
   );
   const creditScoreContext = hasCreditScoreContext(
     latestInboundLower,
     String(input.previousOutboundText || '').toLowerCase(),
   );
   const emailIntentContext =
-    !!(
-      extractEmailAddress(String(input.latestInboundText || '').trim()) ||
-      extractEmailAddress(sharedEmail) ||
-      knownEmail ||
-      input.emailReceived
-    ) && /email|terms?|funding link|details/.test(String(input.previousOutboundText || '').toLowerCase());
+    hasKnownEmailContext &&
+    /email|terms?|funding link|details/.test(String(input.previousOutboundText || '').toLowerCase());
   const callbackWithNotes =
     noteBodies.length > 0 &&
-    /tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording/.test(latestInboundLower);
+    /tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording/.test(recentInboundLower);
   const needsContextualRepair =
     !!sharedEmail ||
     !!knownEmail ||
@@ -1171,11 +1356,12 @@ function repairSuggestionsForInboundContext(input: {
     followupWindowContext ||
     amountDisclosureContext ||
     paymentTermsContext ||
+    sendTermsIntentContext ||
     phoneCallLogisticsContext ||
     creditScoreContext ||
     callbackWithNotes ||
-    /predatory|another mca|stacked mca|daily pay|weekly pay|fee|fees|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
-      latestInboundLower,
+    /predatory|another mca|stacked mca|daily pay|weekly pay|fee|fees|payoff|prepay|penalty|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
+      recentInboundLower,
     );
   if (!needsContextualRepair) return input.suggestions;
 
@@ -1183,6 +1369,7 @@ function repairSuggestionsForInboundContext(input: {
     buildDeterministicFallbackSuggestionText({
       classification: input.classification,
       latestInboundText: input.latestInboundText,
+      recentInboundContextText: input.recentInboundContextText,
       previousOutboundText: input.previousOutboundText,
       sharedEmail,
       noteBodies,
@@ -1203,6 +1390,7 @@ function repairSuggestionsForInboundContext(input: {
       (followupWindowContext && suggestionLooksContradictoryToFollowupWindow(suggestion.text)) ||
       (amountDisclosureContext && suggestionLooksStaleForAmountDisclosure(suggestion.text)) ||
       (paymentTermsContext && suggestionLooksStaleForPaymentTerms(suggestion.text)) ||
+      (sendTermsIntentContext && suggestionLooksStaleForSendTermsIntent(suggestion.text, hasKnownEmailContext)) ||
       (phoneCallLogisticsContext && suggestionLooksStaleForPhoneCallLogistics(suggestion.text)) ||
       (creditScoreContext && suggestionLooksStaleForCreditScore(suggestion.text)) ||
       (emailIntentContext && suggestionLooksContradictoryToEmailIntent(suggestion.text)) ||
@@ -1251,6 +1439,7 @@ export function resolveAiSuggestions(input: {
 }): ResolvedAISuggestion[] {
   const chronologicalMessages = Array.isArray(input.messages) ? input.messages : [];
   const latestInboundText = extractLatestInboundText(chronologicalMessages);
+  const recentInboundContextText = extractRecentInboundContextText(chronologicalMessages);
   const previousOutboundText = extractPreviousOutboundText(chronologicalMessages);
   const sharedEmail = extractConversationEmail(chronologicalMessages);
   const noteBodies = normalizeAiNoteBodies(input.notes);
@@ -1260,6 +1449,7 @@ export function resolveAiSuggestions(input: {
     suggestions: normalizeAiSuggestions(input.suggestions),
     classification: input.classification,
     latestInboundText,
+    recentInboundContextText,
     previousOutboundText,
     sharedEmail,
     noteBodies,
@@ -1273,6 +1463,7 @@ export function resolveAiSuggestions(input: {
     suggestions: normalizeAiSuggestions(input.fallbackSuggestions),
     classification: input.classification,
     latestInboundText,
+    recentInboundContextText,
     previousOutboundText,
     sharedEmail,
     noteBodies,
@@ -1298,6 +1489,7 @@ export function resolveAiSuggestions(input: {
     ]),
     classification: input.classification,
     latestInboundText,
+    recentInboundContextText,
     previousOutboundText,
     sharedEmail,
     noteBodies,
@@ -1311,6 +1503,7 @@ export function resolveAiSuggestions(input: {
     buildDeterministicFallbackSuggestionText({
       classification: input.classification,
       latestInboundText,
+      recentInboundContextText,
       previousOutboundText,
       sharedEmail,
       noteBodies,
@@ -1365,6 +1558,28 @@ export class AIService {
     const model = String(map[modelKey] || DEFAULT_MODELS[provider]);
 
     return { provider, apiKey, model };
+  }
+
+  private static async getAnthropicCohortConfig(): Promise<AIConfig | null> {
+    const settings = await prisma.systemSetting.findMany({
+      where: {
+        key: {
+          in: ['anthropicApiKey', 'anthropicModel'],
+        },
+      },
+    });
+    const map = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
+    const apiKey = String(map.anthropicApiKey || '');
+
+    if (!apiKey) {
+      logger.warn('AI cohort reasoning: Anthropic API key missing');
+      return null;
+    }
+
+    const configuredModel = String(map.anthropicModel || '');
+    const model = configuredModel.includes('claude-sonnet-4-5') ? configuredModel : DEFAULT_MODELS.anthropic;
+
+    return { provider: 'anthropic', apiKey, model };
   }
 
   private static async getClassifierPromptVersion(): Promise<string> {
@@ -1433,6 +1648,41 @@ export class AIService {
     }
   }
 
+  static async generateCohortReasoning(input: CohortReasoningInput): Promise<{ text: string; model: string } | null> {
+    const cfg = await AIService.getAnthropicCohortConfig();
+    if (!cfg) return null;
+
+    const systemPrompt = [
+      'You write AI Retarget cohort reasoning for SCL Capital campaign operators.',
+      'Use Claude Sonnet 4.5 reasoning to produce one or two business-specific sentences.',
+      'Do not mention private lead names, phone numbers, or emails.',
+      'Be concrete about why this cohort should be prioritized and mention capacity/cooldown only when relevant.',
+    ].join(' ');
+
+    const userPrompt = JSON.stringify({
+      task: 'Generate concise cohort reasoning for an SMS retarget recommendation.',
+      cohort: {
+        id: input.cohortId,
+        type: input.cohortType,
+        title: input.title,
+      },
+      criteria: input.criteria,
+      counts: input.counts,
+      capacity: input.capacity,
+      fundedHistoryAggregate: input.historicalAnchor,
+      anonymizedSampleLeads: input.sampleLeads,
+      output: 'One or two sentences. No markdown. No bullets.',
+    });
+
+    const raw = await AIService.callLLM(cfg, systemPrompt, [{ role: 'user', content: userPrompt }], {
+      maxTokens: 260,
+      temperature: 0.2,
+    });
+    const text = normalizeCohortReasoningText(raw);
+
+    return text ? { text, model: cfg.model } : null;
+  }
+
   // ────────────────────────────────────────────────────────────────
   //  Phase 1 AI Inbox: classifyInbound() — main entry point
   // ────────────────────────────────────────────────────────────────
@@ -1463,6 +1713,7 @@ OWNER NOTES: Treat owner/admin/rep notes as first-class context. If notes mentio
 TWILIO-SAFE PHRASING: Never ask "Do you own property?", "Do you own any property?", or "Do you own property with equity?" in a suggested SMS. For HELOC, explain the option and ask for funding amount or preferred next step instead.
 EMAIL SHARE RULE: If the latest inbound is an email address or confirms an email request, treat it as buying intent, not hostility, even if the email local-part contains slang or profanity.
 REVENUE NORMALIZATION: annual ÷ 12 = monthly. Range → midpoint. Always store both monthly and annual as integers (no $ or commas).
+HELOC FLAG RULE: Set helocFitFlag=true only when the lead explicitly fits/asks for HELOC context. Set helocFitFlag=false only when there is explicit mismatch/decline for HELOC. Otherwise set helocFitFlag=null (never default to false).
 BEST SUGGESTION LOGIC: HOT + urgency = aggressive close. WARM + evaluating = consultative. Always exactly 2 suggestions: one BEST, one ALT. Never 3.
 
 CLASSIFICATION RULES (apply strictly to the LATEST inbound message):
@@ -1983,7 +2234,9 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       helocFitFlag:
         typeof rawSignals.helocFitFlag === 'boolean'
           ? rawSignals.helocFitFlag
-          : String(rawSignals.product || '').toUpperCase() === 'HELOC',
+          : String(rawSignals.product || '').toUpperCase() === 'HELOC'
+            ? true
+            : null,
       staleState,
       suggestedReply,
       suggestedFollowupTime,
@@ -2021,13 +2274,27 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const finalPreviousOutboundText = extractPreviousOutboundText(messageTextContext);
     const finalSuggestedReplyText = String(signals.suggestedReply || '');
     const finalLatestInboundLower = lastInboundBody.toLowerCase();
+    const finalRecentInboundContextText = extractRecentInboundContextText(messageTextContext);
+    const finalRecentInboundLower = finalRecentInboundContextText.toLowerCase();
     const hasAmountDisclosureContext =
       extractAmountDisclosureFromContext(lastInboundBody, finalPreviousOutboundText) != null;
+    const hasSendTermsIntentContext = hasSendTermsIntent(finalLatestInboundLower);
+    const hasKnownEmailForSendTerms = !!(
+      extractConversationEmail(messageTextContext) ||
+      extractEmailAddress(conv.lead?.email || '') ||
+      conv.emailReceived
+    );
     const shouldForceCurrentTopicReply =
       (hasAmountDisclosureContext && suggestionLooksStaleForAmountDisclosure(finalSuggestedReplyText)) ||
       (hasPaymentTermsContext(finalLatestInboundLower) &&
         suggestionLooksStaleForPaymentTerms(finalSuggestedReplyText)) ||
-      (hasPhoneCallLogisticsContext(finalLatestInboundLower, finalPreviousOutboundText.toLowerCase()) &&
+      (hasSendTermsIntentContext &&
+        suggestionLooksStaleForSendTermsIntent(finalSuggestedReplyText, hasKnownEmailForSendTerms)) ||
+      (hasPhoneCallLogisticsContext(
+        finalLatestInboundLower,
+        finalPreviousOutboundText.toLowerCase(),
+        finalRecentInboundLower,
+      ) &&
         suggestionLooksStaleForPhoneCallLogistics(finalSuggestedReplyText)) ||
       (hasCreditScoreContext(finalLatestInboundLower, finalPreviousOutboundText.toLowerCase()) &&
         suggestionLooksStaleForCreditScore(finalSuggestedReplyText));
@@ -2037,6 +2304,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
         buildDeterministicFallbackSuggestionText({
           classification,
           latestInboundText: lastInboundBody,
+          recentInboundContextText: finalRecentInboundContextText,
           previousOutboundText: finalPreviousOutboundText,
           sharedEmail: extractConversationEmail(messageTextContext),
           noteBodies: conv.notes.map((note) => note.body),

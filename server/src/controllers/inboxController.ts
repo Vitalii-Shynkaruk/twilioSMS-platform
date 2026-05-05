@@ -346,7 +346,13 @@ export class InboxController {
   private static extractHelocFitFromText(text: string): boolean | null {
     const normalized = text.toLowerCase();
     if (/\b(heloc|home equity|home-equity)\b/.test(normalized)) return true;
-    if (/\b(line of credit|loc)\b/.test(normalized)) return false;
+    if (
+      /\b(no\s+heloc|not\s+(?:a\s+)?heloc|dont\s+want\s+heloc|don't\s+want\s+heloc|do\s+not\s+want\s+heloc|no\s+home\s+equity|do\s+not\s+own\s+(?:a\s+)?home|renting|renter)\b/.test(
+        normalized,
+      )
+    ) {
+      return false;
+    }
     return null;
   }
 
@@ -392,9 +398,9 @@ export class InboxController {
       InboxController.extractRevenueMonthlyFromText(textCorpus) ?? conversation.extractedRevenue ?? null;
     const askValue = InboxController.extractAskFromText(textCorpus) ?? conversation.extractedAsk ?? null;
     const industry = InboxController.extractIndustryFromText(textCorpus) ?? conversation.extractedIndustry ?? null;
+    const extractedHelocFit = InboxController.extractHelocFitFromText(textCorpus);
     const helocFitFlag =
-      InboxController.extractHelocFitFromText(textCorpus) ??
-      (typeof conversation.helocFitFlag === 'boolean' ? conversation.helocFitFlag : null);
+      extractedHelocFit !== null ? extractedHelocFit : conversation.helocFitFlag === true ? true : null;
 
     const currentSignals = ((conversation.aiSignals as Record<string, unknown> | null) || {}) as Record<
       string,
@@ -410,7 +416,11 @@ export class InboxController {
     }
     if (askValue) nextSignals.ask = askValue;
     if (industry) nextSignals.industry = industry;
-    if (typeof helocFitFlag === 'boolean') nextSignals.helocFitFlag = helocFitFlag;
+    if (typeof helocFitFlag === 'boolean') {
+      nextSignals.helocFitFlag = helocFitFlag;
+    } else {
+      delete nextSignals.helocFitFlag;
+    }
 
     nextSignals.reclassificationReason = 'note_added_fastpath';
     nextSignals.reclassifiedAt = new Date().toISOString();
@@ -513,14 +523,78 @@ export class InboxController {
         const ai = await AIService.classifyInbound(conversationId);
         if (!ai) return;
 
+        const existingConversation = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: {
+            aiSignals: true,
+            extractedIndustry: true,
+            helocFitFlag: true,
+            extractedRevenue: true,
+            extractedAsk: true,
+          },
+        });
+        const existingSignals = ((existingConversation?.aiSignals as Record<string, unknown> | null) || {}) as Record<
+          string,
+          unknown
+        >;
+        const incomingSignals = (ai.signals as Record<string, unknown>) || {};
+        const incomingIndustry =
+          typeof incomingSignals.industry === 'string' && incomingSignals.industry.trim()
+            ? incomingSignals.industry.trim()
+            : null;
+        const incomingAsk =
+          typeof incomingSignals.ask === 'string' && incomingSignals.ask.trim() ? incomingSignals.ask.trim() : null;
+        const incomingRevenue =
+          typeof incomingSignals.revenueMonthly === 'number' ? Math.round(incomingSignals.revenueMonthly) : null;
+        const incomingHeloc = typeof incomingSignals.helocFitFlag === 'boolean' ? incomingSignals.helocFitFlag : null;
+
+        const existingIndustry =
+          typeof existingSignals.industry === 'string' && existingSignals.industry.trim()
+            ? existingSignals.industry.trim()
+            : existingConversation?.extractedIndustry || null;
+        const existingAsk =
+          typeof existingSignals.ask === 'string' && existingSignals.ask.trim()
+            ? existingSignals.ask.trim()
+            : existingConversation?.extractedAsk || null;
+        const existingRevenue =
+          typeof existingSignals.revenueMonthly === 'number'
+            ? Math.round(existingSignals.revenueMonthly)
+            : existingConversation?.extractedRevenue || null;
+        const existingHeloc =
+          typeof existingSignals.helocFitFlag === 'boolean'
+            ? existingSignals.helocFitFlag
+            : typeof existingConversation?.helocFitFlag === 'boolean'
+              ? existingConversation.helocFitFlag
+              : null;
+
+        const resolvedIndustry = incomingIndustry || existingIndustry || null;
+        const resolvedAsk = incomingAsk || existingAsk || null;
+        const resolvedRevenue = incomingRevenue ?? existingRevenue ?? null;
+        const resolvedHeloc = typeof incomingHeloc === 'boolean' ? incomingHeloc : existingHeloc === true ? true : null;
+
         const persistedSignals = {
-          ...(ai.signals as Record<string, unknown>),
+          ...existingSignals,
+          ...incomingSignals,
+          ...(resolvedIndustry ? { industry: resolvedIndustry } : {}),
+          ...(resolvedAsk ? { ask: resolvedAsk } : {}),
+          ...(typeof resolvedRevenue === 'number'
+            ? {
+                revenueMonthly: resolvedRevenue,
+                revenueAnnual: resolvedRevenue * 12,
+              }
+            : {}),
+          ...(typeof resolvedHeloc === 'boolean' ? { helocFitFlag: resolvedHeloc } : { helocFitFlag: null }),
           classifierPromptVersion: ai.promptVersion,
           reclassificationReason: reason,
           reclassifiedAt: new Date().toISOString(),
           reclassifiedByUserId: req.user?.id || null,
         };
-        const aiPersistence = InboxController.buildAiPersistenceFields(persistedSignals);
+        const aiPersistence = {
+          extractedIndustry: resolvedIndustry,
+          helocFitFlag: resolvedHeloc,
+          extractedRevenue: resolvedRevenue,
+          extractedAsk: resolvedAsk,
+        };
 
         await prisma.conversation.update({
           where: { id: conversationId },

@@ -42,6 +42,45 @@ describe('AI suggestion policy', () => {
     expect(result.triggers.contactInfoWithContext).toBe(true);
   });
 
+  it('должна повышать короткое "yes" до HOT, если перед этим был продуктовый outreach', () => {
+    const result = resolveDeterministicClassification({
+      classification: 'WARM',
+      latestInboundText: 'Yes',
+      previousOutboundText: "I'm waiving all fees this week. Do you want updated terms?",
+    });
+
+    expect(result.classification).toBe('HOT');
+    expect(result.triggers.strongYes).toBe(true);
+    expect(result.triggers.strongYesWithProductContext).toBe(true);
+  });
+
+  it.each(['Yes.', 'YES!!!', 'yep'])(
+    'должна повышать короткое подтверждение "%s" до HOT, если перед этим был продуктовый outreach',
+    (reply) => {
+      const result = resolveDeterministicClassification({
+        classification: 'WARM',
+        latestInboundText: reply,
+        previousOutboundText: "I'm waiving all fees this week. Do you want updated terms?",
+      });
+
+      expect(result.classification).toBe('HOT');
+      expect(result.triggers.strongYes).toBe(true);
+      expect(result.triggers.strongYesWithProductContext).toBe(true);
+    },
+  );
+
+  it('не должна повышать изолированное "yes" до HOT без продуктового контекста и без дополнительных сигналов', () => {
+    const result = resolveDeterministicClassification({
+      classification: 'WARM',
+      latestInboundText: 'yes',
+      previousOutboundText: 'Checking in.',
+    });
+
+    expect(result.classification).toBe('WARM');
+    expect(result.triggers.strongYes).toBe(true);
+    expect(result.triggers.strongYesWithProductContext).toBe(false);
+  });
+
   it('должна переопределять ошибочный DEAD в HOT, если inbound это email на прямой email request', () => {
     const result = resolveDeterministicClassification({
       classification: 'DEAD',
@@ -167,6 +206,15 @@ describe('AI suggestion policy', () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].text).toMatch(/i have your email|sending (?:the )?(?:funding link|terms)/i);
     expect(suggestions[0].text).not.toMatch(/best email/i);
+  });
+
+  it('должна распознавать email с пробелами вокруг @ и точки', () => {
+    const messages = [
+      { direction: 'OUTBOUND', body: 'best email?' },
+      { direction: 'INBOUND', body: 'pelucavenice @ gmail . com' },
+    ];
+
+    expect(extractConversationEmail(messages)).toBe('pelucavenice@gmail.com');
   });
 
   it('должна выбирать самый свежий inbound email из истории треда', () => {
@@ -300,6 +348,126 @@ describe('AI suggestion policy', () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].text).toMatch(/fees depend|cleanest quote|how much you need/i);
     expect(suggestions[0].text).not.toMatch(/thanks for the update/i);
+  });
+
+  it('должна чинить stale funding-link suggestion, если lead спрашивает про early payoff penalty', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'I sent a breakdown for $100k and docs needed to proceed. Can you confirm receipt?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Is there an early payoff penalty?',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/no early payoff penalty|pay down early without a fee|payoff terms/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|what problem are you trying to solve/i);
+  });
+
+  it('должна чинить stale funding-link suggestion, если lead прислал "call now" и номер отдельным inbound', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10yr agreement be what your business needs? Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Can we do a call now?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Mike 7046047009',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/call now|call right away|on that number/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|what problem are you trying to solve/i);
+  });
+
+  it('должна при явном intent "send terms" отдавать funding-link suggestion, а не rate/payment branch', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Fair question. Rate depends on credit and collateral...',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10yr agreement be what your business needs? Best email to send terms?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Please send terms to jay@seamoc.com',
+        },
+      ],
+      knownEmail: 'jay@seamoc.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/sending (?:the )?funding link|i have your email/i);
+    expect(suggestions[0].text).not.toMatch(/rate depends|payment pressure|fund growth/i);
+  });
+
+  it('должна при "send terms" без email просить email, а не уходить в rate/payment branch', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Could a flexible 10yr agreement be what your business needs?',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'please send terms',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/best email|send terms right away/i);
+    expect(suggestions[0].text).not.toMatch(/rate depends|payment pressure|fund growth/i);
   });
 
   it('должна чинить stale email/funding suggestion, если текущий inbound спрашивает про payments/rate/years', () => {

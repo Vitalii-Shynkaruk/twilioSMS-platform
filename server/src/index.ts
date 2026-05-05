@@ -29,6 +29,7 @@ import { stopAutomationWorker } from './jobs/automationWorker';
 import { startDealCron, stopDealCron } from './jobs/dealCron';
 import { startFollowupStateCron, stopFollowupStateCron } from './jobs/followupStateCron';
 import { startReconciliationCron, stopReconciliationCron } from './jobs/reconciliationCron';
+import { startAiCohortCron, stopAiCohortCron } from './jobs/aiCohortCron';
 import { ensureDefaultTeamUsers } from './bootstrap/defaultUsers';
 
 const httpServer = createServer(app);
@@ -96,19 +97,20 @@ io.on('connection', (socket) => {
       // lead-owned, or if they sent outbound on a conversation that is still unassigned.
       if (user?.role === 'REP') {
         const ownsByAssignment =
-          conversation.assignedRepId === authenticatedUserId || conversation.lead?.assignedRepId === authenticatedUserId;
+          conversation.assignedRepId === authenticatedUserId ||
+          conversation.lead?.assignedRepId === authenticatedUserId;
         const hasAssignedOwner = !!(conversation.assignedRepId || conversation.lead?.assignedRepId);
         const ownsByOutbound = ownsByAssignment
           ? true
           : hasAssignedOwner
-          ? false
-          : (await prisma.message.count({
-              where: {
-                conversationId,
-                direction: 'OUTBOUND',
-                sentByUserId: authenticatedUserId,
-              },
-            })) > 0;
+            ? false
+            : (await prisma.message.count({
+                where: {
+                  conversationId,
+                  direction: 'OUTBOUND',
+                  sentByUserId: authenticatedUserId,
+                },
+              })) > 0;
 
         if (!ownsByOutbound) {
           logger.warn(`Socket: REP ${authenticatedUserId} denied access to conversation ${conversationId}`);
@@ -167,6 +169,7 @@ async function start() {
     startDealCron();
     startFollowupStateCron();
     startReconciliationCron();
+    startAiCohortCron();
 
     httpServer.listen(config.port, () => {
       logger.info(`🚀 Server running on port ${config.port}`);
@@ -229,6 +232,7 @@ async function gracefulShutdown(signal: string) {
   stopDealCron();
   stopFollowupStateCron();
   stopReconciliationCron();
+  stopAiCohortCron();
 
   // Stop accepting new connections
   httpServer.close(() => {

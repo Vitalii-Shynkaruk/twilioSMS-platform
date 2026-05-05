@@ -987,19 +987,10 @@ function MessageThread({
     if (!hasEmailRecipient) return;
     const to = encodeURIComponent(emailRecipient);
     const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}`;
-
-    if (!document.body) {
+    const popup = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!popup) {
       window.location.assign(url);
-      return;
     }
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
   };
 
   return (

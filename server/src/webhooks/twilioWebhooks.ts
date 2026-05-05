@@ -32,14 +32,28 @@ interface InboundAiClassificationJob {
   repId: string | null;
   inboundBody: string;
   fromNumber: string;
+  inboundReceivedAt?: string;
 }
 
 async function processInboundAiClassification(jobData: InboundAiClassificationJob): Promise<void> {
-  const { conversationId, repId, inboundBody, fromNumber } = jobData;
+  const { conversationId, repId, inboundBody, fromNumber, inboundReceivedAt } = jobData;
 
   const convForLead = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { lead: { select: { firstName: true, lastName: true } } },
+    select: {
+      lead: { select: { firstName: true, lastName: true } },
+      aiSignals: true,
+      extractedIndustry: true,
+      helocFitFlag: true,
+      extractedRevenue: true,
+      extractedAsk: true,
+      messages: {
+        where: { direction: 'INBOUND' },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { createdAt: true },
+      },
+    },
   });
   const leadFirst = convForLead?.lead?.firstName || '';
   const leadLast = convForLead?.lead?.lastName || '';
@@ -48,29 +62,85 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
   const ai = await AIService.classifyInbound(conversationId);
   if (!ai) return;
 
+  const existingSignals = ((convForLead?.aiSignals as Record<string, unknown> | null) || {}) as Record<string, unknown>;
+  const incomingSignals = (ai.signals as Record<string, unknown>) || {};
+  const incomingIndustry =
+    typeof incomingSignals.industry === 'string' && incomingSignals.industry.trim()
+      ? incomingSignals.industry.trim()
+      : null;
+  const incomingAsk =
+    typeof incomingSignals.ask === 'string' && incomingSignals.ask.trim() ? incomingSignals.ask.trim() : null;
+  const incomingRevenue =
+    typeof incomingSignals.revenueMonthly === 'number' ? Math.round(incomingSignals.revenueMonthly) : null;
+  const incomingHeloc = typeof incomingSignals.helocFitFlag === 'boolean' ? incomingSignals.helocFitFlag : null;
+
+  const existingIndustry =
+    typeof existingSignals.industry === 'string' && existingSignals.industry.trim()
+      ? existingSignals.industry.trim()
+      : convForLead?.extractedIndustry || null;
+  const existingAsk =
+    typeof existingSignals.ask === 'string' && existingSignals.ask.trim()
+      ? existingSignals.ask.trim()
+      : convForLead?.extractedAsk || null;
+  const existingRevenue =
+    typeof existingSignals.revenueMonthly === 'number'
+      ? Math.round(existingSignals.revenueMonthly)
+      : convForLead?.extractedRevenue || null;
+  const existingHeloc =
+    typeof existingSignals.helocFitFlag === 'boolean'
+      ? existingSignals.helocFitFlag
+      : typeof convForLead?.helocFitFlag === 'boolean'
+        ? convForLead.helocFitFlag
+        : null;
+
+  const resolvedIndustry = incomingIndustry || existingIndustry || null;
+  const resolvedAsk = incomingAsk || existingAsk || null;
+  const resolvedRevenue = incomingRevenue ?? existingRevenue ?? null;
+  const resolvedHeloc = typeof incomingHeloc === 'boolean' ? incomingHeloc : existingHeloc === true ? true : null;
+
   const persistedSignals: Record<string, unknown> = {
-    ...(ai.signals as Record<string, unknown>),
+    ...existingSignals,
+    ...incomingSignals,
+    ...(resolvedIndustry ? { industry: resolvedIndustry } : {}),
+    ...(resolvedAsk ? { ask: resolvedAsk } : {}),
+    ...(typeof resolvedRevenue === 'number'
+      ? {
+          revenueMonthly: resolvedRevenue,
+          revenueAnnual: resolvedRevenue * 12,
+        }
+      : {}),
+    ...(typeof resolvedHeloc === 'boolean' ? { helocFitFlag: resolvedHeloc } : { helocFitFlag: null }),
     classifierPromptVersion: ai.promptVersion,
   };
-  const extractedIndustry =
-    typeof persistedSignals.industry === 'string' && persistedSignals.industry.trim()
-      ? persistedSignals.industry.trim()
-      : null;
-  const helocFitFlag = typeof persistedSignals.helocFitFlag === 'boolean' ? persistedSignals.helocFitFlag : null;
-  const extractedRevenue =
-    typeof persistedSignals.revenueMonthly === 'number' ? Math.round(persistedSignals.revenueMonthly) : null;
-  const extractedAsk =
-    typeof persistedSignals.ask === 'string' && persistedSignals.ask.trim() ? persistedSignals.ask.trim() : null;
+  const extractedIndustry = resolvedIndustry;
+  const helocFitFlag = resolvedHeloc;
+  const extractedRevenue = resolvedRevenue;
+  const extractedAsk = resolvedAsk;
 
   const phase1Lean = (process.env.PHASE1_LEAN ?? 'false').toLowerCase() !== 'false';
   let alertSent = false;
+  const inboundTs = inboundReceivedAt ? new Date(inboundReceivedAt).getTime() : NaN;
+  const latestInboundAt = convForLead?.messages?.[0]?.createdAt
+    ? new Date(convForLead.messages[0].createdAt).getTime()
+    : NaN;
+  const isStaleInboundForAlert =
+    Number.isFinite(inboundTs) && Number.isFinite(latestInboundAt) && latestInboundAt - inboundTs > 5000;
   if (ai.classification === 'HOT' && repId) {
-    const guardKey = `hot-alert:${conversationId}`;
-    const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
-    if (guard === 'OK') {
-      alertSent = await MobileAlertService.sendHotAlert(repId, leadName, inboundBody);
+    if (isStaleInboundForAlert) {
+      logger.info('HOT-alert skipped: stale inbound classification job', {
+        conversationId,
+        repId,
+        inboundReceivedAt,
+        latestInboundAt: convForLead?.messages?.[0]?.createdAt?.toISOString?.() || null,
+      });
     } else {
-      logger.info('HOT-alert: rate-limited (3 min window)', { conversationId });
+      const guardKey = `hot-alert:${conversationId}`;
+      const guard = await redis.set(guardKey, '1', 'EX', 180, 'NX');
+      if (guard === 'OK') {
+        alertSent = await MobileAlertService.sendHotAlert(repId, leadName, inboundBody);
+      } else {
+        logger.info('HOT-alert: rate-limited (3 min window)', { conversationId });
+      }
     }
   }
 
@@ -371,7 +441,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       }
 
       // Save inbound message
-      await prisma.message.create({
+      const inboundMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           direction: 'INBOUND',
@@ -382,6 +452,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
           twilioMessageSid: MessageSid,
           sentAt: new Date(),
         },
+        select: { createdAt: true },
       });
 
       // Update conversation
@@ -565,6 +636,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
             repId: conversation.assignedRepId || null,
             inboundBody: Body,
             fromNumber: From,
+            inboundReceivedAt: inboundMessage.createdAt.toISOString(),
           })
           .catch((err) =>
             logger.error('Failed to enqueue inbound AI classification', {
@@ -638,7 +710,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
         },
       });
 
-      await prisma.message.create({
+      const inboundMessage = await prisma.message.create({
         data: {
           conversationId: conversation.id,
           direction: 'INBOUND',
@@ -649,6 +721,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
           twilioMessageSid: MessageSid,
           sentAt: new Date(),
         },
+        select: { createdAt: true },
       });
 
       if (matchedDeal?.id && shouldResetDealEngagement) {
@@ -683,6 +756,23 @@ router.post('/inbound', async (req: Request, res: Response) => {
           },
         });
         io.to(`inbox:${conversation.assignedRepId}`).emit('new-message', { conversation: updatedConversation });
+      }
+
+      if (config.ai.classificationEnabled) {
+        void inboundAiClassificationQueue
+          .add('classify-inbound', {
+            conversationId: conversation.id,
+            repId: conversation.assignedRepId || null,
+            inboundBody: Body,
+            fromNumber: From,
+            inboundReceivedAt: inboundMessage.createdAt.toISOString(),
+          })
+          .catch((err) =>
+            logger.error('Failed to enqueue inbound AI classification (new lead flow)', {
+              conversationId: conversation.id,
+              error: err.message,
+            }),
+          );
       }
     }
 

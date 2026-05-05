@@ -1,0 +1,216 @@
+{
+  "gate": "M2.3 AI Retarget cache, persistence, and cron",
+  "date": "2026-05-04",
+  "result": "passed",
+  "scope": {
+    "implemented": [
+      "LeadCohort Prisma model mapped to lead_cohorts",
+      "24h active cache lookup using expiresAt > now",
+      "Anthropic Claude Sonnet 4.5 cohort reasoning path with deterministic fallback when key is missing",
+      "Reasoning prompt includes criteria, anonymized sample leads, funded history aggregate, counts, and capacity",
+      "LeadCohort snapshot stores user, cohort type, title, description, query JSON, source attribution, predicted reply rate, expected funded, historical anchor, AI reasoning, counts, cap metadata, warnings, sample leads, lead ids, and expiry",
+      "15 minute AI cohort cron connected to server startup and graceful shutdown",
+      "Cron runs across active ADMIN, MANAGER, and REP users and isolates failures per user/cohort",
+      "AI Build Campaign button opens the existing campaign modal with cohort name, message, and resolved lead set preloaded",
+      "AI modal submit calls the AI cohort build endpoint so campaign lineage is preserved",
+      "Campaigns v3 prototype retained-scope compare passed for AI Retarget Suggestions, three cohort cards, All Campaigns, AI badge, lineage marker, and no scope-creep blocks"
+    ],
+    "notClaimed": [
+      "Full shell-wide pixel-perfect match is not claimed because the retained M2 scope is the Campaigns AI Retarget section, not the whole app chrome",
+      "Full live authenticated admin/rep AI cohort browser smoke remains open until production credentials are available"
+    ]
+  },
+  "filesChanged": [
+    "server/prisma/schema.prisma",
+    "server/src/controllers/campaignController.ts",
+    "server/src/services/aiService.ts",
+    "server/src/jobs/aiCohortCron.ts",
+    "server/src/index.ts",
+    "client/src/pages/CampaignsPage.tsx",
+    "server/tests/campaignAiCohorts.test.ts",
+    "server/tests/aiCohortCron.test.ts"
+  ],
+  "validation": {
+    "prismaGenerate": {
+      "command": "cd server && npx prisma generate",
+      "result": "passed"
+    },
+    "focusedTests": {
+      "command": "cd server && npx vitest run tests/campaignAiCohorts.test.ts tests/aiCohortCron.test.ts",
+      "result": "passed",
+      "testFiles": 2,
+      "tests": 8,
+      "notes": ["Redis ECONNREFUSED warnings are expected in local focused tests and did not fail the suite"]
+    },
+    "rootBuild": {
+      "command": "npm run build",
+      "result": "passed",
+      "coverage": ["server tsc", "client tsc", "vite production build"]
+    },
+    "vscodeProblems": {
+      "result": "passed",
+      "errors": 0,
+      "checkedFiles": [
+        "server/src/controllers/campaignController.ts",
+        "server/src/services/aiService.ts",
+        "server/src/jobs/aiCohortCron.ts",
+        "server/src/index.ts",
+        "server/tests/campaignAiCohorts.test.ts",
+        "server/tests/aiCohortCron.test.ts",
+        "server/prisma/schema.prisma"
+      ]
+    },
+    "mockedBrowserSmoke": {
+      "tooling": "VS Code browser + Playwright route mocks",
+      "url": "http://127.0.0.1:4175/campaigns",
+      "result": "passed",
+      "assertions": {
+        "buildModalVisible": true,
+        "cohortTitleVisible": true,
+        "preloadedLeadCountVisible": true,
+        "namePrefilled": true,
+        "messagePrefilled": true,
+        "buildEndpointCalled": true,
+        "aiCampaignInList": true,
+        "lineageVisible": true,
+        "aiBadgeVisible": true,
+        "noHorizontalOverflow": true
+      }
+    },
+    "campaignActionsRegressionSmoke": {
+      "tooling": "VS Code browser + Playwright route mocks",
+      "url": "http://127.0.0.1:4175/campaigns",
+      "result": "passed",
+      "assertions": {
+        "startCalled": true,
+        "pauseCalled": true,
+        "cancelCalled": true,
+        "deleteCalled": true,
+        "draftStatusUpdated": true,
+        "pausedStatusUpdated": true,
+        "cancelStatusUpdated": true,
+        "deletedCampaignHidden": true,
+        "noHorizontalOverflow": true
+      }
+    },
+    "retargetActionRegressionSmoke": {
+      "tooling": "VS Code browser + Playwright route mocks",
+      "url": "http://127.0.0.1:4175/campaigns",
+      "result": "passed",
+      "assertions": {
+        "retargetPreviewCalled": true,
+        "retargetModalVisible": true,
+        "retargetCreateCalled": true,
+        "retargetCampaignInList": true,
+        "retargetLineageVisible": true,
+        "noHorizontalOverflow": true
+      }
+    },
+    "productionDeploySmoke": {
+      "result": "passed",
+      "backup": "/root/backups/sms_platform_m23_202605040758.sql",
+      "schemaApproach": "Prisma db push stopped on unrelated varchar data-loss warnings; did not use --accept-data-loss. Created only the additive lead_cohorts table with manual SQL.",
+      "checks": {
+        "apiHealth": "https://app.sclcapital.io/api/health returned status ok with database ok and redis ok",
+        "devLoginProductionGuard": "POST /api/auth/dev-login returned 404",
+        "frontendIndex": "https://app.sclcapital.io/ returned 200 with new index-D8Paol87.js",
+        "campaignsAsset": "https://app.sclcapital.io/assets/CampaignsPage-DZQ5tntO.js returned 200",
+        "leadCohortTable": "Prisma leadCohort.count() succeeded on production",
+        "pm2": "sms-api online after restart"
+      }
+    },
+    "campaignsPrototypeScopeSmoke": {
+      "tooling": "VS Code browser + Playwright route mocks + saved screenshots",
+      "prototypeUrl": "https://papaya-swan-76d714.netlify.app/scl_leads_campaigns_scope_v3.html",
+      "actualUrl": "http://127.0.0.1:4175/campaigns?pixel=20260504",
+      "result": "passed",
+      "screenshots": [
+        "audit-screenshots/m23-campaigns-prototype-desktop.png",
+        "audit-screenshots/m23-campaigns-actual-desktop.png",
+        "audit-screenshots/m23-campaigns-actual-mobile.png"
+      ],
+      "desktopAssertions": {
+        "prototypeCampaignsTabVerified": true,
+        "aiRetargetVisible": true,
+        "sourceCampaignBaseVisible": true,
+        "threeCardsVisible": true,
+        "crossRepVisible": true,
+        "restaurantsVisible": true,
+        "renewalsVisible": true,
+        "allCampaignsVisible": true,
+        "aiBuiltCampaignVisible": true,
+        "lineageVisible": true,
+        "noSuppressedZoneInActual": true,
+        "noListManagementRebuildInActual": true,
+        "noExtraCohortBarInActual": true,
+        "noHorizontalOverflow": true
+      },
+      "mobileAssertions": {
+        "viewport": "390x844",
+        "aiRetargetVisible": true,
+        "allCampaignsVisible": true,
+        "threeCardsVisible": true,
+        "lineageVisible": true,
+        "noHorizontalOverflow": true
+      }
+    }
+  },
+  "testEvidence": {
+    "cacheHit": {
+      "verified": true,
+      "assertions": [
+        "active LeadCohort reasoning is reused",
+        "AIService.generateCohortReasoning is not called on cache hit",
+        "lead sample query is skipped on cache hit"
+      ]
+    },
+    "cacheMiss": {
+      "verified": true,
+      "assertions": [
+        "expired cohorts are ignored by expiresAt > now lookup",
+        "Anthropic reasoning input includes funded history and anonymized sample leads",
+        "24h LeadCohort snapshot is written with criteria, counts, cap metadata, warnings, sample leads, and lead ids"
+      ]
+    },
+    "cron": {
+      "verified": true,
+      "assertions": [
+        "active users are selected by role ADMIN/MANAGER/REP",
+        "refresh continues after one user failure",
+        "summary records attempted, refreshed, and failure counts"
+      ]
+    },
+    "uiBuildFlow": {
+      "verified": true,
+      "assertions": [
+        "Build Campaign opens Build AI Campaign modal",
+        "modal preloads cohort title, lead count, name, and message template",
+        "submit calls POST /api/campaigns/ai-cohorts/:cohortId/build",
+        "AI-built campaign appears in All Campaigns with AI badge and lineage marker"
+      ]
+    },
+    "campaignActionsRegression": {
+      "verified": true,
+      "assertions": [
+        "Start action calls existing start endpoint and updates status",
+        "Pause action calls existing pause endpoint and updates status",
+        "Cancel action confirms and calls existing cancel endpoint",
+        "Delete action confirms and removes the campaign from the list",
+        "Retarget action opens preview modal, confirms retarget endpoint, and shows lineage in All Campaigns"
+      ]
+    },
+    "prototypeScopeCompare": {
+      "verified": true,
+      "assertions": [
+        "Prototype Campaigns tab contains retained Phase 3 AI Retarget section",
+        "Actual Campaigns page preserves AI Retarget Suggestions above All Campaigns",
+        "Actual page renders the three retained cohort types from the prototype",
+        "Actual page shows AI-built campaign badge and lineage marker in All Campaigns",
+        "Actual page avoids out-of-scope Suppressed Leads, List Management rebuild, and extra cohort bar"
+      ]
+    }
+  },
+  "remainingM23Risks": [
+    "Full live authenticated admin/rep AI cohort browser smoke still depends on production login credentials or OTP access"
+  ]
+}

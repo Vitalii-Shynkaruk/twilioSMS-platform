@@ -61,6 +61,7 @@ model User {
   numberAssignments NumberAssignment[]
   activityLogs      ActivityLog[]
   tags              Tag[]
+  leadCohorts       LeadCohort[]
 
   // Phase 2 Relations
   primaryDeals      Deal[]          @relation("PrimaryRep")
@@ -947,6 +948,41 @@ model Offer {
 
   @@index([dealId])
   @@map("offers")
+}
+
+model LeadCohort {
+  id                       String   @id @default(cuid())
+  userId                   String
+  cohortType               String
+  title                    String
+  description              String?  @db.Text
+  queryJson                Json
+  sourceAttribution        Json?
+  predictedReplyRate       Float
+  expectedFundedCount      Int
+  historicalAnchor         String   @db.Text
+  aiReasoning              String   @db.Text
+  resolvedLeadCount        Int
+  totalMatchCount          Int
+  eligibleCount            Int
+  capTrimmedCount          Int
+  dailyRemainingCapacity   Int
+  dailyCap                 Int
+  campaignCap              Int
+  cooldownDays             Int
+  warningJson              Json?
+  sampleLeadJson           Json?
+  resolvedLeadIdsJson      Json?
+  expiresAt                DateTime
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([userId, cohortType, expiresAt])
+  @@index([expiresAt])
+  @@map("lead_cohorts")
 }
 
 model FundingEvent {

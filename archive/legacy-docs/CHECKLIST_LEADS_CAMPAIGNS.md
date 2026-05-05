@@ -15,7 +15,7 @@
 
 - [ ] Найти оба метода: `importMappedCSV` и `importCSV`
 - [ ] В массиве `leadsToUpsert` в блоке **`create`** добавить поле:
-  `assignedRepId: req.user?.role === 'REP' ? req.user.id : null`
+      `assignedRepId: req.user?.role === 'REP' ? req.user.id : null`
 - [ ] В блоке **`update`** — НЕ трогать `assignedRepId` (не перебивать чужую собственность)
 - [ ] Проверить: реп AN загружает CSV 50 строк → все 50 видны в его Leads tab сразу
 - [ ] Проверить: admin загружает CSV → лиды создаются с `assignedRepId=null`
@@ -27,7 +27,7 @@
 **Строки:** `list` (312–539), `get`, `getAnalytics`, `start`, `pause`, `cancel`, `syncStatuses`
 
 - [ ] Добавить rep-scope filter во все 7 endpoint'ов:
-  `if (req.user?.role === 'REP') { where.createdById = req.user.id; }`
+      `if (req.user?.role === 'REP') { where.createdById = req.user.id; }`
 - [ ] Проверить: реп AN → видит только свои кампании
 - [ ] Проверить: реп AN → GET /campaigns/{другой-id} → 404 или 403
 - [ ] Проверить: реп AN → POST /campaigns/{другой-id}/start → 403
@@ -99,18 +99,21 @@
 - [ ] Создать сервис с тремя cohort-генераторами:
 
 **Generator 1 — Multi-campaign retarget:**
+
 - [ ] Pulls delivered+no-reply leads из последних 90 дней кампаний репа
 - [ ] Исключает: opted_out, DNC, suppressed, лиды в активных сделках (ENGAGED/QUALIFIED/SUBMITTED)
 - [ ] **7-day cooldown**: исключать лиды, контактированные в любой кампании за последние 7 дней
 - [ ] Условие: `COUNT(DISTINCT campaign_id) >= 1` (хотя бы 1 кампания)
 
 **Generator 2 — New cohort from unsent leads:**
+
 - [ ] Профиль из funded deals репа (industry, state, avg revenue_band)
 - [ ] Лиды без ЕДИНОЙ кампании (`NOT IN campaign_leads`)
 - [ ] **7-day cooldown**: исключать лиды, контактированные за последние 7 дней
 - [ ] Фильтр по industry + state из funded_profile
 
 **Generator 3 — Renewal candidates:**
+
 - [ ] Funded clients в окне 8–12 месяцев после `funded_at`
 - [ ] **30-day cooldown** (строже, т.к. высоко-touch взаимодействие)
 - [ ] Исключает opted_out, suppressed
@@ -230,4 +233,4 @@
 - Per-lead time-zone scheduling
 - Lead enrichment vendor integration (Clay, Apollo)
 
-*Переоценить через 60 дней после деплоя Phase 3*
+_Переоценить через 60 дней после деплоя Phase 3_

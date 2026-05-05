@@ -1,0 +1,82 @@
+{
+  "generatedAt": "2026-05-04T08:10:03.827Z",
+  "area": "M1.1 Passwordless OTP Login/Auth",
+  "productionUrl": "https://app.sclcapital.io/",
+  "status": "partial-pass",
+  "summary": {
+    "smsOtp": "passed",
+    "browserLogin": "passed",
+    "authMe": "passed",
+    "devLoginProductionGuard": "passed",
+    "emailFallback": "blocked"
+  },
+  "smsOtpFlow": {
+    "requestOtp": {
+      "status": 200,
+      "channel": "SMS",
+      "maskedDestination": "*** *** 8874",
+      "expiresInSeconds": 300
+    },
+    "twilioDelivery": {
+      "sidSuffix": "aad850",
+      "status": "delivered",
+      "toMasked": "+19***74",
+      "direction": "outbound-api"
+    },
+    "verifyOtp": {
+      "status": 200,
+      "tokenIssued": true,
+      "refreshTokenIssued": true,
+      "userRole": "ADMIN",
+      "emailMasked": "jb***@securecreditlines.com"
+    },
+    "authMe": {
+      "status": 200,
+      "userRole": "ADMIN",
+      "emailMasked": "jb***@securecreditlines.com"
+    },
+    "consumedOtp": {
+      "channel": "SMS",
+      "destinationMasked": "*** *** 8874",
+      "consumed": true
+    }
+  },
+  "browserLoginFlow": {
+    "entryUrl": "https://app.sclcapital.io/login",
+    "emailMasked": "jb***@securecreditlines.com",
+    "otpStateVisible": true,
+    "maskedDestinationVisible": "*** *** 8874",
+    "redirectAfterVerify": "https://app.sclcapital.io/command-center",
+    "hardNavigationUrl": "https://app.sclcapital.io/command-center?otpSmoke=20260504",
+    "commandCenterLoadedAfterFreshNavigation": true,
+    "verifyButtonGone": true,
+    "notes": [
+      "Initial post-login page used an old cached runtime and requested missing CommandCenterPage-Bwf8sYmq.js.",
+      "Production dist references CommandCenterPage-CIxJmDMm.js and the file exists on the server.",
+      "Cache-busted hard navigation loaded Command Center successfully with no old chunk error visible."
+    ]
+  },
+  "productionSafety": {
+    "health": {
+      "status": "ok",
+      "env": "production",
+      "database": "ok",
+      "redis": "ok"
+    },
+    "devLogin": {
+      "status": 404,
+      "error": "Dev mode login is not available"
+    }
+  },
+  "emailFallbackBlocker": {
+    "requestOtpEmailStatus": 503,
+    "error": "Email sign-in fallback is not configured",
+    "missingConfiguration": ["server SMTP relay or external SMTP credentials", "authorized sender email"],
+    "impact": "Email OTP delivery cannot be validated until production SMTP delivery is confirmed."
+  },
+  "secretsHandling": {
+    "otpCodePrintedInEvidence": false,
+    "jwtPrintedInEvidence": false,
+    "twilioCredentialsPrintedInEvidence": false
+  }
+}

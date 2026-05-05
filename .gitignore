@@ -45,6 +45,9 @@ redis_data/
 *.jpeg
 *.png
 *.zip
+*.rar
+._*
+**/._*
 
 # Server credentials
 .server-credentials

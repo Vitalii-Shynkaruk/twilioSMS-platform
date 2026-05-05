@@ -442,9 +442,9 @@
   100% { transform: scale(1.0)  translate(0,    0); }
 }
 
-@keyframes beamDash {
-  from { stroke-dashoffset: 3180; }
-  to   { stroke-dashoffset: 0; }
+@keyframes beamRun {
+  0%   { offset-distance: 0%; }
+  100% { offset-distance: 100%; }
 }
 
 .scl-auth {
@@ -484,130 +484,123 @@
   animation: authBgPan 28s ease-in-out infinite alternate;
 }
 
-/* ─── HUD Frame SVG (chamfered polygon + animated stroke beams) ─── */
-.scl-auth__hud-frame {
+/* ─── Animated border beam (CSS offset-path) ─── */
+/* Travels the rectangular perimeter. Short gradient line: bright ends, transparent center. */
+.scl-auth__beam {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 5;
-  overflow: visible;
+  z-index: 6;
 }
 
-/* Running line beams — stroke-dasharray segment travels the stepped polygon.
-   Perimeter = 825(top)+45(step-down)+145(step-right)+575(right-down)+970(bottom)+620(left-up) = 3180 */
-.scl-auth__hud-beam-blue,
-.scl-auth__hud-beam-gold {
-  fill: none;
-  stroke-dasharray: 160 3020;
-  stroke-dashoffset: 3180;
-  animation: beamDash 9s linear infinite;
+.scl-auth__beam::before,
+.scl-auth__beam::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 90px;
+  height: 2px;
+  offset-path: inset(20px);
+  offset-rotate: auto;
+  offset-distance: 0%;
+  animation: beamRun 10s linear infinite;
 }
 
-.scl-auth__hud-beam-blue {
-  stroke: rgba(80, 185, 255, 0.98);
-  stroke-width: 2.5;
-  filter: drop-shadow(0 0 5px rgba(22, 132, 255, 1)) drop-shadow(0 0 12px rgba(22, 132, 255, 0.6));
+/* Blue beam — gradient: opaque at ends, transparent center */
+.scl-auth__beam::before {
+  background: linear-gradient(90deg,
+    rgba(22, 132, 255, 0.9)  0%,
+    rgba(80, 185, 255, 0.55) 20%,
+    rgba(22, 132, 255, 0.08) 50%,
+    rgba(80, 185, 255, 0.55) 80%,
+    rgba(22, 132, 255, 0.9)  100%);
+  box-shadow: 0 0 6px 1px rgba(22, 132, 255, 0.45);
 }
 
-.scl-auth__hud-beam-gold {
-  stroke: rgba(224, 180, 68, 0.98);
-  stroke-width: 2.5;
-  animation-delay: -4.5s;
-  filter: drop-shadow(0 0 5px rgba(213, 168, 74, 1)) drop-shadow(0 0 12px rgba(213, 168, 74, 0.6));
+/* Gold beam — offset by half-cycle */
+.scl-auth__beam::after {
+  background: linear-gradient(90deg,
+    rgba(213, 168, 74, 0.9)  0%,
+    rgba(224, 192, 100, 0.5) 20%,
+    rgba(213, 168, 74, 0.08) 50%,
+    rgba(224, 192, 100, 0.5) 80%,
+    rgba(213, 168, 74, 0.9)  100%);
+  box-shadow: 0 0 6px 1px rgba(213, 168, 74, 0.4);
+  animation-delay: -5s;
 }
 
-/* ─── Corner accents (HUD brackets) ─── */
+/* ─── Corner accent brackets (HUD style with diagonal cut) ─── */
 .scl-auth__edge {
   position: absolute;
   pointer-events: none;
   z-index: 10;
 }
 
-/* Top-left: blue L-bracket — aligns with polygon point (15,15) */
-.scl-auth__edge--tl {
-  top: 15px;
-  left: 15px;
-  width: 70px;
-  height: 38px;
-  border-top: 2px solid rgba(22, 132, 255, 0.75);
-  border-left: 2px solid rgba(22, 132, 255, 0.75);
-}
-/* bright glow tick on top edge */
-.scl-auth__edge--tl::after {
-  content: "";
-  position: absolute;
-  top: -2px;
-  left: 14px;
-  width: 28px;
-  height: 2px;
-  background: rgba(22, 132, 255, 1);
-  box-shadow: 0 0 8px 3px rgba(22, 132, 255, 0.85);
-}
-
-/*
-  Top-right: floating gold L accent in the very top-right corner.
-  This is the small "cap" ABOVE the polygon's step notch — visible in the prototype
-  as a separate gold bracket floating top-right.
-*/
-.scl-auth__edge--tr {
-  top: 15px;
-  right: 15px;
-  width: 90px;
-  height: 38px;
-  border-top: 2px solid rgba(213, 168, 74, 0.65);
-  border-right: 2px solid rgba(213, 168, 74, 0.65);
-}
-.scl-auth__edge--tr::after {
-  content: "";
-  position: absolute;
-  top: -2px;
-  right: 14px;
-  width: 28px;
-  height: 2px;
-  background: rgba(213, 168, 74, 0.95);
-  box-shadow: 0 0 8px 3px rgba(213, 168, 74, 0.8);
-}
-
-/* Bottom-left: subtle blue L-bracket — aligns with polygon point (15,635) */
-.scl-auth__edge--bl {
-  bottom: 15px;
-  left: 15px;
-  width: 70px;
-  height: 38px;
-  border-bottom: 1.5px solid rgba(22, 132, 255, 0.45);
-  border-left: 1.5px solid rgba(22, 132, 255, 0.45);
-}
-.scl-auth__edge--bl::after {
-  content: "";
-  position: absolute;
-  bottom: -2px;
-  left: 14px;
-  width: 28px;
-  height: 2px;
-  background: rgba(22, 132, 255, 0.85);
-  box-shadow: 0 0 8px 3px rgba(22, 132, 255, 0.6);
-}
-
-/* Bottom-right: gold L-bracket with bright glow — aligns with polygon point (985,635) */
+/* Shared: diagonal inner-corner clip */
+.scl-auth__edge--tl,
+.scl-auth__edge--tr,
+.scl-auth__edge--bl,
 .scl-auth__edge--br {
-  bottom: 15px;
-  right: 15px;
-  width: 90px;
-  height: 38px;
-  border-bottom: 2px solid rgba(213, 168, 74, 0.7);
-  border-right: 2px solid rgba(213, 168, 74, 0.7);
+  width: 64px;
+  height: 64px;
 }
-.scl-auth__edge--br::after {
-  content: "";
-  position: absolute;
-  bottom: -2px;
-  right: 14px;
-  width: 28px;
-  height: 2px;
-  background: rgba(213, 168, 74, 1);
-  box-shadow: 0 0 10px 4px rgba(213, 168, 74, 0.85);
+
+/* Top-left — blue, clip cuts inner corner at 45° */
+.scl-auth__edge--tl {
+  top: 20px;
+  left: 20px;
+  background:
+    linear-gradient(to right,  rgba(22, 132, 255, 0.9) 0px, rgba(22, 132, 255, 0.9) 2px, transparent 2px) no-repeat 0 0,
+    linear-gradient(to bottom, rgba(22, 132, 255, 0.9) 0px, rgba(22, 132, 255, 0.9) 2px, transparent 2px) no-repeat 0 0;
+  background-size: 100% 100%, 100% 100%;
+  /* Diagonal cut at inner corner */
+  clip-path: polygon(0 0, 100% 0, 100% 24%, 24% 100%, 0 100%);
+  border-top: 2px solid rgba(22, 132, 255, 0.88);
+  border-left: 2px solid rgba(22, 132, 255, 0.88);
+  border-bottom: none;
+  border-right: none;
+  box-shadow:
+    inset 0 0 0 0 transparent,
+    -2px -2px 12px rgba(22, 132, 255, 0.18);
+}
+
+/* Top-right — gold */
+.scl-auth__edge--tr {
+  top: 20px;
+  right: 20px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 76% 100%, 0 24%);
+  border-top: 2px solid rgba(213, 168, 74, 0.88);
+  border-right: 2px solid rgba(213, 168, 74, 0.88);
+  border-bottom: none;
+  border-left: none;
+  box-shadow: 2px -2px 12px rgba(213, 168, 74, 0.15);
+}
+
+/* Bottom-left — blue */
+.scl-auth__edge--bl {
+  bottom: 20px;
+  left: 20px;
+  clip-path: polygon(0 0, 24% 0, 100% 76%, 100% 100%, 0 100%);
+  border-bottom: 2px solid rgba(22, 132, 255, 0.75);
+  border-left: 2px solid rgba(22, 132, 255, 0.75);
+  border-top: none;
+  border-right: none;
+  box-shadow: -2px 2px 12px rgba(22, 132, 255, 0.12);
+}
+
+/* Bottom-right — gold, most prominent per prototype */
+.scl-auth__edge--br {
+  bottom: 20px;
+  right: 20px;
+  clip-path: polygon(76% 0, 100% 0, 100% 100%, 0 100%, 0 76%);
+  border-bottom: 2px solid rgba(213, 168, 74, 0.95);
+  border-right: 2px solid rgba(213, 168, 74, 0.95);
+  border-top: none;
+  border-left: none;
+  box-shadow: 2px 2px 14px rgba(213, 168, 74, 0.22);
 }
 
 .scl-auth__ghost-mark {

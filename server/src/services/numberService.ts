@@ -151,6 +151,11 @@ export class NumberService {
     // In live routing mode, enforce Messaging Service-linked senders only.
     const activeMessagingServiceSid = await getActiveMessagingServiceSid();
     const requireMessagingServiceRouting = Boolean(activeMessagingServiceSid);
+    const serviceCandidates = numbers.filter(
+      (number) =>
+        Boolean(number.messagingServiceSid) &&
+        (!activeMessagingServiceSid || number.messagingServiceSid === activeMessagingServiceSid),
+    );
     const pool = this.getRoutableNumbers(numbers, activeMessagingServiceSid);
 
     // Filter by daily limit (considering ramp-up) and delivery rate
@@ -173,7 +178,7 @@ export class NumberService {
         activeMessagingServiceSid,
         poolId: poolId || null,
         totalCandidates: numbers.length,
-        serviceCandidates: a2pNumbers.length,
+        serviceCandidates: serviceCandidates.length,
       });
       return null;
     }

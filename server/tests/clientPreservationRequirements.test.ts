@@ -8,6 +8,17 @@ const readWorkspaceFile = (relativePath: string): string => {
   return fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
 };
 
+const readFirstExistingWorkspaceFile = (relativePaths: readonly string[]): string => {
+  for (const relativePath of relativePaths) {
+    const absolutePath = path.join(rootDir, relativePath);
+    if (fs.existsSync(absolutePath)) {
+      return fs.readFileSync(absolutePath, 'utf8');
+    }
+  }
+
+  throw new Error(`Missing workspace file: ${relativePaths.join(', ')}`);
+};
+
 describe('Клиентские preservation requirements', () => {
   it('должны сохранять Inbox assignment controls и CONTACT assigned rep', () => {
     const inboxPage = readWorkspaceFile('client/src/pages/InboxPageV2.tsx');
@@ -37,7 +48,10 @@ describe('Клиентские preservation requirements', () => {
   });
 
   it('должны фиксировать B.0 ownership contract в Pipeline AI документах', () => {
-    const masterChecklist = readWorkspaceFile('MASTER_M1_M2_DELIVERY_CHECKLIST.md');
+    const masterChecklist = readFirstExistingWorkspaceFile([
+      'archive/legacy-docs/MASTER_M1_M2_DELIVERY_CHECKLIST.md',
+      'MASTER_M1_M2_DELIVERY_CHECKLIST.md',
+    ]);
     const extractorSpec = readWorkspaceFile('scl-pipeline-ai-handoff/extractor-spec.md');
     const extractorContract = readWorkspaceFile('scl-pipeline-ai-handoff/scl-pipeline-ai-extractor.md');
 

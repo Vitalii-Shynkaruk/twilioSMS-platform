@@ -823,9 +823,10 @@ export class SendingEngine {
    * This prevents carrier fingerprinting of identical messages
    */
   static interpolateTemplate(template: string, variables: Record<string, string>): string {
-    // First, resolve variables
+    // First, resolve variables (case-insensitive key lookup so {{FirstName}} == {{firstName}})
+    const lowerVars = Object.fromEntries(Object.entries(variables).map(([k, v]) => [k.toLowerCase(), v]));
     let result = template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
-      return variables[key] || match;
+      return variables[key] ?? lowerVars[key.toLowerCase()] ?? match;
     });
 
     // Then, resolve spintax {option1|option2|option3}

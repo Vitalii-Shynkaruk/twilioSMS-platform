@@ -331,8 +331,8 @@ export default function CampaignsPage() {
               disabled={outboundLocked}
               title={outboundLocked ? outboundLockMsg : undefined}
             >
-              <Plus className="w-4 h-4" />
-              New Campaign
+              <span>+</span>
+              <span>New Campaign</span>
             </button>
           )}
         </div>

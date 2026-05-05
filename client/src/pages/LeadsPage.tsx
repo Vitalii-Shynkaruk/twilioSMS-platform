@@ -26,7 +26,6 @@ import {
   Play,
   Zap,
   Pencil,
-  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -271,6 +270,9 @@ export default function LeadsPage() {
   const importLists = importListsData?.tags || [];
   const { user } = useAuthStore();
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER' || user?.role === 'REP';
+  const isRepView = user?.role === 'REP';
+  const formattedTotal = total.toLocaleString('en-US');
+  const headerSummaryText = isRepView ? 'total leads · uploaded by you' : 'total leads · admin sees all reps';
   const { data: filterOptionsData } = useQuery<{ sources: LeadFilterOption[]; states: LeadFilterOption[] }>({
     queryKey: ['lead-filter-options', user?.id, user?.role],
     queryFn: async () => {
@@ -326,11 +328,12 @@ export default function LeadsPage() {
               <strong>Phase 2.1 · Source readable</strong> — Source column shows list name, not UUID.
             </span>
             <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--green">
-              <strong>Phase 2.2–6 · Industry + Revenue + Last Contact + Export CSV</strong> — Columns are wired from AI
-              classifier and existing data.
+              <strong>Phase 2.2–6 · Industry + Revenue + Last Contact + Export CSV</strong> — New columns wired from AI
+              classifier. Last Contact shows admin attribution. Filter-aware export.
             </span>
             <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--purple">
-              <strong>Phase 3 · AI Retarget</strong> — Campaigns tab shows AI cohorts and AI-built campaign lineage.
+              <strong>Phase 3 · AI Retarget</strong> — All-campaigns cohorts, predicted funded deals + historical
+              anchor. AI-built campaigns appear in All Campaigns list with lineage marker.
             </span>
           </div>
         </section>
@@ -339,18 +342,20 @@ export default function LeadsPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-dark-50">Leads</h1>
-            <p className="text-sm text-dark-400 mt-1">{total} total leads</p>
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-sm text-dark-400">
+              <strong className="text-[15px] font-semibold text-dark-200">{formattedTotal}</strong>
+              <span>{headerSummaryText}</span>
+            </p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             {canManage && (
               <button onClick={() => setShowImport(true)} className="btn-ghost flex items-center gap-2">
-                <Upload className="w-4 h-4" />
                 Import CSV
               </button>
             )}
             <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Add Lead
+              <span>+</span>
+              <span>Add Lead</span>
             </button>
           </div>
         </div>
@@ -479,9 +484,9 @@ export default function LeadsPage() {
             className="leads-filter-export"
             disabled={exportMutation.isPending}
           >
-            <Download className="w-4 h-4" />
+            <span aria-hidden="true">↓</span>
             <span>{exportMutation.isPending ? 'Exporting...' : 'Export CSV'}</span>
-            <small>{total} leads</small>
+            <small>{formattedTotal} leads</small>
           </button>
         </div>
 

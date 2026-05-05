@@ -28,11 +28,66 @@ export const PRODUCT_COLORS: Record<string, string> = {
   BRIDGE: 'bg-teal-500/20 text-teal-400',
 };
 
+export const PRODUCT_ICONS: Record<string, string> = {
+  MCA: '⚡',
+  LOC: '🔄',
+  EQUIPMENT: '🔧',
+  HELOC: '🏡',
+  SBA: '🏛',
+  CRE: '🏢',
+  BRIDGE: '🌉',
+};
+
 export function formatCurrency(amount?: number | null): string {
   if (!amount) return '$0';
   if (amount >= 1000000) return `$${(amount / 1000000).toFixed(2)}M`;
   if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}k`;
   return `$${amount.toLocaleString()}`;
+}
+
+type DealMachineState = 'ACTIVE' | 'WAITING' | 'NURTURE';
+
+export function stateColor(state: DealMachineState): string {
+  if (state === 'ACTIVE') return '#3AB97A';
+  if (state === 'WAITING') return '#D4A940';
+  return '#4A9EE8';
+}
+
+function formatWakeDate(value?: string | null): string {
+  if (!value) return 'No wake date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No wake date';
+  return `Wake ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
+export function getDealStatePill(deal: Pick<Deal, 'stage' | 'contactAttempts' | 'contactAttemptThreshold' | 'nextActionDue' | 'followUpDate'>): {
+  state: DealMachineState;
+  timing: string;
+  color: string;
+} | null {
+  if (deal.stage === 'FUNDED' || deal.stage === 'CLOSED') return null;
+  if (deal.stage === 'NURTURE') {
+    const state: DealMachineState = 'NURTURE';
+    return { state, timing: formatWakeDate(deal.nextActionDue || deal.followUpDate), color: stateColor(state) };
+  }
+  const attempts = deal.contactAttempts || 0;
+  const threshold = deal.contactAttemptThreshold || 10;
+  const state: DealMachineState = attempts > 0 ? 'WAITING' : 'ACTIVE';
+  return { state, timing: `${attempts}/${threshold} attempts`, color: stateColor(state) };
+}
+
+export function StatePillRow({ deal, className = '' }: { deal: Deal; className?: string }) {
+  const pill = getDealStatePill(deal);
+  if (!pill) return null;
+  return (
+    <div className={`state-line-exec state-${pill.state.toLowerCase()} ${className}`.trim()}>
+      <span className={`state-dot sd-${pill.state.toLowerCase()}`} aria-hidden />
+      <span className="state-label" style={{ color: pill.color }}>
+        {pill.state}
+      </span>
+      <span className="state-timing">{pill.timing}</span>
+    </div>
+  );
 }
 
 // ─── Internal helpers ───
@@ -48,13 +103,13 @@ const PRODUCT_TAG: Record<string, { cls: string; label: string }> = {
 };
 
 const PRODUCT_BADGE: Record<string, { icon: string; color: string; bg: string }> = {
-  MCA: { icon: '⚡', color: '#C9952A', bg: 'rgba(201,149,42,0.15)' },
-  LOC: { icon: '💳', color: '#4A9EE8', bg: 'rgba(74,158,232,0.15)' },
-  HELOC: { icon: '🏠', color: '#9B72E8', bg: 'rgba(155,114,232,0.15)' },
-  EQUIPMENT: { icon: '🔧', color: '#3AB97A', bg: 'rgba(58,185,122,0.15)' },
-  SBA: { icon: '🏛', color: '#3AB97A', bg: 'rgba(58,185,122,0.15)' },
-  CRE: { icon: '🏢', color: '#D06828', bg: 'rgba(208,104,40,0.15)' },
-  BRIDGE: { icon: '🌉', color: '#D4A940', bg: 'rgba(212,169,64,0.15)' },
+  MCA: { icon: PRODUCT_ICONS.MCA, color: '#C9952A', bg: 'rgba(201,149,42,0.15)' },
+  LOC: { icon: PRODUCT_ICONS.LOC, color: '#4A9EE8', bg: 'rgba(74,158,232,0.15)' },
+  HELOC: { icon: PRODUCT_ICONS.HELOC, color: '#9B72E8', bg: 'rgba(155,114,232,0.15)' },
+  EQUIPMENT: { icon: PRODUCT_ICONS.EQUIPMENT, color: '#3AB97A', bg: 'rgba(58,185,122,0.15)' },
+  SBA: { icon: PRODUCT_ICONS.SBA, color: '#3AB97A', bg: 'rgba(58,185,122,0.15)' },
+  CRE: { icon: PRODUCT_ICONS.CRE, color: '#D06828', bg: 'rgba(208,104,40,0.15)' },
+  BRIDGE: { icon: PRODUCT_ICONS.BRIDGE, color: '#D4A940', bg: 'rgba(212,169,64,0.15)' },
 };
 
 const REP_COLORS = ['#C9952A', '#3AB97A', '#4A9EE8', '#9B72E8', '#D06828', '#E24B4A'];
@@ -302,17 +357,15 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
   const amt = simpleAmount(deal);
   const due = simpleDueInfo(deal.nextActionDue);
   const hot = isDealHot(deal);
+  const linkedDealsTotal = (deal.linkedDealsCount || 0) + 1;
   const businessName = deal.client?.businessName || 'Unknown';
   const cardClickHandlers = useGuardedCardClick(onClick);
   const attempt = attemptBanner(deal);
+  const showAiLayer = hot || linkedDealsTotal > 1 || !!deal.pipelineAiSignals;
 
   return (
     <div className={`s-card ${state} ${deal.stage === 'CLOSED' ? 'sc-closed' : ''}`} {...cardClickHandlers}>
       <div style={{ padding: '10px 11px 8px' }}>
-        {hot && <div className="sc-hot-badge">🔥 HOT</div>}
-        <StackingChip signals={deal.pipelineAiSignals} compact className="sc-stacking-chip" />
-        <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact className="sc-ai-badges" />
-        <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
         <div
           className="sc-name"
           onClick={blockCardTextClick}
@@ -321,6 +374,17 @@ function SimpleCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?: ()
         >
           {renderHighlightedText(businessName, highlightTerm)}
         </div>
+
+        {showAiLayer && (
+          <div className="sc-ai-layer">
+            {hot && <span className="b b-hot">🔥 HOT</span>}
+            {linkedDealsTotal > 1 && <span className="b b-linked">{linkedDealsTotal} CARDS</span>}
+            <StackingChip signals={deal.pipelineAiSignals} compact className="sc-stacking-chip" />
+            <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact className="sc-ai-badges" />
+          </div>
+        )}
+        <StatePillRow deal={deal} className="sc-state-line" />
+        <div className={`sc-amount ${amt.cls}`}>{amt.text}</div>
 
         {attempt && <div className={`nurture-banner ${attempt.cls}`}>{attempt.text}</div>}
 
@@ -353,6 +417,8 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
   const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
   const cardClickHandlers = useGuardedCardClick(onClick);
   const attempt = attemptBanner(deal);
+  const linkedDealsTotal = (deal.linkedDealsCount || 0) + 1;
+  const showAiLayer = hot || linkedDealsTotal > 1 || !!deal.client?.fundingCount || !!deal.pipelineAiSignals;
 
   const bestOffer = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
   const showSubmittedBadge =
@@ -406,18 +472,25 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
             )}
           </div>
           <div className="bdgs">
-            {hot && <span className="b b-hot">🔥HOT</span>}
-            <StackingChip signals={deal.pipelineAiSignals} compact />
             {deal.stage === 'NURTURE' && deal.followUpType === 'renewal' && <span className="b b-renew">RENEW</span>}
             {deal.stage === 'NURTURE' &&
               (!deal.followUpType || deal.followUpType === 'reengage' || deal.followUpType === 'competitor') && (
                 <span className="b b-lost">LOST</span>
               )}
-            {deal.client && deal.client.fundingCount > 0 && deal.stage !== 'NURTURE' && (
-              <span className="b b-renew">↻</span>
-            )}
           </div>
         </div>
+
+        {showAiLayer && (
+          <div className="c-ai-layer">
+            {hot && <span className="b b-hot">🔥HOT</span>}
+            {deal.client && deal.client.fundingCount > 0 && deal.stage !== 'NURTURE' && (
+              <span className="b b-returning">RETURNING · {deal.client.fundingCount}x FUNDED</span>
+            )}
+            {linkedDealsTotal > 1 && <span className="b b-linked">{linkedDealsTotal} CARDS</span>}
+            <StackingChip signals={deal.pipelineAiSignals} compact />
+            <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />
+          </div>
+        )}
 
         {deal.notes && (
           <div
@@ -447,17 +520,16 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
                   </span>
                 )}
                 {smsCampaignSource && <span className="source-chip">SMS · {smsCampaignSource}</span>}
-                <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />
               </div>
             );
           })()}
         {!deal.productType && smsCampaignSource && (
           <div className="source-row">
             <span className="source-chip">SMS · {smsCampaignSource}</span>
-            <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />
           </div>
         )}
-        {!deal.productType && !smsCampaignSource && <PipelineAiBadgeRow signals={deal.pipelineAiSignals} compact />}
+
+        <StatePillRow deal={deal} />
 
         {/* HOT reason row */}
         {hot && (
@@ -533,13 +605,6 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
           </div>
         )}
 
-        {/* Returning client */}
-        {deal.client && deal.client.fundingCount > 0 && (
-          <div className="ret-pill">
-            <span>↻ Returning · {deal.client.fundingCount}x funded</span>
-          </div>
-        )}
-
         {/* Offer block */}
         {bestOffer && deal.stage !== 'FUNDED' && deal.stage !== 'NURTURE' && (
           <div className={`offer-block ${offerStrength(bestOffer.amount)}`}>
@@ -603,7 +668,7 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
         {deal.stage === 'NURTURE' && (
           <>
             {deal.prevOffer && (
-              <div className="prev-block">
+              <div className="prev-offer-pill">
                 <div className="pb-amount">Prev: {formatCurrency(deal.prevOffer)}</div>
                 <div className="pb-label">Best offer before close</div>
               </div>

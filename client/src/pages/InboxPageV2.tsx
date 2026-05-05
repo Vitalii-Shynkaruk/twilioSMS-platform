@@ -1580,10 +1580,24 @@ function RightSidebar({
 
 function AIStateSection({ conversation }: { conversation: Conversation }) {
   const signals = (conversation as any)?.aiSignals || {};
+  const creditProfile =
+    typeof signals.creditProfile === 'string' && signals.creditProfile.trim().toLowerCase() !== 'unknown'
+      ? signals.creditProfile.trim()
+      : null;
+  const propertyOwnership =
+    typeof signals.propertyOwnership === 'string' && signals.propertyOwnership.trim().toLowerCase() !== 'unknown'
+      ? signals.propertyOwnership.trim()
+      : null;
+  const product =
+    typeof signals.product === 'string' && signals.product.trim().toLowerCase() !== 'unknown'
+      ? signals.product.trim()
+      : null;
   const rows: Array<{ key: string; value?: string | number | null }> = [
     { key: 'Classification', value: conversation.aiClassification || '—' },
     { key: 'Lead Score', value: conversation.aiLeadScore ?? '—' },
-    { key: 'Product', value: signals.product || '—' },
+    { key: 'Credit', value: creditProfile || '—' },
+    { key: 'Property', value: propertyOwnership || '—' },
+    { key: 'Product', value: product || '—' },
     { key: 'Industry', value: signals.industry || '—' },
     { key: 'Revenue', value: signals.revenue || '—' },
     { key: 'Urgency', value: signals.urgency || '—' },

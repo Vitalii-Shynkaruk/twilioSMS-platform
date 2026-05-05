@@ -70,6 +70,112 @@ describe('DealController board scope', () => {
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: {} }));
   });
 
+  it('должен разделять active value и previous-offer subtotal в board stages', async () => {
+    vi.spyOn(prisma.deal, 'findMany').mockResolvedValue([
+      {
+        id: 'deal-nurture-1',
+        clientId: 'client-1',
+        stage: 'NURTURE',
+        stageLabel: 'Nurture',
+        assignedRepId: 'rep-1',
+        assistingRepIds: [],
+        dealAmount: 50000,
+        prevOffer: 120000,
+        lastReplyAt: null,
+        lenderEngaged: false,
+        appSubmitted: false,
+        client: { id: 'client-1', businessName: 'Ghost Offer LLC' },
+        offers: [],
+        fundingEvents: [],
+      },
+      {
+        id: 'deal-approved-1',
+        clientId: 'client-2',
+        stage: 'APPROVED_OFFERS',
+        stageLabel: 'Approved / Offers',
+        assignedRepId: 'rep-1',
+        assistingRepIds: [],
+        dealAmount: null,
+        prevOffer: 5000,
+        lastReplyAt: null,
+        lenderEngaged: false,
+        appSubmitted: true,
+        client: { id: 'client-2', businessName: 'Active Offer LLC' },
+        offers: [{ id: 'offer-1', amount: 30000, lenderName: 'Lender A' }],
+        fundingEvents: [],
+      },
+    ] as never);
+    const response = createResponse();
+
+    await DealController.getBoard(createRequest({}), response);
+
+    const payload = (response.json as any).mock.calls[0][0];
+    const nurture = payload.stages.find((stage: any) => stage.stage === 'NURTURE');
+    const approved = payload.stages.find((stage: any) => stage.stage === 'APPROVED_OFFERS');
+    expect(nurture.value).toBe(0);
+    expect(nurture.prevOfferSubtotal).toBe(120000);
+    expect(approved.value).toBe(30000);
+    expect(approved.prevOfferSubtotal).toBe(5000);
+  });
+
+  it('должен отдавать linkedDeals для карточек одного clientId в getDeal', async () => {
+    const currentDeal = {
+      id: 'deal-1',
+      clientId: 'client-1',
+      stage: 'QUALIFIED',
+      stageLabel: 'Qualified',
+      assignedRepId: 'rep-1',
+      assistingRepIds: [],
+      lastReplyAt: null,
+      lenderEngaged: false,
+      appSubmitted: false,
+      client: { id: 'client-1', businessName: 'Linked Client LLC' },
+    };
+    const siblingDeal = {
+      id: 'deal-2',
+      clientId: 'client-1',
+      assignedRepId: 'rep-1',
+      assistingRepIds: [],
+      stage: 'APPROVED_OFFERS',
+      stageLabel: 'Approved / Offers',
+      productType: 'MCA',
+      dealAmount: 50000,
+      submittedAmount: null,
+      prevOffer: null,
+      nextAction: 'Present offer',
+      nextActionDue: null,
+      lastActivityAt: new Date('2026-05-05T12:00:00.000Z'),
+      lastReplyAt: null,
+      lenderEngaged: false,
+      appSubmitted: true,
+      createdAt: new Date('2026-05-01T12:00:00.000Z'),
+      updatedAt: new Date('2026-05-05T12:00:00.000Z'),
+      assignedRep: { id: 'rep-1', firstName: 'Rep', lastName: 'One', initials: 'RO' },
+      offers: [],
+    };
+    vi.spyOn(prisma.deal, 'findFirst').mockResolvedValue(currentDeal as never);
+    const findMany = vi.spyOn(prisma.deal, 'findMany').mockResolvedValue([siblingDeal] as never);
+    const response = createResponse();
+
+    await DealController.getDeal({ ...createRequest({}), params: { id: 'deal-1' } } as AuthRequest, response);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          clientId: 'client-1',
+          id: { not: 'deal-1' },
+        }),
+      }),
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'deal-1',
+        linkedDealsCount: 1,
+        linkedDeals: [expect.objectContaining({ id: 'deal-2', isHot: true, stageLabel: 'Approved / Offers' })],
+      }),
+    );
+  });
+
   it('не должен разрешать primary rep удалять deal', async () => {
     vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue({
       id: 'deal-1',

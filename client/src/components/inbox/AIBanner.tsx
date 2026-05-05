@@ -21,12 +21,22 @@ interface AIBannerProps {
 const SIGNAL_DEFS: Array<{ key: keyof AISignals; icon: string; suffix?: string; quote?: boolean }> = [
   { key: 'revenue', icon: '💰' },
   { key: 'ask', icon: '📊', suffix: ' ask' },
+  { key: 'creditProfile', icon: '💳' },
+  { key: 'propertyOwnership', icon: '🏠' },
   { key: 'urgency', icon: '⚡', quote: true },
   { key: 'product', icon: '🏦' },
   { key: 'industry', icon: '🏗' },
   { key: 'objections', icon: '⚠' },
   { key: 'helocFitFlag', icon: '🟣' },
 ];
+
+function isMeaningfulSignalLabel(value: unknown): value is string {
+  return (
+    typeof value === 'string'
+    && value.trim().length > 0
+    && !['unknown', 'n/a', 'na', '—'].includes(value.trim().toLowerCase())
+  );
+}
 
 const formatElapsed = (s: number) => {
   const m = Math.floor(s / 60);
@@ -58,9 +68,13 @@ export default function AIBanner({ conversation }: AIBannerProps) {
   const isHot = cls === 'HOT';
   const isCa = !!conversation.isCaliforniaNumber;
   const signals = (conversation.aiSignals || {}) as AISignals;
-  const askLabel = (typeof signals.ask === 'string' && signals.ask.trim()) || conversation.extractedAsk || null;
+  const askLabel = (isMeaningfulSignalLabel(signals.ask) && signals.ask.trim()) || conversation.extractedAsk || null;
   const industryLabel =
-    (typeof signals.industry === 'string' && signals.industry.trim()) || conversation.extractedIndustry || null;
+    (isMeaningfulSignalLabel(signals.industry) && signals.industry.trim()) || conversation.extractedIndustry || null;
+  const creditProfileLabel = isMeaningfulSignalLabel(signals.creditProfile) ? signals.creditProfile.trim() : null;
+  const propertyOwnershipLabel = isMeaningfulSignalLabel(signals.propertyOwnership)
+    ? signals.propertyOwnership.trim()
+    : null;
   const helocFitValue =
     typeof signals.helocFitFlag === 'boolean'
       ? signals.helocFitFlag
@@ -141,6 +155,24 @@ export default function AIBanner({ conversation }: AIBannerProps) {
         </span>
       );
     }
+    if (def.key === 'creditProfile') {
+      if (!creditProfileLabel) return null;
+      return (
+        <span key={def.key} className="signal-chip">
+          <span className="sig-icon">{def.icon}</span>
+          <span className="sig-val">{/credit/i.test(creditProfileLabel) ? creditProfileLabel : `${creditProfileLabel} credit`}</span>
+        </span>
+      );
+    }
+    if (def.key === 'propertyOwnership') {
+      if (!propertyOwnershipLabel) return null;
+      return (
+        <span key={def.key} className="signal-chip">
+          <span className="sig-icon">{def.icon}</span>
+          <span className="sig-val">{propertyOwnershipLabel}</span>
+        </span>
+      );
+    }
     if (def.key === 'industry') {
       if (!industryLabel) return null;
       return (
@@ -150,7 +182,7 @@ export default function AIBanner({ conversation }: AIBannerProps) {
         </span>
       );
     }
-    if (!v) return null;
+    if (!isMeaningfulSignalLabel(v)) return null;
     const display = def.quote ? `"${v}"` : `${v}${def.suffix || ''}`;
     return (
       <span key={def.key} className="signal-chip">

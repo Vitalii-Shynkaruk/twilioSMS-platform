@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { dealApi, repApi } from '../services/api';
 import { useAuthStore } from '../stores/authStore';
-import DealCard, { formatCurrency } from '../components/pipeline/DealCard';
+import DealCard, { formatCurrency, PRODUCT_ICONS } from '../components/pipeline/DealCard';
 import DealPanel, { NQCloseModal, ScheduleFollowUpModal } from '../components/pipeline/DealPanel';
 import CreateDealModal from '../components/pipeline/CreateDealModal';
 import type { Deal, DealStage, DealBoard, DealStats, Rep } from '../types';
@@ -165,7 +165,7 @@ function getDealApprovedCommittedAmount(deal: Deal): number {
   return deal.dealAmount || 0;
 }
 
-type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'this_week' | 'shared';
+type QuickFilter = 'all' | 'mine' | 'overdue' | 'hot' | 'neglected' | 'ghost_offer' | 'this_week' | 'shared';
 type ViewTab = 'pipeline' | 'team' | 'queue';
 type ViewMode = 'simple' | 'execution';
 type PipelineScope = 'mine' | 'all';
@@ -177,6 +177,7 @@ const FILTERS: { key: QuickFilter; label: string; activeCls: string; passiveCls:
   { key: 'overdue', label: 'Overdue', activeCls: 'act', passiveCls: 'urg' },
   { key: 'hot', label: '🔥 Hot', activeCls: 'fire act', passiveCls: 'fire' },
   { key: 'neglected', label: 'Neglected', activeCls: 'act', passiveCls: 'urg' },
+  { key: 'ghost_offer', label: 'Ghosted with Offer', activeCls: 'ghost-act', passiveCls: 'ghost' },
   { key: 'this_week', label: '📅 This Week', activeCls: 'week-act', passiveCls: '' },
 ];
 
@@ -489,6 +490,7 @@ export default function PipelinePage() {
           }
           if (quickFilter === 'hot' && !isDealHot(d)) return false;
           if (quickFilter === 'neglected' && (d.staleDays || 0) < 7) return false;
+          if (quickFilter === 'ghost_offer' && !(d.stage === 'NURTURE' && (d.prevOffer || 0) > 0)) return false;
           if (quickFilter === 'this_week') {
             const weekEnd = new Date();
             weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
@@ -499,14 +501,12 @@ export default function PipelinePage() {
 
         // Recalculate value based on filtered deals
         let value = 0;
+        const prevOfferSubtotal = filteredDeals.reduce((sum: number, d: Deal) => sum + (d.prevOffer || 0), 0);
         if (!NO_AMOUNT_STAGES.includes(s.stage)) {
           if (s.stage === 'FUNDED') {
             value = filteredDeals.reduce((sum: number, d: Deal) => sum + (d.dealAmount || 0), 0);
           } else if (s.stage === 'NURTURE') {
-            value = filteredDeals.reduce(
-              (sum: number, d: Deal) => sum + ((d as any).prevOffer || d.dealAmount || 0),
-              0,
-            );
+            value = 0;
           } else if (s.stage === 'SUBMITTED_IN_REVIEW') {
             value = filteredDeals.reduce((sum: number, d: Deal) => {
               if (!d.productType || !SUBMITTED_TOTAL_PRODUCTS.has(d.productType)) return sum;
@@ -523,7 +523,7 @@ export default function PipelinePage() {
           }
         }
 
-        return { ...s, deals: filteredDeals, count: filteredDeals.length, value };
+        return { ...s, deals: filteredDeals, count: filteredDeals.length, value, prevOfferSubtotal };
       }),
     };
   }, [board, quickFilter, user?.id, searchTerm, isAdmin]);
@@ -577,7 +577,7 @@ export default function PipelinePage() {
 
   // ─── Filter counts (computed from unfiltered board) ───
   const filterCounts = useMemo(() => {
-    if (!board?.stages) return { overdue: 0, hot: 0, neglected: 0, this_week: 0 };
+    if (!board?.stages) return { overdue: 0, hot: 0, neglected: 0, ghost_offer: 0, this_week: 0, shared: 0 };
     const allDeals: Deal[] = board.stages.flatMap((s: any) => s.deals);
     const now = new Date();
     const weekEnd = new Date();
@@ -588,6 +588,7 @@ export default function PipelinePage() {
     ).length;
     const hot = allDeals.filter((d) => isDealHot(d)).length;
     const neglected = allDeals.filter((d) => (d.staleDays || 0) >= 7 && !['FUNDED', 'CLOSED'].includes(d.stage)).length;
+    const ghost_offer = allDeals.filter((d) => d.stage === 'NURTURE' && (d.prevOffer || 0) > 0).length;
     const this_week = allDeals.filter((d) => {
       if (['CLOSED', 'NURTURE'].includes(d.stage)) return false;
       if (['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(d.stage)) return true;
@@ -604,7 +605,7 @@ export default function PipelinePage() {
       if (isAdmin) return assistIds.length > 0;
       return assistIds.includes(user?.id || '');
     }).length;
-    return { overdue, hot, neglected, this_week, shared };
+    return { overdue, hot, neglected, ghost_offer, this_week, shared };
   }, [board, user?.id, isAdmin]);
 
   // ─── Filter labels with counts ───
@@ -616,6 +617,7 @@ export default function PipelinePage() {
       overdue: filterCounts.overdue ? `Overdue (${filterCounts.overdue})` : 'Overdue',
       hot: filterCounts.hot ? `🔥 Hot (${filterCounts.hot})` : '🔥 Hot',
       neglected: filterCounts.neglected ? `Neglected (${filterCounts.neglected})` : 'Neglected',
+      ghost_offer: filterCounts.ghost_offer ? `Ghosted with Offer (${filterCounts.ghost_offer})` : 'Ghosted with Offer',
       this_week: filterCounts.this_week ? `📅 This Week (${filterCounts.this_week})` : '📅 This Week',
     }),
     [filterCounts],
@@ -861,7 +863,7 @@ export default function PipelinePage() {
         </div>
         <div className="lsep" />
         <div className="li" style={{ color: 'var(--text3)', fontStyle: 'italic' }}>
-          ⚡MCA/LOC: flag 2d · 🔧Equipment: 5d · 🏠HELOC: 30d · 🏛SBA/🏢CRE: 60d review clocks
+          ⚡MCA/🔄LOC: flag 2d · 🔧Equipment: 5d · 🏡HELOC: 30d · 🏛SBA/🏢CRE: 60d review clocks
         </div>
       </div>
 
@@ -891,6 +893,7 @@ export default function PipelinePage() {
               {quickFilter === 'overdue' ? ' · Overdue only' : ''}
               {quickFilter === 'hot' ? ' · Hot deals' : ''}
               {quickFilter === 'neglected' ? ' · Neglected' : ''}
+              {quickFilter === 'ghost_offer' ? ' · Ghosted with Offer' : ''}
               {quickFilter === 'this_week' ? ' · 📅 This Week — likely to close' : ''}
             </span>
           </>
@@ -955,6 +958,7 @@ export default function PipelinePage() {
                     const deals = stageData?.deals || [];
                     const count = stageData?.count || deals.length;
                     const value = stageData?.value || 0;
+                    const prevOfferSubtotal = stageData?.prevOfferSubtotal || 0;
                     return (
                       <StageColumn
                         key={stageDef.value}
@@ -962,6 +966,7 @@ export default function PipelinePage() {
                         deals={deals}
                         count={count}
                         value={value}
+                        prevOfferSubtotal={prevOfferSubtotal}
                         viewMode={viewMode}
                         searchTerm={searchTerm}
                         onDealClick={(id) => setSelectedDealId(id)}
@@ -1522,6 +1527,7 @@ function StageColumn({
   deals,
   count,
   value,
+  prevOfferSubtotal,
   viewMode,
   searchTerm,
   onDealClick,
@@ -1533,6 +1539,7 @@ function StageColumn({
   deals: Deal[];
   count: number;
   value: number;
+  prevOfferSubtotal: number;
   viewMode: ViewMode;
   searchTerm?: string;
   onDealClick: (id: string) => void;
@@ -1544,6 +1551,8 @@ function StageColumn({
   const urgentCount = deals.filter(
     (d) => isPastDueDate(d.nextActionDue) || d.renewalTasks?.some((t) => t.status === 'PENDING'),
   ).length;
+  const dealCountLabel = `${count} ${count === 1 ? 'deal' : 'deals'}`;
+  const activeTotalLabel = count === 0 ? '— · 0 deals' : value ? `${formatCurrency(value)} · ${dealCountLabel}` : `${dealCountLabel} · no $`;
 
   return (
     <div ref={setNodeRef} className={`col ${config.colClass || ''}`}>
@@ -1577,33 +1586,8 @@ function StageColumn({
         ) : (
           <>
             <div className={`col-stage ${config.stageClass || ''}`}>{config.short}</div>
-            {/* Only show dollar values for stages where lender offers/funding (or submitted totals) exist */}
-            {['SUBMITTED_IN_REVIEW', 'APPROVED_OFFERS', 'COMMITTED_FUNDING', 'FUNDED'].includes(config.value) ? (
-              <>
-                <div className={`col-vol ${value ? '' : 'dim'}`}>
-                  {value
-                    ? `${formatCurrency(value)}${config.value === 'FUNDED' ? ' total' : config.value === 'SUBMITTED_IN_REVIEW' ? ' submitted' : ''}`
-                    : '—'}
-                </div>
-                <div className="col-ct">
-                  {count} {count === 1 ? 'deal' : 'deals'}
-                </div>
-              </>
-            ) : config.value === 'NURTURE' ? (
-              <>
-                <div className={`col-vol ${value ? '' : 'dim'}`}>{value ? `${formatCurrency(value)} prev` : '—'}</div>
-                <div className="col-ct">
-                  {count} {count === 1 ? 'deal' : 'deals'} · prev offer totals
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="col-vol dim">—</div>
-                <div className="col-ct">
-                  {count} {count === 1 ? 'lead' : 'leads'} · no $
-                </div>
-              </>
-            )}
+            <div className={`col-vol ${value ? '' : 'dim'}`}>{activeTotalLabel}</div>
+            {prevOfferSubtotal > 0 && <div className="col-prev-total">{formatCurrency(prevOfferSubtotal)} prev offers</div>}
             {(config.value === 'APPROVED_OFFERS' || config.value === 'COMMITTED_FUNDING') &&
               (() => {
                 const offerCount = deals.reduce((acc, d) => acc + (d.offers?.length || 0), 0);
@@ -1618,6 +1602,11 @@ function StageColumn({
       </div>
       <div className="col-bar" style={{ background: config.color, opacity: config.opacity }} />
       <div className={`col-cards ${isOver ? 'drag-over' : ''}`}>
+        {deals.length === 0 && config.value === 'NEW_LEAD' && (
+          <div className="col-empty-state">
+            Empty by default. Manually-assigned leads from admin land here. Reps move to Engaged on first contact.
+          </div>
+        )}
         {[...deals]
           .sort((a, b) => {
             // Shared (assist) deals sort below primary-owned deals
@@ -1713,12 +1702,12 @@ function DraggableDealCard({
 // ═══════════════════════════════════════
 
 const TEAM_PRODUCT_TAG: Record<string, { cls: string; icon: string; label: string }> = {
-  MCA: { cls: 't-mca', icon: '⚡', label: 'MCA' },
-  LOC: { cls: 't-con', icon: '💳', label: 'LOC' },
-  EQUIPMENT: { cls: 't-eq', icon: '🔧', label: 'Equipment' },
-  HELOC: { cls: 't-hel', icon: '🏠', label: 'HELOC' },
-  SBA: { cls: 't-sba', icon: '🏛', label: 'SBA' },
-  CRE: { cls: 't-sba', icon: '🏢', label: 'CRE' },
+  MCA: { cls: 't-mca', icon: PRODUCT_ICONS.MCA, label: 'MCA' },
+  LOC: { cls: 't-con', icon: PRODUCT_ICONS.LOC, label: 'LOC' },
+  EQUIPMENT: { cls: 't-eq', icon: PRODUCT_ICONS.EQUIPMENT, label: 'Equipment' },
+  HELOC: { cls: 't-hel', icon: PRODUCT_ICONS.HELOC, label: 'HELOC' },
+  SBA: { cls: 't-sba', icon: PRODUCT_ICONS.SBA, label: 'SBA' },
+  CRE: { cls: 't-sba', icon: PRODUCT_ICONS.CRE, label: 'CRE' },
   BRIDGE: { cls: 't-con', icon: '🌉', label: 'Bridge' },
 };
 
@@ -3682,12 +3671,12 @@ function AddOfferModal({
   };
 
   const productEmoji: Record<string, string> = {
-    MCA: '⚡',
-    LOC: '💳',
-    EQUIPMENT: '🔧',
-    HELOC: '🏠',
-    SBA: '🏛',
-    CRE: '🏢',
+    MCA: PRODUCT_ICONS.MCA,
+    LOC: PRODUCT_ICONS.LOC,
+    EQUIPMENT: PRODUCT_ICONS.EQUIPMENT,
+    HELOC: PRODUCT_ICONS.HELOC,
+    SBA: PRODUCT_ICONS.SBA,
+    CRE: PRODUCT_ICONS.CRE,
     BRIDGE: '🌉',
   };
 

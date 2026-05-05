@@ -20,6 +20,14 @@ interface AICardProps {
   conversation: ConvSlice;
 }
 
+function isMeaningfulSignalLabel(value: unknown): value is string {
+  return (
+    typeof value === 'string'
+    && value.trim().length > 0
+    && !['unknown', 'n/a', 'na', '—'].includes(value.trim().toLowerCase())
+  );
+}
+
 function formatRevenueLabel(monthlyRevenue: number | null): string | null {
   if (monthlyRevenue == null || !Number.isFinite(monthlyRevenue) || monthlyRevenue <= 0) return null;
   if (monthlyRevenue >= 1_000_000) {
@@ -47,6 +55,10 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
   const revenueLabel = signals.revenue || formatRevenueLabel(revenueMonthly);
   const askLabel = signals.ask || conversation.extractedAsk || null;
   const industryLabel = signals.industry || conversation.extractedIndustry || null;
+  const creditProfileLabel = isMeaningfulSignalLabel(signals.creditProfile) ? signals.creditProfile.trim() : null;
+  const propertyOwnershipLabel = isMeaningfulSignalLabel(signals.propertyOwnership)
+    ? signals.propertyOwnership.trim()
+    : null;
   const helocFitValue =
     typeof signals.helocFitFlag === 'boolean'
       ? signals.helocFitFlag
@@ -55,6 +67,8 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
         : null;
   const hasRevenue = !!revenueLabel;
   const hasAsk = !!askLabel;
+  const hasCredit = !!creditProfileLabel;
+  const hasProperty = !!propertyOwnershipLabel;
   const hasUrgency = !!signals.urgency;
   const hasIndustry = !!industryLabel;
   const hasHelocFit = typeof helocFitValue === 'boolean';
@@ -74,7 +88,9 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
     );
   }
 
-  if (!isHot && !hasRevenue && !hasAsk && !hasUrgency && !hasIndustry && !hasHelocFit && !followupLabel) return null;
+  if (!isHot && !hasRevenue && !hasAsk && !hasCredit && !hasProperty && !hasUrgency && !hasIndustry && !hasHelocFit && !followupLabel) {
+    return null;
+  }
 
   return (
     <div className="ai-card-chips" aria-label="AI signals">
@@ -87,6 +103,16 @@ export function InboxCardAIChips({ conversation }: AICardProps) {
       {hasAsk && (
         <span className="chip" title="Capital ask (extracted)">
           📊<strong>{askLabel}</strong>
+        </span>
+      )}
+      {hasCredit && (
+        <span className="chip" title="Credit profile">
+          💳<strong>{/credit/i.test(creditProfileLabel || '') ? creditProfileLabel : `${creditProfileLabel} credit`}</strong>
+        </span>
+      )}
+      {hasProperty && (
+        <span className="chip" title="Property ownership">
+          🏠<strong>{propertyOwnershipLabel}</strong>
         </span>
       )}
       {hasUrgency && (

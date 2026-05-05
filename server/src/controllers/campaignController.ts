@@ -1642,6 +1642,7 @@ export class CampaignController {
 
     const preview = await CampaignController.buildRetargetPreview(id);
     CampaignController.ensureRetargetAccess(preview.sourceCampaign, req);
+    const capacity = await CampaignController.getAiCampaignCapacity(req);
 
     res.json({
       sourceCampaign: {
@@ -1650,6 +1651,7 @@ export class CampaignController {
       },
       defaults: preview.defaults,
       summary: preview.summary,
+      capacity,
     });
   }
 

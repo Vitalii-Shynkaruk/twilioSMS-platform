@@ -4,8 +4,8 @@ import { aiApi, dealApi, repApi } from '../../services/api';
 import { MessageSquare, Plus, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import toast from 'react-hot-toast';
-import type { Deal, DealStage, Rep, Offer, ProductType, DealEvent, PipelineAiSignals } from '../../types';
-import { formatCurrency } from './DealCard';
+import type { Deal, DealStage, Rep, Offer, ProductType, DealEvent, PipelineAiSignals, LinkedDeal } from '../../types';
+import { formatCurrency, PRODUCT_ICONS, StatePillRow } from './DealCard';
 import StackingChip from './StackingChip';
 import PipelineAiInlineBar from './PipelineAiInlineBar';
 import { getLatestPipelineNoteText } from './pipelineAiSignals';
@@ -28,12 +28,12 @@ type DuePreset = 'Overdue' | 'Today' | 'Tomorrow' | 'This week' | 'Future date';
 
 const STAGE_QUICK_ACTIONS: Record<DealStage, string[]> = {
   NEW_LEAD: ['Make first contact', 'Send intro text', 'Qualify business', 'Get monthly revenue'],
-  ENGAGED_INTERESTED: ['Send Follow Up Email', 'Send Case Study Email', '3/4th Follow Up'],
+  ENGAGED_INTERESTED: ['Send Follow Up', 'Get docs', 'Schedule call'],
   QUALIFIED: ['Submit application', 'Get remaining docs', 'Verify revenue'],
-  SUBMITTED_IN_REVIEW: ['Collect Remaining Docs', 'Follow Up With Lender', 'Book Newtek Call'],
-  APPROVED_OFFERS: ['Presenting Offer', 'Get DL/VC', 'Get Updated Offer'],
-  COMMITTED_FUNDING: ['Send PSF', 'Get Docs Signed'],
-  FUNDED: ['Request referrals', 'Check in 30 days', 'Upsell next product'],
+  SUBMITTED_IN_REVIEW: ['Follow Up With Lender', 'Collect Remaining Docs', 'Book Newtek Call'],
+  APPROVED_OFFERS: ['Call Client - Present Offer', 'Collect DL/VC', 'Get Decision'],
+  COMMITTED_FUNDING: ['Send PSF', 'Get Docs Signed', 'Schedule funding call'],
+  FUNDED: ['Renewal check-in', 'Schedule review'],
   NURTURE: ['Check back in 30 days', 'Send market update', 'Re-qualify business'],
   CLOSED: [],
 };
@@ -77,7 +77,10 @@ function dateFromDuePreset(preset: DuePreset): string {
   if (preset === 'Overdue') d.setDate(d.getDate() - 1);
   if (preset === 'Tomorrow') d.setDate(d.getDate() + 1);
   if (preset === 'This week') d.setDate(d.getDate() + 4);
-  return d.toISOString().split('T')[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function formatRelativeShort(iso?: string): string {
@@ -104,6 +107,33 @@ function formatDateTimeNoSeconds(value: string): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function formatLinkedDealAmount(linkedDeal: Deal | LinkedDeal): string {
+  const amount =
+    linkedDeal.stage === 'NURTURE' && linkedDeal.prevOffer
+      ? linkedDeal.prevOffer
+      : linkedDeal.submittedAmount ?? linkedDeal.dealAmount;
+  if (amount) return formatCurrency(amount);
+  return linkedDeal.productType || 'No amount';
+}
+
+function formatProductLabel(productType?: ProductType | string | null): string {
+  if (!productType) return 'Product';
+  return `${PRODUCT_ICONS[productType] || ''} ${productType}`.trim();
+}
+
+function loadStoredClientMeta(clientMetaKey: string): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(clientMetaKey);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === 'object' && 'monthlyRevenue' in parsed) {
+      delete parsed.monthlyRevenue;
+    }
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function dealSystemStatus(deal: Deal): { label: string; cls: string } | null {
@@ -146,6 +176,7 @@ interface DealPanelProps {
 }
 
 export default function DealPanel({ dealId, onClose }: DealPanelProps) {
+  const [activeDealId, setActiveDealId] = useState(dealId);
   const [tab, setTab] = useState<'convo' | 'deal' | 'history'>('deal');
   const [showActionModal, setShowActionModal] = useState(false);
   const [showOfferModal, setShowOfferModal] = useState(false);
@@ -158,10 +189,14 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
+  useEffect(() => {
+    setActiveDealId(dealId);
+  }, [dealId]);
+
   const { data: deal, isLoading } = useQuery({
-    queryKey: ['deal', dealId],
+    queryKey: ['deal', activeDealId],
     queryFn: async () => {
-      const { data } = await dealApi.getDeal(dealId);
+      const { data } = await dealApi.getDeal(activeDealId);
       return data as Deal;
     },
   });
@@ -169,12 +204,12 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
 
   const rerunPipelineMutation = useMutation({
     mutationFn: async (text: string): Promise<ExtractPipelineResponse> => {
-      const { data } = await aiApi.extractPipeline({ dealId, inputType: 'rep_note', text });
+      const { data } = await aiApi.extractPipeline({ dealId: activeDealId, inputType: 'rep_note', text });
       return data as ExtractPipelineResponse;
     },
     onSuccess: (result) => {
       if ('signals' in result) {
-        queryClient.setQueryData<Deal | undefined>(['deal', dealId], (current) =>
+        queryClient.setQueryData<Deal | undefined>(['deal', activeDealId], (current) =>
           current
             ? {
                 ...current,
@@ -198,9 +233,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => dealApi.updateDeal(dealId, data),
+    mutationFn: (data: any) => dealApi.updateDeal(activeDealId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal updated');
     },
@@ -208,9 +243,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const moveMutation = useMutation({
-    mutationFn: (data: any) => dealApi.moveDeal(dealId, data),
+    mutationFn: (data: any) => dealApi.moveDeal(activeDealId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal moved');
       setShowMoveModal(false);
@@ -219,9 +254,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const actionMutation = useMutation({
-    mutationFn: (data: any) => dealApi.completeAction(dealId, data),
+    mutationFn: (data: any) => dealApi.completeAction(activeDealId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Action completed');
       setShowActionModal(false);
@@ -229,9 +264,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const offerMutation = useMutation({
-    mutationFn: (data: any) => dealApi.addOffer(dealId, data),
+    mutationFn: (data: any) => dealApi.addOffer(activeDealId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Offer added');
       setShowOfferModal(false);
@@ -239,27 +274,27 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const fundMutation = useMutation({
-    mutationFn: (data: any) => dealApi.markFunded(dealId, data),
+    mutationFn: (data: any) => dealApi.markFunded(activeDealId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Deal marked as funded!');
     },
   });
 
   const shareMutation = useMutation({
-    mutationFn: (data: any) => dealApi.shareDeal(dealId, data),
+    mutationFn: (data: any) => dealApi.shareDeal(activeDealId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Co-rep updated');
     },
   });
 
   const logAttemptMutation = useMutation({
-    mutationFn: (kind: AttemptKind) => dealApi.logAttempt(dealId, { kind }),
+    mutationFn: (kind: AttemptKind) => dealApi.logAttempt(activeDealId, { kind }),
     onSuccess: (_response, kind) => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.invalidateQueries({ queryKey: ['board'] });
       toast.success(kind === 'not_interested' ? 'Moved to nurture' : 'Attempt logged');
@@ -268,7 +303,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => dealApi.deleteDeal(dealId),
+    mutationFn: () => dealApi.deleteDeal(activeDealId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.invalidateQueries({ queryKey: ['board'] });
@@ -279,9 +314,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
   });
 
   const deleteOfferMutation = useMutation({
-    mutationFn: (offerId: string) => dealApi.deleteOffer(dealId, offerId),
+    mutationFn: (offerId: string) => dealApi.deleteOffer(activeDealId, offerId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+      queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       toast.success('Offer deleted');
     },
@@ -433,7 +468,9 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
                 </option>
               ))}
             </select>
-            {deal.productType ? <span className="ph-stage-badge ph-badge-good">{deal.productType}</span> : null}
+            {deal.productType ? (
+              <span className="ph-stage-badge ph-badge-good">{formatProductLabel(deal.productType)}</span>
+            ) : null}
             <StackingChip signals={deal.pipelineAiSignals} className="ph-stacking-chip" />
             {smsCampaignSource ? <span className="ph-stage-badge ph-badge-amber">{smsCampaignSource}</span> : null}
             {deal.nextActionDue ? (
@@ -454,6 +491,8 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               <span className={clsx('ph-stage-badge ph-badge-info', sysStatus.cls)}>{sysStatus.label}</span>
             ) : null}
           </div>
+
+          <StatePillRow deal={deal} className="state-pill-row" />
 
           {deal.stage !== 'FUNDED' && deal.stage !== 'CLOSED' ? (
             <div className="quick-log-row" aria-label="Quick contact attempt log">
@@ -529,6 +568,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
           {tab === 'convo' && <ConversationTab deal={deal} />}
           {tab === 'deal' && (
             <DealClientTab
+              key={`${deal.id}:${deal.updatedAt || ''}`}
               deal={deal}
               isAdmin={isAdmin}
               onUpdate={(data: any) => updateMutation.mutate(data)}
@@ -539,6 +579,10 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
               onOpenNQModal={() => setShowNQModal(true)}
               onOpenFundedModal={() => setShowFundedModal(true)}
               onDeleteOffer={(offerId: string) => deleteOfferMutation.mutate(offerId)}
+              onOpenLinkedDeal={(id: string) => {
+                setActiveDealId(id);
+                setTab('deal');
+              }}
               canDeleteOffer={canDeleteOffer}
               deletingOfferId={deleteOfferMutation.isPending ? (deleteOfferMutation.variables ?? null) : null}
             />
@@ -597,7 +641,7 @@ export default function DealPanel({ dealId, onClose }: DealPanelProps) {
             deal={deal}
             onClose={() => setShowEditFundModal(null)}
             onSave={() => {
-              queryClient.invalidateQueries({ queryKey: ['deal', dealId] });
+              queryClient.invalidateQueries({ queryKey: ['deal', activeDealId] });
               queryClient.invalidateQueries({ queryKey: ['deals'] });
               setShowEditFundModal(null);
             }}
@@ -698,6 +742,7 @@ function DealClientTab({
   onOpenNQModal,
   onOpenFundedModal,
   onDeleteOffer,
+  onOpenLinkedDeal,
   canDeleteOffer,
   deletingOfferId,
 }: {
@@ -711,10 +756,13 @@ function DealClientTab({
   onOpenNQModal: () => void;
   onOpenFundedModal: () => void;
   onDeleteOffer: (offerId: string) => void;
+  onOpenLinkedDeal: (id: string) => void;
   canDeleteOffer: boolean;
   deletingOfferId: string | null;
 }) {
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
+  const [showLinkedDealModal, setShowLinkedDealModal] = useState(false);
   const isClosed = deal.stage === 'CLOSED';
   const isFunded = deal.stage === 'FUNDED';
   const assistingIds = (deal.assistingRepIds as string[]) || [];
@@ -722,33 +770,18 @@ function DealClientTab({
   const isAssistRep = !!user?.id && assistingIds.includes(user.id);
   const canEdit = isAdmin || isPrimaryRep || isAssistRep;
   const dealTypeOptions: Array<{ label: string; value: ProductType }> = [
-    { label: 'MCA', value: 'MCA' },
-    { label: 'LOC', value: 'LOC' },
-    { label: 'HELOC', value: 'HELOC' },
-    { label: 'SBA', value: 'SBA' },
-    { label: 'Equipment', value: 'EQUIPMENT' },
-    { label: 'CRE', value: 'CRE' },
+    { label: `${PRODUCT_ICONS.MCA} MCA`, value: 'MCA' },
+    { label: `${PRODUCT_ICONS.LOC} LOC`, value: 'LOC' },
+    { label: `${PRODUCT_ICONS.HELOC} HELOC`, value: 'HELOC' },
+    { label: `${PRODUCT_ICONS.SBA} SBA`, value: 'SBA' },
+    { label: `${PRODUCT_ICONS.EQUIPMENT} Equipment`, value: 'EQUIPMENT' },
+    { label: `${PRODUCT_ICONS.CRE} CRE`, value: 'CRE' },
   ];
-  const dueOptions: DuePreset[] = ['Overdue', 'Today', 'Tomorrow', 'This week', 'Future date'];
-  const baseRevenueRanges = [
-    '$10k–$20k',
-    '$20k–$30k',
-    '$40k–$60k',
-    '$75k–$100k',
-    '$100k–$120k',
-    '$120k–$150k',
-    '$150k–$200k',
-    '$200k–$300k',
-    '$300k–$400k',
-    '$500k–$600k',
-    '$700k–$800k',
-    '$900k–$1M',
-    '$1M+',
-  ];
+  const dueOptions: DuePreset[] = ['Today', 'Tomorrow', 'This week', 'Future date'];
   const sourceOptions = ['Cold Calling', 'Email', 'SMS', 'Referral'];
   const clientMetaKey = `scl_client_meta_${deal.clientId}`;
-  const [clientMeta, setClientMeta] = useState<Record<string, string>>({});
-  const [isNextActionOpen, setIsNextActionOpen] = useState(false);
+  const [clientMeta, setClientMeta] = useState<Record<string, string>>(() => loadStoredClientMeta(clientMetaKey));
+  const [isNextActionOpen, setIsNextActionOpen] = useState(true);
   const [nextActionDraft, setNextActionDraft] = useState(deal.nextAction || '');
   const [nextDuePreset, setNextDuePreset] = useState<DuePreset>(getDuePresetFromDate(deal.nextActionDue));
   const [nextDueDate, setNextDueDate] = useState(deal.nextActionDue?.split('T')[0] || '');
@@ -762,42 +795,12 @@ function DealClientTab({
   const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
   const clientSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const smsCampaignSource = extractSmsCampaignSource(deal.clientNotes);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(clientMetaKey);
-      const parsed = raw ? JSON.parse(raw) : {};
-      // monthlyRevenue is server-backed, keep localStorage only for lightweight local UX fields.
-      if (parsed && typeof parsed === 'object' && 'monthlyRevenue' in parsed) {
-        delete parsed.monthlyRevenue;
-      }
-      setClientMeta(parsed);
-    } catch {
-      setClientMeta({});
-    }
-  }, [clientMetaKey]);
-
-  useEffect(() => setNextActionDraft(deal.nextAction || ''), [deal.id, deal.nextAction]);
-  useEffect(() => {
-    setNextDuePreset(getDuePresetFromDate(deal.nextActionDue));
-    setNextDueDate(deal.nextActionDue?.split('T')[0] || '');
-    setSelectedPreset(null);
-    setIsNextActionOpen(false);
-  }, [deal.id, deal.nextActionDue]);
-  useEffect(() => setClientNoteDraft(deal.clientNotes || ''), [deal.id, deal.clientNotes]);
-  useEffect(
-    () => setAmountDraft(String(deal.submittedAmount ?? deal.dealAmount ?? '').replace(/\.0+$/, '')),
-    [deal.id, deal.submittedAmount, deal.dealAmount],
-  );
   useEffect(
     () => () => {
       if (clientSaveTimer.current) clearTimeout(clientSaveTimer.current);
     },
     [],
   );
-  useEffect(() => {
-    setLocalNotes([]);
-  }, [deal.id, deal.updatedAt]);
 
   function saveClientMeta(patch: Record<string, string>, persistToClient = false) {
     const next = { ...clientMeta, ...patch };
@@ -817,11 +820,9 @@ function DealClientTab({
   const clientPhone = clientMeta.phone ?? deal.client?.phone ?? '';
   const clientEmail = clientMeta.email ?? deal.client?.email ?? '';
   const clientBusiness = clientMeta.businessName ?? deal.client?.businessName ?? '';
-  const clientRevenue = deal.client?.monthlyRevenue ?? clientMeta.monthlyRevenue ?? '';
   const sourceType = (clientMeta.source || (smsCampaignSource ? 'SMS' : '')).trim();
   const leadSource = (clientMeta.leadSource ?? smsCampaignSource ?? '').trim();
   const pipelineSignals = deal.pipelineAiSignals?.skip_reason ? null : deal.pipelineAiSignals;
-  const aiRevenueRaw = pipelineSignals?.monthly_revenue?.raw?.trim() || '';
   const aiProductInterest = pipelineSignals?.product_interest || [];
   const aiPrimaryProduct = !deal.productType ? aiProductInterest[0] : null;
   const aiPendingAction = !deal.nextAction ? pipelineSignals?.pending_actions?.[0]?.action?.trim() || '' : '';
@@ -835,13 +836,11 @@ function DealClientTab({
   const stagePresets = STAGE_QUICK_ACTIONS[deal.stage] || [];
   const persistedDuePreset = getDuePresetFromDate(deal.nextActionDue);
   const persistedDueLabel = deal.nextActionDue ? persistedDuePreset : 'No due';
-
-  const revenueRanges = useMemo(() => {
-    const ranges = [...baseRevenueRanges];
-    if (aiRevenueRaw && !ranges.includes(aiRevenueRaw)) ranges.unshift(aiRevenueRaw);
-    if (clientRevenue && !ranges.includes(clientRevenue)) ranges.unshift(clientRevenue);
-    return ranges;
-  }, [baseRevenueRanges, clientRevenue, aiRevenueRaw]);
+  const linkedDeals = deal.linkedDeals || [];
+  const linkedDealRows: Array<{ deal: Deal | LinkedDeal; isCurrent: boolean }> = [
+    { deal, isCurrent: true },
+    ...linkedDeals.map((linkedDeal) => ({ deal: linkedDeal, isCurrent: false })),
+  ];
 
   const sortedEvents = useMemo(
     () =>
@@ -858,7 +857,7 @@ function DealClientTab({
     return text;
   }
 
-  const noteEntries = useMemo(() => {
+  const noteEntries = (() => {
     const items = sortedEvents
       .filter((event) => (event.eventType || '').toLowerCase().includes('note') && resolveEventNoteText(event.note))
       .map((event) => ({
@@ -883,7 +882,7 @@ function DealClientTab({
       return true;
     });
     return deduped.slice(0, 8);
-  }, [sortedEvents, deal.notes, deal.updatedAt, deal.createdAt, deal.id, localNotes, fullDealNote]);
+  })();
 
   const recentActivity = sortedEvents.slice(0, 3);
 
@@ -929,6 +928,10 @@ function DealClientTab({
     let dueForSave = '';
     if (nextDuePreset === 'Future date') {
       dueForSave = nextDueDate;
+      if (!dueForSave) {
+        toast.error('Future date is required');
+        return;
+      }
     } else {
       dueForSave = dateFromDuePreset(nextDuePreset);
     }
@@ -936,7 +939,7 @@ function DealClientTab({
 
     if (dueForSave !== existingDue) payload.nextActionDue = dueForSave || null;
     if (Object.keys(payload).length > 0) onUpdate(payload);
-    setIsNextActionOpen(false);
+    setIsNextActionOpen(true);
   }
 
   function saveQuickNote() {
@@ -969,6 +972,61 @@ function DealClientTab({
         </div>
       )}
 
+      {linkedDeals.length > 0 && (
+        <div className="dc-section linked-deals-section">
+          <div className="dc-sec-title">
+            <span>
+              Linked Deals · {linkedDealRows.length} cards for {deal.client?.businessName || 'Client'}
+            </span>
+            <button type="button" className="dc-link-action" onClick={() => setShowLinkedDealModal(true)}>
+              + Add product
+            </button>
+          </div>
+          <div className="linked-deals-grid">
+            {linkedDealRows.map(({ deal: linkedDeal, isCurrent }) => (
+              <button
+                key={linkedDeal.id}
+                type="button"
+                className={clsx('linked-deal-card', isCurrent && 'current')}
+                onClick={() => !isCurrent && onOpenLinkedDeal(linkedDeal.id)}
+                disabled={isCurrent}
+                aria-current={isCurrent ? 'true' : undefined}
+              >
+                <div className="linked-deal-main">
+                  <div className="linked-deal-amount">
+                    {formatLinkedDealAmount(linkedDeal)} · {formatProductLabel(linkedDeal.productType)}
+                    {linkedDeal.isHot ? <span className="linked-deal-hot">HOT</span> : null}
+                  </div>
+                  <div className="linked-deal-stage">{linkedDeal.stageLabel || STAGE_LABELS[linkedDeal.stage]}</div>
+                  <div className="linked-deal-action">{linkedDeal.nextAction || 'No action set'}</div>
+                </div>
+                <span className={clsx('linked-deal-status', isCurrent && 'current')}>
+                  {isCurrent ? 'VIEWING' : 'OPEN'}
+                </span>
+              </button>
+            ))}
+          </div>
+          {showLinkedDealModal && (
+            <CreateDealModal
+              onClose={() => setShowLinkedDealModal(false)}
+              onCreated={(createdDeal) => {
+                queryClient.invalidateQueries({ queryKey: ['deal', deal.id] });
+                queryClient.invalidateQueries({ queryKey: ['deals'] });
+                onOpenLinkedDeal(createdDeal.id);
+              }}
+              prefill={{
+                clientId: deal.clientId,
+                businessName: deal.client?.businessName,
+                contactName: deal.client?.contactName,
+                phone: deal.client?.phone,
+                email: deal.client?.email,
+                assignedRepId: deal.assignedRepId,
+              }}
+            />
+          )}
+        </div>
+      )}
+
       <div className="dc-section">
         <div className="dc-sec-title">Next Action</div>
         <div className="na-box">
@@ -990,16 +1048,16 @@ function DealClientTab({
               <span className="na-edit-icon">✎</span>
             </button>
           )}
-          <div className={clsx('na-expanded', isNextActionOpen && 'open')}>
-            <div className="preset-label">
-              Quick actions — <span>{STAGE_LABELS[deal.stage]}</span>
+          <div className={clsx('na-expanded qa-block', isNextActionOpen && 'open')}>
+            <div className="preset-label qa-stage-label">
+              Quick actions · <strong>{STAGE_LABELS[deal.stage]}</strong>
             </div>
-            <div className="preset-row">
+            <div className="preset-row qa-buttons">
               {stagePresets.map((preset) => (
                 <button
                   key={preset}
                   type="button"
-                  className={clsx('preset', selectedPreset === preset && 'selected')}
+                  className={clsx('preset qa-action', selectedPreset === preset && 'selected')}
                   onClick={() => {
                     if (!canEdit) return;
                     setSelectedPreset(preset);
@@ -1011,20 +1069,21 @@ function DealClientTab({
               ))}
             </div>
             <div className="na-edit-lbl">Custom / edit</div>
-            <textarea
-              className="na-ta"
+            <input
+              type="text"
+              className="qa-input"
               value={nextActionDraft}
               onChange={(e) => setNextActionDraft(e.target.value)}
               placeholder="Or type a custom action..."
               disabled={!canEdit}
             />
-            <div className="na-footer">
-              <div className="drow" style={{ marginTop: 0 }}>
+            <div className="na-footer qa-date-row">
+              <div className="drow qa-date-pills" style={{ marginTop: 0 }}>
                 {dueOptions.map((opt) => (
                   <button
                     key={opt}
                     type="button"
-                    className={clsx('dbtn', nextDuePreset === opt && 'active')}
+                    className={clsx('dbtn qa-date-pill', nextDuePreset === opt && 'active on')}
                     onClick={() => setDuePreset(opt)}
                   >
                     {opt}
@@ -1035,7 +1094,7 @@ function DealClientTab({
                 <button type="button" className="na-cancel" onClick={closeNextActionEditor}>
                   Cancel
                 </button>
-                <button type="button" className="na-set-btn" onClick={saveNextAction} disabled={!canEdit || isClosed}>
+                <button type="button" className="na-set-btn qa-set" onClick={saveNextAction} disabled={!canEdit || isClosed}>
                   Set Action
                 </button>
               </div>
@@ -1161,28 +1220,6 @@ function DealClientTab({
               >
                 {opt.label}
                 {suggested ? <span className="pill-ai-mark">AI</span> : null}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="lbl" style={{ marginTop: 10, marginBottom: 5 }}>
-          Monthly Revenue
-        </div>
-        <div className="pr">
-          {revenueRanges.map((range) => {
-            const isAiSuggestion = aiRevenueRaw === range;
-            const isSelected = clientRevenue ? clientRevenue === range : isAiSuggestion;
-            return (
-              <button
-                key={range}
-                type="button"
-                className={clsx('pill', isSelected && 'on', isAiSuggestion && 'pill-ai-suggested')}
-                onClick={() => saveClientMeta({ monthlyRevenue: range }, true)}
-                title={isAiSuggestion ? 'AI monthly revenue suggestion' : undefined}
-              >
-                {range}
-                {isAiSuggestion ? <span className="pill-ai-mark">AI</span> : null}
               </button>
             );
           })}
@@ -1415,8 +1452,15 @@ function DealClientTab({
 
 function FundingHistoryTab({ deal }: { deal: Deal }) {
   const [showNewDeal, setShowNewDeal] = useState(false);
-  const events = deal.fundingEvents || [];
-  const total = events.reduce((sum, e) => sum + (e.amountFunded || 0), 0);
+  const history = deal.fundingHistory || [];
+  const total = history.reduce((sum, round) => sum + (round.amountFunded || 0), 0);
+  const priorCount = history.filter((round) => !round.isCurrentDeal).length;
+  const historyLabel =
+    history.length === 0
+      ? 'Funding History'
+      : deal.stage === 'FUNDED'
+        ? `Funding History · ${history.length} round${history.length === 1 ? '' : 's'}`
+        : `Funding History · ${priorCount || history.length}x prior`;
 
   return (
     <div className="fund-history">
@@ -1441,9 +1485,9 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
             </div>
           </div>
           <div className="cs-item">
-            <div className="cs-label">Events</div>
+            <div className="cs-label">Rounds</div>
             <div className="cs-val" style={{ color: 'var(--gold)' }}>
-              {events.length}
+              {history.length}
             </div>
           </div>
           <div className="cs-item">
@@ -1477,41 +1521,64 @@ function FundingHistoryTab({ deal }: { deal: Deal }) {
       )}
 
       <div
-        style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: 8 }}
+        className="fund-history-title"
       >
-        Funding History ({events.length})
+        {historyLabel}
       </div>
 
-      {events.length === 0 && <div className="msg-meta">No funding events yet.</div>}
-      {events.map((event) => (
-        <div key={event.id} className="fund-event">
+      {history.length === 0 && <div className="fund-empty-state">No funding history yet</div>}
+      {history.length > 0 && (
+        <div className="fund-returning-summary">
+          {deal.stage === 'FUNDED'
+            ? `${history.length} funded round${history.length === 1 ? '' : 's'} recorded for this client.`
+            : `${priorCount || history.length} prior funded round${(priorCount || history.length) === 1 ? '' : 's'} found for this returning customer.`}
+        </div>
+      )}
+      {history.map((round) => (
+        <div key={round.id} className={clsx('fund-event', round.isCurrentDeal && 'active-event')}>
           <div className="fe-header">
-            <div className="fe-title">{event.lender || 'Funding Event'}</div>
+            <div className="fe-title">{round.lender || 'Lender not recorded'}</div>
             <div className="fe-date">
-              {event.fundedDate
-                ? new Date(event.fundedDate).toLocaleDateString()
-                : new Date(event.createdAt).toLocaleDateString()}
+              {round.fundedDate
+                ? new Date(round.fundedDate).toLocaleDateString()
+                : new Date(round.createdAt).toLocaleDateString()}
             </div>
           </div>
           <div className="fe-grid">
             <div className="fe-item">
-              <div className="fe-label">Amount</div>
-              <div className="fe-val g">{formatCurrency(event.amountFunded)}</div>
+              <div className="fe-label">Funded Amount</div>
+              <div className="fe-val g">{formatCurrency(round.amountFunded)}</div>
             </div>
             <div className="fe-item">
+              <div className="fe-label">Funding Date</div>
+              <div className="fe-val">
+                {round.fundedDate ? new Date(round.fundedDate).toLocaleDateString() : '—'}
+              </div>
+            </div>
+            <div className="fe-item">
+              <div className="fe-label">Lender</div>
+              <div className="fe-val">{round.lender || '—'}</div>
+            </div>
+          </div>
+          <div className="fe-grid fe-grid-secondary">
+            <div className="fe-item">
               <div className="fe-label">Product</div>
-              <div className="fe-val">{event.productType || '—'}</div>
+              <div className="fe-val">{round.productType ? formatProductLabel(round.productType) : '—'}</div>
             </div>
             <div className="fe-item">
               <div className="fe-label">Rep</div>
-              <div className="fe-val">{deal.assignedRep?.firstName || '—'}</div>
+              <div className="fe-val">{round.repName || deal.assignedRep?.firstName || '—'}</div>
+            </div>
+            <div className="fe-item">
+              <div className="fe-label">Round</div>
+              <div className="fe-val">{round.isCurrentDeal ? 'Current deal' : 'Prior deal'}</div>
             </div>
           </div>
-          {event.notes && (
+          {round.notes && (
             <div className="fe-milestones">
               <div className="ms-item">
                 <span className="ms-label">Notes</span>
-                <span className="ms-date done">{event.notes}</span>
+                <span className="ms-date done">{round.notes}</span>
               </div>
             </div>
           )}

@@ -1129,7 +1129,25 @@ type RetargetPreviewResponse = {
     dncFiltered: number;
     willReceive: number;
   };
+  capacity: {
+    campaignCap: number;
+    dailyCap: number;
+    dailyUsed: number;
+    dailyRemaining: number;
+  };
 };
+
+type CampaignApiErrorPayload = {
+  error?: string;
+  message?: string;
+};
+
+function getCampaignApiErrorPayload(error: unknown): CampaignApiErrorPayload | null {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return null;
+  const response = (error as { response?: { data?: CampaignApiErrorPayload } }).response;
+  if (!response?.data) return null;
+  return response.data;
+}
 
 function RetargetCampaignModal({
   campaign,
@@ -1159,6 +1177,13 @@ function RetargetCampaignModal({
 
   const resolvedName = nameEdited ? nameDraft : data?.defaults.name || '';
   const resolvedMessageTemplate = messageEdited ? messageDraft : data?.defaults.messageTemplate || '';
+  const summary = data?.summary;
+  const capacity = data?.capacity;
+  const hasEligibleRecipients = (summary?.willReceive || 0) > 0;
+  const exceedsDailyCapacity = typeof capacity?.dailyRemaining === 'number' && (summary?.willReceive || 0) > capacity.dailyRemaining;
+  const capacityWarning = exceedsDailyCapacity
+    ? `Daily capacity: ${capacity?.dailyUsed || 0} of ${capacity?.dailyCap || 0} used in the last 24 hours. Remaining capacity: ${capacity?.dailyRemaining || 0}. This retarget needs ${summary?.willReceive || 0}.`
+    : null;
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -1172,16 +1197,16 @@ function RetargetCampaignModal({
       onCreated();
       onClose();
     },
-    onError: (err: any) => {
-      toast.error(err.response?.data?.error || 'Failed to create retarget campaign');
+    onError: (error: unknown) => {
+      const payload = getCampaignApiErrorPayload(error);
+      toast.error(payload?.message || payload?.error || 'Failed to create retarget campaign');
     },
   });
 
-  const summary = data?.summary;
-  const hasEligibleRecipients = (summary?.willReceive || 0) > 0;
   const canConfirm =
     !outboundLocked &&
     hasEligibleRecipients &&
+    !exceedsDailyCapacity &&
     resolvedName.trim().length > 0 &&
     resolvedMessageTemplate.trim().length > 0;
 
@@ -1227,9 +1252,22 @@ function RetargetCampaignModal({
                 <p className="text-lg font-semibold text-[#C9A84C]">{summary?.willReceive || 0}</p>
               </div>
 
+              <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2">
+                <p className="text-xs text-sky-300 uppercase tracking-wide">Daily Capacity Remaining</p>
+                <p className="text-lg font-semibold text-sky-200">
+                  {capacity?.dailyRemaining || 0} / {capacity?.dailyCap || 0}
+                </p>
+                <p className="mt-1 text-[11px] text-sky-100/80">Rolling 24-hour window for this rep.</p>
+              </div>
+
               {!hasEligibleRecipients && (
                 <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-xs text-orange-300">
                   No eligible recipients. All delivered contacts have replied or are on DNC.
+                </div>
+              )}
+              {capacityWarning && (
+                <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {capacityWarning}
                 </div>
               )}
               {outboundLocked && (
@@ -1277,7 +1315,7 @@ function RetargetCampaignModal({
               type="button"
               className="btn-primary w-full sm:w-auto"
               disabled={!canConfirm || createMutation.isPending}
-              title={outboundLocked ? outboundLockMsg : undefined}
+              title={outboundLocked ? outboundLockMsg : capacityWarning || undefined}
               onClick={() => createMutation.mutate()}
             >
               {createMutation.isPending ? 'Creating...' : 'Confirm Retarget'}

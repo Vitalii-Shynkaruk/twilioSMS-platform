@@ -8,7 +8,13 @@ import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import { ComplianceService } from '../services/complianceService';
 import { OutboundGateService } from '../services/outboundGateService';
-import { AIService, extractConversationEmail, resolveAiSuggestions } from '../services/aiService';
+import {
+  AIService,
+  extractConversationCreditProfile,
+  extractConversationEmail,
+  extractConversationPropertyOwnership,
+  resolveAiSuggestions,
+} from '../services/aiService';
 import { buildSuggestedFollowup, resolveFollowupStatus } from '../services/followupPolicy';
 import { resolveConversationEmailRecipient } from '../services/conversationEmailPolicy';
 
@@ -407,6 +413,8 @@ export class InboxController {
       unknown
     >;
     const nextSignals: Record<string, unknown> = { ...currentSignals };
+    const creditProfile = extractConversationCreditProfile(conversation.messages);
+    const propertyOwnership = extractConversationPropertyOwnership(conversation.messages);
 
     if (monthlyRevenue != null) {
       nextSignals.revenueMonthly = monthlyRevenue;
@@ -416,6 +424,8 @@ export class InboxController {
     }
     if (askValue) nextSignals.ask = askValue;
     if (industry) nextSignals.industry = industry;
+    if (creditProfile) nextSignals.creditProfile = creditProfile;
+    if (propertyOwnership) nextSignals.propertyOwnership = propertyOwnership;
     if (typeof helocFitFlag === 'boolean') {
       nextSignals.helocFitFlag = helocFitFlag;
     } else {
@@ -1890,6 +1900,15 @@ export class InboxController {
     const responseAiSignals = {
       ...(((conversation.aiSignals as Record<string, unknown> | null) || {}) as Record<string, unknown>),
     };
+    const derivedCreditProfile = extractConversationCreditProfile(chronologicalMessages);
+    const derivedPropertyOwnership = extractConversationPropertyOwnership(chronologicalMessages);
+
+    if (derivedCreditProfile) {
+      responseAiSignals.creditProfile = derivedCreditProfile;
+    }
+    if (derivedPropertyOwnership) {
+      responseAiSignals.propertyOwnership = derivedPropertyOwnership;
+    }
     const latestInboundMessage =
       [...chronologicalMessages]
         .reverse()

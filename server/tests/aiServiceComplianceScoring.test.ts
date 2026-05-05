@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { AIService } from "../src/services/aiService";
+import {
+  AIService,
+  extractConversationCreditProfile,
+  extractConversationPropertyOwnership,
+} from "../src/services/aiService";
 
 describe("AIService CA compliance and scoring", () => {
   it("includes California compliance block in system prompt when isCA is true", async () => {
@@ -42,5 +46,23 @@ describe("AIService CA compliance and scoring", () => {
     });
 
     expect(score).toBeLessThanOrEqual(25);
+  });
+
+  it("извлекает credit profile из краткого ответа после вопроса о credit score", () => {
+    const creditProfile = extractConversationCreditProfile([
+      { direction: "OUTBOUND", body: "Do you have 600 credit and property?" },
+      { direction: "INBOUND", body: "780 plus" },
+    ]);
+
+    expect(creditProfile).toBe("780+");
+  });
+
+  it("извлекает ownership property из контекстного короткого ответа", () => {
+    const propertyOwnership = extractConversationPropertyOwnership([
+      { direction: "OUTBOUND", body: "Do you have property?" },
+      { direction: "INBOUND", body: "Lots of it" },
+    ]);
+
+    expect(propertyOwnership).toBe("Owns property");
   });
 });

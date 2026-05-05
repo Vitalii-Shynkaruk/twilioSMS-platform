@@ -65,6 +65,7 @@ describe("M1.4 Pipeline AI service", () => {
   it("возвращает локальные skip reasons до LLM вызова", () => {
     expect(getPipelineAiLocalSkipReason("[EMAIL]")).toBe("contact_info_only");
     expect(getPipelineAiLocalSkipReason("Have not received yet")).toBe("too_short");
+    expect(getPipelineAiLocalSkipReason("$20k monthly gross")).toBeNull();
     expect(getPipelineAiLocalSkipReason("Trucking business does $80k a month and wants equipment")).toBeNull();
   });
 

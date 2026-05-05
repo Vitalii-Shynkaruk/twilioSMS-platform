@@ -132,6 +132,8 @@ export const dealApi = {
 };
 
 export const aiApi = {
+  previewPipeline: (data: { inputType: 'rep_note' | 'client_sms'; text: string }) =>
+    api.post('/ai/preview-pipeline', data),
   extractPipeline: (data: { dealId: string; inputType: 'rep_note' | 'client_sms'; text: string }) =>
     api.post('/ai/extract-pipeline', data),
 };

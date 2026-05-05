@@ -143,6 +143,8 @@ export interface Conversation {
 }
 
 export interface AISignals {
+  creditProfile?: string | null;
+  propertyOwnership?: string | null;
   revenue?: string | null;
   ask?: string | null;
   urgency?: string | null;
@@ -457,6 +459,30 @@ export interface Client {
   lastFundedDate?: string;
 }
 
+export interface LinkedDeal {
+  id: string;
+  clientId: string;
+  assignedRepId?: string;
+  assistingRepIds?: string[];
+  stage: DealStage;
+  stageLabel: string;
+  productType?: ProductType;
+  dealAmount?: number;
+  submittedAmount?: number;
+  prevOffer?: number;
+  nextAction?: string;
+  nextActionDue?: string;
+  lastActivityAt?: string;
+  lastReplyAt?: string | null;
+  lenderEngaged?: boolean;
+  appSubmitted?: boolean;
+  isHot?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  assignedRep?: Rep;
+  offers?: Offer[];
+}
+
 export interface Deal {
   id: string;
   clientId: string;
@@ -498,6 +524,9 @@ export interface Deal {
   isHot: boolean;
   pipelineAiSignals?: PipelineAiSignals | null;
   pipelineAiUpdatedAt?: string | null;
+  linkedDealsCount?: number;
+  linkedDeals?: LinkedDeal[];
+  fundingHistory?: FundingHistoryRound[];
   createdAt: string;
   updatedAt: string;
   // Relations
@@ -538,6 +567,19 @@ export interface FundingEvent {
   fundedDate?: string;
   notes?: string;
   createdAt: string;
+}
+
+export interface FundingHistoryRound {
+  id: string;
+  dealId: string;
+  amountFunded: number;
+  lender?: string | null;
+  productType?: ProductType | null;
+  fundedDate?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  repName?: string | null;
+  isCurrentDeal?: boolean;
 }
 
 export interface DealEvent {
@@ -587,6 +629,7 @@ export interface DealBoard {
     deals: Deal[];
     count: number;
     value: number;
+    prevOfferSubtotal?: number;
   }[];
   total: number;
 }

@@ -13,6 +13,50 @@ interface AISuggestionsProps {
   suggestionCtaDisabledTitle?: string;
 }
 
+function isMeaningfulSignalLabel(value: unknown): value is string {
+  return (
+    typeof value === 'string'
+    && value.trim().length > 0
+    && !['unknown', 'n/a', 'na', '—'].includes(value.trim().toLowerCase())
+  );
+}
+
+function formatRevenueLabel(signals: AISignals): string | null {
+  if (isMeaningfulSignalLabel(signals.revenue)) return signals.revenue.trim();
+  const monthly = typeof signals.revenueMonthly === 'number' ? Math.round(signals.revenueMonthly) : null;
+  if (monthly == null || !Number.isFinite(monthly) || monthly <= 0) return null;
+  if (monthly >= 1_000_000) return `$${(monthly / 1_000_000).toFixed(monthly % 1_000_000 === 0 ? 0 : 1)}M/mo`;
+  if (monthly >= 1_000) return `$${Math.round(monthly / 1_000)}k/mo`;
+  return `$${monthly}/mo`;
+}
+
+function buildSignalSummary(signals?: AISignals | null): string {
+  if (!signals) return '';
+
+  const parts: string[] = [];
+  const creditProfile = isMeaningfulSignalLabel(signals.creditProfile) ? signals.creditProfile.trim() : null;
+  const propertyOwnership = isMeaningfulSignalLabel(signals.propertyOwnership)
+    ? signals.propertyOwnership.trim()
+    : null;
+  const revenueLabel = formatRevenueLabel(signals);
+  const askLabel = isMeaningfulSignalLabel(signals.ask) ? signals.ask.trim() : null;
+  const productLabel = isMeaningfulSignalLabel(signals.product) ? signals.product.trim() : null;
+  const industryLabel = isMeaningfulSignalLabel(signals.industry) ? signals.industry.trim() : null;
+  const urgencyLabel = isMeaningfulSignalLabel(signals.urgency) ? signals.urgency.trim() : null;
+  const objectionLabel = isMeaningfulSignalLabel(signals.objections) ? signals.objections.trim() : null;
+
+  if (creditProfile) parts.push(/credit/i.test(creditProfile) ? creditProfile : `${creditProfile} credit`);
+  if (propertyOwnership) parts.push(propertyOwnership);
+  if (revenueLabel) parts.push(revenueLabel);
+  if (askLabel) parts.push(askLabel);
+  if (productLabel) parts.push(productLabel);
+  if (industryLabel) parts.push(industryLabel);
+  if (urgencyLabel) parts.push(urgencyLabel);
+  if (objectionLabel) parts.push(objectionLabel);
+
+  return parts.slice(0, 4).join(' · ');
+}
+
 function renderText(text: string) {
   return text.split(/(\$[\d,.]+[kKmM]?)/g).map((part, i) =>
     /^\$[\d,.]+[kKmM]?$/.test(part) ? (
@@ -57,7 +101,7 @@ export default function AISuggestions({
   if (shown.length === 0) return null;
   const best = shown[0];
 
-  const sigStr = signals ? Object.values(signals).filter(Boolean).slice(0, 4).join(' · ') : '';
+  const sigStr = buildSignalSummary(signals);
 
   const renderCard = (s: AISuggestion, isBest: boolean) => {
     const blocked = !!s.blocked;

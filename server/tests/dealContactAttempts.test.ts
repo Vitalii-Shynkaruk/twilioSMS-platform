@@ -85,6 +85,36 @@ describe('M1.5 deal contact attempts', () => {
     expect(response.json).toHaveBeenCalled();
   });
 
+  it.each(['no_answer', 'texted', 'voicemail'] as const)(
+    'переносит overdue nextActionDue на следующий business day при quick-log attempt %s',
+    async (kind) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-08T16:00:00.000Z'));
+
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(
+      createDealFixture({ nextActionDue: new Date('2026-05-01T12:00:00.000Z') }) as never,
+    );
+    const update = vi.spyOn(prisma.deal, 'update').mockResolvedValue(
+      createDealFixture({
+        contactAttempts: 3,
+        nextActionDue: new Date('2026-05-11T12:00:00.000Z'),
+      }) as never,
+    );
+    vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+
+    await DealController.logAttempt(createRequest({ kind }), createResponse());
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactAttempts: 3,
+          nextActionDue: new Date('2026-05-11T12:00:00.000Z'),
+        }),
+      }),
+    );
+    },
+  );
+
   it('автоматически переносит в Nurture при достижении threshold', async () => {
     vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(
       createDealFixture({ contactAttempts: 9, contactAttemptThreshold: 10 }) as never,
@@ -115,8 +145,10 @@ describe('M1.5 deal contact attempts', () => {
     expect(leadUpdate).toHaveBeenCalledWith({ where: { id: 'lead-1' }, data: { status: 'NOT_INTERESTED' } });
   });
 
-  it('connected сбрасывает attempts и обновляет engagement timestamp', async () => {
-    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 4 }) as never);
+  it('connected сбрасывает attempts, due date и обновляет engagement timestamp', async () => {
+    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(
+      createDealFixture({ contactAttempts: 4, nextActionDue: new Date('2026-05-01T12:00:00.000Z') }) as never,
+    );
     const update = vi
       .spyOn(prisma.deal, 'update')
       .mockResolvedValue(
@@ -128,7 +160,7 @@ describe('M1.5 deal contact attempts', () => {
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ contactAttempts: 0, lastEngagementAt: expect.any(Date) }),
+        data: expect.objectContaining({ contactAttempts: 0, lastEngagementAt: expect.any(Date), nextActionDue: null }),
       }),
     );
   });

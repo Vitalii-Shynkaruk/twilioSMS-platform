@@ -147,6 +147,87 @@ describe('M2.3 AI retarget cohorts', () => {
     );
   });
 
+  it('возвращает rolling 24h capacity в retarget preview', async () => {
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(529);
+    vi.spyOn(prisma.campaign, 'findUnique').mockResolvedValue({
+      id: 'campaign-1',
+      name: 'TT master Sheet AN 04/22/2026',
+      messageTemplate: 'Hello {{firstName}}',
+      numberPoolId: null,
+      sendingSpeed: 30,
+      dailyLimit: 400,
+      createdById: 'rep-1',
+    } as never);
+    vi.spyOn(prisma.campaignLead, 'findMany').mockResolvedValue([
+      {
+        status: 'DELIVERED',
+        leadId: 'lead-1',
+        lead: { id: 'lead-1', phone: '+15550000001', status: 'NEW', optedOut: false, isSuppressed: false },
+      },
+      {
+        status: 'DELIVERED',
+        leadId: 'lead-2',
+        lead: { id: 'lead-2', phone: '+15550000002', status: 'NEW', optedOut: false, isSuppressed: false },
+      },
+    ] as never);
+    vi.spyOn(prisma.message, 'findMany')
+      .mockResolvedValueOnce([
+        {
+          status: 'DELIVERED',
+          sentAt: new Date('2026-05-05T10:00:00.000Z'),
+          createdAt: new Date('2026-05-05T10:00:00.000Z'),
+          conversation: { leadId: 'lead-1' },
+        },
+        {
+          status: 'DELIVERED',
+          sentAt: new Date('2026-05-05T10:05:00.000Z'),
+          createdAt: new Date('2026-05-05T10:05:00.000Z'),
+          conversation: { leadId: 'lead-2' },
+        },
+      ] as never)
+      .mockResolvedValueOnce([
+        {
+          createdAt: new Date('2026-05-05T10:30:00.000Z'),
+          conversation: { leadId: 'lead-1' },
+        },
+      ] as never);
+    vi.spyOn(prisma.suppressionEntry, 'findMany').mockResolvedValue([] as never);
+
+    const response = createResponse();
+
+    await CampaignController.retargetPreview(
+      createRequest({
+        params: { id: 'campaign-1' },
+        user: {
+          id: 'rep-1',
+          email: 'rep@sclcapital.io',
+          role: 'REP',
+          firstName: 'Rep',
+          lastName: 'One',
+        },
+      }),
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: expect.objectContaining({
+          totalDelivered: 2,
+          replied: 1,
+          failedBlocked: 0,
+          dncFiltered: 0,
+          willReceive: 1,
+        }),
+        capacity: expect.objectContaining({
+          campaignCap: 500,
+          dailyCap: 800,
+          dailyUsed: 529,
+          dailyRemaining: 271,
+        }),
+      }),
+    );
+  });
+
   it('создает draft campaign из AI cohort без auto-send', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(2).mockResolvedValueOnce(2);

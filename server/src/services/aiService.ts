@@ -245,6 +245,10 @@ export function normalizeLockedClassifierPayload(payload: unknown): Record<strin
   return {
     classification,
     leadScore: typeof raw.leadScore === 'number' ? raw.leadScore : 0,
+    creditProfile:
+      typeof raw.creditProfile === 'string' && raw.creditProfile.trim() ? raw.creditProfile.trim() : null,
+    propertyOwnership:
+      typeof raw.propertyOwnership === 'string' && raw.propertyOwnership.trim() ? raw.propertyOwnership.trim() : null,
     revenueMonthly: typeof raw.revenueMonthly === 'number' ? raw.revenueMonthly : null,
     revenueAnnual: typeof raw.revenueAnnual === 'number' ? raw.revenueAnnual : null,
     revenueConfidence,
@@ -555,15 +559,21 @@ function extractPreviousOutboundText(messages: SuggestionResolutionMessage[]): s
   }
 
   if (latestInboundIndex > 0) {
-    for (let index = latestInboundIndex - 1; index >= 0; index -= 1) {
-      const message = messages[index];
-      if (String(message.direction || '').toUpperCase() !== 'OUTBOUND') continue;
-      const body = String(message.body || '').trim();
-      if (body) return body;
-    }
+    return findPreviousOutboundText(messages, latestInboundIndex);
   }
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message.direction || '').toUpperCase() !== 'OUTBOUND') continue;
+    const body = String(message.body || '').trim();
+    if (body) return body;
+  }
+
+  return '';
+}
+
+function findPreviousOutboundText(messages: SuggestionResolutionMessage[], startIndexExclusive: number): string {
+  for (let index = startIndexExclusive - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (String(message.direction || '').toUpperCase() !== 'OUTBOUND') continue;
     const body = String(message.body || '').trim();
@@ -580,6 +590,106 @@ export function extractConversationEmail(messages: SuggestionResolutionMessage[]
 
     const detectedEmail = extractEmailAddress(message.body);
     if (detectedEmail) return detectedEmail;
+  }
+
+  return null;
+}
+
+function formatCreditProfileLabel(match: RegExpMatchArray): string | null {
+  const qualifier = String(match[1] || '')
+    .trim()
+    .toLowerCase();
+  const score = Number.parseInt(String(match[2] || ''), 10);
+  const plus = String(match[3] || '').trim().toLowerCase();
+  if (!Number.isFinite(score) || score < 400 || score > 850) return null;
+
+  if (plus === '+' || plus === 'plus' || qualifier === 'over' || qualifier === 'above') {
+    return `${score}+`;
+  }
+  if (qualifier === 'under' || qualifier === 'below') {
+    return `<${score}`;
+  }
+  if (qualifier === 'around' || qualifier === 'about' || qualifier === 'near' || qualifier === 'close to') {
+    return `~${score}`;
+  }
+
+  return `${score}`;
+}
+
+function hasCreditSignalContext(bodyLower: string, previousOutboundLower: string): boolean {
+  return /\b(credit|score|fico)\b/.test(bodyLower) || /\b(credit|score|fico)\b/.test(previousOutboundLower);
+}
+
+export function extractConversationCreditProfile(messages: SuggestionResolutionMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message.direction || '').toUpperCase() !== 'INBOUND') continue;
+
+    const body = String(message.body || '').trim();
+    const lower = body.toLowerCase();
+    if (!lower) continue;
+
+    const previousOutboundLower = findPreviousOutboundText(messages, index).toLowerCase();
+    const bodyLooksLikeBareScore =
+      /^\s*(?:over|above|under|below|around|about|near|close to)?\s*[4-8]\d{2}\s*(?:\+|plus)?\s*$/i.test(body);
+    const scoreMatch = body.match(/\b(over|above|under|below|around|about|near|close to)?\s*([4-8]\d{2})\s*(\+|plus)?\b/i);
+
+    if (scoreMatch && (hasCreditSignalContext(lower, previousOutboundLower) || bodyLooksLikeBareScore)) {
+      const label = formatCreditProfileLabel(scoreMatch);
+      if (label) return label;
+    }
+
+    if (/\bexcellent credit\b/.test(lower)) return 'Excellent credit';
+    if (/\bgreat credit\b/.test(lower)) return 'Great credit';
+    if (/\bgood credit\b/.test(lower)) return 'Good credit';
+    if (/\bfair credit\b/.test(lower)) return 'Fair credit';
+    if (/\bpoor credit\b|\bbad credit\b|\brough credit\b/.test(lower)) return 'Poor credit';
+  }
+
+  return null;
+}
+
+function hasPropertySignalContext(bodyLower: string, previousOutboundLower: string): boolean {
+  return /\b(property|properties|real estate|home|house|equity|homeowner|home owner)\b/.test(bodyLower)
+    || /\b(property|properties|real estate|home|house|equity|homeowner|home owner)\b/.test(previousOutboundLower);
+}
+
+function extractPropertyOwnershipFromText(bodyLower: string): string | null {
+  if (!bodyLower.trim()) return null;
+
+  if (/\bhas equity\b|\bequity\b/.test(bodyLower)) return 'Has equity';
+  if (/\blots? of it\b|\ba lot of it\b|\bplenty\b|\bseveral\b|\bmany\b/.test(bodyLower)) {
+    return 'Owns property';
+  }
+  if (
+    /\b(yes|yeah|yep|yup|i do|own property|own a home|own a house|own real estate|have property|have a home|have a house|have real estate|homeowner)\b/.test(
+      bodyLower,
+    )
+  ) {
+    return 'Owns property';
+  }
+  if (/\b(no property|no home|no house|not a homeowner|rent|renter|none|do not|don't)\b/.test(bodyLower)) {
+    return 'No property';
+  }
+
+  return null;
+}
+
+export function extractConversationPropertyOwnership(messages: SuggestionResolutionMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (String(message.direction || '').toUpperCase() !== 'INBOUND') continue;
+
+    const bodyLower = String(message.body || '')
+      .trim()
+      .toLowerCase();
+    if (!bodyLower) continue;
+
+    const previousOutboundLower = findPreviousOutboundText(messages, index).toLowerCase();
+    if (!hasPropertySignalContext(bodyLower, previousOutboundLower)) continue;
+
+    const label = extractPropertyOwnershipFromText(bodyLower);
+    if (label) return label;
   }
 
   return null;
@@ -2253,6 +2363,21 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       direction: message.direction,
       body: message.body,
     }));
+    const derivedCreditProfile =
+      typeof rawSignals.creditProfile === 'string' && rawSignals.creditProfile.trim()
+        ? rawSignals.creditProfile.trim()
+        : extractConversationCreditProfile(messageTextContext);
+    const derivedPropertyOwnership =
+      typeof rawSignals.propertyOwnership === 'string' && rawSignals.propertyOwnership.trim()
+        ? rawSignals.propertyOwnership.trim()
+        : extractConversationPropertyOwnership(messageTextContext);
+
+    if (derivedCreditProfile) {
+      signals.creditProfile = derivedCreditProfile;
+    }
+    if (derivedPropertyOwnership) {
+      signals.propertyOwnership = derivedPropertyOwnership;
+    }
 
     let suggestions = resolveAiSuggestions({
       suggestions: parsedSuggestions,

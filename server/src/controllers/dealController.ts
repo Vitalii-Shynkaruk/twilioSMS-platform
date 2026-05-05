@@ -89,6 +89,22 @@ const INCREMENT_ATTEMPT_KINDS = new Set<QuickLogKind>([
   QUICK_LOG_KINDS.VOICEMAIL,
 ]);
 
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setUTCHours(12, 0, 0, 0);
+
+  let remaining = Math.max(0, days);
+  while (remaining > 0) {
+    result.setUTCDate(result.getUTCDate() + 1);
+    const day = result.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+
+  return result;
+}
+
 type RepIdentity = {
   id: string;
   firstName: string;
@@ -307,11 +323,17 @@ export class DealController {
       orderBy: { lastActivityAt: 'desc' },
     });
 
+    const visibleDealCountByClient = deals.reduce((counts, deal) => {
+      counts.set(deal.clientId, (counts.get(deal.clientId) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+
     // Compute HOT flag for each deal
     const enrichedDeals = deals.map((deal) => ({
       ...deal,
       isHot: computeIsHot(deal),
       stageLabel: STAGE_LABELS[deal.stage] || deal.stage,
+      linkedDealsCount: Math.max((visibleDealCountByClient.get(deal.clientId) || 1) - 1, 0),
     }));
 
     res.json(enrichedDeals);
@@ -352,6 +374,11 @@ export class DealController {
       orderBy: { lastActivityAt: 'desc' },
     });
 
+    const visibleDealCountByClient = deals.reduce((counts, deal) => {
+      counts.set(deal.clientId, (counts.get(deal.clientId) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+
     // Group by stage
     const board: Record<string, any[]> = {};
     for (const stage of STAGE_ORDER) {
@@ -363,6 +390,7 @@ export class DealController {
         ...deal,
         isHot: computeIsHot(deal),
         stageLabel: STAGE_LABELS[deal.stage] || deal.stage,
+        linkedDealsCount: Math.max((visibleDealCountByClient.get(deal.clientId) || 1) - 1, 0),
       };
       if (board[deal.stage]) {
         board[deal.stage].push(enriched);
@@ -373,6 +401,7 @@ export class DealController {
     const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED'];
     const stages = STAGE_ORDER.map((stage, index) => {
       const deals = board[stage] || [];
+      const prevOfferSubtotal = deals.reduce((sum: number, d: any) => sum + (d.prevOffer || 0), 0);
       // Dollar value ONLY from lender offers (Approved/Committed) or funding events (Funded)
       let value = 0;
       if (!NO_AMOUNT_STAGES.includes(stage)) {
@@ -380,8 +409,7 @@ export class DealController {
           // Use dealAmount as fallback for funded deals (it's set from actual funding)
           value = deals.reduce((sum: number, d: any) => sum + (d.dealAmount || 0), 0);
         } else if (stage === 'NURTURE') {
-          // Nurture: use prevOffer (prior funded amount before they went to nurture)
-          value = deals.reduce((sum: number, d: any) => sum + (d.prevOffer || d.dealAmount || 0), 0);
+          value = 0;
         } else if (stage === 'SUBMITTED_IN_REVIEW') {
           // Submitted total should count ONLY SBA/CRE/Equipment submitted amounts.
           value = deals.reduce((sum: number, d: any) => {
@@ -406,6 +434,7 @@ export class DealController {
         deals,
         count: deals.length,
         value,
+        prevOfferSubtotal,
       };
     });
 
@@ -444,10 +473,125 @@ export class DealController {
       return res.status(404).json({ error: 'Deal not found' });
     }
 
+    const linkedDeals = await prisma.deal.findMany({
+      where: {
+        ...filter,
+        clientId: deal.clientId,
+        id: { not: deal.id },
+      },
+      select: {
+        id: true,
+        clientId: true,
+        assignedRepId: true,
+        assistingRepIds: true,
+        stage: true,
+        stageLabel: true,
+        productType: true,
+        dealAmount: true,
+        submittedAmount: true,
+        prevOffer: true,
+        nextAction: true,
+        nextActionDue: true,
+        lastActivityAt: true,
+        lastReplyAt: true,
+        lenderEngaged: true,
+        appSubmitted: true,
+        createdAt: true,
+        updatedAt: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
+        },
+        offers: { orderBy: { createdAt: 'desc' }, take: 3 },
+      },
+      orderBy: { lastActivityAt: 'desc' },
+    });
+
+    const fundedDeals = await prisma.deal.findMany({
+      where: {
+        ...filter,
+        clientId: deal.clientId,
+        stage: DealStage.FUNDED,
+      },
+      select: {
+        id: true,
+        productType: true,
+        dealAmount: true,
+        fundedDate: true,
+        lender: true,
+        createdAt: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true },
+        },
+        fundingEvents: {
+          orderBy: [{ fundedDate: 'desc' }, { createdAt: 'desc' }],
+          select: {
+            id: true,
+            amountFunded: true,
+            lender: true,
+            productType: true,
+            fundedDate: true,
+            notes: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: [{ fundedDate: 'desc' }, { updatedAt: 'desc' }],
+    });
+
+    const fundingHistory = fundedDeals
+      .flatMap((fundedDeal) => {
+        if (fundedDeal.fundingEvents.length > 0) {
+          return fundedDeal.fundingEvents.map((event) => ({
+            id: event.id,
+            dealId: fundedDeal.id,
+            amountFunded: event.amountFunded,
+            lender: event.lender || fundedDeal.lender || null,
+            productType: event.productType || fundedDeal.productType || null,
+            fundedDate: event.fundedDate || fundedDeal.fundedDate || null,
+            notes: event.notes || null,
+            createdAt: event.createdAt,
+            repName: fundedDeal.assignedRep
+              ? `${fundedDeal.assignedRep.firstName} ${fundedDeal.assignedRep.lastName}`.trim()
+              : null,
+            isCurrentDeal: fundedDeal.id === deal.id,
+          }));
+        }
+
+        if (!fundedDeal.dealAmount && !fundedDeal.fundedDate && !fundedDeal.lender) return [];
+        return [
+          {
+            id: `deal-${fundedDeal.id}`,
+            dealId: fundedDeal.id,
+            amountFunded: fundedDeal.dealAmount || 0,
+            lender: fundedDeal.lender || null,
+            productType: fundedDeal.productType || null,
+            fundedDate: fundedDeal.fundedDate || null,
+            notes: null,
+            createdAt: fundedDeal.createdAt,
+            repName: fundedDeal.assignedRep
+              ? `${fundedDeal.assignedRep.firstName} ${fundedDeal.assignedRep.lastName}`.trim()
+              : null,
+            isCurrentDeal: fundedDeal.id === deal.id,
+          },
+        ];
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a.fundedDate || a.createdAt).getTime();
+        const bTime = new Date(b.fundedDate || b.createdAt).getTime();
+        return bTime - aTime;
+      });
+
     res.json({
       ...deal,
       isHot: computeIsHot(deal),
       stageLabel: STAGE_LABELS[deal.stage] || deal.stage,
+      linkedDealsCount: linkedDeals.length,
+      fundingHistory,
+      linkedDeals: linkedDeals.map((linkedDeal) => ({
+        ...linkedDeal,
+        isHot: computeIsHot(linkedDeal),
+        stageLabel: STAGE_LABELS[linkedDeal.stage] || linkedDeal.stage,
+      })),
     });
   }
 
@@ -1829,6 +1973,7 @@ export class DealController {
     if (INCREMENT_ATTEMPT_KINDS.has(kind)) {
       nextAttempts = previousAttempts + 1;
       updateData.contactAttempts = nextAttempts;
+      updateData.nextActionDue = addBusinessDays(now, 1);
       eventNote = `${QUICK_LOG_LABELS[kind]} logged (${nextAttempts}/${threshold} attempts)`;
 
       if (nextAttempts >= threshold && existing.stage !== DealStage.NURTURE) {
@@ -1849,6 +1994,7 @@ export class DealController {
       nextAttempts = 0;
       updateData.contactAttempts = 0;
       updateData.lastEngagementAt = now;
+      updateData.nextActionDue = null;
       eventNote = 'Connected with client; contact attempts reset';
     }
 

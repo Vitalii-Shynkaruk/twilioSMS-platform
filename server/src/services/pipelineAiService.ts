@@ -299,12 +299,25 @@ function meaningfulWords(text: string): string[] {
     .filter((word) => word.length > 1);
 }
 
+function hasCompactPipelineSignal(text: string): boolean {
+  const normalized = text.toLowerCase();
+  const hasMoneyValue = /\$?\s*\d[\d,.]*(?:\s?[km])?\+?\b/i.test(text);
+  const hasPipelineContext =
+    /\b(monthly|gross|revenue|sales|funding|capital|need|needs|want|wants|looking|equipment|inventory|debt|payroll|mca|heloc|sba|loc|line of credit|working capital|positions?|stacked)\b/.test(
+      normalized,
+    );
+
+  return hasMoneyValue && hasPipelineContext;
+}
+
 export function getPipelineAiLocalSkipReason(text: string | null | undefined): PipelineSkipReason | null {
   const normalized = String(text || "").trim();
   if (!normalized) return "too_short";
 
   const contactOnly = /^(?:\[[A-Z_]+\]|[\w.%+-]+@[\w.-]+\.[A-Z]{2,}|\+?[\d\s().-]{7,}|https?:\/\/\S+)$/i.test(normalized);
   if (contactOnly) return "contact_info_only";
+
+  if (hasCompactPipelineSignal(normalized)) return null;
 
   return meaningfulWords(normalized).length < 5 ? "too_short" : null;
 }
@@ -426,6 +439,79 @@ export function enqueuePipelineExtraction(
     if (pipelineDealQueues.get(dealId) === queued) pipelineDealQueues.delete(dealId);
   });
   return queued;
+}
+
+export async function previewPipelineSignals(args: {
+  inputType: PipelineInputType;
+  text: string;
+  stageAtTime?: DealStage | null;
+  productAtTime?: ProductType | null;
+}): Promise<PipelineAiSignals | null> {
+  const startedAt = Date.now();
+  const localSkipReason = getPipelineAiLocalSkipReason(args.text);
+  if (localSkipReason) {
+    logger.info("AI: previewPipelineSignals skipped by local guard", {
+      inputType: args.inputType,
+      skipReason: localSkipReason,
+      durationMs: Date.now() - startedAt,
+    });
+    return null;
+  }
+
+  try {
+    const cfg = await getPipelineAiConfig();
+    if (!cfg) return null;
+
+    const payload = buildPipelineAiPayload({
+      existingSignals: null,
+      inputType: args.inputType,
+      text: args.text,
+      stageAtTime: args.stageAtTime,
+      productAtTime: args.productAtTime,
+    });
+    const client = new Anthropic({ apiKey: cfg.apiKey });
+    const response = await client.messages.create({
+      model: cfg.model,
+      max_tokens: 2048,
+      temperature: 0,
+      system: [{ type: "text", text: PIPELINE_AI_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      output_config: { format: { type: "json_schema", schema: PIPELINE_AI_OUTPUT_SCHEMA } },
+      messages: [{ role: "user", content: payload }],
+    });
+    const raw = extractTextFromAnthropicResponse(response);
+    const extractedJson = extractJsonObjectFromLlmResponse(raw);
+    if (!extractedJson) {
+      logger.error("AI: previewPipelineSignals empty response");
+      return null;
+    }
+
+    const parsed = JSON.parse(extractedJson) as unknown;
+    if (!isPipelineSignals(parsed)) {
+      logger.error("AI: previewPipelineSignals invalid schema");
+      return null;
+    }
+
+    const usage = response.usage;
+    logger.info("AI: previewPipelineSignals complete", {
+      model: cfg.model,
+      inputType: args.inputType,
+      inputTokens: usage?.input_tokens,
+      outputTokens: usage?.output_tokens,
+      cacheCreationInputTokens: usage?.cache_creation_input_tokens,
+      cacheReadInputTokens: usage?.cache_read_input_tokens,
+      skipReason: parsed.skip_reason,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return parsed;
+  } catch (error) {
+    logger.error("AI: previewPipelineSignals failed", {
+      inputType: args.inputType,
+      error: (error as Error).message,
+      durationMs: Date.now() - startedAt,
+    });
+    return null;
+  }
 }
 
 export async function extractPipelineSignals(args: {

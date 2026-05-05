@@ -112,11 +112,25 @@ export default function LoginPage() {
 
   return (
     <main className="scl-auth" aria-labelledby="scl-auth-title">
-      {/* HUD Frame */}
-      <div className="scl-auth__frame" aria-hidden="true" />
-      {/* Animated running border beams */}
-      <div className="scl-auth__beam" aria-hidden="true" />
-      <div className="scl-auth__beam scl-auth__beam--gold" aria-hidden="true" />
+      {/*
+        HUD Frame — SVG polygon with chamfered top-right corner (matching client prototype).
+        Two stroke-dasharray beams (blue + gold) travel the same irregular contour.
+        Polygon points (viewBox 0 0 1000 650): rect with top-right chamfer.
+        Perimeter ≈ 3148 px units  →  dashoffset 3200→0 over 9s.
+      */}
+      <svg className="scl-auth__hud-frame" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true">
+        {/* Faint static base border — same chamfered polygon */}
+        <polygon
+          points="40,3 836,3 997,154 997,647 3,647 3,3"
+          fill="none"
+          stroke="rgba(22,132,255,0.13)"
+          strokeWidth="1.5"
+        />
+        {/* Blue running beam */}
+        <polygon className="scl-auth__hud-beam-blue" points="40,3 836,3 997,154 997,647 3,647 3,3" />
+        {/* Gold running beam (half-phase offset) */}
+        <polygon className="scl-auth__hud-beam-gold" points="40,3 836,3 997,154 997,647 3,647 3,3" />
+      </svg>
       {/* Corner accent brackets */}
       <div className="scl-auth__edge scl-auth__edge--tl" aria-hidden="true" />
       <div className="scl-auth__edge scl-auth__edge--tr" aria-hidden="true" />

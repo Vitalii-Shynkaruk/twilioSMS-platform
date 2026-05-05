@@ -113,23 +113,32 @@ export default function LoginPage() {
   return (
     <main className="scl-auth" aria-labelledby="scl-auth-title">
       {/*
-        HUD Frame — SVG polygon with chamfered top-right corner (matching client prototype).
-        Two stroke-dasharray beams (blue + gold) travel the same irregular contour.
-        Polygon points (viewBox 0 0 1000 650): rect with top-right chamfer.
-        Perimeter ≈ 3148 px units  →  dashoffset 3200→0 over 9s.
+        HUD Frame — SVG polygon with STEPPED top-right notch (matching client prototype).
+        Shape (viewBox 1000×650):
+          TL(15,15) → top to x=840 → step down 45px → right to x=985 → down to BR → bottom → left back up
+        Perimeter = 825+45+145+575+970+620 = 3180 → dashoffset 3180→0.
       */}
       <svg className="scl-auth__hud-frame" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true">
-        {/* Faint static base border — same chamfered polygon */}
+        {/* Static faint base border */}
         <polygon
-          points="40,3 836,3 997,154 997,647 3,647 3,3"
+          points="15,15 840,15 840,60 985,60 985,635 15,635"
           fill="none"
           stroke="rgba(22,132,255,0.13)"
           strokeWidth="1.5"
         />
+        {/* Glow dot at inner notch apex */}
+        <circle cx="840" cy="60" r="3.5" fill="rgba(213,168,74,0.7)" />
+        <circle cx="840" cy="60" r="7.5" fill="none" stroke="rgba(213,168,74,0.2)" strokeWidth="1" />
+        {/* Left-side tick ~1/3 down */}
+        <line x1="15" y1="208" x2="55" y2="208" stroke="rgba(22,132,255,0.45)" strokeWidth="1.5" />
+        <line x1="15" y1="208" x2="28" y2="208" stroke="rgba(80,185,255,1)" strokeWidth="2.5" />
+        {/* Right-side tick ~1/3 down */}
+        <line x1="945" y1="218" x2="985" y2="218" stroke="rgba(213,168,74,0.4)" strokeWidth="1.5" />
+        <line x1="972" y1="218" x2="985" y2="218" stroke="rgba(224,180,68,0.95)" strokeWidth="2.5" />
         {/* Blue running beam */}
-        <polygon className="scl-auth__hud-beam-blue" points="40,3 836,3 997,154 997,647 3,647 3,3" />
+        <polygon className="scl-auth__hud-beam-blue" points="15,15 840,15 840,60 985,60 985,635 15,635" />
         {/* Gold running beam (half-phase offset) */}
-        <polygon className="scl-auth__hud-beam-gold" points="40,3 836,3 997,154 997,647 3,647 3,3" />
+        <polygon className="scl-auth__hud-beam-gold" points="15,15 840,15 840,60 985,60 985,635 15,635" />
       </svg>
       {/* Corner accent brackets */}
       <div className="scl-auth__edge scl-auth__edge--tl" aria-hidden="true" />

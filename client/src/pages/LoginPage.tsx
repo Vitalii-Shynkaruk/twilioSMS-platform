@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { OtpChannel, useAuthStore } from '../stores/authStore';
-import { ArrowRight, KeyRound, Mail, RefreshCw, Smartphone, UserRound } from 'lucide-react';
+import { ArrowRight, KeyRound, Mail, RefreshCw, Shield, Smartphone, UserRound } from 'lucide-react';
 
 type LoginStep = 'email' | 'code';
 
@@ -30,6 +30,11 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const { requestOtp, verifyOtp, devModeLogin, isLoginLoading, isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
+  const isEmailStep = step === 'email';
+  const panelFooterText =
+    step === 'code' && channel === 'email'
+      ? "We'll send a verification code to your email"
+      : "We'll send a verification code to your phone";
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -130,8 +135,8 @@ export default function LoginPage() {
 
         <section className="scl-auth__panel" aria-label="Sign in to SCL">
           <div className="scl-auth__panel-title">
-            {step === 'email' ? <UserRound aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
-            <h2>{step === 'email' ? 'Sign in to SCL' : 'Enter verification code'}</h2>
+            {isEmailStep ? <UserRound aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
+            <h2>{isEmailStep ? 'Sign in to SCL' : 'Enter verification code'}</h2>
           </div>
 
           {error && (
@@ -154,9 +159,9 @@ export default function LoginPage() {
                   required
                   autoFocus
                   autoComplete="email"
-                  disabled={step === 'code'}
-                  aria-invalid={!!error && step === 'email'}
-                  aria-describedby={error && step === 'email' ? 'login-error' : undefined}
+                  disabled={!isEmailStep}
+                  aria-invalid={!!error && isEmailStep}
+                  aria-describedby={error && isEmailStep ? 'login-error' : undefined}
                 />
               </div>
             </div>
@@ -195,24 +200,14 @@ export default function LoginPage() {
                 <span className="scl-auth__spinner" aria-label="Loading" />
               ) : (
                 <>
-                  <span>{step === 'email' ? 'Send SMS code' : 'Verify code'}</span>
+                  <span>{isEmailStep ? 'Send code' : 'Verify code'}</span>
                   <ArrowRight aria-hidden="true" />
                 </>
               )}
             </button>
 
-            {step === 'email' && (
+            {isEmailStep && (
               <>
-                <button
-                  type="button"
-                  onClick={() => sendCode('email')}
-                  disabled={isLoginLoading || !email}
-                  className="scl-auth__link"
-                >
-                  <Mail className="w-4 h-4" />
-                  Use email code instead
-                </button>
-
                 {devModeLoginEnabled && (
                   <button
                     type="button"
@@ -269,11 +264,14 @@ export default function LoginPage() {
 
           <div className="scl-auth__panel-footer">
             <Smartphone aria-hidden="true" />
-            <p>We’ll send a verification code to your phone or email</p>
+            <p>{panelFooterText}</p>
           </div>
         </section>
 
-        <footer className="scl-auth__footer">SCL Systems • Secure • Intelligent • Relentless</footer>
+        <footer className="scl-auth__footer">
+          <Shield className="scl-auth__footer-icon" aria-hidden="true" />
+          <span>SCL Systems • Secure • Intelligent • Relentless</span>
+        </footer>
       </div>
     </main>
   );

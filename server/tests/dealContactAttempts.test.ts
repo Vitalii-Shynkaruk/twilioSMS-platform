@@ -56,6 +56,7 @@ function createDealFixture(overrides: Record<string, unknown> = {}) {
 
 describe('M1.5 deal contact attempts', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -88,30 +89,30 @@ describe('M1.5 deal contact attempts', () => {
   it.each(['no_answer', 'texted', 'voicemail'] as const)(
     'переносит overdue nextActionDue на следующий business day при quick-log attempt %s',
     async (kind) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-05-08T16:00:00.000Z'));
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-08T16:00:00.000Z'));
 
-    vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(
-      createDealFixture({ nextActionDue: new Date('2026-05-01T12:00:00.000Z') }) as never,
-    );
-    const update = vi.spyOn(prisma.deal, 'update').mockResolvedValue(
-      createDealFixture({
-        contactAttempts: 3,
-        nextActionDue: new Date('2026-05-11T12:00:00.000Z'),
-      }) as never,
-    );
-    vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
-
-    await DealController.logAttempt(createRequest({ kind }), createResponse());
-
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
+      vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(
+        createDealFixture({ nextActionDue: new Date('2026-05-01T12:00:00.000Z') }) as never,
+      );
+      const update = vi.spyOn(prisma.deal, 'update').mockResolvedValue(
+        createDealFixture({
           contactAttempts: 3,
           nextActionDue: new Date('2026-05-11T12:00:00.000Z'),
+        }) as never,
+      );
+      vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
+
+      await DealController.logAttempt(createRequest({ kind }), createResponse());
+
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contactAttempts: 3,
+            nextActionDue: new Date('2026-05-11T12:00:00.000Z'),
+          }),
         }),
-      }),
-    );
+      );
     },
   );
 
@@ -246,7 +247,10 @@ describe('M1.5 deal contact attempts', () => {
       .mockResolvedValue(createDealFixture({ contactAttempts: 0, lastEngagementAt: new Date() }) as never);
     const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
 
-    await DealController.updateDeal(createRequest({ contactAttempts: 0, contactAttemptThreshold: 12 }, { id: 'deal-1' }, 'ADMIN'), createResponse());
+    await DealController.updateDeal(
+      createRequest({ contactAttempts: 0, contactAttemptThreshold: 12 }, { id: 'deal-1' }, 'ADMIN'),
+      createResponse(),
+    );
 
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({

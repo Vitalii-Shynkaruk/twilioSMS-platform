@@ -1,0 +1,290 @@
+{
+  "description": "Nine representative input/output pairs from the locked v4 classifier on real production conversations. Each example shows the full thread the AI saw and the structured output it produced. Use these for unit tests, regression checks, and onboarding.",
+  "generatedAt": "2026-04-25T12:15:56.370Z",
+  "examples": [
+    {
+      "index": 1,
+      "bucket": "HOT 90+ (top-tier peak intent)",
+      "leadName": "Yulia Papyants",
+      "leadPhone": "+13057781107",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Yulia Papyants\nPhone: +13057781107\nBusiness: Aesthetemed\nSource: csv_import\nFirst contact: 2026-04-22\n\n--- CONVERSATION (6 messages) ---\n[2026-04-22 02:45] SCL-REP → Hey, it's Marcos from SecureCreditLines. Would longer term credit options help the business? Perhaps 10-25yrs? Best email to send details? Reply STOP to opt out\n[2026-04-22 19:09] LEAD → Hi, thank you for reaching out. I am only considering a long-term debt restructuring solution, not short-term or MCA financing. Current situation: - ~$450K in high-cost MCA debt - ~$50K/month in payments (weekly structure) - Monthly revenue: ~$500K–$600K - All obligations are current and paid on time While we are performing well and meeting all obligations, the current structure is inefficient and limits our ability to scale due to heavy weekly cash flow pressure. What I’m looking for: - ~$500K loan for MCA payoff (direct at closing preferred) - Term: ~7 years - Rate: up to 14–15% - Monthly payments only (no weekly ACH) The goal is to replace high-cost short-term debt with a stable long-term structure and improve cash flow efficiency. After restructuring, monthly obligations will decrease significantly, improving overall cash flow coverage. If your firm can realistically support this structure, I’d be open to discussing further. If not, I’m not considering alternative financing structures at this time. Thank you.\n[2026-04-22 19:11] SCL-REP → I can facilitate that for you. What's your best email to send details?\n[2026-04-22 19:17] LEAD → u.papyants@gmail.com\n[2026-04-22 19:17] SCL-REP → Email sent came from Marcos Cruz. Please confirm you received it\n[2026-04-22 19:25] SCL-REP → Did you see it?"
+      },
+      "output": {
+        "classification": "HOT",
+        "leadScore": 94,
+        "revenueMonthly": 550000,
+        "revenueAnnual": null,
+        "revenueConfidence": "medium",
+        "amountRequested": 500000,
+        "useOfFunds": "MCA payoff / debt restructuring into long-term structure",
+        "product": "SBA",
+        "urgency": "high",
+        "objections": [
+          "Will only consider long-term restructure, not MCA",
+          "Requires monthly payments, no weekly ACH",
+          "Rate cap 14-15%",
+          "Term ~7 years required"
+        ],
+        "suggestedReply": "Just confirming the email from Marcos Cruz landed in your inbox (check spam too). Once you've reviewed, happy to hop on a quick call to walk through the 7-year structure and next steps.",
+        "suggestedFollowupTime": "tomorrow 9am",
+        "suggestedFollowupReason": "Email with terms was just sent — check in tomorrow morning to confirm receipt and move toward a call.",
+        "staleState": "fresh",
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "concerning",
+        "coachingNote": "Avoid promising you can facilitate a very specific structure ($500K, 7yr, 14-15%, monthly-only, MCA payoff) before underwriting confirms — set expectations rather than committing.",
+        "reasoning": "Lead disclosed $500-600K monthly revenue, requested $500K for MCA payoff with specific terms, and provided email — top-tier qualification with active engagement today."
+      }
+    },
+    {
+      "index": 2,
+      "bucket": "HOT 80-89 (full-thread peak — Wayne acknowledged with \"Ok, will do\" but peak was K)",
+      "leadName": "Wayne Anderson",
+      "leadPhone": "+12103920549",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Wayne Anderson\nPhone: +12103920549\nBusiness: N/A\nEmail: Weanderson30@gmail.com\nSource: csv_import\nFirst contact: 2026-04-08\n\n--- CONVERSATION (9 messages) ---\n[2026-04-08 06:47] SCL-REP → Wayne Anderson, Stuart with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Reply STOP to opt out\n[2026-04-24 23:25] SCL-REP → Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-24 23:27] LEAD → Weanderson30@gmail.com\n[2026-04-24 23:30] SCL-REP → Got it. How much are you looking to receive for the business?\n[2026-04-24 23:30] LEAD → 350k\n[2026-04-24 23:32] SCL-REP → Ok! I just sent you an email with a breakdown on 350K and the docs needed to proceed. Can you confirm receipt? Alex@securecreditlines.com\n[2026-04-24 23:36] LEAD → Got it\n[2026-04-24 23:36] SCL-REP → Nice. Let me know if you have any questions or once I can expect what I need to begin\n[2026-04-24 23:38] LEAD → Ok, will do"
+      },
+      "output": {
+        "classification": "HOT",
+        "leadScore": 86,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": 350000,
+        "useOfFunds": null,
+        "product": "LOC",
+        "urgency": "high",
+        "objections": [],
+        "suggestedReply": "Sounds good Wayne — once you've had a chance to review, shoot me back the docs and I'll get the file moving. Any questions on the breakdown just text me here.",
+        "suggestedFollowupTime": "tomorrow 9am",
+        "suggestedFollowupReason": "Terms sent and lead confirmed receipt — check in tomorrow morning on docs.",
+        "staleState": "fresh",
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "good",
+        "coachingNote": "",
+        "reasoning": "Lead provided email, named $350K, confirmed receipt of terms breakdown — strong multi-signal HOT with active engagement minutes ago."
+      }
+    },
+    {
+      "index": 3,
+      "bucket": "HOT 70-79 (typical multi-signal HOT)",
+      "leadName": "Tom Jenkins",
+      "leadPhone": "+17866790122",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Tom Jenkins\nPhone: +17866790122\nBusiness: Cleanmusiccleanlifegroup\nEmail: Cleanmusiccleanlifegroup@gmail.com\nSource: Stuart Mastersheet  - Copy of Baker TT Leads (1)\nFirst contact: 2026-04-24\n\n--- CONVERSATION (6 messages) ---\n[2026-04-24 21:25] SCL-REP → Tom, if you have been considering a HELOC, I can get one done in 5-7 days. Interested? Reply STOP to opt out.\n[2026-04-24 21:28] LEAD → How much\n[2026-04-24 21:49] SCL-REP → capped at 750K\n[2026-04-24 21:50] SCL-REP → you got 2m to jump into a quick call?\n[2026-04-24 22:00] LEAD → After I leave this funeral\n[2026-04-24 22:04] SCL-REP → No problem, sorry for your loss."
+      },
+      "output": {
+        "classification": "HOT",
+        "leadScore": 74,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": null,
+        "useOfFunds": null,
+        "product": "HELOC",
+        "urgency": "high",
+        "objections": ["At a funeral - not available right now"],
+        "suggestedReply": "Totally understand, take your time. When you're free later today or tomorrow, shoot me a text and we'll set up a quick 10-min call to walk through the HELOC numbers.",
+        "suggestedFollowupTime": "tomorrow 10am",
+        "suggestedFollowupReason": "Lead is at a funeral today and committed to talk after — give space and check in tomorrow morning.",
+        "staleState": "fresh",
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "good",
+        "coachingNote": "",
+        "reasoning": "Lead asked a real buying question ('How much') and committed to continuing the conversation after a funeral, indicating active intent — single substantive signal plus engagement places this in mid-HOT band."
+      }
+    },
+    {
+      "index": 4,
+      "bucket": "HOT 65-72 (single-question borderline — Romona-style)",
+      "leadName": "Romona Keveza",
+      "leadPhone": "+19177051113",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Romona Keveza\nPhone: +19177051113\nSource: csv_import\nFirst contact: 2026-03-21\n\n--- CONVERSATION (14 messages) ---\n[2026-03-21 23:37] SCL-REP → Hey, this is Stuart with Securecreditlines. Can the business use a 10-year option with no prepayment penalties? Best email to send terms? Reply STOP to Opt Out\n[2026-03-21 23:47] SCL-REP → Hey, this is Stuart with Securecreditlines. Can the business use a 10-year option with no prepayment penalties? Best email to send terms? Reply STOP to Opt Out\n[2026-03-24 05:29] SCL-REP → Hey this is Stuart with Securecreditlines. Can the business use a 10-year option with no prepayment penalties? Best email to send terms? Reply STOP to Opt Out\n[2026-03-30 21:00] SCL-REP → Romona Keveza this is Stuart with Securecreditlines. We have equipment financing solutions for businesses like {{company}}. Interested? Reply STOP to Opt Out\n[2026-04-02 19:04] SCL-REP → Romona Keveza, this is Stuart with SCL Capital. I have LOC and equipment financing solutions for {{company}}. Interested? Reply STOP to Opt Out\n[2026-04-03 22:53] SCL-REP → Romona Keveza, Stuart @ SCL Capital. We're funding $50K-$500K for select businesses. {{company}} could qualify. Interested? Reply YES or STOP.\n[2026-04-03 23:32] SCL-REP → Romona Keveza, Stuart @ SCL Capital. We're funding $50K-$500K for select businesses. {{company}} could qualify. Interested? Reply with Monthly Revenue or STOP.\n[2026-04-07 19:47] SCL-REP → Romona Keveza, Stuart with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-10 04:23] SCL-REP → Romona Keveza, Stuart at SCLCapital. Quick one...would 50k-350k unsecured with flexible 10yr terms help? reply STOP to opt out\n[2026-04-22 21:25] SCL-REP → Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-24 20:03] SCL-REP → Romona Keveza, if you have been considering a HELOC, I can get one done in 5-7 days. Interested? Reply STOP to opt out.\n[2026-04-24 23:43] SCL-REP → Hello, if you have been considering a HELOC, I can get one done in 5-7 days. Interested? Reply STOP to opt out.\n[2026-04-25 01:17] LEAD → What is HELOC?\n[2026-04-25 01:18] SCL-REP → a program that allows you to use your available home equity as a LOC"
+      },
+      "output": {
+        "classification": "HOT",
+        "leadScore": 68,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": null,
+        "useOfFunds": null,
+        "product": "HELOC",
+        "urgency": "medium",
+        "objections": [],
+        "suggestedReply": "Glad you asked. A HELOC lets you tap your home's equity as a flexible line — typically funded in 5-7 days. Do you currently own your home, and roughly what's the mortgage balance? I can run numbers from there.",
+        "suggestedFollowupTime": "tomorrow 9am",
+        "suggestedFollowupReason": "Lead just engaged with a real buying question — follow up tomorrow morning to qualify property details.",
+        "staleState": "fresh",
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "concerning",
+        "coachingNote": "After explaining HELOC, immediately ask a qualifying question (home ownership, mortgage balance) instead of leaving a flat definition that may stall the conversation.",
+        "reasoning": "Lead asked a genuine buying question ('What is HELOC?') after months of outbound silence — single substantive curiosity signal places this in the low HOT band."
+      }
+    },
+    {
+      "index": 5,
+      "bucket": "WARM (downgraded — bare 👍🏻 acknowledgment after terms)",
+      "leadName": "Jesse Adame",
+      "leadPhone": "+19256588922",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Jesse Adame\nPhone: +19256588922\nEmail: adame.herrera23@gmail.com\nSource: BANSHEE LRR SCRUBBED - pt2 501 - 1001\nFirst contact: 2026-04-24\n\n--- CONVERSATION (4 messages) ---\n[2026-04-24 20:10] SCL-REP → Jonathan with Secure Credit Lines. You get a lot of calls/texts. I get it. If you can truly use 10/30yr terms for the biz I'll send one email and leave you alone. reply STOP to opt out\n[2026-04-24 20:44] LEAD → Adame.herrera23@gmail.com\n[2026-04-24 20:46] SCL-REP → Got it, your terms were just emailed over with subject \"Express Biz Credit\" from Jonathan Baker. Can you confirm you received?\n[2026-04-24 20:47] LEAD → 👍🏻"
+      },
+      "output": {
+        "classification": "WARM",
+        "leadScore": 58,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": null,
+        "useOfFunds": null,
+        "product": "LOC",
+        "urgency": "low",
+        "objections": [],
+        "suggestedReply": "Awesome — once you've had a chance to look it over, mind sharing rough monthly revenue and how much you'd want to access? That'll help me tailor the terms.",
+        "suggestedFollowupTime": null,
+        "suggestedFollowupReason": null,
+        "staleState": null,
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "good",
+        "coachingNote": "",
+        "reasoning": "Lead provided email and acknowledged terms with 👍 but gave no revenue, amount, use of funds, or buying question — naked acknowledgment qualifies as WARM, not HOT."
+      }
+    },
+    {
+      "index": 6,
+      "bucket": "NURTURE/ghosted (was HOT, lead silent 7+ days, re-engage required)",
+      "leadName": "Frank",
+      "leadPhone": "+18599405842",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Frank\nPhone: +18599405842\nSource: csv_import\nFirst contact: 2026-03-20\n\n--- CONVERSATION (6 messages) ---\n[2026-03-20 02:15] SCL-REP → Hey this is Jonathan with Secure Credit Lines - did you receive this meessage?\n[2026-03-20 02:21] LEAD → Yes please\n[2026-03-24 03:40] SCL-REP → Hey this is Stuart with Securecreditlines. Can the business use a 10-year option with no prepayment penalties? Best email to send terms? Reply STOP to Opt Out\n[2026-03-24 06:45] SCL-REP → Test\n[2026-03-24 23:24] SCL-REP → What's a good email to send terms to?\n[2026-04-24 01:10] SCL-REP → Hello Frank, did you get what you been looking for?"
+      },
+      "output": {
+        "classification": "NURTURE",
+        "leadScore": 52,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": null,
+        "useOfFunds": null,
+        "product": "LOC",
+        "urgency": "low",
+        "objections": ["went silent after initial yes", "never provided email", "no qualification data shared"],
+        "suggestedReply": "Hey Frank — still open to seeing what a 10-year LOC option looks like? Just need a good email to send terms over.",
+        "suggestedFollowupTime": null,
+        "suggestedFollowupReason": null,
+        "staleState": null,
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": "Hey Frank — back in March you said yes to hearing more about the 10-year LOC option. Still want me to send terms over? Just need a good email and I'll get it to you.",
+        "repBehavior": "concerning",
+        "coachingNote": "Avoid sending visible 'Test' messages to leads and tighten typos ('meessage') — it undermines credibility on outbound.",
+        "reasoning": "Lead gave a bare 'Yes please' acknowledgment with no substantive signal (no revenue, amount, use, email, or question), then went silent for over a month despite multiple rep nudges — classic NURTURE with a thin reactivatable touchpoint."
+      }
+    },
+    {
+      "index": 7,
+      "bucket": "NURTURE/was-hot (Kingdom Property — engaged then \"we are going to pass\")",
+      "leadName": "Kingdom Property",
+      "leadPhone": "+16172338860",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: clean L3Funding LLC $1,495 Weekly Foretrust Funding $526 Daily\nPhone: +16172338860\nBusiness: KINGDOM PROPERTY DEVELOPMENT LLC\nEmail: ma\nSource: csv_import\nFirst contact: 2026-04-05\n\n--- CONVERSATION (11 messages) ---\n[2026-04-05 01:49] SCL-REP → Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-20 20:09] SCL-REP → Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-21 22:00] SCL-REP → Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-22 02:14] LEAD → Johnwhitecle@gmail.com\n[2026-04-22 02:16] SCL-REP → Got it. How much are you looking to receive for the business?\n[2026-04-22 02:16] LEAD → 210k\n[2026-04-22 02:35] SCL-REP → Ok. I just sent you an email with a breakdown on 210K and the docs needed to proceed. Can you confirm receipt? Alex@securecreditlines.com\n[2026-04-22 02:35] LEAD → Did you send it to johnwhitecle@gmail.com\n[2026-04-22 02:36] SCL-REP → Yes. It might have hit spam so take a look please\n[2026-04-22 02:50] SCL-REP → Did you get it?\n[2026-04-22 02:55] LEAD → Yes. We are going to pass"
+      },
+      "output": {
+        "classification": "NURTURE",
+        "leadScore": 22,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": 210000,
+        "useOfFunds": null,
+        "product": "LOC",
+        "urgency": "low",
+        "objections": ["Decided to pass after reviewing terms"],
+        "suggestedReply": "Understood, appreciate you taking a look. If anything changes or you'd like to revisit different terms down the road, I'm here. Best of luck.",
+        "suggestedFollowupTime": null,
+        "suggestedFollowupReason": null,
+        "staleState": null,
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "good",
+        "coachingNote": "",
+        "reasoning": "Lead engaged, provided email and a $210K ask, then explicitly passed after reviewing terms — classic NURTURE since circumstances may change in 1-2 months."
+      }
+    },
+    {
+      "index": 8,
+      "bucket": "DEAD (structural disqualifier — bad credit + stacked MCAs + low revenue + denied)",
+      "leadName": "Cherri Eurich",
+      "leadPhone": "+17196410451",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Cherri Eurich\nPhone: +17196410451\nBusiness: HydroProSolutionsLLC\nEmail: tadeurich@gmail.com\nSource: Stuart Mastersheet  - Copy of Baker TT Leads (1)\nFirst contact: 2026-04-24\n\n--- CONVERSATION (9 messages) ---\n[2026-04-24 20:31] SCL-REP → Cherri, if you have been considering a HELOC, I can get one done in 5-7 days. Interested? Reply STOP to opt out.\n[2026-04-24 20:43] LEAD → Yep, but denied. Mortgage issues due to fraud\n[2026-04-24 20:47] SCL-REP → Got it, perhaps we can do a line of credit using only the business. What does the business typically gross per month?\n[2026-04-24 20:47] LEAD → 5-10K\n[2026-04-24 23:25] SCL-REP → I can do that, please send the last 4 months of business bank statements + april month to date to sbenitez@pmfus.com\n[2026-04-24 23:27] LEAD → What do we need to have as far as revenue?\n[2026-04-24 23:28] LEAD → I really need help asap, but we keep getting turned down or ignored.\n[2026-04-24 23:29] SCL-REP → no minimum required it all depends if you are paying l;oans and credit score\n[2026-04-24 23:30] LEAD → Loans and poor credit so we won't qualify."
+      },
+      "output": {
+        "classification": "DEAD",
+        "leadScore": 8,
+        "revenueMonthly": 7500,
+        "revenueAnnual": null,
+        "revenueConfidence": "medium",
+        "amountRequested": null,
+        "useOfFunds": null,
+        "product": "LOC",
+        "urgency": "high",
+        "objections": ["mortgage fraud denial", "poor credit", "existing loans", "low revenue $5-10k/mo"],
+        "suggestedReply": "Appreciate you being upfront. With the loan stack and credit situation, we won't be able to get this approved right now. If things change in a few months, reach back out and we'll take another look.",
+        "suggestedFollowupTime": null,
+        "suggestedFollowupReason": null,
+        "staleState": null,
+        "hadMeaningfulEngagement": true,
+        "suggestedReengageMessage": null,
+        "repBehavior": "concerning",
+        "coachingNote": "Tighten typing (typo 'l;oans') and slow down — lead asked an urgent qualification question and the rushed reply effectively talked her out of the deal instead of probing for a fallback product.",
+        "reasoning": "Lead self-disqualified with multiple stacking hard issues (mortgage fraud denial, poor credit, existing loans, $5-10k/mo revenue) and explicitly stated 'we won't qualify,' making this functionally DEAD."
+      }
+    },
+    {
+      "index": 9,
+      "bucket": "WRONG_NUMBER (lead said \"Not Justin\")",
+      "leadName": "Justin Lee",
+      "leadPhone": "+14043233627",
+      "input": {
+        "currentTime": "2026-04-25T11:41:00.000Z",
+        "threadText": "--- LEAD INFO ---\nName: Justin Lee\nPhone: +14043233627\nBusiness: Unlimited Electric Co Inc\nEmail: lee_justin@bellsouth.net\nSource: csv_import\nFirst contact: 2026-04-08\n\n--- CONVERSATION (4 messages) ---\n[2026-04-08 21:58] SCL-REP → Alex with SecureCreditLines again. Could a flexible 10yr agreement be what your business needs? Best email to send terms? Reply STOP to opt out\n[2026-04-25 00:23] SCL-REP → Justin, do you want to see if a HELOC is feasible? Interested? Need the: Address / DOB / Email. Reply STOP to opt out.\n[2026-04-25 01:54] LEAD → Not Justin\n[2026-04-25 01:55] SCL-REP → My bad, this could be a blessing in disguise, you familiar with helocs?"
+      },
+      "output": {
+        "classification": "WRONG_NUMBER",
+        "leadScore": 0,
+        "revenueMonthly": null,
+        "revenueAnnual": null,
+        "revenueConfidence": "none",
+        "amountRequested": null,
+        "useOfFunds": null,
+        "product": "Unknown",
+        "urgency": "low",
+        "objections": ["Not the named contact"],
+        "suggestedReply": "Understood — sorry for the mix-up. I'll remove this number from our list. Have a good one.",
+        "suggestedFollowupTime": null,
+        "suggestedFollowupReason": null,
+        "staleState": null,
+        "hadMeaningfulEngagement": false,
+        "suggestedReengageMessage": null,
+        "repBehavior": "concerning",
+        "coachingNote": "When a lead says 'Not Justin', acknowledge the wrong-number signal and exit politely instead of pivoting to pitch HELOCs to an unknown person.",
+        "reasoning": "Lead explicitly identified as not the named contact ('Not Justin'), which is a clear wrong-number signal."
+      }
+    }
+  ]
+}

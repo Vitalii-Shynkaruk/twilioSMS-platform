@@ -1,0 +1,64 @@
+{
+  "gate": "M1.6 production deploy smoke",
+  "date": "2026-05-02",
+  "productionUrl": "https://app.sclcapital.io/",
+  "deployedCommit": "1982fdb0",
+  "branch": "deploy/mysql-hosting",
+  "sourceSync": {
+    "method": "git bundle fetch from local origin/deploy/mysql-hosting",
+    "previousProductionCommit": "83d14126",
+    "fastForwarded": true,
+    "gitStatusLinesAfterSync": 0,
+    "dirtyStatePreserved": {
+      "stash": "pre-deploy-1982fdb-20260502-175850",
+      "worktreeBackupDir": "/root/scl-prod-backups/20260502-175850"
+    }
+  },
+  "database": {
+    "backup": "/root/scl-prod-backups/db-20260502180111/database.sql.gz",
+    "schemaSync": "manual additive SQL",
+    "verified": {
+      "usersOtpFields": true,
+      "loginOtpsTable": true,
+      "dealContactAttemptFields": true,
+      "dealContactAttemptIndexes": true
+    }
+  },
+  "build": {
+    "prismaGenerate": "passed",
+    "serverBuild": "passed",
+    "clientBuild": "passed",
+    "pm2Process": "sms-api",
+    "pm2StatusAfterRestart": "online"
+  },
+  "smoke": {
+    "apiHealth": {
+      "url": "https://app.sclcapital.io/api/health",
+      "httpStatus": 200,
+      "status": "ok",
+      "services": {
+        "database": "ok",
+        "redis": "ok"
+      }
+    },
+    "rootHtml": {
+      "url": "https://app.sclcapital.io/",
+      "httpStatus": 200,
+      "bytes": 1132,
+      "hasRootMarker": true
+    },
+    "browser": {
+      "finalUrl": "https://app.sclcapital.io/login",
+      "pageTitle": "SecureCreditLines - SMS Platform",
+      "loginHeadingRendered": true,
+      "otpEmailFieldRendered": true,
+      "sendCodeButtonRendered": true
+    },
+    "pm2RecentErrorTail": "no matching error lines in last 80 lines after restart"
+  },
+  "summary": {
+    "status": "passed",
+    "passed": 6,
+    "failed": 0
+  }
+}

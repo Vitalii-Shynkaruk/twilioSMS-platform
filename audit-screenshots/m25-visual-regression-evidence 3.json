@@ -1,0 +1,86 @@
+{
+  "id": "m25-visual-regression",
+  "generatedAt": "2026-05-04T00:00:00.000Z",
+  "scope": "Login/Auth and Campaigns prototype visual remediation",
+  "appUrl": "http://127.0.0.1:5177",
+  "prototypeUrl": "https://papaya-swan-76d714.netlify.app/scl_leads_campaigns_scope_v3.html",
+  "screenshots": {
+    "loginDesktop": "audit-screenshots/m25-login-desktop.png",
+    "loginMobile": "audit-screenshots/m25-login-mobile.png",
+    "campaignsDesktop": "audit-screenshots/m25-campaigns-desktop.png",
+    "campaignsMobile": "audit-screenshots/m25-campaigns-mobile.png",
+    "prototypeCampaignsDesktop": "audit-screenshots/m25-prototype-campaigns-desktop.png"
+  },
+  "visualMetrics": {
+    "loginDesktop": {
+      "panel": { "top": 356, "height": 323, "width": 480 },
+      "wordmark": { "top": 116, "height": 75, "width": 152 },
+      "footerVisible": true,
+      "emailFallbackInitialVisible": false,
+      "noHorizontalOverflow": true,
+      "hasReferenceCopy": true
+    },
+    "loginMobile": {
+      "panel": { "top": 256, "height": 311, "width": 354 },
+      "wordmark": { "top": 58, "height": 56, "width": 120 },
+      "footerVisible": true,
+      "emailFallbackInitialVisible": false,
+      "noHorizontalOverflow": true,
+      "hasReferenceCopy": true
+    },
+    "campaignsDesktop": {
+      "noHorizontalOverflow": true,
+      "textChecks": true,
+      "scopeBackground": "rgb(10, 15, 28)",
+      "aiZoneBorderTop": "rgb(167, 139, 250)",
+      "aiCardBackground": "rgb(17, 24, 39)",
+      "primaryButtonBackground": "rgb(74, 158, 255)"
+    },
+    "campaignsMobile": {
+      "noHorizontalOverflow": true,
+      "textChecks": true,
+      "scopeBackground": "rgb(10, 15, 28)",
+      "aiZoneBorderTop": "rgb(167, 139, 250)",
+      "aiCardBackground": "rgb(17, 24, 39)",
+      "primaryButtonBackground": "rgb(74, 158, 255)"
+    },
+    "prototypeCampaignsDesktop": {
+      "loaded": true,
+      "hasCampaignSignals": true,
+      "noHorizontalOverflow": true
+    }
+  },
+  "scenarioResults": {
+    "loginOtp": {
+      "emailNormalized": true,
+      "smsCodeStepVisible": true,
+      "emailFallbackVisibleAfterSmsStep": true,
+      "resendCountdownLocked": true,
+      "emailFallbackSwitchShowsMaskedEmail": true,
+      "verifyRedirectsToCommandCenter": true
+    },
+    "campaigns": {
+      "searchFiltersCityBoys": true,
+      "statusCompletedHidesSendingCampaigns": true,
+      "aiPreviewModalOpensWithSampleLead": true,
+      "aiBuildModalOpens": true,
+      "aiBuildNamePrefilled": true,
+      "aiBuildMessagePrefilled": true
+    }
+  },
+  "assertions": {
+    "loginDesktopReferenceFit": true,
+    "loginMobileFits": true,
+    "campaignsPrototypeTokens": true,
+    "campaignsResponsive": true,
+    "prototypeLoaded": true,
+    "loginOtpScenario": true,
+    "campaignsInteractionScenario": true
+  },
+  "notes": [
+    "Login first screen no longer shows email fallback link; fallback remains available after SMS code step.",
+    "Campaigns route now uses a prototype-matched topbar/tabs shell instead of the legacy sidebar shell.",
+    "Campaigns visual tokens match the M2 prototype for background, AI section top border, card background, and primary action color.",
+    "True pixel-perfect auth wordmark still depends on receiving the original SCL logo asset; current wordmark is CSS-rendered approximation."
+  ]
+}

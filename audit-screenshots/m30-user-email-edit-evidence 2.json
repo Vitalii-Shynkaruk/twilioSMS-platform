@@ -1,0 +1,42 @@
+{
+  "date": "2026-05-05",
+  "scope": "M30 User account email edit unblock and domain-change audit",
+  "clientIssue": "Client reported that user emails were changed to @Securecreditlines.com and could not be edited from Settings -> Users.",
+  "documentReview": {
+    "source": "docs/LOVABLE_PROMPT_A2P_FIX.md",
+    "finding": "The document asks to update public website/legal page domain references and public contact email info@securecreditlines.com. It does not ask to change platform user login emails.",
+    "policyApplied": "Do not rewrite account emails unless the client explicitly provides the correct email for each user."
+  },
+  "rootCause": [
+    "Users edit modal rendered the Email input as disabled during edit mode.",
+    "Frontend edit payload did not include email.",
+    "Backend updateUser validation allowed email, but AuthController.updateUser ignored it.",
+    "Production had a dirty defaultUsers bootstrap change that could sync existing users back to default @securecreditlines.com emails on restart."
+  ],
+  "implementation": [
+    "Email input is editable in Settings -> Users edit modal.",
+    "Edit payload now sends email to PUT /api/auth/users/:id.",
+    "AuthController.updateUser now persists email for ADMIN updates, rejects duplicate emails, and invalidates the user cache after update.",
+    "Default team bootstrap preserves existing user emails; production dirty email-sync code must not be reintroduced."
+  ],
+  "validation": {
+    "vscodeDiagnostics": "No errors found in UsersTab.tsx, authController.ts, and defaultUsers.ts.",
+    "focusedTests": "server npm test -- --run tests/authOtpPolicy.test.ts tests/authDevModeLogin.test.ts: 2 files passed, 8 tests passed.",
+    "build": "npm run build passed: server tsc and client tsc/vite build.",
+    "productionUsersInspected": "Production user emails were listed for diagnosis only; no bulk email data migration was performed.",
+    "productionApiSmoke": "PUT /api/auth/users/:id was tested on a disabled QA user: email temporarily changed, persisted, then reverted to the original email."
+  },
+  "productionDeploy": {
+    "commit": "fee5e5f",
+    "host": "https://app.sclcapital.io/",
+    "method": "local git bundle to production with temporary stash/reapply; server/src/bootstrap/defaultUsers.ts was restored to HEAD after stash pop to remove the bad dirty email-sync code while preserving other pre-existing dirty files.",
+    "build": "production npm run build passed: server tsc, client tsc, and Vite production build.",
+    "pm2": "sms-api restarted and reported online.",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok.",
+      "login": "https://app.sclcapital.io/login returned HTTP 200.",
+      "emailUpdateApi": "QA user email update/revert smoke returned 200 and final email was restored."
+    }
+  },
+  "remainingClientAction": "Client/admin can now edit each user's email to the correct address in Settings -> Users after production deploy."
+}

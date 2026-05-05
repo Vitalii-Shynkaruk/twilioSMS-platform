@@ -1,0 +1,63 @@
+{
+  "scope": "M1.6 drag/drop and funding history smoke on production preview with mock API",
+  "date": "2026-05-02",
+  "checks": [
+    {
+      "name": "drag/drop card to Qualified",
+      "status": "passed",
+      "detail": {
+        "dealStage": "QUALIFIED",
+        "qualifiedHasCard": true,
+        "bodyHasMovedCard": true
+      }
+    },
+    {
+      "name": "funding history tab displays existing event",
+      "status": "passed",
+      "detail": {
+        "hasFundingHeading": true,
+        "hasActiveFundingTab": true,
+        "activeTabCriterion": "ptab act class observed on the selected Funding History tab",
+        "hasLender": true,
+        "hasAmount": true,
+        "hasNotes": true,
+        "activeTabs": [
+          {
+            "className": "ptab act",
+            "ariaSelected": null
+          }
+        ]
+      }
+    }
+  ],
+  "apiCalls": [
+    {
+      "method": "PUT",
+      "url": "http://127.0.0.1:4174/api/deals/deal-1/move",
+      "body": "{\"stage\":\"QUALIFIED\"}"
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:4174/api/deals/deal-1",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:4174/api/deals/deal-3",
+      "body": null
+    }
+  ],
+  "consoleMessages": [],
+  "requestFailures": [],
+  "screenshots": {
+    "dragBefore": "audit-screenshots/m16-drag-before.png",
+    "dragAfter": "audit-screenshots/m16-drag-after.png",
+    "fundingHistory": "audit-screenshots/m16-funding-history-smoke.png",
+    "note": "PNG screenshots are local ignored evidence; measured results are preserved in this JSON."
+  },
+  "summary": {
+    "status": "passed",
+    "passed": 2,
+    "failed": 0
+  }
+}

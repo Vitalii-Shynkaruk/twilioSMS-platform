@@ -1,0 +1,184 @@
+[
+  {
+    "id": "golden_01",
+    "input_type": "rep_note",
+    "stage_at_time": "QUALIFIED",
+    "product_at_time": "MCA",
+    "text": "Industry is trucking, guy does about $80k/mo. Wants 50k for new equipment.",
+    "expected": {
+      "industry": "trucking",
+      "monthly_revenue": { "value_usd": 80000, "raw": "$80k/mo" },
+      "requested_amount": { "value_usd": 50000, "raw": "50k" },
+      "use_of_funds": { "category": "equipment", "detail": "new equipment" },
+      "product_interest": ["MCA", "EQUIPMENT"]
+    }
+  },
+  {
+    "id": "golden_02",
+    "input_type": "rep_note",
+    "stage_at_time": "ENGAGED_INTERESTED",
+    "product_at_time": "SBA",
+    "text": "Restaurant in Florida. Does 110k monthly. Looking for 200k SBA for expansion.",
+    "expected": {
+      "industry": "restaurant",
+      "monthly_revenue": { "value_usd": 110000, "raw": "110k monthly" },
+      "requested_amount": { "value_usd": 200000, "raw": "200k" },
+      "use_of_funds": { "category": "expansion" },
+      "product_interest": ["SBA"]
+    }
+  },
+  {
+    "id": "golden_03",
+    "input_type": "rep_note",
+    "stage_at_time": "NEW_LEAD",
+    "product_at_time": "MCA",
+    "text": "Has 2 mca's currently, paying [LENDER] $500/week and [LENDER] $700/week. Wants consolidation.",
+    "expected": {
+      "use_of_funds": { "category": "debt_consolidation" },
+      "product_interest": ["MCA"],
+      "has_stacked_history": true,
+      "current_active_positions": { "count": 2, "total_debt_usd": null }
+    }
+  },
+  {
+    "id": "golden_04",
+    "input_type": "rep_note",
+    "stage_at_time": "APPROVED_OFFERS",
+    "product_at_time": "HELOC",
+    "text": "Follow up Monday after he talks to wife.",
+    "expected": {
+      "pending_actions": [{ "actor": "rep", "action": "follow up after lead talks to wife", "timing": "next_week" }]
+    }
+  },
+  {
+    "id": "golden_05",
+    "input_type": "rep_note",
+    "stage_at_time": "NURTURE",
+    "product_at_time": null,
+    "text": "Real estate guy, owns 3 commercial properties. Reach out in 2 weeks.",
+    "expected": {
+      "industry": "commercial real estate",
+      "pending_actions": [{ "actor": "rep", "action": "reach out", "timing": "later" }]
+    }
+  },
+  {
+    "id": "golden_06",
+    "input_type": "rep_note",
+    "stage_at_time": "QUALIFIED",
+    "product_at_time": "EQUIPMENT",
+    "text": "Construction company, 200k/month revenue. Needs 150k for excavator.",
+    "expected": {
+      "industry": "construction",
+      "monthly_revenue": { "value_usd": 200000, "raw": "200k/month" },
+      "requested_amount": { "value_usd": 150000, "raw": "150k" },
+      "use_of_funds": { "category": "equipment", "detail": "excavator" },
+      "product_interest": ["EQUIPMENT"]
+    }
+  },
+  {
+    "id": "golden_07",
+    "input_type": "client_sms",
+    "stage_at_time": "ENGAGED_INTERESTED",
+    "product_at_time": "MCA",
+    "text": "Yeah I do about 60k a month and need maybe 40k working capital",
+    "expected": {
+      "monthly_revenue": { "value_usd": 60000, "raw": "60k a month" },
+      "requested_amount": { "value_usd": 40000, "raw": "40k" },
+      "use_of_funds": { "category": "working_capital", "detail": "working capital" }
+    }
+  },
+  {
+    "id": "golden_08",
+    "input_type": "rep_note",
+    "stage_at_time": "QUALIFIED",
+    "product_at_time": "MCA",
+    "text": "Stacked up bad. 4 active MCAs, owes about 180k total. Needs out.",
+    "expected": {
+      "use_of_funds": { "category": "debt_consolidation" },
+      "has_stacked_history": true,
+      "current_active_positions": { "count": 4, "total_debt_usd": 180000 }
+    }
+  },
+  {
+    "id": "golden_09",
+    "input_type": "rep_note",
+    "stage_at_time": "NEW_LEAD",
+    "product_at_time": "MCA",
+    "text": "Industry: e-commerce. Took a new MCA last week on top of his existing 2.",
+    "expected": {
+      "industry": "e-commerce",
+      "product_interest": ["MCA"],
+      "has_stacked_history": true,
+      "current_active_positions": { "count": 3, "total_debt_usd": null },
+      "recent_stacking_activity": { "active": true, "window": "last_30d" }
+    }
+  },
+  {
+    "id": "golden_10",
+    "input_type": "rep_note",
+    "stage_at_time": "ENGAGED_INTERESTED",
+    "product_at_time": null,
+    "text": "Healthcare practice, dentist. Pulls in $500k a month. Asking about LOC options.",
+    "expected": {
+      "industry": "healthcare",
+      "monthly_revenue": { "value_usd": 500000, "raw": "$500k a month" },
+      "product_interest": ["LOC"]
+    }
+  },
+  {
+    "id": "golden_11",
+    "input_type": "client_sms",
+    "stage_at_time": "QUALIFIED",
+    "product_at_time": "SBA",
+    "text": "I need to send last 3 bank statements right? When can I get them to you",
+    "expected": {
+      "pending_actions": [{ "actor": "lead", "action": "send last 3 bank statements", "timing": null }]
+    }
+  },
+  {
+    "id": "golden_12",
+    "input_type": "rep_note",
+    "stage_at_time": "NURTURE",
+    "product_at_time": "MCA",
+    "text": "Used to stack hard back in 2023, all paid off now. Clean profile. Trucking.",
+    "expected": {
+      "industry": "trucking",
+      "has_stacked_history": true,
+      "current_active_positions": null,
+      "recent_stacking_activity": { "active": false, "window": null }
+    }
+  },
+  {
+    "id": "golden_13",
+    "input_type": "rep_note",
+    "stage_at_time": "ENGAGED_INTERESTED",
+    "product_at_time": "MCA",
+    "text": "Auto repair shop owner. Does 90k a month. Wants 60k for inventory and a lift.",
+    "expected": {
+      "industry": "auto repair",
+      "monthly_revenue": { "value_usd": 90000, "raw": "90k a month" },
+      "requested_amount": { "value_usd": 60000, "raw": "60k" },
+      "use_of_funds": { "category": "working_capital", "detail": "inventory and a lift" }
+    }
+  },
+  {
+    "id": "golden_14",
+    "input_type": "rep_note",
+    "stage_at_time": "APPROVED_OFFERS",
+    "product_at_time": "MCA",
+    "text": "Send him the offer today. Hot lead.",
+    "expected": {
+      "pending_actions": [{ "actor": "rep", "action": "send offer", "timing": "today" }]
+    }
+  },
+  {
+    "id": "golden_15",
+    "input_type": "client_sms",
+    "stage_at_time": "QUALIFIED",
+    "product_at_time": "HELOC",
+    "text": "Hit me up next week, traveling rn",
+    "expected": {
+      "pending_actions": [{ "actor": "rep", "action": "follow up", "timing": "next_week" }]
+    }
+  }
+]

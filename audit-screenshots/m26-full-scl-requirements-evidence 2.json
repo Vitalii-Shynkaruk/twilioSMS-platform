@@ -1,0 +1,102 @@
+{
+  "id": "m26-full-scl-requirements",
+  "generatedAt": "2026-05-04T19:37:16Z",
+  "scope": "Full SCL Leads/Campaigns PDF + prototype re-audit, Login/Auth and Pipeline API dependency check",
+  "sources": [
+    "SCL_Leads_Campaigns_Refinement.pdf via CHECKLIST_LEADS_CAMPAIGNS.md",
+    "https://papaya-swan-76d714.netlify.app/scl_leads_campaigns_scope_v3.html",
+    "scl-pipeline-ai-handoff/extractor-spec.md",
+    "scl-pipeline-ai-handoff/scl_pipeline_v11.html",
+    "MASTER_M1_M2_DELIVERY_CHECKLIST.md",
+    "PROJECT_BRIEFING.md",
+    "TECHNICAL_QA.md"
+  ],
+  "implementedChecks": {
+    "leadsPrototypeShell": true,
+    "leadsAppSidebarRetainedAfterM27": true,
+    "leadsReadableSourceExample": true,
+    "leadsSourceStateLastContactFilters": true,
+    "leadsFilterAwareExport": true,
+    "campaignsPrototypeShell": true,
+    "campaignsAppSidebarRetainedAfterM27": true,
+    "campaignsThreeAiCards": true,
+    "campaignsCategoryLabels": true,
+    "campaignsCapBarsAndDailyLimits": true,
+    "campaignsCooldownWarnings": true,
+    "campaignsAiLineage": true,
+    "manualCampaignCapsServerSide": true,
+    "noHorizontalOverflowDesktopCurrentViewport": true,
+    "noHorizontalOverflowMobile": true
+  },
+  "validation": {
+    "vscodeProblems": "No errors in changed Leads/Campaigns TSX/CSS and focused server test files after latest pass.",
+    "focusedTests": "cd server && npm test -- --run tests/leadCampaignScope.test.ts tests/campaignAiCohorts.test.ts tests/leadEnrichmentExport.test.ts passed: 3 files, 19/19 tests. Local Redis ECONNREFUSED warnings are known test-environment noise.",
+    "build": "cd /Users/oleksandr/Documents/GitHub/twilio-sms-platform && npm run build passed: server tsc, client tsc, Vite production build.",
+    "browser": [
+      "Local /leads renders inside the normal app sidebar after M27, with Source/State/Last Contact filter bar and no separate prototype topbar/tabs.",
+      "Local /campaigns renders inside the normal app sidebar after M27, with 3 AI Retarget cards, category labels, cap bar, cooldown warnings, AI lineage, and no separate prototype topbar/tabs.",
+      "Campaign AI capacity text spacing fixed after visual self-review."
+    ]
+  },
+  "screenshots": [
+    "audit-screenshots/m26-leads-desktop.png",
+    "audit-screenshots/m26-leads-mobile.png",
+    "audit-screenshots/m26-campaigns-desktop.png",
+    "audit-screenshots/m26-campaigns-mobile.png"
+  ],
+  "browserMetrics": {
+    "leads": {
+      "viewport": "918x667 actual integrated-browser viewport after requested desktop/mobile passes",
+      "bodyScrollWidth": 918,
+      "documentScrollWidth": 918,
+      "hasHorizontalOverflow": false,
+      "hasAppSidebarAfterM27": true,
+      "filterBar": "864px wide, 78px high at actual viewport; compact two-row layout",
+      "hasPrototypeScopeBlock": true,
+      "hasSourceReadabilityExample": true
+    },
+    "campaigns": {
+      "viewport": "918x667 actual integrated-browser viewport after requested desktop/mobile passes",
+      "bodyScrollWidth": 918,
+      "documentScrollWidth": 918,
+      "hasHorizontalOverflow": false,
+      "hasAppSidebarAfterM27": true,
+      "hasPrototypeShell": true,
+      "aiCardCount": 3,
+      "capacityText": "148 leads · Daily capacity: 120 / 800 used · 15%",
+      "capacityTextSpacingOk": true,
+      "hasCooldownWarning": true,
+      "hasCategoryLabels": true,
+      "hasAiLineageRows": true
+    }
+  },
+  "apiRequirementConclusion": {
+    "newApiForLeadsCampaigns": false,
+    "requiredForEmailOtpFallback": ["server SMTP relay or external SMTP credentials", "authorized sender email/domain"],
+    "requiredForExactLoginPixelMatch": ["original SCL logo/wordmark SVG or high-resolution transparent PNG"],
+    "confirmExistingProductionServices": [
+      "Twilio Account SID/Auth Token",
+      "Twilio Messaging Service SID",
+      "A2P/10DLC approval",
+      "Anthropic API key for AI features"
+    ]
+  },
+  "productionDeploy": {
+    "commit": "7fe9a7c",
+    "host": "https://app.sclcapital.io/",
+    "method": "full local git bundle to production because non-interactive GitHub HTTPS fetch requires credentials",
+    "build": "production npm run build passed: server tsc, client tsc, Vite production build",
+    "pm2": "sms-api restarted and reported online",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok",
+      "root": "https://app.sclcapital.io/ returned HTTP 200",
+      "login": "https://app.sclcapital.io/login returned HTTP 200",
+      "leads": "https://app.sclcapital.io/leads returned HTTP 200",
+      "campaigns": "https://app.sclcapital.io/campaigns returned HTTP 200"
+    }
+  },
+  "remainingExternalBlockers": [
+    "Production SMTP email sender configuration for email OTP fallback smoke.",
+    "Original SCL logo/wordmark asset for absolute Login pixel-perfect match."
+  ]
+}

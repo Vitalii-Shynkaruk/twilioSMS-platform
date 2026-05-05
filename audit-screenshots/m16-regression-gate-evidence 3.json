@@ -1,0 +1,33 @@
+{
+  "scope": "M1.6 initial regression/release gate",
+  "date": "2026-05-02",
+  "checks": [
+    {
+      "name": "root build",
+      "command": "npm run build",
+      "status": "passed",
+      "details": "server tsc and client tsc/vite build completed successfully"
+    },
+    {
+      "name": "full server vitest suite",
+      "command": "cd server && npm test -- --run",
+      "status": "environment_blocked",
+      "details": "DB-free tests ran, but DB/Redis-backed tests cannot complete in the current local environment: Redis is not listening on 6379 and Prisma rejects the local DATABASE_URL provider for the MySQL schema."
+    },
+    {
+      "name": "M1.5 focused backend regression",
+      "command": "cd server && npx vitest run tests/dealContactAttempts.test.ts tests/dealControllerScope.test.ts tests/dealScopePolicy.test.ts",
+      "status": "passed",
+      "details": "18 tests passed before M1.6 gate documentation"
+    }
+  ],
+  "blockedTestsSummary": {
+    "testFiles": "3 failed, 26 passed, 1 skipped",
+    "tests": "1 failed, 135 passed, 44 skipped",
+    "blockedBy": [
+      "Redis unavailable on local 6379",
+      "Local Prisma DATABASE_URL provider mismatch for MySQL schema",
+      "DB-backed auth and number service tests require a valid test database"
+    ]
+  }
+}

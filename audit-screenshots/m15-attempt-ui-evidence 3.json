@@ -1,0 +1,95 @@
+{
+  "scope": "M1.5 contact attempt UI browser/pixel gate",
+  "date": "2026-05-02",
+  "environment": "client production preview with local mock API",
+  "screenshots": {
+    "desktop": "audit-screenshots/m15-attempt-ui-desktop.png",
+    "mobile": "audit-screenshots/m15-attempt-ui-mobile.png",
+    "note": "PNG screenshots are local evidence files and ignored by repository gitignore. This JSON preserves measured browser evidence."
+  },
+  "desktop": {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "bannerText": "WAITING 3/5 ATTEMPTS · 2 BEFORE AUTO-NURTURE",
+    "quickLogText": "WAITING 3/5 2 before auto-nurture No answer Texted Voicemail Connected Not interested Reset Threshold",
+    "thresholdValue": "5",
+    "boxes": {
+      "banner": {
+        "width": 116,
+        "height": 49
+      },
+      "quickLog": {
+        "width": 443,
+        "height": 112
+      },
+      "actions": {
+        "width": 303,
+        "height": 59
+      },
+      "admin": {
+        "width": 303,
+        "height": 27
+      }
+    }
+  },
+  "mobile": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "bannerText": "WAITING 4/5 ATTEMPTS · 1 BEFORE AUTO-NURTURE",
+    "quickLogText": "WAITING 4/5 1 before auto-nurture No answer Texted Voicemail Connected Not interested Reset Threshold",
+    "thresholdValue": "5",
+    "boxes": {
+      "banner": {
+        "width": 116,
+        "height": 49
+      },
+      "quickLog": {
+        "width": 365,
+        "height": 181
+      },
+      "actions": {
+        "width": 347,
+        "height": 91
+      },
+      "admin": {
+        "width": 347,
+        "height": 27
+      }
+    }
+  },
+  "uiActions": [
+    {
+      "action": "No answer",
+      "statusAfterClick": "WAITING 1/5 4 before auto-nurture"
+    },
+    {
+      "action": "Texted",
+      "statusAfterClick": "WAITING 2/5 3 before auto-nurture"
+    },
+    {
+      "action": "Voicemail",
+      "statusAfterClick": "WAITING 3/5 2 before auto-nurture"
+    },
+    {
+      "action": "Connected",
+      "statusAfterClick": "WAITING 0/5 5 before auto-nurture"
+    },
+    {
+      "action": "Not interested",
+      "statusAfterClick": "quick-log flow invoked; backend behavior covered by focused Vitest semantics"
+    },
+    {
+      "action": "Reset",
+      "statusAfterClick": "WAITING 0/5 5 before auto-nurture"
+    },
+    {
+      "action": "Threshold Enter 12",
+      "statusAfterClick": "threshold input value 12"
+    }
+  ],
+  "validation": ["client get_errors for pipeline.css: no errors", "cd client && npm run build: passed"]
+}

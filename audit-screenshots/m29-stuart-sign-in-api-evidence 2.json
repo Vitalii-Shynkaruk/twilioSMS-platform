@@ -1,0 +1,75 @@
+{
+  "date": "2026-05-04",
+  "scope": "M29 Stuart sign-in support and SMTP email OTP settings",
+  "productionDiagnosis": {
+    "user": {
+      "email": "sb@securecreditlines.com",
+      "isActive": true,
+      "mobilePhoneEnding": "2055",
+      "otpFailedAttempts": 0,
+      "otpLockedUntil": null,
+      "lastLoginAt": "2026-04-30T12:28:09.647Z"
+    },
+    "otpRowsForStuart": 0,
+    "twilioStatus": {
+      "settingsAccountSidConfigured": true,
+      "settingsMessagingServiceSidConfigured": true,
+      "recentMessagesToStuartPhoneDelivered": true
+    },
+    "emailStatusBeforeFix": {
+      "legacyEmailApiConfigured": false,
+      "smtpSettingsConfigured": false,
+      "serverSmtpRelayDefault": "127.0.0.1:25"
+    },
+    "finding": "Stuart is active and not OTP locked. No LoginOtp rows exist for Stuart, so the user likely did not complete a successful code request with the exact account email. SMS delivery to the same phone is working for HOT alerts. Email fallback now uses SMTP."
+  },
+  "implementation": {
+    "backend": [
+      "AuthOtpService SMS OTP continues to use the existing Twilio client and active Messaging Service path.",
+      "AuthOtpService email OTP now sends through SMTP with local server defaults and external SMTP override settings.",
+      "SettingsController now whitelists smtpFromEmail, smtpHost, smtpPort, smtpUser, smtpPassword, and smtpSecure.",
+      "smtpPassword is masked as a sensitive setting.",
+      "smtpFromEmail, smtpPort, and smtpSecure are validated."
+    ],
+    "frontend": [
+      "Settings -> Integrations now includes Email Sign-in / SMTP fields.",
+      "Login first screen now offers Send SMS code and Use email code instead after an email is entered.",
+      "Login footer copy now reflects phone or email code delivery."
+    ],
+    "documentation": "docs/STUART_SIGN_IN_AND_API_SETUP_2026-05-04.md"
+  },
+  "validation": {
+    "typeErrors": "No errors found in changed files via VS Code diagnostics.",
+    "focusedTests": "server npm test -- --run tests/authOtpPolicy.test.ts tests/authDevModeLogin.test.ts: 2 files passed, 8 tests passed.",
+    "build": "npm run build passed: server tsc and client tsc/vite build.",
+    "browserSmoke": {
+      "url": "http://127.0.0.1:4175/login",
+      "steps": [
+        "Opened login page in local Vite preview.",
+        "Entered sb@securecreditlines.com.",
+        "Confirmed Send SMS code is enabled.",
+        "Confirmed Use email code instead is enabled on the first screen."
+      ],
+      "screenshot": "audit-screenshots/m29-login-email-code-option.png"
+    }
+  },
+  "productionDeploy": {
+    "commit": "1105439",
+    "host": "https://app.sclcapital.io/",
+    "method": "local git bundle to production with temporary stash/reapply for existing dirty worktree",
+    "install": "server npm install completed and installed nodemailer dependency.",
+    "build": "production npm run build passed: server tsc, client tsc, and Vite production build.",
+    "pm2": "sms-api restarted and reported online.",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok.",
+      "root": "https://app.sclcapital.io/ returned HTTP 200.",
+      "login": "https://app.sclcapital.io/login returned HTTP 200.",
+      "loginBrowser": "After entering sb@securecreditlines.com on production login, Send SMS code and Use email code instead were enabled without sending a code."
+    }
+  },
+  "remainingExternalDependency": {
+    "serverSmtp": "Production server must have a working SMTP relay, or admin must save external SMTP credentials in Settings.",
+    "smtpFromEmail": "Client/admin must confirm the sender email/domain is authorized for SMTP delivery.",
+    "productionEmailSmoke": "Must be run after SMTP relay or external SMTP credentials are ready."
+  }
+}

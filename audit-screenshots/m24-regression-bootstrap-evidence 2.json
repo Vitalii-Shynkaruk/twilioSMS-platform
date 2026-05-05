@@ -1,0 +1,103 @@
+{
+  "gate": "M2.4 regression and release gate",
+  "date": "2026-05-04",
+  "result": "passed",
+  "progressImpact": "+2% overall; M2 complete",
+  "productionDeploy": {
+    "host": "198.199.91.174",
+    "commit": "43f067a45",
+    "method": "Local git bundle from production ancestor 100a34387 to 43f067a45; production dirty hotfixes stashed, fast-forwarded, and reapplied without conflicts.",
+    "build": "cd /opt/sms-platform/server && npm run build passed",
+    "restart": "pm2 restart sms-api --update-env passed; process online",
+    "health": {
+      "url": "http://127.0.0.1:3001/api/health",
+      "status": "ok",
+      "database": "ok",
+      "redis": "ok"
+    },
+    "temporaryFilesRemoved": true
+  },
+  "scope": {
+    "verified": [
+      "Focused M2 backend tests passed for lead/campaign scope, enrichment/export, AI cohorts, LeadCohort cache, AI cohort cron, Pipeline AI golden grader, Inbox reply linking, retarget suppression, send-path suppression, and outbound template guards",
+      "Root build passed: server tsc, client tsc, and Vite production build",
+      "Leads page renders search, Import, Add Lead, Export CSV, filters, enrichment columns, and no document-level horizontal overflow",
+      "Leads status/list filters, Add Lead submit payload, CSV preview, mapped import, and Export CSV request path were covered in mocked UI smoke plus server tests",
+      "Production live CSV flow passed with AN uploader, HB isolated rep, admin visibility, enrichment fields, filter-aware export, and cleanup",
+      "Campaigns page renders search, status filters, New Campaign, AI Retarget Suggestions, retained All Campaigns list, and no document-level horizontal overflow",
+      "New Campaign create path, Start/Pause/Cancel actions, campaign analytics/detail scope, and campaign ownership negative cases are covered by focused regression tests",
+      "Inbox reply/campaign reply linking is covered by focused regression tests",
+      "Retarget suppression helper and send-path edge cases are covered by focused regression tests",
+      "Template unresolved-variable/test-message guards are covered by focused regression tests",
+      "Admin and rep Leads/Campaigns visual screenshots were captured and compared against the retained v3 prototype scope"
+    ],
+    "notYetVerified": []
+  },
+  "validation": {
+    "focusedTests": {
+      "command": "cd server && npx vitest run tests/pipelineAiService.test.ts tests/pipelineAiGoldenGrader.test.ts tests/leadCampaignScope.test.ts tests/leadEnrichmentExport.test.ts tests/campaignAiCohorts.test.ts tests/aiCohortCron.test.ts tests/inboxReplyReclassification.test.ts tests/retargetSuppression.test.ts tests/sendingEngineRetarget.test.ts tests/outboundMessageGuard.test.ts",
+      "result": "passed",
+      "testFiles": 10,
+      "tests": 37,
+      "notes": ["Redis ECONNREFUSED warnings are expected in local focused tests and did not fail the suite."]
+    },
+    "rootBuild": {
+      "command": "npm run build",
+      "result": "passed",
+      "coverage": ["server tsc", "client tsc", "vite production build"]
+    },
+    "vscodeProblems": {
+      "result": "passed",
+      "filesChecked": [
+        "server/src/controllers/leadController.ts",
+        "server/tests/leadEnrichmentExport.test.ts",
+        "server/tests/pipelineAiGoldenGrader.test.ts"
+      ],
+      "errors": 0
+    },
+    "visualSmoke": {
+      "tooling": "Playwright chromium against Vite dev server with deterministic API mocks",
+      "result": "passed",
+      "assertions": {
+        "leadsAdminColumns": true,
+        "leadsRepColumns": true,
+        "campaignsAdminAi": true,
+        "campaignsRepAi": true,
+        "sidebarUnchanged": true,
+        "noPageOverflow": true,
+        "prototypeLoaded": true
+      },
+      "screenshots": [
+        "audit-screenshots/m24-leads-admin-desktop.png",
+        "audit-screenshots/m24-leads-rep-desktop.png",
+        "audit-screenshots/m24-campaigns-admin-desktop.png",
+        "audit-screenshots/m24-campaigns-rep-desktop.png",
+        "audit-screenshots/m24-leads-admin-half.png",
+        "audit-screenshots/m24-campaigns-admin-mobile.png",
+        "audit-screenshots/m24-leads-campaigns-prototype-desktop.png"
+      ]
+    },
+    "productionLiveCsvSmoke": {
+      "result": "passed",
+      "imported": 1,
+      "uploaderTotal": 1,
+      "isolatedRepTotal": 0,
+      "adminTotal": 1,
+      "industry": "Restaurants",
+      "monthlyRevenue": 82000,
+      "exportContainsIndustry": true,
+      "exportContainsRevenue": true,
+      "exportContainsReadableSource": true,
+      "cleanupDeletedLeadCount": 1
+    }
+  },
+  "secretsHandling": {
+    "productionSecretsPrinted": false,
+    "otpCodesPrinted": false,
+    "jwtPrinted": false,
+    "liveSmokeEmailsMasked": true
+  },
+  "remainingRisks": [
+    "No M2.4 blocker remains. Overall project readiness is still gated by production SMTP smoke for email OTP fallback."
+  ]
+}

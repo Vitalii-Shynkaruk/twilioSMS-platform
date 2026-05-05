@@ -1,0 +1,490 @@
+{
+  "timestamp": "2026-04-06T20:39:31.395Z",
+  "loginOk": true,
+  "pages": [
+    {
+      "name": "Dashboard",
+      "path": "/dashboard",
+      "loaded": true,
+      "loadTime": 1629,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 12,
+      "formsCount": 0,
+      "linksCount": 28,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Pipeline",
+      "path": "/pipeline",
+      "loaded": true,
+      "loadTime": 1681,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 33,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "CommandCenter",
+      "path": "/command-center",
+      "loaded": true,
+      "loadTime": 1240,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 50,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Leads",
+      "path": "/leads",
+      "loaded": true,
+      "loadTime": 1249,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 116,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Inbox",
+      "path": "/inbox",
+      "loaded": true,
+      "loadTime": 1055,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 19,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Campaigns",
+      "path": "/campaigns",
+      "loaded": true,
+      "loadTime": 1046,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 43,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Numbers",
+      "path": "/numbers",
+      "loaded": true,
+      "loadTime": 1038,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 41,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Automation",
+      "path": "/automation",
+      "loaded": true,
+      "loadTime": 997,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 16,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Analytics",
+      "path": "/analytics",
+      "loaded": true,
+      "loadTime": 1159,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 14,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    },
+    {
+      "name": "Settings",
+      "path": "/settings",
+      "loaded": true,
+      "loadTime": 1110,
+      "hasContent": true,
+      "hasEmptyState": false,
+      "buttonsCount": 78,
+      "formsCount": 0,
+      "linksCount": 24,
+      "errors": [],
+      "consoleErrorsBefore": 0
+    }
+  ],
+  "consoleErrors": [],
+  "networkErrors": [],
+  "styleIssues": [
+    {
+      "page": "Leads",
+      "issue": "Элементы выходят за viewport: {\"tag\":\"SELECT\",\"class\":\"input w-auto\",\"right\":2334,\"width\":1765}",
+      "severity": "medium"
+    }
+  ],
+  "functionalIssues": [],
+  "responsiveIssues": [
+    {
+      "page": "Pipeline",
+      "viewport": "Tablet (768x1024)",
+      "issue": "2477 элементов выходят за пределы экрана"
+    },
+    {
+      "page": "Pipeline",
+      "viewport": "Mobile (375x812)",
+      "issue": "2939 элементов выходят за пределы экрана"
+    }
+  ],
+  "a11yIssues": [
+    {
+      "page": "Dashboard",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Dashboard",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Dashboard",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Dashboard",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Dashboard",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Dashboard",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Pipeline",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Pipeline",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Pipeline",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Pipeline",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "CommandCenter",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "CommandCenter",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "CommandCenter",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "CommandCenter",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "CommandCenter",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "CommandCenter",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"btn-ghost p-1\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"btn-ghost p-1\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"btn-ghost p-1\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox",
+      "severity": "low"
+    },
+    {
+      "page": "Leads",
+      "issue": "Кнопка без label: <button class=\"btn-ghost p-1\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox",
+      "severity": "low"
+    },
+    {
+      "page": "Inbox",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Inbox",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Inbox",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Inbox",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Inbox",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Inbox",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Campaigns",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Campaigns",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Campaigns",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Campaigns",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Campaigns",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Campaigns",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Numbers",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Numbers",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Numbers",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Numbers",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Numbers",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Numbers",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Automation",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Automation",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Automation",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Automation",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Automation",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Automation",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Analytics",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Analytics",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Analytics",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Analytics",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Analytics",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Analytics",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors hidden lg:block\" style=\"color: var(--scl-text-m);\"><svg",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"ml-auto p-1 transition-colors lg:hidden\" style=\"color: var(--scl-text-m);\"><svg xmlns",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"p-1.5 -ml-1\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"p-1.5\" style=\"color: var(--text-muted);\"><svg xmlns=\"http://www.w3.org/2000/svg\" widt",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"w-7 h-7 rounded-full transition-transform\" style=\"background-color: rgb(239, 68, 68);",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"w-7 h-7 rounded-full transition-transform\" style=\"background-color: rgb(245, 158, 11)",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"w-7 h-7 rounded-full transition-transform\" style=\"background-color: rgb(16, 185, 129)",
+      "severity": "low"
+    },
+    {
+      "page": "Settings",
+      "issue": "Кнопка без label: <button class=\"w-7 h-7 rounded-full transition-transform\" style=\"background-color: rgb(59, 130, 246)",
+      "severity": "low"
+    }
+  ]
+}

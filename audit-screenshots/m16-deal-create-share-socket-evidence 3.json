@@ -1,0 +1,115 @@
+{
+  "gate": "M1.6 deal creation, deal sharing, and socket scoping",
+  "date": "2026-05-02",
+  "productionUrl": "https://app.sclcapital.io/",
+  "status": "passed",
+  "codeChanges": [
+    {
+      "file": "server/src/controllers/dealController.ts",
+      "summary": "shareDeal socket emit now uses the updated deal record so newly added assisting reps receive scoped deal:updated events."
+    },
+    {
+      "file": "server/tests/dealControllerScope.test.ts",
+      "summary": "Added focused coverage for admin-created deals with selected assigned reps and shareDeal scoped socket rooms."
+    }
+  ],
+  "bugFixed": {
+    "area": "Deal sharing socket scoping",
+    "before": "shareDeal emitted using the pre-update deal.assistingRepIds array, so a newly shared rep did not receive inbox:{repId} real-time notifications.",
+    "after": "shareDeal emits with updated.assignedRepId and updated.assistingRepIds, covering primary, assisting reps, and actor rooms."
+  },
+  "focusedTests": {
+    "command": "cd server && npx vitest run tests/dealControllerScope.test.ts tests/dealScopePolicy.test.ts tests/inboxReplyReclassification.test.ts",
+    "result": "passed",
+    "testFiles": 3,
+    "testsPassed": 14,
+    "testsFailed": 0,
+    "notes": "Redis ECONNREFUSED noise can appear locally, but the focused tests completed green."
+  },
+  "typecheck": {
+    "tool": "VS Code diagnostics",
+    "files": ["server/src/controllers/dealController.ts", "server/tests/dealControllerScope.test.ts"],
+    "result": "no errors"
+  },
+  "build": {
+    "command": "npm run build",
+    "result": "passed",
+    "steps": ["server tsc", "client tsc && vite build"]
+  },
+  "browserSmoke": {
+    "environment": "Vite production preview on 127.0.0.1:4177 with mock API on 127.0.0.1:3001",
+    "result": "passed",
+    "createdDealVisible": true,
+    "sharedDealVisible": true,
+    "screenshot": "audit-screenshots/m16-deal-create-share-browser-smoke.png",
+    "capturedCreatePayloads": [
+      {
+        "businessName": "M1.6 Smoke Capital",
+        "contactName": "Morgan Smoke",
+        "phone": "+15550000099",
+        "email": "morgan@example.com",
+        "productType": "MCA",
+        "dealAmount": 42000,
+        "assignedRepId": "rep-2"
+      }
+    ],
+    "capturedSharePayloads": [
+      {
+        "assistingRepIds": ["rep-2"]
+      }
+    ],
+    "requestPaths": [
+      "GET /api/auth/me",
+      "GET /api/reps",
+      "GET /api/deals/board",
+      "POST /api/deals",
+      "GET /api/deals/deal-created-1",
+      "GET /api/deals/deal-1",
+      "PUT /api/deals/deal-1/share"
+    ],
+    "notes": "Browser mock API did not implement Socket.IO, so websocket connection warnings are outside this browser gate; socket scoping is covered by focused backend tests."
+  },
+  "production": {
+    "deployStatus": "passed",
+    "deployedCommit": "01b6700d",
+    "branch": "deploy/mysql-hosting",
+    "method": "git bundle fast-forward on /opt/sms-platform",
+    "previousProductionCommit": "2797bfcb",
+    "build": {
+      "command": "npm run build",
+      "result": "passed",
+      "pm2Process": "sms-api",
+      "pm2StatusAfterRestart": "online"
+    },
+    "smoke": {
+      "apiHealth": {
+        "url": "https://app.sclcapital.io/api/health",
+        "httpStatus": 200,
+        "status": "ok",
+        "services": {
+          "database": "ok",
+          "redis": "ok"
+        }
+      },
+      "rootHtml": {
+        "url": "https://app.sclcapital.io/",
+        "httpStatus": 200,
+        "bytes": 1132,
+        "hasRootMarker": true
+      },
+      "browser": {
+        "url": "https://app.sclcapital.io/login",
+        "pageTitle": "SecureCreditLines - SMS Platform",
+        "loginHeadingRendered": true,
+        "emailFieldRendered": true,
+        "sendCodeButtonRendered": true
+      },
+      "pm2RecentErrorTail": "no error lines in last 60 lines after restart"
+    }
+  },
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "pending": 0
+  }
+}

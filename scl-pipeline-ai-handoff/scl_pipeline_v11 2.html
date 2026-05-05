@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCL · Sales Command Layer v11</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --scl-silver-1:#e8eef7; --scl-silver-2:#b8c2d6;
+  --scl-gold:#d4a85a; --scl-gold-light:#e8c785;
+  --scl-blue:#5b8def; --scl-blue-deep:#2a4a80; --scl-blue-glow:rgba(91,141,239,0.25);
+  --bg-base:#050810; --bg-elev-1:#0a0e1a; --bg-elev-2:#0f1422;
+  --bg-elev-3:#151b2c; --bg-elev-4:#1c2335;
+  --border-faint:rgba(255,255,255,0.04); --border-soft:rgba(255,255,255,0.08);
+  --border-strong:rgba(255,255,255,0.14); --border-gold:rgba(212,168,90,0.3);
+  --txt-primary:#eaeef5; --txt-secondary:#a3acbe;
+  --txt-tertiary:#6b7689; --txt-quaternary:#495060;
+  --rose:#f87171; --rose-soft:rgba(248,113,113,0.10);
+  --amber:#d4a85a; --amber-soft:rgba(212,168,90,0.10);
+  --emerald:#4ade80; --emerald-soft:rgba(74,222,128,0.10);
+  --orange:#fb923c; --orange-soft:rgba(251,146,60,0.10);
+  --cyan:#67e8f9; --violet:#a78bfa; --violet-soft:rgba(167,139,250,0.10);
+  --stage-new:#34d399; --stage-engaged:#a78bfa; --stage-qualified:#facc15;
+  --stage-submitted:#5b8def; --stage-approved:#fb923c;
+  --stage-committed:#34d399; --stage-funded:#22c55e; --stage-closed:#6b7280;
+  --font-display:'Geist',-apple-system,sans-serif;
+  --font-mono:'Geist Mono','SF Mono',Menlo,monospace;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; background:var(--bg-base); color:var(--txt-primary); font-family:var(--font-display); font-size:13px; line-height:1.45; overflow:hidden; -webkit-font-smoothing:antialiased; }
+button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+input,textarea,select { font-family:inherit; }
+body::before { content:''; position:fixed; inset:0; background:radial-gradient(ellipse at top left,rgba(91,141,239,0.06) 0%,transparent 50%),radial-gradient(ellipse at bottom right,rgba(212,168,90,0.04) 0%,transparent 50%),linear-gradient(rgba(255,255,255,0.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.012) 1px,transparent 1px); background-size:100% 100%,100% 100%,32px 32px,32px 32px; pointer-events:none; z-index:1; }
+::-webkit-scrollbar { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.06); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.14); }
+
+.app { display:flex; height:100vh; position:relative; z-index:2; }
+.nav { width:56px; background:var(--bg-elev-1); border-right:1px solid var(--border-faint); display:flex; flex-direction:column; align-items:center; padding:14px 0; gap:4px; flex-shrink:0; }
+.nav-brand { width:36px; height:36px; background:linear-gradient(135deg,#1a2540 0%,#0a1020 100%); border:1px solid var(--border-strong); border-radius:8px; display:flex; align-items:center; justify-content:center; margin-bottom:14px; }
+.nav-brand-text { font-weight:800; font-size:13px; background:linear-gradient(135deg,var(--scl-silver-1) 0%,var(--scl-gold) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.nav-item { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--txt-quaternary); transition:all 0.15s; }
+.nav-item:hover { color:var(--txt-secondary); background:var(--bg-elev-2); }
+.nav-item.active { color:var(--amber); background:var(--amber-soft); }
+.nav-spacer { flex:1; }
+.nav-user { width:32px; height:32px; background:linear-gradient(135deg,var(--scl-blue) 0%,var(--scl-blue-deep) 100%); border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:11px; color:#fff; }
+.main { flex:1; display:flex; flex-direction:column; min-width:0; background:var(--bg-base); }
+
+.topbar { display:flex; align-items:center; gap:10px; padding:11px 18px; border-bottom:1px solid var(--border-faint); background:var(--bg-elev-1); flex-shrink:0; }
+.tb-title { font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; }
+.tb-brand { font-weight:800; font-size:14px; letter-spacing:0.04em; background:linear-gradient(135deg,var(--scl-silver-1) 0%,var(--scl-gold) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+.tb-title .sub { color:var(--txt-tertiary); font-size:10px; font-family:var(--font-mono); letter-spacing:0.08em; text-transform:uppercase; padding:2px 7px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:4px; }
+.tb-divider { width:1px; height:18px; background:var(--border-soft); }
+.search-box { display:flex; align-items:center; gap:7px; background:var(--bg-elev-2); border:1px solid var(--border-faint); border-radius:6px; padding:5px 10px; width:200px; }
+.search-box input { flex:1; background:transparent; border:none; color:var(--txt-primary); font-size:12px; outline:none; }
+.search-box input::placeholder { color:var(--txt-quaternary); }
+.seg { display:flex; background:var(--bg-elev-2); border:1px solid var(--border-faint); border-radius:6px; padding:2px; gap:1px; }
+.seg button { font-size:11px; padding:4px 10px; color:var(--txt-tertiary); border-radius:4px; font-weight:500; font-family:var(--font-mono); }
+.seg button.on { background:var(--bg-elev-4); color:var(--txt-primary); }
+.tb-spacer { flex:1; }
+.btn-revive { font-size:11px; padding:5px 11px; color:var(--violet); border:1px solid rgba(167,139,250,0.3); border-radius:6px; background:var(--violet-soft); font-weight:500; display:flex; align-items:center; gap:5px; }
+.btn-revive .count { background:var(--violet); color:#fff; padding:1px 6px; border-radius:8px; font-size:9px; font-weight:700; font-family:var(--font-mono); }
+.btn-primary { font-size:11px; padding:5px 13px; background:linear-gradient(180deg,var(--scl-gold-light) 0%,var(--scl-gold) 100%); color:#050810; border-radius:6px; font-weight:600; display:flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(212,168,90,0.4); }
+
+.subbar { display:flex; align-items:center; gap:14px; padding:7px 18px; border-bottom:1px solid var(--border-faint); background:var(--bg-base); flex-shrink:0; font-size:11px; color:var(--txt-tertiary); font-family:var(--font-mono); }
+.scope-pill { font-size:9.5px; padding:3px 9px; border-radius:4px; background:rgba(91,141,239,0.10); color:#93c5fd; border:1px solid rgba(91,141,239,0.25); font-weight:600; letter-spacing:0.08em; text-transform:uppercase; }
+.legend { display:none; align-items:center; gap:14px; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; font-weight:500; }
+.legend.show { display:inline-flex; }
+.legend-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; }
+
+.view-pipeline { flex:1; display:flex; flex-direction:column; min-height:0; }
+.grid { flex:1; display:flex; gap:1px; overflow-x:auto; overflow-y:hidden; min-height:0; background:var(--border-faint); }
+.col { display:flex; flex-direction:column; flex-shrink:0; background:var(--bg-base); min-width:0; width:218px; }
+.col.execution { width:240px; }
+.col-head { padding:12px 14px 10px; background:var(--bg-elev-1); border-bottom:1px solid var(--border-faint); flex-shrink:0; position:relative; }
+.col-accent { height:2px; background:var(--col-color); margin:-12px -14px 10px; }
+.col-name { font-size:9px; font-weight:600; letter-spacing:0.14em; color:var(--txt-tertiary); text-transform:uppercase; font-family:var(--font-mono); }
+.col-amount { font-size:13px; font-weight:600; color:var(--txt-primary); font-family:var(--font-mono); letter-spacing:-0.02em; margin-top:6px; }
+.col-amount.empty { color:var(--txt-tertiary); }
+.col-amount.ghost { color:var(--orange); font-size:11px; margin-top:2px; }
+.col-cards { flex:1; overflow-y:auto; padding:6px 6px 12px; display:flex; flex-direction:column; gap:5px; }
+
+.card { background:var(--bg-elev-2); border:1px solid var(--border-faint); border-radius:6px; padding:10px 11px; cursor:pointer; transition:all 0.12s; position:relative; overflow:hidden; }
+.card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--card-border,transparent); }
+.card.t-rose { --card-border:var(--rose); }
+.card.t-amber { --card-border:var(--amber); }
+.card.t-cyan { --card-border:var(--cyan); }
+.card.t-emerald { --card-border:var(--emerald); }
+.card.t-orange { --card-border:var(--orange); }
+.card.t-gray { --card-border:var(--txt-quaternary); }
+.card:hover { background:var(--bg-elev-3); border-color:var(--border-soft); }
+
+.card-top-row { display:flex; gap:5px; flex-wrap:wrap; margin-bottom:6px; }
+.nurture-banner { margin:-10px -11px 8px; padding:5px 10px; background:linear-gradient(90deg,rgba(251,146,60,0.18) 0%,rgba(212,168,90,0.12) 100%); border-bottom:1px solid rgba(251,146,60,0.3); font-size:9px; font-weight:700; font-family:var(--font-mono); letter-spacing:0.06em; color:var(--orange); text-transform:uppercase; display:flex; align-items:center; gap:6px; }
+.nurture-banner::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--orange); box-shadow:0 0 8px var(--orange); }
+.nurture-banner .nb-wake { margin-left:auto; color:var(--amber); }
+
+.returning-badge { display:inline-flex; align-items:center; gap:4px; font-size:9px; font-family:var(--font-mono); padding:2px 7px; border-radius:3px; background:rgba(74,222,128,0.10); color:var(--emerald); border:1px solid rgba(74,222,128,0.3); letter-spacing:0.06em; text-transform:uppercase; font-weight:700; }
+.returning-badge::before { content:'↻'; }
+.linked-pill { display:inline-flex; align-items:center; gap:4px; font-size:9px; font-family:var(--font-mono); padding:2px 7px; border-radius:3px; background:rgba(91,141,239,0.10); color:#93c5fd; border:1px solid rgba(91,141,239,0.3); letter-spacing:0.06em; text-transform:uppercase; font-weight:700; cursor:pointer; }
+.linked-pill:hover { background:rgba(91,141,239,0.2); }
+.linked-pill::before { content:'⇄'; font-size:10px; }
+.paused-pill { display:inline-flex; align-items:center; gap:5px; font-size:9px; font-family:var(--font-mono); padding:2px 7px; border-radius:3px; background:rgba(107,114,128,0.15); color:var(--txt-tertiary); border:1px solid rgba(107,114,128,0.3); letter-spacing:0.06em; text-transform:uppercase; font-weight:600; }
+.paused-pill::before { content:'⏸'; }
+.prev-offer-pill { display:inline-flex; align-items:center; gap:5px; font-size:9.5px; font-family:var(--font-mono); padding:3px 8px; border-radius:4px; background:var(--bg-elev-3); border:1px solid rgba(251,146,60,0.25); color:var(--amber); letter-spacing:0.04em; text-transform:uppercase; font-weight:600; margin-bottom:6px; }
+.prev-offer-pill::before { content:'$'; color:var(--orange); font-weight:700; }
+.hot-pill { font-size:9px; font-weight:600; padding:2px 7px; border-radius:3px; letter-spacing:0.08em; font-family:var(--font-mono); background:rgba(251,146,60,0.15); color:var(--orange); border:1px solid rgba(251,146,60,0.4); display:inline-flex; align-items:center; gap:4px; text-transform:uppercase; }
+.hot-pill::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--orange); box-shadow:0 0 8px var(--orange); animation:pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+
+.amt-row { display:flex; align-items:center; gap:7px; margin-bottom:5px; }
+.amt-display { font-size:18px; font-weight:700; color:var(--amber); font-family:var(--font-mono); letter-spacing:-0.02em; line-height:1; }
+.amt-display.funded { color:var(--emerald); }
+.product-emoji { font-size:14px; line-height:1; }
+.amt-product-only { font-size:13px; color:var(--txt-tertiary); font-family:var(--font-mono); font-weight:500; }
+
+.card-name { font-size:12px; font-weight:600; color:var(--txt-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-0.01em; }
+.card-contact-exec { font-size:10px; color:var(--txt-tertiary); margin-top:2px; font-family:var(--font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-action-row { font-size:11px; color:var(--txt-secondary); margin-top:8px; padding-top:8px; border-top:1px solid var(--border-faint); display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.card-action-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card-status { font-size:9px; font-weight:600; font-family:var(--font-mono); letter-spacing:0.08em; text-transform:uppercase; flex-shrink:0; }
+.s-overdue { color:var(--rose); } .s-today { color:var(--cyan); } .s-tomorrow { color:var(--emerald); }
+.s-amber { color:var(--amber); } .s-future { color:var(--txt-tertiary); } .s-funded { color:var(--emerald); }
+.s-nurture { color:var(--amber); } .s-closed { color:var(--txt-quaternary); }
+
+.card-note-exec { font-size:10.5px; color:var(--txt-secondary); margin:8px 0 0; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; padding-top:7px; border-top:1px solid var(--border-faint); }
+.card-note-exec::before { content:''; display:inline-block; width:3px; height:3px; border-radius:50%; background:var(--txt-quaternary); vertical-align:middle; margin-right:6px; }
+.card-meta-exec { display:flex; align-items:center; gap:6px; margin-top:7px; font-size:10px; }
+.avatar { width:18px; height:18px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#050810; flex-shrink:0; font-family:var(--font-mono); }
+.owner-name { color:var(--txt-secondary); font-size:10px; font-family:var(--font-mono); }
+.card-age { font-size:9px; color:var(--txt-quaternary); margin-left:auto; font-family:var(--font-mono); letter-spacing:0.06em; }
+.state-line-exec { display:flex; align-items:center; gap:6px; font-size:10px; margin-top:7px; padding-top:7px; border-top:1px solid var(--border-faint); font-family:var(--font-mono); letter-spacing:0.06em; }
+.state-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.sd-active { background:var(--rose); box-shadow:0 0 8px var(--rose); }
+.sd-waiting { background:var(--amber); }
+.sd-nurture { background:var(--orange); }
+.sd-funded { background:var(--emerald); }
+.sd-closed { background:var(--txt-quaternary); }
+.state-label { font-weight:600; text-transform:uppercase; letter-spacing:0.1em; }
+.state-timing { color:var(--txt-quaternary); margin-left:auto; }
+
+.hover-tip { position:fixed; z-index:200; pointer-events:none; background:var(--bg-elev-3); border:1px solid var(--border-strong); border-radius:8px; padding:14px 16px; max-width:340px; box-shadow:0 16px 48px rgba(0,0,0,0.7); opacity:0; transition:opacity 0.12s; font-size:11px; }
+.hover-tip.show { opacity:1; }
+.ht-name { font-size:13px; font-weight:600; margin-bottom:3px; }
+.ht-contact { font-size:10px; color:var(--txt-secondary); font-family:var(--font-mono); margin-bottom:8px; }
+.ht-row { color:var(--txt-secondary); margin-bottom:4px; font-size:10px; }
+.ht-row strong { color:var(--txt-primary); }
+.ht-section { margin-top:8px; padding-top:8px; border-top:1px solid var(--border-faint); }
+.ht-section-label { font-size:8.5px; font-family:var(--font-mono); letter-spacing:0.14em; color:var(--txt-quaternary); text-transform:uppercase; margin-bottom:5px; }
+.ht-source { font-size:9.5px; color:var(--scl-blue); font-style:italic; margin-top:4px; }
+.ht-note { font-size:11px; color:var(--txt-primary); line-height:1.5; }
+.ht-workflow { font-size:10.5px; color:var(--scl-blue); font-style:italic; line-height:1.45; }
+
+.empty-stage-note { padding:24px 16px; text-align:center; color:var(--txt-tertiary); font-size:11px; line-height:1.55; }
+.empty-stage-note .esn-label { font-family:var(--font-mono); font-size:9px; letter-spacing:0.14em; text-transform:uppercase; color:var(--txt-quaternary); margin-bottom:8px; display:block; }
+
+.kpi { display:none; gap:0; border-top:1px solid var(--border-faint); background:var(--bg-elev-1); flex-shrink:0; overflow-x:auto; }
+.kpi.show { display:flex; }
+.kpi-item { flex:1; display:flex; flex-direction:column; gap:2px; padding:11px 18px; border-right:1px solid var(--border-faint); min-width:130px; }
+.kpi-label { font-size:9px; color:var(--txt-tertiary); letter-spacing:0.14em; font-weight:500; font-family:var(--font-mono); text-transform:uppercase; }
+.kpi-value { font-size:18px; font-weight:600; font-family:var(--font-mono); letter-spacing:-0.03em; }
+.kpi-sub { font-size:9px; color:var(--txt-quaternary); font-family:var(--font-mono); }
+
+.backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:300; display:none; backdrop-filter:blur(6px); }
+.backdrop.show { display:block; }
+.modal { position:fixed; right:0; top:0; bottom:0; width:560px; max-width:100vw; background:var(--bg-elev-1); border-left:1px solid var(--border-soft); z-index:301; transform:translateX(100%); transition:transform 0.25s; display:flex; flex-direction:column; box-shadow:-16px 0 48px rgba(0,0,0,0.5); }
+.modal.show { transform:translateX(0); }
+.modal-header { padding:18px 22px 14px; border-bottom:1px solid var(--border-faint); flex-shrink:0; position:relative; }
+.mh-row { display:flex; align-items:flex-start; gap:14px; margin-bottom:6px; }
+.mh-title { font-size:17px; font-weight:600; flex:1; letter-spacing:-0.02em; line-height:1.3; }
+.mh-actions { display:flex; gap:6px; flex-shrink:0; }
+.mh-btn { width:28px; height:28px; border-radius:6px; background:var(--bg-elev-3); border:1px solid var(--border-faint); color:var(--txt-tertiary); display:flex; align-items:center; justify-content:center; font-size:13px; }
+.mh-btn:hover { background:var(--bg-elev-4); color:var(--txt-primary); }
+.mh-btn.primary-rep { background:rgba(167,139,250,0.15); border-color:rgba(167,139,250,0.3); color:#c4b5fd; width:auto; padding:0 11px; font-size:11px; font-weight:600; }
+.mh-contact { font-size:11px; color:var(--txt-secondary); font-family:var(--font-mono); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.mh-contact a { color:#93c5fd; text-decoration:none; }
+.mh-contact .sep { color:var(--txt-quaternary); }
+
+.ai-inline-bar { margin-top:10px; padding:9px 11px; background:linear-gradient(90deg,rgba(91,141,239,0.06) 0%,rgba(212,168,90,0.04) 100%); border:1px solid rgba(91,141,239,0.2); border-radius:6px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:10.5px; font-family:var(--font-mono); }
+.ai-inline-label { font-weight:700; letter-spacing:0.14em; color:var(--scl-blue); text-transform:uppercase; font-size:9px; padding:2px 5px; }
+.ai-inline-class { padding:3px 8px; border-radius:3px; font-size:9px; letter-spacing:0.06em; font-weight:700; text-transform:uppercase; }
+.ai-inline-class.HOT { background:rgba(251,146,60,0.15); color:var(--orange); border:1px solid rgba(251,146,60,0.4); }
+.ai-inline-class.WARM { background:rgba(212,168,90,0.10); color:var(--amber); border:1px solid rgba(212,168,90,0.3); }
+.ai-inline-class.COLD { background:rgba(107,114,128,0.10); color:var(--txt-tertiary); border:1px solid rgba(107,114,128,0.3); }
+.ai-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 4px 3px 9px; border-radius:4px; font-size:10.5px; font-family:var(--font-mono); transition:all 0.12s; }
+.ai-chip.filled { background:var(--bg-elev-3); border:1px solid var(--border-soft); color:var(--txt-primary); }
+.ai-chip.filled.industry { background:rgba(167,139,250,0.08); border-color:rgba(167,139,250,0.3); color:#c4b5fd; }
+.ai-chip.filled.revenue { background:rgba(74,222,128,0.08); border-color:rgba(74,222,128,0.3); color:#86efac; }
+.ai-chip.filled.use { background:rgba(212,168,90,0.10); border-color:rgba(212,168,90,0.35); color:var(--amber); }
+.ai-chip.filled.urgency-high { background:rgba(248,113,113,0.10); border-color:rgba(248,113,113,0.35); color:var(--rose); }
+.ai-chip.filled.urgency-medium { background:rgba(251,146,60,0.08); border-color:rgba(251,146,60,0.3); color:var(--orange); }
+.ai-chip.filled.urgency-low { background:rgba(107,114,128,0.08); border-color:rgba(107,114,128,0.25); color:var(--txt-tertiary); }
+.ai-chip.filled.ask { background:rgba(91,141,239,0.08); border-color:rgba(91,141,239,0.3); color:#93c5fd; }
+.ai-chip.filled.borrowing { background:rgba(248,113,113,0.10); border-color:rgba(248,113,113,0.4); color:var(--rose); font-weight:600; }
+.ai-chip.empty { background:transparent; border:1px dashed rgba(255,255,255,0.12); color:var(--txt-quaternary); padding:3px 9px; cursor:default; font-style:italic; }
+.ai-chip-key { font-size:9px; opacity:0.7; letter-spacing:0.04em; text-transform:uppercase; font-weight:600; }
+.ai-chip-val { font-weight:500; }
+.ai-chip-x { display:flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:3px; background:rgba(255,255,255,0.06); color:inherit; opacity:0.5; font-size:10px; cursor:pointer; line-height:1; transition:all 0.1s; }
+.ai-chip-x:hover { opacity:1; background:rgba(248,113,113,0.2); color:var(--rose); }
+.ai-inline-source { font-size:9px; color:var(--txt-quaternary); font-style:italic; margin-left:auto; letter-spacing:0; text-transform:none; font-family:var(--font-display); padding:3px 5px; }
+
+.mh-chips { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+.stage-chip { font-size:11px; padding:4px 10px; border-radius:5px; background:var(--amber-soft); color:var(--amber); border:1px solid var(--border-gold); font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; }
+.pill { font-size:9px; font-weight:600; padding:2px 7px; border-radius:3px; letter-spacing:0.08em; font-family:var(--font-mono); border:1px solid; text-transform:uppercase; }
+.p-MCA { background:rgba(212,168,90,0.08); color:var(--amber); border-color:rgba(212,168,90,0.25); }
+.p-LOC { background:rgba(103,232,249,0.08); color:var(--cyan); border-color:rgba(103,232,249,0.25); }
+.p-EQUIPMENT { background:rgba(167,139,250,0.08); color:#c4b5fd; border-color:rgba(167,139,250,0.25); }
+.p-HELOC { background:rgba(74,222,128,0.08); color:#86efac; border-color:rgba(74,222,128,0.25); }
+.p-SBA { background:rgba(251,146,60,0.08); color:var(--orange); border-color:rgba(251,146,60,0.25); }
+.p-CRE { background:rgba(236,72,153,0.08); color:#f9a8d4; border-color:rgba(236,72,153,0.25); }
+.p-HOT { background:rgba(251,146,60,0.15); color:var(--orange); border-color:rgba(251,146,60,0.4); display:inline-flex; align-items:center; gap:4px; }
+.p-HOT::before { content:''; width:5px; height:5px; border-radius:50%; background:var(--orange); box-shadow:0 0 8px var(--orange); animation:pulse 1.6s ease-in-out infinite; }
+
+.sibling-popover { display:none; position:absolute; top:calc(100% + 8px); left:22px; right:22px; z-index:50; background:var(--bg-elev-3); border:1px solid var(--border-strong); border-radius:8px; padding:14px; box-shadow:0 16px 48px rgba(0,0,0,0.6); }
+.sibling-popover.show { display:block; }
+.sp-header { font-size:9px; font-weight:700; letter-spacing:0.14em; color:var(--txt-tertiary); text-transform:uppercase; font-family:var(--font-mono); margin-bottom:10px; }
+.sp-card { display:flex; align-items:center; gap:10px; padding:9px 11px; background:var(--bg-elev-2); border-radius:6px; border:1px solid var(--border-soft); margin-bottom:6px; cursor:pointer; transition:all 0.12s; }
+.sp-card:hover { background:var(--bg-elev-4); }
+.sp-card-emoji { font-size:18px; }
+.sp-card-content { flex:1; }
+.sp-card-name { font-size:12px; font-weight:600; }
+.sp-card-meta { font-size:10px; color:var(--txt-tertiary); font-family:var(--font-mono); margin-top:2px; }
+.sp-card-stage { font-size:9px; color:var(--scl-blue); font-family:var(--font-mono); letter-spacing:0.08em; text-transform:uppercase; font-weight:600; }
+.sp-add-btn { width:100%; padding:9px; background:transparent; border:1px dashed rgba(74,222,128,0.4); border-radius:6px; color:var(--emerald); font-size:11px; font-weight:600; margin-top:6px; }
+.sp-add-btn:hover { background:var(--emerald-soft); border-style:solid; }
+
+.tabs { display:flex; border-bottom:1px solid var(--border-faint); padding:0 22px; flex-shrink:0; }
+.tab { font-size:12px; padding:11px 14px; color:var(--txt-tertiary); font-weight:500; border-bottom:2px solid transparent; }
+.tab.active { color:var(--amber); border-bottom-color:var(--amber); }
+
+.modal-body { flex:1; overflow-y:auto; padding:18px 22px 32px; }
+.section { margin-bottom:20px; }
+.section-label { font-size:9px; font-weight:600; letter-spacing:0.16em; color:var(--txt-tertiary); margin-bottom:9px; text-transform:uppercase; font-family:var(--font-mono); display:flex; align-items:center; justify-content:space-between; }
+.section-label .secondary { font-size:10px; color:var(--txt-quaternary); font-weight:400; letter-spacing:0; text-transform:none; font-family:var(--font-display); }
+
+.modal-nurture-banner { margin:0 -22px 18px; padding:14px 22px; background:linear-gradient(90deg,rgba(251,146,60,0.15) 0%,rgba(212,168,90,0.10) 100%); border-top:1px solid rgba(251,146,60,0.3); border-bottom:1px solid rgba(251,146,60,0.3); display:flex; align-items:center; gap:12px; }
+.mnb-icon { width:32px; height:32px; border-radius:8px; background:rgba(251,146,60,0.2); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:16px; }
+.mnb-content { flex:1; }
+.mnb-title { font-size:11px; font-weight:700; letter-spacing:0.1em; color:var(--orange); text-transform:uppercase; font-family:var(--font-mono); }
+.mnb-detail { font-size:12px; color:var(--txt-primary); margin-top:2px; }
+.mnb-wake { font-size:11px; font-family:var(--font-mono); color:var(--amber); font-weight:600; text-transform:uppercase; text-align:right; }
+
+.state-pill-row { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--bg-elev-2); border-radius:6px; margin-bottom:14px; font-size:10px; font-family:var(--font-mono); letter-spacing:0.08em; text-transform:uppercase; }
+.sp-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+
+.qa-block { background:var(--bg-elev-2); border:1px solid var(--scl-blue); border-radius:8px; padding:14px; }
+.qa-stage-label { font-size:9px; font-weight:600; letter-spacing:0.14em; color:var(--txt-tertiary); text-transform:uppercase; font-family:var(--font-mono); margin-bottom:10px; }
+.qa-stage-label strong { color:var(--scl-blue); }
+.qa-buttons { display:flex; gap:6px; margin-bottom:12px; flex-wrap:wrap; }
+.qa-btn { font-size:11px; padding:7px 12px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; color:var(--txt-secondary); font-weight:500; }
+.qa-btn:hover { background:var(--bg-elev-4); color:var(--txt-primary); }
+.qa-input { width:100%; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; padding:9px 12px; color:var(--txt-primary); font-size:12px; outline:none; margin-bottom:10px; }
+.qa-date-row { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
+.qa-date-pill { font-size:10px; padding:5px 10px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:5px; color:var(--txt-secondary); font-family:var(--font-mono); }
+.qa-date-pill.on { background:var(--amber-soft); border-color:var(--border-gold); color:var(--amber); }
+.qa-set { font-size:11px; padding:6px 14px; background:linear-gradient(180deg,var(--scl-gold-light) 0%,var(--scl-gold) 100%); color:#050810; border-radius:5px; font-weight:600; }
+
+.action-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px; }
+.act-btn { font-size:11px; padding:9px 12px; border-radius:6px; font-weight:500; background:var(--bg-elev-3); border:1px solid var(--border-soft); color:var(--txt-secondary); display:flex; align-items:center; justify-content:center; gap:6px; }
+.act-btn:hover { background:var(--bg-elev-4); color:var(--txt-primary); }
+.act-btn.danger { color:var(--rose); border-color:rgba(248,113,113,0.25); background:var(--rose-soft); }
+.act-btn.funded { grid-column:span 2; background:var(--emerald-soft); border-color:rgba(74,222,128,0.3); color:var(--emerald); font-weight:600; }
+
+.notes-block { background:var(--bg-elev-2); border-radius:8px; padding:14px; border:1px solid var(--border-faint); border-left:2px solid var(--amber); }
+.quick-log-row { display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; align-items:center; }
+.quick-log-label { font-size:9px; font-weight:600; letter-spacing:0.14em; color:var(--txt-tertiary); text-transform:uppercase; font-family:var(--font-mono); margin-right:6px; }
+.ql-btn { font-size:10px; padding:5px 9px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:5px; color:var(--txt-secondary); font-family:var(--font-mono); display:flex; align-items:center; gap:5px; transition:all 0.12s; }
+.ql-btn:hover { background:var(--bg-elev-4); color:var(--txt-primary); transform:translateY(-1px); }
+.ql-btn.success:hover { color:var(--emerald); border-color:rgba(74,222,128,0.3); background:var(--emerald-soft); }
+.ql-btn.danger:hover { color:var(--rose); border-color:rgba(248,113,113,0.3); background:var(--rose-soft); }
+.ql-dot { width:5px; height:5px; border-radius:50%; }
+.ql-dot.warm { background:var(--amber); }
+.ql-dot.green { background:var(--emerald); }
+.ql-dot.red { background:var(--rose); }
+.note-input { width:100%; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; padding:10px 12px; color:var(--txt-primary); font-size:12px; resize:vertical; min-height:56px; }
+.note-input:focus { outline:none; border-color:var(--amber); }
+.note-save-row { display:flex; justify-content:flex-end; margin-top:8px; }
+.note-save-btn { font-size:11px; padding:6px 14px; background:linear-gradient(180deg,var(--scl-gold-light) 0%,var(--scl-gold) 100%); color:#050810; border-radius:5px; font-weight:600; }
+.notes-log { margin-top:14px; display:flex; flex-direction:column; gap:8px; }
+.note-existing { background:var(--bg-elev-3); border-radius:6px; padding:10px 12px; font-size:11.5px; color:var(--txt-primary); border-left:2px solid var(--amber); line-height:1.5; }
+.note-existing.fresh { border-left-color:var(--emerald); animation:freshNote 1.5s ease-out; }
+@keyframes freshNote { 0% { transform:translateX(10px); opacity:0; } 100% { transform:translateX(0); opacity:1; } }
+.note-time { font-size:9px; color:var(--txt-quaternary); margin-top:6px; font-family:var(--font-mono); letter-spacing:0.08em; text-transform:uppercase; }
+
+.client-notes-block { background:var(--bg-elev-2); border-radius:8px; padding:14px; border:1px solid var(--border-faint); border-left:2px solid var(--violet); }
+.client-note-content { font-size:12px; color:var(--txt-primary); line-height:1.6; white-space:pre-wrap; background:var(--bg-elev-3); border-radius:6px; padding:12px 13px; border:1px solid var(--border-soft); min-height:60px; }
+.shared-tag { font-size:9px; color:var(--violet); font-weight:600; font-family:var(--font-mono); letter-spacing:0.04em; text-transform:uppercase; margin-top:8px; display:flex; align-items:center; gap:4px; }
+.shared-tag::before { content:'⇄'; }
+
+.maintain { background:linear-gradient(135deg,rgba(74,222,128,0.06) 0%,rgba(212,168,90,0.04) 100%); border:1px solid rgba(74,222,128,0.2); border-radius:8px; padding:14px; }
+.maintain-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.maintain-title { font-size:11px; font-weight:600; letter-spacing:0.14em; color:var(--emerald); text-transform:uppercase; font-family:var(--font-mono); }
+.create-new-deal-btn { width:100%; padding:12px 16px; background:linear-gradient(180deg,var(--scl-gold-light) 0%,var(--scl-gold) 100%); color:#050810; border-radius:7px; font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; }
+.bs-card { display:flex; align-items:center; gap:14px; padding:12px; background:var(--bg-elev-2); border-radius:7px; }
+.bs-card.paused { opacity:0.55; }
+.bs-ring { position:relative; width:48px; height:48px; flex-shrink:0; }
+.bs-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+.bs-ring circle { fill:none; stroke-width:4; }
+.bs-ring .bg { stroke:rgba(255,255,255,0.06); }
+.bs-ring-text { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-family:var(--font-mono); }
+.bs-ring-num { font-size:12px; font-weight:700; }
+.bs-ring-label { font-size:6.5px; color:var(--txt-tertiary); letter-spacing:0.08em; text-transform:uppercase; }
+.bs-content { flex:1; }
+.bs-title { font-size:11px; font-weight:600; }
+.bs-meta { font-size:9.5px; color:var(--txt-tertiary); font-family:var(--font-mono); }
+.bs-meta strong { color:var(--amber); }
+
+.detail-section { background:var(--bg-elev-2); border-radius:7px; padding:14px; border:1px solid var(--border-faint); }
+.detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+.detail-field { display:flex; flex-direction:column; gap:4px; }
+.detail-field-label { font-size:9px; color:var(--txt-tertiary); text-transform:uppercase; letter-spacing:0.12em; font-family:var(--font-mono); }
+.detail-field-value { font-size:12px; color:var(--txt-primary); font-weight:500; }
+.detail-field-value.mono { font-family:var(--font-mono); }
+.product-pills { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+.product-toggle { font-size:10px; padding:5px 11px; border-radius:5px; background:var(--bg-elev-3); border:1px solid var(--border-soft); color:var(--txt-tertiary); font-weight:500; font-family:var(--font-mono); display:flex; align-items:center; gap:5px; }
+.product-toggle.on { background:var(--emerald-soft); border-color:rgba(74,222,128,0.3); color:var(--emerald); font-weight:600; }
+.amount-input { width:100%; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; padding:8px 12px; color:var(--txt-primary); font-size:14px; font-family:var(--font-mono); font-weight:600; }
+.amount-deferred { font-size:10px; color:var(--txt-tertiary); font-family:var(--font-mono); padding:8px 10px; background:var(--bg-elev-3); border-radius:5px; border:1px dashed var(--border-soft); display:flex; align-items:center; gap:6px; }
+
+.lender-list { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+.lender-row { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; }
+.lender-row.preserved { border-color:rgba(251,146,60,0.3); background:rgba(251,146,60,0.04); }
+.lender-name { font-size:12px; font-weight:600; }
+.lender-meta { font-size:10px; color:var(--txt-tertiary); font-family:var(--font-mono); }
+.lender-meta.preserved-tag { color:var(--orange); font-weight:600; text-transform:uppercase; }
+.lender-amount { font-size:14px; font-weight:600; color:var(--emerald); font-family:var(--font-mono); }
+.lender-amount.preserved { color:var(--amber); text-decoration:line-through; opacity:0.7; }
+.add-offer { width:100%; padding:9px; background:transparent; border:1px dashed rgba(74,222,128,0.4); border-radius:6px; color:var(--emerald); font-size:11px; font-weight:600; margin-top:6px; }
+
+.stacking-badge { display:inline-flex; align-items:center; gap:4px; font-size:9px; font-family:var(--font-mono); padding:2px 7px; border-radius:3px; background:rgba(248,113,113,0.10); color:var(--rose); border:1px solid rgba(248,113,113,0.4); letter-spacing:0.06em; text-transform:uppercase; font-weight:700; }
+.stacking-badge::before { content:'⚠'; font-size:9px; }
+
+.linked-deals-grid { display:flex; flex-direction:column; gap:6px; background:var(--bg-elev-2); border-radius:8px; padding:14px; border:1px solid var(--border-faint); border-left:2px solid var(--scl-blue); }
+.ld-card { display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; cursor:pointer; transition:all 0.12s; }
+.ld-card.current { background:var(--amber-soft); border-color:var(--border-gold); cursor:default; }
+.ld-card:not(.current):hover { background:var(--bg-elev-4); border-color:var(--scl-blue); transform:translateX(2px); }
+.ld-emoji { font-size:18px; flex-shrink:0; }
+.ld-content { flex:1; min-width:0; }
+.ld-amt { font-size:12px; font-weight:600; }
+.ld-stage { font-size:10px; color:var(--scl-blue); font-family:var(--font-mono); letter-spacing:0.06em; text-transform:uppercase; font-weight:600; margin-top:2px; }
+.ld-action { font-size:10px; color:var(--txt-tertiary); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px; }
+.ld-hot { font-size:9px; padding:1px 5px; background:rgba(251,146,60,0.15); color:var(--orange); border-radius:3px; font-family:var(--font-mono); font-weight:700; letter-spacing:0.06em; margin-left:6px; }
+.ld-current-tag { font-size:9px; color:var(--amber); font-family:var(--font-mono); font-weight:700; letter-spacing:0.08em; flex-shrink:0; }
+.ld-arrow { color:var(--txt-tertiary); font-size:14px; flex-shrink:0; }
+.add-product-inline { font-size:10px; color:var(--emerald); padding:4px 10px; border:1px dashed rgba(74,222,128,0.4); border-radius:4px; background:transparent; font-family:var(--font-mono); font-weight:600; letter-spacing:0.04em; text-transform:none; }
+.add-product-inline:hover { background:var(--emerald-soft); border-style:solid; }
+
+.ai-suggestion-banner { background:linear-gradient(135deg,rgba(91,141,239,0.10) 0%,rgba(212,168,90,0.06) 100%); border:1px solid rgba(91,141,239,0.35); border-radius:10px; padding:14px 16px; margin-bottom:18px; box-shadow:0 4px 16px rgba(91,141,239,0.08); animation:bannerIn 0.3s ease-out; }
+@keyframes bannerIn { 0% { transform:translateY(-8px); opacity:0; } 100% { transform:translateY(0); opacity:1; } }
+.ai-sug-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.ai-sug-icon { font-size:14px; color:var(--scl-blue); }
+.ai-sug-title { font-size:11px; font-weight:700; color:var(--scl-blue); letter-spacing:0.14em; text-transform:uppercase; font-family:var(--font-mono); }
+.ai-sug-confidence { font-size:10px; color:var(--txt-tertiary); margin-left:auto; font-style:italic; }
+.ai-sug-body { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid rgba(91,141,239,0.15); }
+.ai-sug-row { display:flex; align-items:center; gap:10px; font-size:11px; }
+.ai-sug-key { color:var(--txt-tertiary); min-width:100px; font-family:var(--font-mono); font-size:10px; letter-spacing:0.06em; text-transform:uppercase; }
+.ai-sug-val { color:var(--txt-primary); font-weight:500; }
+.ai-sug-reasoning { font-size:10.5px; color:var(--scl-blue); font-style:italic; padding-left:110px; line-height:1.5; }
+.ai-sug-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.ai-sug-apply { padding:10px; background:linear-gradient(180deg,var(--scl-gold-light) 0%,var(--scl-gold) 100%); color:#050810; border-radius:6px; font-weight:700; font-size:12px; }
+.ai-sug-dismiss { padding:10px; background:var(--bg-elev-3); border:1px solid var(--border-soft); border-radius:6px; color:var(--txt-secondary); font-weight:500; font-size:12px; }
+.ai-sug-dismiss:hover { background:var(--bg-elev-4); }
+
+.toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(60px); background:var(--bg-elev-3); border:1px solid var(--border-strong); border-radius:8px; padding:12px 20px; font-size:12px; font-weight:500; z-index:600; opacity:0; transition:all 0.28s; box-shadow:0 12px 40px rgba(0,0,0,0.6); display:flex; align-items:center; gap:8px; max-width:520px; }
+.toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+.toast-dot { width:6px; height:6px; border-radius:50%; background:var(--emerald); box-shadow:0 0 8px var(--emerald); flex-shrink:0; }
+.icon { width:14px; height:14px; stroke-width:1.6; }
+.icon-sm { width:12px; height:12px; stroke-width:1.6; }
+
+.center-modal-bg { position:fixed; inset:0; z-index:400; background:rgba(0,0,0,0.75); backdrop-filter:blur(8px); display:none; align-items:center; justify-content:center; padding:20px; }
+.center-modal-bg.show { display:flex; }
+.center-modal { background:var(--bg-elev-1); border:1px solid var(--border-soft); border-radius:12px; width:580px; max-width:100%; max-height:92vh; overflow-y:auto; box-shadow:0 24px 64px rgba(0,0,0,0.6); padding:24px; }
+.cm-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+.cm-title { font-size:18px; font-weight:700; }
+.cm-title-row { display:flex; align-items:center; gap:10px; }
+.cm-demo-btn { font-size:10px; padding:5px 10px; background:rgba(91,141,239,0.10); border:1px solid rgba(91,141,239,0.3); color:#93c5fd; border-radius:5px; font-weight:600; font-family:var(--font-mono); letter-spacing:0.04em; text-transform:uppercase; }
+.cm-demo-btn:hover { background:rgba(91,141,239,0.2); }
+.cm-close { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--txt-tertiary); font-size:18px; }
+.cm-close:hover { background:var(--bg-elev-3); color:var(--txt-primary); }
+.cm-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px 16px; }
+.cm-grid .full { grid-column:span 2; }
+.cm-field { display:flex; flex-direction:column; gap:5px; }
+.cm-label { font-size:11px; color:var(--scl-blue); font-weight:500; }
+.cm-label .req { color:var(--rose); margin-left:2px; }
+.cm-input,.cm-select,.cm-textarea { background:var(--bg-elev-2); border:1px solid var(--border-soft); border-radius:6px; padding:10px 12px; color:var(--txt-primary); font-size:13px; outline:none; width:100%; }
+.cm-input:focus,.cm-select:focus,.cm-textarea:focus { border-color:var(--scl-blue); box-shadow:0 0 0 3px var(--scl-blue-glow); }
+.cm-textarea { resize:vertical; min-height:80px; font-family:inherit; line-height:1.5; }
+.cm-actions { display:grid; grid-template-columns:1fr 2fr; gap:10px; margin-top:18px; }
+.cm-cancel { padding:11px; background:var(--bg-elev-2); border:1px solid var(--border-soft); border-radius:7px; color:var(--txt-secondary); font-weight:500; font-size:13px; }
+.cm-confirm { padding:11px; background:var(--emerald); color:#050810; border-radius:7px; font-weight:700; font-size:13px; }
+.cm-confirm.gold { background:linear-gradient(180deg,var(--scl-gold-light) 0%,var(--scl-gold) 100%); }
+.cm-info { font-size:11px; color:var(--txt-tertiary); padding:8px 10px; background:var(--bg-elev-2); border-radius:5px; border-left:2px solid var(--scl-blue); }
+.cm-routing-banner { grid-column:span 2; background:rgba(91,141,239,0.08); border-left:2px solid var(--scl-blue); padding:10px 12px; border-radius:5px; font-size:12px; color:#93c5fd; display:none; }
+.cm-routing-banner.show { display:block; }
+
+.ai-preview-block {
+  grid-column:span 2;
+  background:linear-gradient(135deg,rgba(91,141,239,0.06) 0%,rgba(212,168,90,0.04) 100%);
+  border:1px solid rgba(91,141,239,0.25);
+  border-radius:8px;
+  padding:13px 15px;
+  font-size:11px;
+  font-family:var(--font-mono);
+  display:none;
+  flex-direction:column;
+  gap:10px;
+}
+.ai-preview-block.show { display:flex; }
+.ai-preview-section { display:flex; flex-direction:column; gap:5px; }
+.ai-preview-section + .ai-preview-section { padding-top:9px; border-top:1px solid rgba(91,141,239,0.15); }
+.ai-preview-header {
+  display:flex; align-items:center; gap:8px;
+  font-weight:700; letter-spacing:0.12em; color:var(--scl-blue);
+  text-transform:uppercase; font-size:9.5px;
+}
+.ai-preview-row { display:flex; align-items:center; gap:8px; font-size:11px; }
+.ai-preview-key { color:var(--txt-tertiary); min-width:90px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; }
+.ai-preview-val { color:var(--txt-primary); font-weight:500; }
+.ai-preview-empty { color:var(--txt-quaternary); font-style:italic; font-size:10.5px; font-family:var(--font-display); }
+.ai-stage-pill { display:inline-block; padding:3px 9px; border-radius:4px; font-size:10px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; }
+.ai-stage-pill.new_lead { background:rgba(52,211,153,0.12); color:#34d399; border:1px solid rgba(52,211,153,0.3); }
+.ai-stage-pill.engaged { background:rgba(167,139,250,0.12); color:#a78bfa; border:1px solid rgba(167,139,250,0.3); }
+.ai-stage-pill.qualified { background:rgba(250,204,21,0.12); color:#facc15; border:1px solid rgba(250,204,21,0.3); }
+.ai-stage-pill.submitted { background:rgba(91,141,239,0.12); color:#5b8def; border:1px solid rgba(91,141,239,0.3); }
+.ai-stage-pill.approved { background:rgba(251,146,60,0.12); color:#fb923c; border:1px solid rgba(251,146,60,0.3); }
+.ai-reasoning { font-size:10px; color:var(--scl-blue); font-style:italic; font-family:var(--font-display); line-height:1.4; }
+
+.close-paths { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:18px; }
+.close-path { padding:14px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-elev-2); text-align:center; cursor:pointer; font-weight:600; font-size:13px; }
+.close-path.lost { color:var(--orange); }
+.close-path.lost.on { background:rgba(251,146,60,0.10); border-color:var(--orange); }
+.close-path.nq { color:var(--rose); }
+.close-path.nq.on { background:rgba(248,113,113,0.10); border-color:var(--rose); }
+
+.revive-list { max-height:60vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.revive-row { display:flex; align-items:center; gap:12px; padding:11px 13px; background:var(--bg-elev-2); border:1px solid var(--border-soft); border-radius:7px; cursor:pointer; }
+.revive-emoji { font-size:18px; }
+.revive-content { flex:1; min-width:0; }
+.revive-name { font-size:12px; font-weight:600; }
+.revive-meta { font-size:10px; color:var(--txt-tertiary); font-family:var(--font-mono); margin-top:2px; }
+.revive-prev { font-size:10px; color:var(--amber); font-family:var(--font-mono); font-weight:600; margin-top:2px; }
+.revive-status { font-size:9px; padding:3px 8px; border-radius:3px; font-family:var(--font-mono); letter-spacing:0.06em; text-transform:uppercase; font-weight:700; flex-shrink:0; }
+.revive-status.ready { background:var(--emerald-soft); color:var(--emerald); border:1px solid rgba(74,222,128,0.3); }
+
+.cm-milestones { grid-column:span 2; background:rgba(74,222,128,0.05); border:1px solid rgba(74,222,128,0.25); border-radius:8px; padding:12px 14px; font-size:12px; color:var(--emerald); line-height:1.7; font-family:var(--font-mono); }
+.ms-title { font-weight:700; margin-bottom:6px; letter-spacing:0.04em; }
+.ms-row { color:var(--txt-secondary); }
+.ms-row strong { color:var(--emerald); font-weight:600; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <nav class="nav">
+    <div class="nav-brand"><span class="nav-brand-text">SCL</span></div>
+    <button class="nav-item" title="Dashboard"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg></button>
+    <button class="nav-item active" title="Pipeline"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>
+    <button class="nav-item" title="Inbox"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></button>
+    <div class="nav-spacer"></div>
+    <div class="nav-user">SB</div>
+  </nav>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="tb-title"><span class="tb-brand">SCL</span><span class="sub">Pipeline · v11</span></div>
+      <div class="tb-divider"></div>
+      <div class="search-box">
+        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--txt-quaternary)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Search…">
+      </div>
+      <div class="seg"><button class="on">My Pipeline</button><button>Team</button><button>All</button></div>
+      <div class="seg"><button id="mode-simple" class="on" onclick="setMode('simple')">Simple</button><button id="mode-execution" onclick="setMode('execution')">Execution</button></div>
+      <div class="seg"><button id="filt-all" class="on" onclick="setFilter('all')">All</button><button id="filt-hot" onclick="setFilter('hot')">🔥 Hot</button></div>
+      <div class="tb-spacer"></div>
+      <button class="btn-revive" onclick="openRevive()">
+        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Revive Queue <span class="count" id="reviveCount">3</span>
+      </button>
+      <button class="btn-primary" onclick="openAddLead()">
+        <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Lead
+      </button>
+    </div>
+
+    <div class="subbar">
+      <span class="scope-pill">MY PIPELINE · SB</span>
+      <span>Stuart Black · 9 active deals · 3 hot · 1 nurture wake ready</span>
+      <span class="legend" id="exec-legend">
+        <span><span class="legend-dot" style="background:var(--rose)"></span>Overdue</span>
+        <span><span class="legend-dot" style="background:var(--orange)"></span>Hot · Nurture</span>
+        <span><span class="legend-dot" style="background:var(--amber)"></span>Attention</span>
+        <span><span class="legend-dot" style="background:var(--emerald)"></span>Funded</span>
+      </span>
+    </div>
+
+    <div class="view-pipeline">
+      <div class="grid" id="grid"></div>
+      <div class="kpi" id="kpi">
+        <div class="kpi-item"><span class="kpi-label">Active Pipeline</span><span class="kpi-value" style="color:var(--emerald)">$1.71M</span><span class="kpi-sub">Submitted + Approved</span></div>
+        <div class="kpi-item"><span class="kpi-label">Funded MTD</span><span class="kpi-value" style="color:var(--amber)">$308K</span><span class="kpi-sub">31% of $1M goal</span></div>
+        <div class="kpi-item"><span class="kpi-label">Lifetime Funded</span><span class="kpi-value">$53.6M</span><span class="kpi-sub">142 deals</span></div>
+        <div class="kpi-item"><span class="kpi-label">At Risk</span><span class="kpi-value" style="color:var(--rose)">$70K</span><span class="kpi-sub">1 overdue committed</span></div>
+        <div class="kpi-item"><span class="kpi-label">Hot</span><span class="kpi-value" style="color:var(--orange)">3</span><span class="kpi-sub">Offer · replied</span></div>
+        <div class="kpi-item"><span class="kpi-label">Renewals Due</span><span class="kpi-value">12</span><span class="kpi-sub">Next 30 days</span></div>
+        <div class="kpi-item"><span class="kpi-label">Queue Today</span><span class="kpi-value" style="color:var(--cyan)">7</span><span class="kpi-sub">Scheduled follow-ups</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="hover-tip" id="hoverTip"></div>
+<div class="backdrop" id="backdrop" onclick="closeModal()"></div>
+<div class="modal" id="modal">
+  <div class="modal-header" id="mh"></div>
+  <div class="sibling-popover" id="siblingPopover"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="deal">Deal + Client</button>
+    <button class="tab" data-tab="conv">Conversation</button>
+    <button class="tab" data-tab="funding">Funding History</button>
+  </div>
+  <div class="modal-body" id="mbody"></div>
+</div>
+
+<div class="center-modal-bg" id="addLeadBg">
+  <div class="center-modal">
+    <div class="cm-header">
+      <div class="cm-title-row">
+        <div class="cm-title">Add Lead</div>
+        <button class="cm-demo-btn" onclick="loadDemoText()" title="Try with example sentence">Load demo text</button>
+      </div>
+      <button class="cm-close" onclick="closeAddLead()">×</button>
+    </div>
+    <div class="cm-grid">
+      <div class="cm-field full">
+        <label class="cm-label">Business Name<span class="req">*</span></label>
+        <input class="cm-input" id="alName" type="text" autofocus>
+      </div>
+      <div class="cm-field">
+        <label class="cm-label">Contact Name</label>
+        <input class="cm-input" id="alContact" type="text">
+      </div>
+      <div class="cm-field">
+        <label class="cm-label">Phone</label>
+        <input class="cm-input" id="alPhone" type="text">
+      </div>
+      <div class="cm-field">
+        <label class="cm-label">Email</label>
+        <input class="cm-input" id="alEmail" type="email">
+      </div>
+      <div class="cm-field">
+        <label class="cm-label">Product Type</label>
+        <select class="cm-select" id="alProduct" onchange="onAddLeadProductChange()">
+          <option value="">Select…</option>
+          <option value="MCA">⚡ MCA</option>
+          <option value="LOC">🔄 LOC</option>
+          <option value="HELOC">🏡 HELOC</option>
+          <option value="SBA">🏛 SBA</option>
+          <option value="CRE">🏢 CRE</option>
+          <option value="EQUIPMENT">🔧 Equipment</option>
+        </select>
+      </div>
+      <div class="cm-field full" id="alAmountField" style="display:none">
+        <label class="cm-label" id="alAmountLabel">Submitted Amount<span class="req">*</span></label>
+        <input class="cm-input" id="alAmount" type="number" placeholder="e.g. 50000">
+      </div>
+      <div class="cm-field full">
+        <label class="cm-label">About this lead · use of funds · context</label>
+        <textarea class="cm-textarea" id="alNotes" oninput="updateAIPreview()" placeholder="Type naturally — e.g. 'Cold called client seems interested, $100k monthly gross, Contractor, said parents are in town call back in two weeks'"></textarea>
+      </div>
+      <div class="ai-preview-block" id="aiPreviewBlock">
+        <div class="ai-preview-section">
+          <div class="ai-preview-header">✨ Extracted attributes</div>
+          <div id="aiPreviewAttrs"></div>
+        </div>
+        <div class="ai-preview-section" id="aiPreviewStageWrap" style="display:none">
+          <div class="ai-preview-header">🎯 Suggested routing</div>
+          <div id="aiPreviewStage"></div>
+        </div>
+        <div class="ai-preview-section" id="aiPreviewActionWrap" style="display:none">
+          <div class="ai-preview-header">📅 Action + timing</div>
+          <div id="aiPreviewAction"></div>
+        </div>
+      </div>
+    </div>
+    <div class="cm-actions">
+      <button class="cm-cancel" onclick="closeAddLead()">Cancel</button>
+      <button class="cm-confirm gold" onclick="createLead()">Create Lead</button>
+    </div>
+  </div>
+</div>
+
+<div class="center-modal-bg" id="addProductBg">
+  <div class="center-modal" style="width:460px">
+    <div class="cm-header">
+      <div class="cm-title">Add Product Card</div>
+      <button class="cm-close" onclick="closeAddProduct()">×</button>
+    </div>
+    <div id="addProductInfo" class="cm-info" style="margin-bottom:14px"></div>
+    <div class="cm-grid">
+      <div class="cm-field full">
+        <label class="cm-label">Product<span class="req">*</span></label>
+        <select class="cm-select" id="apProduct" onchange="onAddProductChange()">
+          <option value="">Select product…</option>
+          <option value="MCA">⚡ MCA</option>
+          <option value="LOC">🔄 LOC</option>
+          <option value="HELOC">🏡 HELOC</option>
+          <option value="SBA">🏛 SBA</option>
+          <option value="CRE">🏢 CRE</option>
+          <option value="EQUIPMENT">🔧 Equipment</option>
+        </select>
+      </div>
+      <div class="cm-field full" id="apAmountField">
+        <label class="cm-label" id="apAmountLabel">Amount</label>
+        <input type="number" class="cm-input" id="apAmount" placeholder="50000">
+      </div>
+      <div class="cm-routing-banner" id="apRouting">→ This card will be created in <strong>Submitted (In Review)</strong></div>
+    </div>
+    <div class="cm-actions">
+      <button class="cm-cancel" onclick="closeAddProduct()">Cancel</button>
+      <button class="cm-confirm gold" onclick="confirmAddProduct()">Create Linked Card</button>
+    </div>
+  </div>
+</div>
+
+<div class="center-modal-bg" id="closeModalBg">
+  <div class="center-modal" style="width:480px">
+    <div class="cm-header"><div class="cm-title">Close Deal</div><button class="cm-close" onclick="closeCloseModal()">×</button></div>
+    <div class="close-paths">
+      <button class="close-path lost on" id="cpLost" onclick="setClosePath('lost')">Lost — Recoverable</button>
+      <button class="close-path nq" id="cpNq" onclick="setClosePath('nq')">NQ / Disqualified</button>
+    </div>
+    <div class="cm-field" style="margin-bottom:14px">
+      <label class="cm-label">Reason<span class="req">*</span></label>
+      <select class="cm-select" id="closeReason"></select>
+    </div>
+    <div class="cm-field" id="reEngageField" style="margin-bottom:14px">
+      <label class="cm-label">Re-engage date<span class="req">*</span></label>
+      <input type="date" class="cm-input" id="reEngageDate">
+    </div>
+    <div class="cm-info" id="closeInfo">→ Auto-moves to Qualified (Nurture). Client + offer history preserved.</div>
+    <div class="cm-actions">
+      <button class="cm-cancel" onclick="closeCloseModal()">Cancel</button>
+      <button class="cm-confirm gold" onclick="confirmClose()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="center-modal-bg" id="fundedModalBg">
+  <div class="center-modal">
+    <div class="cm-header"><div class="cm-title">Mark as Funded</div><button class="cm-close" onclick="closeFundedModal()">×</button></div>
+    <div class="cm-grid">
+      <div class="cm-field"><label class="cm-label">Funded date<span class="req">*</span></label><input type="date" class="cm-input" id="mfDate" onchange="updateMilestones()"></div>
+      <div class="cm-field"><label class="cm-label">Amount funded<span class="req">*</span></label><input type="number" class="cm-input" id="mfAmount"></div>
+      <div class="cm-field"><label class="cm-label">Funder<span class="req">*</span></label><input type="text" class="cm-input" id="mfFunder"></div>
+      <div class="cm-field"><label class="cm-label">Term (months)<span class="req">*</span></label><input type="number" class="cm-input" id="mfTerm" oninput="updateMilestones()"></div>
+      <div class="cm-field"><label class="cm-label">Rate / factor</label><input type="text" class="cm-input" id="mfRate" placeholder="e.g. 1.28"></div>
+      <div class="cm-field"><label class="cm-label">Product</label><select class="cm-select" id="mfProduct"><option>MCA</option><option>LOC</option><option>HELOC</option><option>SBA</option><option>CRE</option><option>Equipment</option></select></div>
+      <div class="cm-field full"><label class="cm-label">Notes</label><textarea class="cm-textarea" id="mfNotes" placeholder="Any deal notes"></textarea></div>
+      <div class="cm-milestones" id="mfMilestones">
+        <div class="ms-title">Milestones (auto-computed):</div>
+        <div class="ms-row">· Check-in: <strong>—</strong></div>
+        <div class="ms-row">· Midpoint renewal: <strong>—</strong></div>
+        <div class="ms-row">· 30-day payoff warning: <strong>—</strong></div>
+        <div class="ms-row">· Payoff: <strong>—</strong></div>
+      </div>
+    </div>
+    <div class="cm-actions"><button class="cm-cancel" onclick="closeFundedModal()">Cancel</button><button class="cm-confirm" onclick="confirmFunded()">Confirm Funded ✓</button></div>
+  </div>
+</div>
+
+<div class="center-modal-bg" id="reviveModalBg">
+  <div class="center-modal" style="width:580px">
+    <div class="cm-header"><div class="cm-title">Revive Queue</div><button class="cm-close" onclick="closeRevive()">×</button></div>
+    <div class="cm-info" style="margin-bottom:0">Nurture deals with wake date today or earlier.</div>
+    <div class="revive-list" id="reviveList"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const REP_COLORS = { AR:'#a78bfa', SB:'#d4a85a', JB:'#5b8def' };
+const REP_NAMES = { AR:'Anthony Rack', SB:'Stuart Black', JB:'Jonathan Baker' };
+const PRODUCT_ICONS = { MCA:'⚡', LOC:'🔄', EQUIPMENT:'🔧', HELOC:'🏡', SBA:'🏛', CRE:'🏢' };
+const SUBMITTED_AMT_PRODUCTS = ['SBA','CRE','EQUIPMENT'];
+
+const STAGES = [
+  { id:'new_lead',  name:'New Lead', color:'var(--stage-new)' },
+  { id:'engaged',   name:'Engaged · Interested', color:'var(--stage-engaged)' },
+  { id:'qualified', name:'Qualified', color:'var(--stage-qualified)' },
+  { id:'submitted', name:'Submitted (In Review)', color:'var(--stage-submitted)' },
+  { id:'approved',  name:'Approved · Offers', color:'var(--stage-approved)' },
+  { id:'committed', name:'Committed (Funding)', color:'var(--stage-committed)' },
+  { id:'funded',    name:'Funded', color:'var(--stage-funded)' },
+  { id:'closed',    name:'Closed', color:'var(--stage-closed)' }
+];
+const STAGE_NOTES = {
+  new_lead:'Empty by default. Manually-assigned leads from admin land here. Reps move to Engaged on first contact.',
+  closed:'NQ / Disqualified deals archive here.'
+};
+const QUICK_ACTIONS = {
+  engaged:['Send Follow Up', 'Get docs', 'Schedule call'],
+  qualified:['Submit application', 'Get remaining docs', 'Verify revenue'],
+  submitted:['Follow Up With Lender', 'Collect Remaining Docs', 'Book Newtek Call'],
+  approved:['Call Client - Present Offer', 'Collect DL/VC', 'Get Decision'],
+  committed:['Send PSF', 'Get Docs Signed', 'Schedule funding call'],
+  funded:['Renewal check-in', 'Schedule review']
+};
+const CLOSE_REASONS = {
+  lost:['Went with competitor', 'Timing issue', 'Declined all offers', 'No response', 'Other'],
+  nq:['Not eligible', 'Declined — credit', 'Declined — revenue', 'Bad lead', 'Do not contact']
+};
+
+// === AI ENGINE ===
+// Production = single LLM call returning structured JSON.
+// The regex below is a faithful prototype stand-in showing the same UX flow.
+
+const WORD_NUMS = {
+  one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10,
+  eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, twenty:20, thirty:30, sixty:60, ninety:90, couple:2, few:3, several:5
+};
+function normalizeNumbers(text) {
+  let out = text;
+  Object.entries(WORD_NUMS).forEach(([w,n]) => {
+    out = out.replace(new RegExp('\\b' + w + '\\b', 'gi'), n);
+  });
+  return out;
+}
+function inferIndustry(text) {
+  const t = text.toLowerCase();
+  const inds = [
+    [/\broof|roofing/i, 'Construction · Roofing'],
+    [/\bcontractor|construction|builder/i, 'Construction'],
+    [/renovation|remodel/i, 'Construction · Renovation'],
+    [/restaurant|cafe|deli|bistro|food truck/i, 'Restaurant'],
+    [/florist|floral|flower/i, 'Retail · Floral'],
+    [/legal|\blaw\s|counsel|attorney|firm/i, 'Legal Services'],
+    [/dental|medical|clinic|doctor|hospital|practice/i, 'Healthcare'],
+    [/logistics|trucking|freight|fleet/i, 'Logistics'],
+    [/auto\s|automotive|vehicle\s|car shop/i, 'Automotive'],
+    [/tech|software|saas|app/i, 'Technology'],
+    [/marketing|agency|media\s/i, 'Marketing · Agency'],
+    [/production|studio|film/i, 'Production · Studio'],
+    [/karate|martial|gym|fitness/i, 'Fitness · Wellness'],
+    [/hydroponics|grow|farm|agriculture/i, 'Agriculture'],
+    [/retail|store|shop|boutique/i, 'Retail']
+  ];
+  for (const [p,l] of inds) if (p.test(t)) return l;
+  return null;
+}
+function inferRevenue(text) {
+  const t = text.toLowerCase();
+  const p1 = t.match(/\$?(\d+(?:,\d{3})*(?:\.\d+)?)\s*k\s*(?:a |per |\/\s*)?(?:mo|month)/);
+  const p2 = t.match(/(?:revenue|grossing|making|brings in|does|gross)\s+\$?(\d+(?:,\d{3})*)\s*k/);
+  const p3 = t.match(/(\d+)k\s+(?:a\s+)?(?:month|monthly|mo)/);
+  const p4 = t.match(/\$(\d+)k\s+monthly/);
+  const m = p1 || p2 || p3 || p4;
+  if (m) return `$${m[1].replace(/,/g,'')}k/mo`;
+  return null;
+}
+function inferAsk(text) {
+  const m = text.match(/(?:need|want|looking|seeking|after|asking)s?\s*(?:for|about|approximately)?\s*\$?(\d+(?:,\d{3})*)\s*k/i);
+  if (m) return `$${m[1].replace(/,/g,'')}k`;
+  return null;
+}
+function inferUrgency(text) {
+  if (/urgent|asap|today|right away|emergency|right now|immediately|storm season|before the/i.test(text)) return 'high';
+  if (/soon|next week|this week|by friday|by monday/i.test(text)) return 'medium';
+  if (/q3|q4|next month|down the road|eventually|when/i.test(text)) return 'low';
+  return null;
+}
+function inferSentiment(text) {
+  if (/not interested|declined|no longer|pass\b|don't want/i.test(text)) return 'not_interested';
+  if (/interested|wants|ready to|excited|positive|good fit|seems interested/i.test(text)) return 'interested';
+  return 'neutral';
+}
+function inferAction(text) {
+  const t = text.toLowerCase();
+  if (/call back|callback|call them back/.test(t)) return 'Call back';
+  if (/follow up|followup|reach out|touch base/.test(t)) return 'Follow up';
+  if (/send.*(proposal|offer|terms)/.test(t)) return 'Send proposal';
+  if (/get docs|get statements|get bank stmts|need docs/.test(t)) return 'Get docs';
+  if (/submit|application/.test(t)) return 'Submit application';
+  if (/present.*offer/.test(t)) return 'Present offer';
+  if (/cold call/.test(t)) return 'Follow up';
+  if (/schedule.*call|book.*call/.test(t)) return 'Schedule call';
+  return null;
+}
+function inferTiming(text) {
+  const t = normalizeNumbers(text.toLowerCase());
+  if (/\btomorrow\b/.test(t)) return { days:1, label:'Tomorrow' };
+  if (/\btoday\b|right now|asap/.test(t)) return { days:0, label:'Today' };
+  if (/\bnext week\b/.test(t)) return { days:7, label:'Next week' };
+  if (/\bnext month\b/.test(t)) return { days:30, label:'Next month' };
+  if (/\bend of month\b/.test(t)) return { days:14, label:'End of month' };
+  if (/\bend of week\b/.test(t)) return { days:5, label:'End of week' };
+  const inMatch = t.match(/(?:in|after|wait|back in|by)\s+(\d+)\s+(day|week|month|d|w|mo)/);
+  if (inMatch) {
+    const n = parseInt(inMatch[1]);
+    const u = inMatch[2];
+    if (u.startsWith('d')) return { days:n, label:`In ${n} day${n>1?'s':''}` };
+    if (u.startsWith('w')) return { days:n*7, label:`In ${n} week${n>1?'s':''}` };
+    if (u.startsWith('m')) return { days:n*30, label:`In ${n} month${n>1?'s':''}` };
+  }
+  return null;
+}
+
+function ordSuffix(n) { const s = ['th','st','nd','rd']; const v = n%100; return s[(v-20)%10] || s[v] || s[0]; }
+
+function inferUseOfFunds(text) {
+  const t = text.toLowerCase();
+  const patterns = [
+    [/working capital|cash flow|cashflow|operating capital|ops capital/i, 'Working capital'],
+    [/payroll|salaries|employee/i, 'Payroll'],
+    [/inventory|stock(?:ing)? up|merchandise|product\s+(?:order|buy|purchase)/i, 'Inventory'],
+    [/equipment|machinery|tools?\s+purchase|new\s+gear/i, 'Equipment purchase'],
+    [/fleet|vehicles?|truck/i, 'Fleet expansion'],
+    [/renovat|remodel|buildout|build out|build-out|construction|construction\s+work/i, 'Renovation / Buildout'],
+    [/storefront|location|new (?:store|shop|space)/i, 'New location / Storefront'],
+    [/real estate|property|building purchase/i, 'Real estate'],
+    [/marketing|advertis|campaigns?|seo|google ads/i, 'Marketing'],
+    [/expansion|grow(?:th)?|scale|new market/i, 'Expansion'],
+    [/consolidat|pay off|payoff|refi(?:nance)?|buyout|consolidation/i, 'Debt consolidation'],
+    [/bridge\s+(?:loan|financing|funding)|short[-\s]term cash/i, 'Bridge financing'],
+    [/tax(?:es)?|irs|estimated payment/i, 'Tax payment'],
+    [/software|saas|tech\s+upgrade|crm|pos\s+system/i, 'Tech / Software'],
+    [/legal|lawsuit|settlement/i, 'Legal expenses'],
+    [/season(?:al)?|holiday\s+(?:rush|inventory)|q4\s+ramp|peak\s+season/i, 'Seasonal ramp'],
+    [/materials|supplies|raw materials/i, 'Materials / Supplies']
+  ];
+  for (const [p, label] of patterns) if (p.test(t)) return label;
+  return null;
+}
+
+function inferBorrowingPattern(text) {
+  const t = normalizeNumbers(text.toLowerCase());
+  // "has X positions" / "on X positions" / "currently has X positions" / "two positions" / "with X positions"
+  const posMatch = t.match(/(?:has|have|on|with|got|currently|in|holds?)\s*(\d+)\s+(?:active\s+)?positions?/);
+  if (posMatch) {
+    const n = parseInt(posMatch[1]);
+    return { stacked: n > 1, positions: n, label: `${n}-STACKED`, signal: `${n} active position${n>1?'s':''}` };
+  }
+  // Bare "two/three positions" or "X positions" anywhere
+  const bareMatch = t.match(/\b(\d+)\s+positions?\b/);
+  if (bareMatch) {
+    const n = parseInt(bareMatch[1]);
+    return { stacked: n > 1, positions: n, label: `${n}-STACKED`, signal: `${n} active position${n>1?'s':''}` };
+  }
+  // ordinal: "1st position", "2nd position", "3rd position"
+  const ordMatch = t.match(/(\d+)(?:st|nd|rd|th)\s+position/);
+  if (ordMatch) {
+    const n = parseInt(ordMatch[1]);
+    return { stacked: n > 1, positions: n, label: `${n}${ordSuffix(n)}-POSITION`, signal: `In ${n}${ordSuffix(n)} position` };
+  }
+  // "on N MCAs" / "has N MCAs" / "X active MCAs"
+  const mcaMatch = t.match(/(?:has|have|on|with|got)\s+(\d+)\s+(?:active\s+)?mcas?/);
+  if (mcaMatch) {
+    const n = parseInt(mcaMatch[1]);
+    return { stacked: n > 1, positions: n, label: `${n}-STACKED`, signal: `${n} active MCA${n>1?'s':''}` };
+  }
+  if (/\bstacked\b|stacking|multiple mcas|multiple positions|on multiple deals/.test(t)) {
+    return { stacked: true, positions: null, label: 'STACKED', signal: 'Multiple active MCAs' };
+  }
+  return null;
+}
+
+function inferStage(text) {
+  const t = text.toLowerCase();
+  // Already submitted to lender
+  if (/submitted to|in underwriting|with lender|sent to underwriting|under review/.test(t)) return { stage:'submitted', reasoning:'Already with lender · in underwriting' };
+  // Has all docs · ready to submit
+  if (/has all docs|got bank stmts|all docs in|docs received|application complete|ready to submit/.test(t)) return { stage:'qualified', reasoning:'Docs complete · ready to submit' };
+  // Got an offer
+  if (/got an offer|received offer|approved by|offer of|offer received/.test(t)) return { stage:'approved', reasoning:'Lender offer received · present to client' };
+  // Ghosted post-offer · explicit nurture signal
+  if (/ghost|went silent|no response after offer|stopped responding|not interested.*follow up|not interested.*reach out|not interested.*back/.test(t)) {
+    return { stage:'qualified', reasoning:'Nurture signal detected · client passed for now · routing to wake queue' };
+  }
+  // Engagement signals — broader: any indication rep made contact
+  if (/\bcalled\b|cold call|cold-called|reached out|reached client|contacted|spoke|talked to|met with|chatted|emailed|texted|messaged|seems interested|expressed interest|left voicemail|connected with/.test(t)) {
+    return { stage:'engaged', reasoning:'Engagement signal · rep contacted client · ready for follow-up' };
+  }
+  return { stage:'new_lead', reasoning:'No engagement signal yet · awaiting first contact' };
+}
+function dateInDays(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toLocaleDateString('en-US', { month:'numeric', day:'numeric', year:'numeric' });
+}
+function simulateAIExtraction(text) {
+  if (!text || text.trim().length < 8) return null;
+  const industry = inferIndustry(text);
+  const revenue = inferRevenue(text);
+  const ask = inferAsk(text);
+  const useOfFunds = inferUseOfFunds(text);
+  const urgency = inferUrgency(text);
+  const sentiment = inferSentiment(text);
+  const action = inferAction(text);
+  const timing = inferTiming(text);
+  const stageInf = inferStage(text);
+  const borrowing = inferBorrowingPattern(text);
+  let score = 50;
+  let classification = 'WARM';
+  if (revenue) score += 8;
+  if (industry) score += 5;
+  if (ask) score += 7;
+  if (useOfFunds) score += 4;
+  if (sentiment === 'interested') score += 5;
+  if (urgency === 'high') { score += 12; classification = 'HOT'; }
+  else if (urgency === 'low') score -= 5;
+  if (sentiment === 'not_interested') { score -= 20; classification = 'COLD'; }
+  if (borrowing && borrowing.stacked) { score += 15; classification = 'HOT'; }
+  score = Math.max(20, Math.min(99, score));
+  if (score >= 80) classification = 'HOT';
+  else if (score < 45) classification = 'COLD';
+  if (!industry && !revenue && !ask && !useOfFunds && !action && !timing && !borrowing) return null;
+  const result = {
+    classification, score, industry, revenue, ask, useOfFunds,
+    urgency: urgency || (sentiment === 'interested' ? 'medium' : 'low'),
+    sentiment,
+    action: action || (timing ? 'Follow up' : null),
+    timing,
+    borrowing,
+    suggestedStage: stageInf.stage,
+    suggestedStageName: STAGES.find(s => s.id === stageInf.stage).name,
+    suggestedStageReasoning: stageInf.reasoning,
+    source: 'rep notes'
+  };
+  if (timing) {
+    result.scheduledDays = timing.days;
+    result.scheduledDate = dateInDays(timing.days);
+    result.scheduledLabel = timing.label;
+  }
+  return result;
+}
+
+const CLIENTS = {
+  c_tatiana:{ id:'c_tatiana', name:'TATIANA FLOWERS LLC', contact:'Boris Naranjo', phone:'+19544323834', email:'erezebeta@gmail.com',
+    clientNotes:"Florist business, 5 yrs operating. Owner traveling for industry expo, returns Friday. Round 4 — needs SBA for storefront renovation + new POS while looking at MCA for working capital bridge. Prior fundings: $35K MCA (Nov 2024, paid in full), $50K MCA (Aug 2025, paid in full), $75K MCA (Feb 2026, active 60% paydown). Reliable repeat client. Decisive. Owner prefers SMS over phone.",
+    returningCount:3,
+    aiSignals:{ classification:'HOT', score:91, industry:'Retail · Floral', revenue:'$40-60k/mo', ask:'$150k total', useOfFunds:'Working capital + Storefront renovation', urgency:'high', source:'SMS conversation + 3x funding history' }
+  },
+  c_cmmt:{ id:'c_cmmt', name:'CMMT INC.', contact:'Ramon Cortes', phone:'+13055551234', email:'ramon@cmmt.com',
+    clientNotes:'Logistics company, 7 yrs operating. Strong revenue. Currently has 2 active MCA positions — looking for consolidation. Needs $80k for fleet expansion. Owner ready to commit, just needs offer.', returningCount:0,
+    aiSignals:{ classification:'HOT', score:91, industry:'Logistics', revenue:'$200-300k/mo', ask:'$80k', useOfFunds:'Fleet expansion', urgency:'high', source:'SMS conversation + 2-stacked detected' },
+    borrowing:{ stacked:true, positions:2, label:'2-STACKED', signal:'2 active MCA positions · consolidation candidate' }
+  },
+  c_appellate:{ id:'c_appellate', name:'APPELLATE COUNSEL, PC', contact:'Corey Parker', phone:'+14252212195', email:'corey@appellatecounsel.law',
+    clientNotes:"Legal services. Had offer of $40K from Wynwood, presented 4/22, then ghosted. Re-engage at wake date.", returningCount:0,
+    aiSignals:{ classification:'WARM', score:71, industry:'Legal Services', revenue:null, ask:'$100-250k', useOfFunds:'Operating capital', urgency:'low', source:'SMS conversation' }
+  },
+  c_pickr:{ id:'c_pickr', name:'PICK R CO LLC', contact:'TY MCMILLAN', phone:'+14356715273', email:'arkproductions1103@gmail.com',
+    clientNotes:'Production company. $500k SBA for equipment + facility lease. Clean credit, profitable 3 yrs.', returningCount:0,
+    aiSignals:{ classification:'WARM', score:74, industry:'Production · Studio', revenue:'$300-400k/mo', ask:'$500k', useOfFunds:'Equipment + Facility lease', urgency:'medium', source:'SMS conversation + application file' }
+  },
+  c_mgcc:{ id:'c_mgcc', name:'MGCC INC', contact:'Marcus Grant', phone:'+12135550114', email:'marcus@mgccinc.com',
+    clientNotes:'Returning client (1x prior). $52K MCA via Cashflow, paid clean. Round 2: inventory build for peak season.', returningCount:1,
+    aiSignals:{ classification:'HOT', score:88, industry:'Retail', revenue:'$100-120k/mo', ask:'$52k', useOfFunds:'Inventory · Seasonal ramp', urgency:'high', source:'SMS conversation + 1x funding history' }
+  },
+  c_srd:{ id:'c_srd', name:'SRD RENOVATIONS', contact:'Sean Glackin', phone:'+12679029132', email:'srd.reno@gmail.com',
+    clientNotes:'$70K HELOC for $20K CC consolidation + renovation cash. Friendly but slow on docs.', returningCount:0,
+    aiSignals:{ classification:'HOT', score:94, industry:'Construction · Renovation', revenue:'$200-300k/mo', ask:'$70k', useOfFunds:'CC consolidation + Renovation', urgency:'high', source:'SMS conversation' }
+  },
+  c_bridge:{ id:'c_bridge', name:'BRIDGEWATER STUDIO INC.', contact:'Eric Cup', phone:'+17739607237', email:'eric@bridgewaterstudio.net',
+    clientNotes:'Returning (2x). Production studio. Q2 equipment + payroll smoothing. Renewal eligible at 75% paydown.', returningCount:2,
+    aiSignals:{ classification:'WARM', score:78, industry:'Production · Studio', revenue:'$200-400k/mo', ask:'currently funded · renewal at 75%', useOfFunds:'Equipment + Payroll', urgency:'low', source:'2x funding history · bank stmts on file' }
+  },
+  c_villarima:{ id:'c_villarima', name:'VILLARIMA LLC', contact:'Ximena Villaveces', phone:'+13055552288', email:'ximena@villarima.com',
+    clientNotes:'$15k MCA via Bitty Advance, funded 3/25/2025. NEW interested in renewal — round 2 in pipeline as separate card.', returningCount:1,
+    aiSignals:{ classification:'WARM', score:62, industry:'Service business', revenue:'$30-50k/mo', ask:'renewal interest', useOfFunds:null, urgency:'medium', source:'1x funding history · bank stmts' }
+  },
+  c_african:{ id:'c_african', name:'AFRICAN CARIBBEAN', contact:'Queen', phone:'+15555550111', email:'queen@africaribbean.com',
+    clientNotes:'Shot credit, declined all offers. Disqualified.', returningCount:0,
+    aiSignals:{ classification:'COLD', score:22, industry:null, revenue:null, ask:'$56k attempted', useOfFunds:null, urgency:'low', source:'application · credit report' }
+  }
+};
+
+const DEALS = {
+  new_lead:[],
+  engaged:[
+    { id:101, clientId:'c_tatiana', stage:'engaged', product:'MCA', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'Round 4. Asked for $50K MCA for working capital. Bank stmts pending.',
+      action:'Get bank statements', state:'Today', tone:'cyan', age:2, stageDays:2, attempts:1, machineState:'ACTIVE',
+      workflowNote:'Returning client (3x funded). Round 4 starts here in Engaged. Once bank stmts arrive → Submitted.',
+      lenderOffers:[],
+      notesLog:[{rep:'SB', time:'Today 10:14 AM', text:'Texted client · asked for bank stmts · awaiting'}]
+    }
+  ],
+  qualified:[
+    { id:201, clientId:'c_cmmt', stage:'qualified', product:'MCA', source:'Referral', primary:'SB', owner:'SB',
+      lastNote:'Has all docs. Submitting to Cashflow + Lendini today.',
+      action:'Submit application', state:'Today', tone:'cyan', age:5, stageDays:2, attempts:3, machineState:'ACTIVE',
+      workflowNote:'Confirmed eligible. All docs in. Rep submitting today → moves to Submitted.',
+      lenderOffers:[],
+      notesLog:[{rep:'SB', time:'Today 9:02 AM', text:'Bank stmts received · ready to submit'}]
+    },
+    { id:202, clientId:'c_appellate', stage:'qualified', product:'LOC', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'Client went silent after Wynwood offer. Wake 4/29.',
+      action:'Wake-up scheduled', state:'NURTURE', tone:'orange', age:21, stageDays:14, attempts:0, machineState:'NURTURE',
+      nurtureSubstate:'GHOSTED-AFTER-OFFER', nurtureReason:'No response', wakeIn:0, wakeDate:'4/29/2026', wakeReady:true,
+      prevOffer:{ amount:'$40K', lender:'Wynwood', date:'4/22/2026' },
+      workflowNote:'Came from Approved · had offer · ghosted · auto-moved here. Wake date today — appears in Revive Queue.',
+      lenderOffers:[{lender:'Wynwood', amount:'$40K', term:'2 months', preserved:true, presentedDate:'4/22/2026'}],
+      notesLog:[
+        {rep:'SB', time:'4/22', text:'Offer presented · Wynwood $40K'},
+        {rep:'SB', time:'4/24', text:'No response · followed up'},
+        {rep:'SB', time:'4/29', text:'Closed Lost-Recoverable · auto-moved here · wake 4/29'}
+      ]
+    }
+  ],
+  submitted:[
+    { id:301, clientId:'c_tatiana', stage:'submitted', product:'SBA', submittedAmt:'250000', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'$250K SBA submitted. Day 4 of ~45. Waiting on underwriter.',
+      action:'Follow up with lender', state:'4d', tone:'amber', age:4, stageDays:4, attempts:1, machineState:'WAITING',
+      workflowNote:'CONCURRENT with Approved MCA card. Long underwriting cycle. Click ⇄ pill to see linked MCA.',
+      lenderOffers:[],
+      notesLog:[{rep:'SB', time:'4d ago', text:'SBA application submitted to lender'}]
+    },
+    { id:302, clientId:'c_pickr', stage:'submitted', product:'SBA', submittedAmt:'500000', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'In review · Day 4 of ~45.',
+      action:'Awaiting lender decision', state:'4d', tone:'amber', age:4, stageDays:4, attempts:2, machineState:'WAITING',
+      workflowNote:'$500K SBA. Standard 35-60d underwriting.',
+      lenderOffers:[],
+      notesLog:[{rep:'SB', time:'4d ago', text:'App submitted to SBA preferred lender'}]
+    }
+  ],
+  approved:[
+    { id:401, clientId:'c_tatiana', stage:'approved', product:'MCA', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'MCA offer received from Cashflow $50K while SBA still in underwriting. Present today.',
+      action:'Call Client - Present Offer', state:'Today', tone:'cyan', hot:true, amount:'$50K', age:1, stageDays:1, attempts:1, machineState:'ACTIVE',
+      workflowNote:'CONCURRENT with Submitted SBA. Two products in motion.',
+      lenderOffers:[{lender:'Cashflow Capital', amount:'$50K', term:'8 months'}],
+      notesLog:[{rep:'SB', time:'Today 8:15 AM', text:'Cashflow approved · need to present to client'}]
+    },
+    { id:402, clientId:'c_mgcc', stage:'approved', product:'MCA', source:'Referral', primary:'SB', owner:'SB',
+      lastNote:'Cashflow approved $52K renewal.',
+      action:'Call Client - Present Offer', state:'Today', tone:'cyan', hot:true, amount:'$52K', age:2, stageDays:1, attempts:1, machineState:'ACTIVE',
+      workflowNote:'Returning client renewal. Lender approved.',
+      lenderOffers:[{lender:'Cashflow Capital', amount:'$52K', term:'6 months'}],
+      notesLog:[{rep:'SB', time:'Today 11:30 AM', text:'Lender approved · same terms as last round'}]
+    }
+  ],
+  committed:[
+    { id:501, clientId:'c_srd', stage:'committed', product:'HELOC', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'Client signed PSF. Newtek call today.',
+      action:'Has Newtek call today', state:'Today', tone:'cyan', hot:true, amount:'$70K', age:5, stageDays:3, attempts:1, machineState:'ACTIVE',
+      workflowNote:'Client committed. PSF signed. Funding call today.',
+      lenderOffers:[{lender:'Newtek', amount:'$70K', term:'This week'}],
+      notesLog:[{rep:'SB', time:'5d ago', text:'Client committed'}, {rep:'SB', time:'3d ago', text:'PSF signed'}]
+    }
+  ],
+  funded:[
+    { id:601, clientId:'c_bridge', stage:'funded', product:'MCA', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'Funded with Wynwood 4/7/2026. Returning · 2x funded.',
+      action:'Bank stmt cycle · 12d remaining', state:'FUNDED', tone:'emerald', amount:'$300K', age:0, stageDays:0, attempts:0, machineState:'FUNDED',
+      workflowNote:'Active client · Maintain regime.',
+      returning:true, fundedDate:'4/7/2026', lender:'Wynwood', term:6, bankStmtDays:18, renewalProgress:35,
+      lenderOffers:[{lender:'Wynwood', amount:'$300K', term:'FUNDED'}],
+      notesLog:[{rep:'SB', time:'4/7/2026', text:'Funded · $300K via Wynwood'}]
+    },
+    { id:602, clientId:'c_villarima', stage:'funded', product:'MCA', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'$15K funded 3/25/2025. Round 2 in pipeline — reminders paused.',
+      action:'Reminders paused — active sibling deal', state:'FUNDED', tone:'gray', amount:'$15K', age:0, stageDays:0, attempts:0, machineState:'FUNDED',
+      workflowNote:'Older funded round. Has new active deal — reminders auto-paused.',
+      returning:false, fundedDate:'3/25/2025', lender:'Bitty Advance', term:10, bankStmtDays:14, renewalProgress:80, paused:true,
+      lenderOffers:[{lender:'Bitty Advance', amount:'$15K', term:'FUNDED'}],
+      notesLog:[]
+    }
+  ],
+  closed:[
+    { id:701, clientId:'c_african', stage:'closed', product:'MCA', source:'SMS', primary:'SB', owner:'SB',
+      lastNote:'Closed: NQ — Declined credit. Shot credit, declined all offers.',
+      action:'Closed', state:'CLOSED', tone:'gray', amount:'$56K', age:14, stageDays:14, attempts:6, machineState:'CLOSED',
+      closeType:'nq', closeReason:'Declined — credit',
+      workflowNote:'NQ / Disqualified · credit issues.',
+      lenderOffers:[],
+      notesLog:[{rep:'SB', time:'14d ago', text:'Closed as NQ · credit declined by all 4 lenders'}]
+    }
+  ]
+};
+
+let openDealId=null, mode='simple', activeTab='deal', closePathSelected='lost', addProductForClientId=null;
+let pendingAIExtraction = null;
+let filterMode = 'all';
+
+function setFilter(f) {
+  filterMode = f;
+  document.getElementById('filt-all').classList.toggle('on', f === 'all');
+  document.getElementById('filt-hot').classList.toggle('on', f === 'hot');
+  renderPipeline();
+}
+
+function getDeal(id) { for (const sid of Object.keys(DEALS)) { const d = DEALS[sid].find(x => x.id === id); if (d) return { ...d, _stage:sid }; } return null; }
+function getClient(cid) { return CLIENTS[cid]; }
+function getSiblings(dealId) {
+  const d = getDeal(dealId); if (!d) return [];
+  const all = [];
+  Object.keys(DEALS).forEach(sid => DEALS[sid].forEach(x => { if (x.clientId === d.clientId && x.id !== dealId) all.push({ ...x, _stage:sid }); }));
+  return all;
+}
+function trunc(s, n) { return s && s.length > n ? s.substring(0, n) + '…' : s; }
+function stClass(s) { if (s==='OVERDUE') return 'overdue'; if (s==='Today') return 'today'; if (s==='Tomorrow') return 'tomorrow'; if (s==='NURTURE') return 'nurture'; if (s==='FUNDED') return 'funded'; if (s==='CLOSED') return 'closed'; return 'future'; }
+function stateColor(s) { return s==='ACTIVE'?'var(--rose)':s==='WAITING'?'var(--amber)':s==='NURTURE'?'var(--orange)':s==='FUNDED'?'var(--emerald)':s==='CLOSED'?'var(--txt-quaternary)':'var(--txt-tertiary)'; }
+function parseAmt(s) { if (!s) return 0; const m = s.match(/\$?([\d.]+)([KkMm]?)/); if (!m) return 0; const n = parseFloat(m[1]); if (m[2].toLowerCase()==='k') return n*1000; if (m[2].toLowerCase()==='m') return n*1000000; return n; }
+function fmtAmt(n) { if (n>=1000000) return '$'+(n/1000000).toFixed(2)+'M'; if (n>=1000) return '$'+Math.round(n/1000)+'K'; return '$'+n; }
+
+function renderPipeline() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  STAGES.forEach(stage => {
+    const col = document.createElement('div');
+    col.className = `col${mode==='execution'?' execution':''}`;
+    col.style.setProperty('--col-color', stage.color);
+    const list = DEALS[stage.id] || [];
+    let activeTotal = 0, ghostTotal = 0;
+    list.forEach(d => {
+      if (d.machineState==='NURTURE' && d.prevOffer) ghostTotal += parseAmt(d.prevOffer.amount);
+      else if (d.amount) activeTotal += parseAmt(d.amount);
+      else if (d.submittedAmt) activeTotal += parseInt(d.submittedAmt);
+    });
+    let head = `<div class="col-head"><div class="col-accent"></div><div class="col-name">${stage.name}</div>`;
+    if (list.length === 0) {
+      head += `<div class="col-amount empty">— · 0 deals</div>`;
+    } else {
+      if (activeTotal > 0) head += `<div class="col-amount">${fmtAmt(activeTotal)} <span style="font-size:10px;color:var(--txt-tertiary);font-weight:400">· ${list.length} deal${list.length>1?'s':''}</span></div>`;
+      else head += `<div class="col-amount empty">${list.length} deal${list.length>1?'s':''} · no $</div>`;
+      if (ghostTotal > 0) head += `<div class="col-amount ghost">${fmtAmt(ghostTotal)} prev offers</div>`;
+    }
+    head += `</div>`;
+    col.innerHTML = head;
+    const cards = document.createElement('div');
+    cards.className = 'col-cards';
+    if (list.length === 0) {
+      cards.innerHTML = `<div class="empty-stage-note"><span class="esn-label">Empty</span>${STAGE_NOTES[stage.id] || ''}</div>`;
+    } else {
+      const sorted = [...list].sort((a, b) => {
+        const aHot = a.hot || (getClient(a.clientId)?.aiSignals?.classification === 'HOT') || (getClient(a.clientId)?.borrowing?.stacked);
+        const bHot = b.hot || (getClient(b.clientId)?.aiSignals?.classification === 'HOT') || (getClient(b.clientId)?.borrowing?.stacked);
+        if (aHot && !bHot) return -1;
+        if (!aHot && bHot) return 1;
+        const aScore = getClient(a.clientId)?.aiSignals?.score || 0;
+        const bScore = getClient(b.clientId)?.aiSignals?.score || 0;
+        return bScore - aScore;
+      });
+      const filtered = filterMode === 'hot'
+        ? sorted.filter(d => d.hot || (getClient(d.clientId)?.aiSignals?.classification === 'HOT') || (getClient(d.clientId)?.borrowing?.stacked))
+        : sorted;
+      if (filtered.length === 0 && filterMode === 'hot') {
+        cards.innerHTML = `<div class="empty-stage-note"><span class="esn-label">No hot deals</span>Filtered out</div>`;
+      } else {
+        filtered.forEach(d => cards.appendChild(buildCard(d)));
+      }
+    }
+    col.appendChild(cards);
+    grid.appendChild(col);
+  });
+}
+
+function buildCard(d) {
+  const c = document.createElement('div');
+  const client = getClient(d.clientId);
+  const siblings = getSiblings(d.id);
+  c.className = `card t-${d.tone}`;
+  c.onclick = () => openDeal(d.id);
+  if (mode === 'execution') {
+    c.onmouseenter = (e) => showHoverTip(d, e.currentTarget);
+    c.onmouseleave = hideHoverTip;
+  }
+  const isNurture = d.machineState === 'NURTURE';
+  const isFunded = d.machineState === 'FUNDED';
+  const isClosed = d.machineState === 'CLOSED';
+  const productIcon = PRODUCT_ICONS[d.product] || '';
+  let html = '';
+  if (isNurture) html += `<div class="nurture-banner"><span>NURTURE · ${d.nurtureSubstate}</span><span class="nb-wake">${d.wakeReady ? 'WAKE READY' : 'WAKE ' + d.wakeIn + 'D'}</span></div>`;
+  const badges = [];
+  if (client.returningCount > 0) badges.push(`<span class="returning-badge">RETURNING · ${client.returningCount}X FUNDED</span>`);
+  if (client.borrowing && client.borrowing.stacked) badges.push(`<span class="stacking-badge">${client.borrowing.label}</span>`);
+  if (siblings.length > 0) badges.push(`<span class="linked-pill">${siblings.length+1} CARDS</span>`);
+  if (d.paused) badges.push(`<span class="paused-pill">REMINDERS PAUSED</span>`);
+  if (d.hot) badges.push(`<span class="hot-pill">HOT</span>`);
+  if (badges.length > 0) html += `<div class="card-top-row">${badges.join('')}</div>`;
+  if (isNurture && d.prevOffer) html += `<div class="prev-offer-pill">${d.prevOffer.amount.replace('$','')} prev · ${d.prevOffer.lender}</div>`;
+  if (d.amount) html += `<div class="amt-row"><span class="amt-display ${isFunded ? 'funded' : ''}">${d.amount}</span><span class="product-emoji">${productIcon}</span></div>`;
+  else if (d.submittedAmt) html += `<div class="amt-row"><span class="amt-display">$${(parseInt(d.submittedAmt)/1000)}K</span><span class="product-emoji">${productIcon}</span></div>`;
+  else html += `<div class="amt-row"><span class="amt-product-only">${productIcon} ${d.product}</span></div>`;
+  html += `<div class="card-name">${client.name}</div>`;
+  if (mode === 'execution') {
+    html += `<div class="card-contact-exec">${client.contact}</div>`;
+    if (d.lastNote) html += `<div class="card-note-exec">${trunc(d.lastNote, 88)}</div>`;
+    if (!isClosed) html += `<div class="card-meta-exec"><div class="avatar" style="background:${REP_COLORS[d.owner]}">${d.owner}</div><span class="owner-name">${REP_NAMES[d.owner].split(' ')[0]}</span><span class="card-age">${d.age}d</span></div>`;
+    if (!isFunded && !isClosed) html += `<div class="state-line-exec"><span class="state-dot sd-${d.machineState.toLowerCase()}"></span><span class="state-label" style="color:${stateColor(d.machineState)}">${d.machineState}</span><span class="state-timing">${isNurture ? d.wakeDate : d.attempts + '/10'}</span></div>`;
+  }
+  if (isFunded) html += `<div class="card-action-row"><span class="card-action-text" style="font-size:10px;color:var(--txt-tertiary);font-family:var(--font-mono)">${d.fundedDate} · ${d.lender}</span><span class="card-status s-funded">FUNDED</span></div>`;
+  else if (isClosed) html += `<div class="card-action-row"><span class="card-action-text">${d.closeReason}</span><span class="card-status s-closed">CLOSED</span></div>`;
+  else if (isNurture) html += `<div class="card-action-row"><span class="card-action-text">Wake ${d.wakeDate}</span><span class="card-status s-nurture">${d.wakeReady ? 'READY' : d.wakeIn + 'd'}</span></div>`;
+  else html += `<div class="card-action-row"><span class="card-action-text">${trunc(d.action, 22)}</span><span class="card-status s-${stClass(d.state)}">${d.state}</span></div>`;
+  c.innerHTML = html;
+  return c;
+}
+
+function showHoverTip(d, target) {
+  const tip = document.getElementById('hoverTip');
+  const client = getClient(d.clientId);
+  const siblings = getSiblings(d.id);
+  const r = target.getBoundingClientRect();
+  let aiRow = '';
+  if (client.aiSignals) {
+    const a = client.aiSignals;
+    aiRow = `<div class="ht-section"><div class="ht-section-label">AI · ${a.classification} · ${a.score}/100</div><div class="ht-row">${a.industry || '—'} · ${a.revenue || '—'} · ${a.urgency || '—'} urgency</div>${a.source ? `<div class="ht-source">source: ${a.source}</div>` : ''}</div>`;
+  }
+  tip.innerHTML = `<div class="ht-name">${client.name}</div><div class="ht-contact">${client.contact} · ${client.phone}</div><div class="ht-row"><strong>${PRODUCT_ICONS[d.product]} ${d.product}</strong> · ${d.amount || (d.submittedAmt ? '$'+parseInt(d.submittedAmt).toLocaleString() : '—')}${client.returningCount > 0 ? ' · Returning '+client.returningCount+'x' : ''}${siblings.length > 0 ? ' · '+ (siblings.length+1) +' linked cards' : ''}</div>${aiRow}${d.lastNote ? `<div class="ht-section"><div class="ht-section-label">Last Note</div><div class="ht-note">${d.lastNote}</div></div>` : ''}${d.workflowNote ? `<div class="ht-section"><div class="ht-section-label">Why this stage</div><div class="ht-workflow">${d.workflowNote}</div></div>` : ''}`;
+  tip.style.left = Math.min(r.right + 12, window.innerWidth - 360) + 'px';
+  tip.style.top = Math.max(10, Math.min(r.top, window.innerHeight - 320)) + 'px';
+  tip.classList.add('show');
+}
+function hideHoverTip() { document.getElementById('hoverTip').classList.remove('show'); }
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('mode-simple').classList.toggle('on', m==='simple');
+  document.getElementById('mode-execution').classList.toggle('on', m==='execution');
+  document.getElementById('kpi').classList.toggle('show', m==='execution');
+  document.getElementById('exec-legend').classList.toggle('show', m==='execution');
+  renderPipeline();
+}
+
+function openDeal(id) {
+  openDealId = id;
+  activeTab = 'deal';
+  const d = getDeal(id);
+  const client = getClient(d.clientId);
+  const stage = STAGES.find(s => s.id === d._stage);
+  const siblings = getSiblings(id);
+
+  let aiBar = '';
+  if (client.aiSignals) {
+    const a = client.aiSignals;
+    const cid = client.id;
+    const chip = (key, val, classMod, label) => {
+      if (val) return `<span class="ai-chip filled ${classMod}"><span class="ai-chip-key">${label}</span><span class="ai-chip-val">${val}</span><span class="ai-chip-x" onclick="event.stopPropagation();dismissAIField('${cid}','${key}')" title="Clear · re-extract via notes">×</span></span>`;
+      return `<span class="ai-chip empty"><span class="ai-chip-key">${label}</span><span class="ai-chip-val">?</span></span>`;
+    };
+    const urgencyClass = a.urgency ? `urgency-${a.urgency}` : 'urgency-low';
+    aiBar = `<div class="ai-inline-bar">
+      <span class="ai-inline-label">AI</span>
+      <span class="ai-inline-class ${a.classification}">${a.classification} · ${a.score}</span>
+      ${chip('industry', a.industry, 'industry', 'Industry')}
+      ${chip('revenue', a.revenue, 'revenue', 'Revenue')}
+      ${chip('useOfFunds', a.useOfFunds, 'use', 'Use of funds')}
+      ${chip('urgency', a.urgency, urgencyClass, 'Urgency')}
+      ${chip('ask', a.ask, 'ask', 'Ask')}
+      ${client.borrowing && client.borrowing.stacked ? `<span class="ai-chip filled borrowing"><span class="ai-chip-key">⚠ Stacked</span><span class="ai-chip-val">${client.borrowing.signal}</span><span class="ai-chip-x" onclick="event.stopPropagation();dismissBorrowing('${cid}')" title="Clear stacking flag">×</span></span>` : ''}
+      ${a.source ? `<span class="ai-inline-source">source: ${a.source}</span>` : ''}
+    </div>`;
+  }
+
+  document.getElementById('mh').innerHTML = `
+    <div class="mh-row">
+      <div style="flex:1;min-width:0">
+        <div class="mh-title">${client.name}</div>
+        <div class="mh-contact"><span>${client.contact}</span><span class="sep">·</span><a href="tel:${client.phone}">${client.phone}</a><span class="sep">·</span><a href="mailto:${client.email}">${client.email}</a></div>
+      </div>
+      <div class="mh-actions">
+        <button class="mh-btn primary-rep">${d.primary}</button>
+        <button class="mh-btn" onclick="closeModal()">×</button>
+      </div>
+    </div>
+    ${aiBar}
+    <div class="mh-chips">
+      <span class="stage-chip">${stage.name}</span>
+      <span class="pill p-${d.product}" style="font-size:11px;padding:4px 10px">${PRODUCT_ICONS[d.product]} ${d.product}</span>
+      ${client.returningCount > 0 ? `<span class="returning-badge" style="font-size:10px;padding:3px 9px">RETURNING · ${client.returningCount}X FUNDED</span>` : ''}
+      ${siblings.length > 0 ? `<span class="linked-pill" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();toggleSiblingPopover()">${siblings.length+1} CARDS</span>` : ''}
+      ${d.hot ? `<span class="pill p-HOT" style="font-size:11px;padding:4px 10px">HOT</span>` : ''}
+    </div>
+  `;
+  if (siblings.length > 0) {
+    const sp = document.getElementById('siblingPopover');
+    sp.innerHTML = `
+      <div class="sp-header">Linked deals · ${siblings.length+1} cards for ${client.name}</div>
+      <div class="sp-card" style="border-color:var(--amber);background:var(--amber-soft)">
+        <div class="sp-card-emoji">${PRODUCT_ICONS[d.product]}</div>
+        <div class="sp-card-content">
+          <div class="sp-card-name">${d.amount || (d.submittedAmt ? '$'+parseInt(d.submittedAmt).toLocaleString() : d.product)} · ${d.product} <span style="font-size:10px;color:var(--amber)">· VIEWING</span></div>
+          <div class="sp-card-meta">${d.action}</div>
+        </div>
+        <div class="sp-card-stage">${stage.name}</div>
+      </div>
+      ${siblings.map(s => {
+        const sStage = STAGES.find(st => st.id === s._stage);
+        const amt = s.amount || (s.submittedAmt ? '$'+parseInt(s.submittedAmt).toLocaleString() : s.product);
+        return `<div class="sp-card" onclick="openDeal(${s.id});closeSiblingPopover()">
+          <div class="sp-card-emoji">${PRODUCT_ICONS[s.product]}</div>
+          <div class="sp-card-content">
+            <div class="sp-card-name">${amt} · ${s.product} ${s.hot ? '· 🔥 HOT' : ''}</div>
+            <div class="sp-card-meta">${s.action}</div>
+          </div>
+          <div class="sp-card-stage">${sStage.name}</div>
+        </div>`;
+      }).join('')}
+      <button class="sp-add-btn" onclick="openAddProduct('${d.clientId}')">+ Add another product for this client</button>
+    `;
+  }
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === activeTab);
+    t.onclick = () => { activeTab = t.dataset.tab; document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab === activeTab)); document.getElementById('mbody').innerHTML = renderBody(getDeal(openDealId)); };
+  });
+  document.getElementById('mbody').innerHTML = renderBody(d);
+  document.getElementById('modal').classList.add('show');
+  document.getElementById('backdrop').classList.add('show');
+}
+
+function toggleSiblingPopover() { document.getElementById('siblingPopover').classList.toggle('show'); }
+function closeSiblingPopover() { document.getElementById('siblingPopover').classList.remove('show'); }
+
+function renderBody(d) {
+  if (activeTab === 'conv') return `<div class="section"><div class="section-label">Conversation</div><div style="background:var(--bg-elev-2);border-radius:7px;padding:60px 20px;text-align:center;color:var(--txt-tertiary);font-size:11px;font-family:var(--font-mono)">Live SMS thread renders here</div></div>`;
+  if (activeTab === 'funding') {
+    const client = getClient(d.clientId);
+    if (client.returningCount === 0 && d.machineState !== 'FUNDED') return `<div class="section"><div class="section-label">Funding History</div><div style="background:var(--bg-elev-2);border-radius:7px;padding:40px 20px;text-align:center;color:var(--txt-tertiary)">No funding history yet</div></div>`;
+    return `<div class="section"><div class="section-label">Funding History · ${client.returningCount}x prior</div><div class="detail-section">${d.machineState === 'FUNDED' ? `<div class="detail-grid"><div class="detail-field"><span class="detail-field-label">Funded</span><span class="detail-field-value mono" style="font-size:16px;color:var(--emerald)">${d.amount}</span></div><div class="detail-field"><span class="detail-field-label">Date</span><span class="detail-field-value mono">${d.fundedDate}</span></div><div class="detail-field"><span class="detail-field-label">Lender</span><span class="detail-field-value">${d.lender}</span></div></div>` : '<div style="color:var(--txt-tertiary);font-size:11px">' + client.returningCount + ' prior round' + (client.returningCount>1?'s':'') + ' completed.</div>'}</div></div>`;
+  }
+  return renderDealTab(d);
+}
+
+function renderDealTab(d) {
+  const client = getClient(d.clientId);
+  const stage = STAGES.find(s => s.id === d._stage);
+  const isFunded = d.machineState === 'FUNDED';
+  const isNurture = d.machineState === 'NURTURE';
+  const isClosed = d.machineState === 'CLOSED';
+  const qa = QUICK_ACTIONS[d._stage] || [];
+  const showSubmittedAmt = SUBMITTED_AMT_PRODUCTS.includes(d.product);
+  const hasOffers = d.lenderOffers && d.lenderOffers.length > 0;
+  const siblings = getSiblings(d.id);
+  let html = '';
+
+  // AI Suggestion banner — appears when last note triggered a stage change suggestion
+  if (d.pendingAISuggestion) {
+    const s = d.pendingAISuggestion;
+    html += `<div class="ai-suggestion-banner">
+      <div class="ai-sug-header">
+        <span class="ai-sug-icon">⚡</span>
+        <span class="ai-sug-title">AI Suggestion</span>
+        <span class="ai-sug-confidence">From your last note</span>
+      </div>
+      <div class="ai-sug-body">
+        <div class="ai-sug-row"><span class="ai-sug-key">Move to stage</span><span class="ai-sug-val"><span class="ai-stage-pill ${s.suggestedStage}">${s.suggestedStageName}</span></span></div>
+        <div class="ai-sug-reasoning">↳ ${s.reasoning}</div>
+        ${s.timing ? `<div class="ai-sug-row"><span class="ai-sug-key">Schedule</span><span class="ai-sug-val">${s.action || 'Follow up'} ${s.scheduledLabel.toLowerCase()} → <strong>${s.scheduledDate}</strong></span></div>` : ''}
+        ${s.borrowing && s.borrowing.stacked ? `<div class="ai-sug-row"><span class="ai-sug-key">Borrowing</span><span class="ai-sug-val" style="color:var(--rose)">⚠ ${s.borrowing.signal}</span></div>` : ''}
+      </div>
+      <div class="ai-sug-actions">
+        <button class="ai-sug-apply" onclick="applyAISuggestion(${d.id})">Apply Suggestion</button>
+        <button class="ai-sug-dismiss" onclick="dismissAISuggestion(${d.id})">Keep current stage</button>
+      </div>
+    </div>`;
+  }
+
+  if (isNurture) html += `<div class="modal-nurture-banner"><div class="mnb-icon">⚠</div><div class="mnb-content"><div class="mnb-title">NURTURE · ${d.nurtureSubstate}</div><div class="mnb-detail">${d.prevOffer ? `Had ${d.prevOffer.amount} offer from ${d.prevOffer.lender} on ${d.prevOffer.date} · ${d.nurtureReason}` : d.nurtureReason}</div></div><div class="mnb-wake">Wake ${d.wakeDate}<br><span style="font-size:10px;color:var(--txt-tertiary)">${d.wakeReady ? 'Ready now' : d.wakeIn + 'd remaining'}</span></div></div>`;
+
+  // Linked Deals section — always visible when siblings exist
+  if (siblings.length > 0) {
+    html += `<div class="section">
+      <div class="section-label">Linked Deals · ${siblings.length+1} cards for ${client.name}<button class="add-product-inline" onclick="openAddProduct('${d.clientId}')">+ Add product</button></div>
+      <div class="linked-deals-grid">
+        ${[d, ...siblings].map(deal => {
+          const dStage = STAGES.find(st => st.id === (deal._stage || deal.stage));
+          const isCurrent = deal.id === d.id;
+          const amt = deal.amount || (deal.submittedAmt ? '$'+(parseInt(deal.submittedAmt)/1000)+'K' : deal.product);
+          const hotTag = deal.hot ? '<span class="ld-hot">HOT</span>' : '';
+          return `<div class="ld-card ${isCurrent ? 'current' : ''}" ${!isCurrent ? `onclick="openDeal(${deal.id})"` : ''}>
+            <div class="ld-emoji">${PRODUCT_ICONS[deal.product]}</div>
+            <div class="ld-content">
+              <div class="ld-amt">${amt} · ${deal.product}${hotTag}</div>
+              <div class="ld-stage">${dStage ? dStage.name : deal._stage}</div>
+              <div class="ld-action">${deal.action}</div>
+            </div>
+            ${isCurrent ? '<div class="ld-current-tag">VIEWING</div>' : '<div class="ld-arrow">→</div>'}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (!isFunded && !isClosed) {
+    html += `<div class="section"><div class="section-label">Next Action</div><div class="qa-block"><div class="qa-stage-label">Quick actions · <strong>${stage.name}</strong></div><div class="qa-buttons">${qa.map(a => `<button class="qa-btn" onclick="showToast('Action set: ${a}')">${a}</button>`).join('')}</div><input class="qa-input" type="text" value="${isNurture ? 'Wake-up scheduled' : d.action}"><div class="qa-date-row"><button class="qa-date-pill">Today</button><button class="qa-date-pill">Tomorrow</button><button class="qa-date-pill on">This week</button><button class="qa-date-pill">Future date</button><div style="flex:1"></div><button class="qa-set" onclick="showToast('Action set')">Set Action</button></div></div><div class="action-row"><button class="act-btn"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg> Schedule Follow-Up</button><button class="act-btn danger" onclick="openCloseModal(${d.id})">Lost / NQ / Close</button>${d._stage === 'committed' || d._stage === 'approved' ? `<button class="act-btn funded" onclick="openFundedModal(${d.id})"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 4 12 14.01 9 11.01"/></svg> Mark as Funded</button>` : ''}</div></div><div class="state-pill-row"><span class="sp-dot" style="background:${stateColor(d.machineState)}"></span><span class="sp-label" style="color:${stateColor(d.machineState)}">${d.machineState}</span><span style="color:var(--txt-tertiary)">${d.attempts}/10 attempts</span><span style="color:var(--txt-tertiary);margin-left:auto">${isNurture ? 'Wake ' + d.wakeDate : (10 - d.attempts) + ' before auto-nurture'}</span></div>`;
+  }
+  if (isFunded) html += `<div class="section"><div class="section-label">Maintain Regime · Active Client${d.paused ? ' · PAUSED' : ''}</div><div class="maintain"><div class="maintain-header"><div class="maintain-title">Funded · ${d.lender}</div><div style="font-size:11px;color:var(--txt-secondary);font-family:var(--font-mono)">${d.amount} · ${d.fundedDate}</div></div>${d.paused ? `<div class="paused-pill" style="margin-bottom:10px;width:100%;justify-content:center;padding:6px">⏸ REMINDERS PAUSED · CLIENT HAS ACTIVE SIBLING DEAL</div>` : ''}<button class="create-new-deal-btn" onclick="openAddProduct('${d.clientId}')"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create New Deal · ${d.renewalProgress}% paydown</button><div class="bs-card${d.paused ? ' paused' : ''}"><div class="bs-ring"><svg viewBox="0 0 60 60"><circle class="bg" cx="30" cy="30" r="26"/><circle cx="30" cy="30" r="26" fill="none" stroke-width="4" stroke-dasharray="${2*Math.PI*26}" stroke-dashoffset="${2*Math.PI*26 * (1 - (30 - d.bankStmtDays)/30)}" stroke-linecap="round" style="stroke:${d.bankStmtDays >= 25 ? 'var(--rose)' : d.bankStmtDays >= 20 ? 'var(--amber)' : 'var(--emerald)'}"/></svg><div class="bs-ring-text"><span class="bs-ring-num">${30 - d.bankStmtDays}</span><span class="bs-ring-label">Days</span></div></div><div class="bs-content"><div class="bs-title">Bank Statement Cycle</div><div class="bs-meta">Last received <strong>${d.bankStmtDays}d ago</strong> · next due in ${30 - d.bankStmtDays}d</div></div></div></div></div>`;
+  if (hasOffers) html += `<div class="section"><div class="section-label">Lender Offers · ${d.lenderOffers.length}<span style="font-size:10px;color:var(--emerald);cursor:pointer">+ Add offer</span></div><div class="detail-section"><div class="lender-list">${d.lenderOffers.map(o => `<div class="lender-row ${o.preserved ? 'preserved' : ''}"><div><div class="lender-name">${o.lender}</div><div class="lender-meta ${o.preserved ? 'preserved-tag' : ''}">${o.preserved ? 'Preserved · presented ' + o.presentedDate : o.term}</div></div><span class="lender-amount ${o.preserved ? 'preserved' : ''}">${o.amount}</span></div>`).join('')}</div></div></div>`;
+  html += `<div class="section"><div class="section-label">Notes <span class="secondary">· Per-deal activity log</span></div><div class="notes-block">${!isFunded && !isClosed ? `<div class="quick-log-row"><span class="quick-log-label">Quick log:</span><button class="ql-btn" onclick="quickLog(${d.id},'no_answer')"><span class="ql-dot warm"></span>No answer</button><button class="ql-btn" onclick="quickLog(${d.id},'texted')"><span class="ql-dot warm"></span>Texted</button><button class="ql-btn success" onclick="quickLog(${d.id},'connected')"><span class="ql-dot green"></span>Connected</button><button class="ql-btn" onclick="quickLog(${d.id},'voicemail')"><span class="ql-dot warm"></span>Voicemail</button><button class="ql-btn danger" onclick="quickLog(${d.id},'not_interested')"><span class="ql-dot red"></span>Not interested</button></div>` : ''}<textarea class="note-input" id="noteInput-${d.id}" placeholder="Add note about today's activity… or describe industry/revenue and AI will create badges"></textarea><div class="note-save-row"><button class="note-save-btn" onclick="saveCustomNote(${d.id})">Save</button></div>${(d.notesLog || []).length > 0 ? `<div class="notes-log" id="notesLog-${d.id}">${d.notesLog.map((n) => `<div class="note-existing${n.fresh ? ' fresh' : ''}">${n.text}<div class="note-time">${n.time} · ${REP_NAMES[n.rep] || n.rep}</div></div>`).join('')}</div>` : `<div id="notesLog-${d.id}"></div>`}</div></div>`;
+  html += `<div class="section"><div class="section-label">Client Notes <span class="secondary">· Shared across linked cards</span></div><div class="client-notes-block"><div class="client-note-content">${client.clientNotes || 'No client context yet.'}</div><div class="shared-tag">Shared at client level · edits sync across all cards · AI extracts badges automatically</div></div></div>`;
+  html += `<div class="section"><div class="section-label">Deal Details</div><div class="detail-section"><div class="detail-grid"><div class="detail-field"><span class="detail-field-label">Product</span><div class="product-pills">${['MCA','LOC','HELOC','SBA','Equipment','CRE'].map(p => { const norm = p.toUpperCase(); return `<button class="product-toggle ${d.product === norm ? 'on' : ''}"><span>${PRODUCT_ICONS[norm]}</span>${p}</button>`; }).join('')}</div></div><div class="detail-field"><span class="detail-field-label">${showSubmittedAmt ? 'Submitted Amount' : 'Amount'}</span>${showSubmittedAmt ? `<input class="amount-input" type="text" value="$${parseInt(d.submittedAmt || 0).toLocaleString()}">` : `<div class="amount-deferred"><svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 18l6-6-6-6"/></svg>Set by lender offers</div>`}</div></div></div></div>`;
+  return html;
+}
+
+function quickLog(dealId, kind) {
+  const templates = {
+    no_answer:    { text:'Called, no answer', stateUpdate:'WAITING', attemptsDelta:1 },
+    texted:       { text:'Sent text follow-up', stateUpdate:'WAITING', attemptsDelta:1 },
+    connected:    { text:'Connected with client — interested', stateUpdate:'ACTIVE', attemptsDelta:0, resetAttempts:true },
+    voicemail:    { text:'Left voicemail', stateUpdate:'WAITING', attemptsDelta:1 },
+    not_interested: { text:'Client not interested today — moving to nurture', stateUpdate:'NURTURE', attemptsDelta:0 }
+  };
+  const tmpl = templates[kind];
+  if (!tmpl) return;
+  for (const sid of Object.keys(DEALS)) {
+    const idx = DEALS[sid].findIndex(x => x.id === dealId);
+    if (idx >= 0) {
+      const target = DEALS[sid][idx];
+      const now = new Date();
+      const timeStr = `Just now ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+      target.notesLog = [{ rep:'SB', time:timeStr, text:tmpl.text, fresh:true }, ...(target.notesLog || [])];
+      if (tmpl.resetAttempts) target.attempts = 0; else target.attempts = (target.attempts || 0) + tmpl.attemptsDelta;
+      target.machineState = tmpl.stateUpdate;
+      if (target.tone === 'rose') { target.tone = 'amber'; target.state = 'Tomorrow'; }
+      target.lastNote = tmpl.text;
+      break;
+    }
+  }
+  showToast(`✓ Logged: ${tmpl.text} · attempts ${getDeal(dealId).attempts}/10`);
+  renderPipeline();
+  document.getElementById('mbody').innerHTML = renderBody(getDeal(dealId));
+}
+
+function saveCustomNote(dealId) {
+  const input = document.getElementById('noteInput-' + dealId);
+  if (!input || !input.value.trim()) return;
+  const text = input.value.trim();
+  let didSuggest = false;
+  let filledFields = [];
+  for (const sid of Object.keys(DEALS)) {
+    const idx = DEALS[sid].findIndex(x => x.id === dealId);
+    if (idx >= 0) {
+      const target = DEALS[sid][idx];
+      const now = new Date();
+      const timeStr = `Just now ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+      target.notesLog = [{ rep:'SB', time:timeStr, text, fresh:true }, ...(target.notesLog || [])];
+      const extracted = simulateAIExtraction(text);
+      if (extracted) {
+        const client = getClient(target.clientId);
+        if (!client.aiSignals) client.aiSignals = { ...extracted, source:'rep notes' };
+        else {
+          if (extracted.industry && !client.aiSignals.industry) { client.aiSignals.industry = extracted.industry; filledFields.push('Industry'); }
+          else if (extracted.industry) client.aiSignals.industry = extracted.industry;
+          if (extracted.revenue && !client.aiSignals.revenue) { client.aiSignals.revenue = extracted.revenue; filledFields.push('Revenue'); }
+          else if (extracted.revenue) client.aiSignals.revenue = extracted.revenue;
+          if (extracted.ask && !client.aiSignals.ask) { client.aiSignals.ask = extracted.ask; filledFields.push('Ask'); }
+          else if (extracted.ask) client.aiSignals.ask = extracted.ask;
+          if (extracted.useOfFunds && !client.aiSignals.useOfFunds) { client.aiSignals.useOfFunds = extracted.useOfFunds; filledFields.push('Use of funds'); }
+          else if (extracted.useOfFunds) client.aiSignals.useOfFunds = extracted.useOfFunds;
+          if (extracted.urgency && extracted.urgency !== 'medium') client.aiSignals.urgency = extracted.urgency;
+          client.aiSignals.score = Math.max(client.aiSignals.score || 0, extracted.score);
+          if (extracted.classification === 'HOT') client.aiSignals.classification = 'HOT';
+          client.aiSignals.source = (client.aiSignals.source || '') + ' + rep notes';
+        }
+        if (extracted.borrowing && extracted.borrowing.stacked) {
+          client.borrowing = extracted.borrowing;
+          filledFields.push('Stacking');
+        }
+        if (extracted.suggestedStage && extracted.suggestedStage !== sid && !isFundedOrClosed(sid)) {
+          target.pendingAISuggestion = {
+            suggestedStage: extracted.suggestedStage,
+            suggestedStageName: extracted.suggestedStageName,
+            reasoning: extracted.suggestedStageReasoning,
+            action: extracted.action,
+            scheduledLabel: extracted.scheduledLabel,
+            scheduledDate: extracted.scheduledDate,
+            timing: extracted.timing,
+            sentiment: extracted.sentiment,
+            borrowing: extracted.borrowing
+          };
+          didSuggest = true;
+        }
+        let toastMsg = '✓ Note saved';
+        if (filledFields.length > 0) toastMsg += ` · AI filled: ${filledFields.join(', ')}`;
+        if (didSuggest) toastMsg += ' · suggestion ready';
+        showToast(toastMsg);
+      } else {
+        showToast('✓ Note saved');
+      }
+      target.lastNote = text;
+      break;
+    }
+  }
+  input.value = '';
+  document.getElementById('mbody').innerHTML = renderBody(getDeal(dealId));
+  openDeal(dealId);
+}
+
+function isFundedOrClosed(sid) { return sid === 'funded' || sid === 'closed'; }
+
+function dismissAIField(clientId, field) {
+  const client = getClient(clientId);
+  if (!client || !client.aiSignals) return;
+  client.aiSignals[field] = null;
+  showToast(`Cleared ${field} · type in notes to re-fill`);
+  if (openDealId) openDeal(openDealId);
+  renderPipeline();
+}
+
+function dismissBorrowing(clientId) {
+  const client = getClient(clientId);
+  if (!client) return;
+  client.borrowing = null;
+  showToast('Cleared stacking flag');
+  if (openDealId) openDeal(openDealId);
+  renderPipeline();
+}
+
+function applyAISuggestion(dealId) {
+  for (const sid of Object.keys(DEALS)) {
+    const idx = DEALS[sid].findIndex(x => x.id === dealId);
+    if (idx >= 0) {
+      const target = DEALS[sid][idx];
+      const sug = target.pendingAISuggestion;
+      if (!sug) return;
+      DEALS[sid].splice(idx, 1);
+      target.stage = sug.suggestedStage;
+      if (sug.action) target.action = sug.action;
+      if (sug.scheduledLabel) target.state = sug.scheduledLabel;
+      // If routing to nurture due to "not interested" sentiment
+      if (sug.suggestedStage === 'qualified' && sug.sentiment === 'not_interested' && sug.timing) {
+        target.machineState = 'NURTURE';
+        target.nurtureSubstate = 'CLIENT-PASSED';
+        target.nurtureReason = 'Not interested today · scheduled wake';
+        target.wakeDate = sug.scheduledDate;
+        target.wakeIn = sug.timing.days;
+        target.wakeReady = sug.timing.days === 0;
+        target.tone = 'orange';
+        target.attempts = 0;
+      } else if (sug.suggestedStage === 'engaged') {
+        target.machineState = 'ACTIVE';
+        target.tone = 'cyan';
+      }
+      delete target.pendingAISuggestion;
+      if (!DEALS[sug.suggestedStage]) DEALS[sug.suggestedStage] = [];
+      DEALS[sug.suggestedStage].push(target);
+      showToast(`✓ Moved to ${sug.suggestedStageName} · AI applied`);
+      renderPipeline();
+      openDeal(dealId);
+      return;
+    }
+  }
+}
+
+function dismissAISuggestion(dealId) {
+  for (const sid of Object.keys(DEALS)) {
+    const idx = DEALS[sid].findIndex(x => x.id === dealId);
+    if (idx >= 0) {
+      delete DEALS[sid][idx].pendingAISuggestion;
+      showToast('AI suggestion dismissed · stage unchanged');
+      document.getElementById('mbody').innerHTML = renderBody(getDeal(dealId));
+      return;
+    }
+  }
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('show'); document.getElementById('backdrop').classList.remove('show'); closeSiblingPopover(); openDealId = null; }
+
+function openAddLead() {
+  document.getElementById('alName').value = '';
+  document.getElementById('alContact').value = '';
+  document.getElementById('alPhone').value = '';
+  document.getElementById('alEmail').value = '';
+  document.getElementById('alProduct').value = '';
+  document.getElementById('alAmount').value = '';
+  document.getElementById('alNotes').value = '';
+  document.getElementById('alAmountField').style.display = 'none';
+  document.getElementById('aiPreviewBlock').classList.remove('show');
+  document.getElementById('addLeadBg').classList.add('show');
+  pendingAIExtraction = null;
+}
+function closeAddLead() { document.getElementById('addLeadBg').classList.remove('show'); }
+function loadDemoText() {
+  document.getElementById('alName').value = 'TESTING';
+  document.getElementById('alContact').value = 'Jon';
+  document.getElementById('alPhone').value = '+13055559999';
+  document.getElementById('alEmail').value = '';
+  document.getElementById('alProduct').value = 'MCA';
+  document.getElementById('alNotes').value = "Called client, needs $200k by next week. Does $100k monthly, has two positions";
+  onAddLeadProductChange();
+  updateAIPreview();
+}
+function onAddLeadProductChange() {
+  const p = document.getElementById('alProduct').value;
+  const requiresAmt = SUBMITTED_AMT_PRODUCTS.includes(p);
+  document.getElementById('alAmountField').style.display = requiresAmt ? 'flex' : 'none';
+}
+function updateAIPreview() {
+  const text = document.getElementById('alNotes').value;
+  const ext = simulateAIExtraction(text);
+  const block = document.getElementById('aiPreviewBlock');
+  const attrs = document.getElementById('aiPreviewAttrs');
+  const stageWrap = document.getElementById('aiPreviewStageWrap');
+  const stageEl = document.getElementById('aiPreviewStage');
+  const actionWrap = document.getElementById('aiPreviewActionWrap');
+  const actionEl = document.getElementById('aiPreviewAction');
+
+  if (!ext) {
+    if (text.trim().length === 0) { block.classList.remove('show'); pendingAIExtraction = null; return; }
+    block.classList.add('show');
+    attrs.innerHTML = `<div class="ai-preview-empty">Keep typing… AI needs more context (revenue, industry, action)</div>`;
+    stageWrap.style.display = 'none';
+    actionWrap.style.display = 'none';
+    pendingAIExtraction = null;
+    return;
+  }
+  pendingAIExtraction = ext;
+  block.classList.add('show');
+
+  const rows = [];
+  rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Classification</span><span class="ai-preview-val"><span class="ai-inline-class ${ext.classification}" style="font-size:9px;padding:2px 7px">${ext.classification}</span> · ${ext.score}/100</span></div>`);
+  if (ext.industry) rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Industry</span><span class="ai-preview-val">${ext.industry}</span></div>`);
+  if (ext.revenue) rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Revenue</span><span class="ai-preview-val">${ext.revenue}</span></div>`);
+  if (ext.ask) rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Ask</span><span class="ai-preview-val">${ext.ask}</span></div>`);
+  if (ext.useOfFunds) rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Use of funds</span><span class="ai-preview-val" style="color:var(--amber);font-weight:600">${ext.useOfFunds}</span></div>`);
+  if (ext.borrowing && ext.borrowing.stacked) rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">⚠ Borrowing</span><span class="ai-preview-val" style="color:var(--rose);font-weight:600">${ext.borrowing.signal} · score boosted</span></div>`);
+  if (ext.sentiment && ext.sentiment !== 'neutral') rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Sentiment</span><span class="ai-preview-val">${ext.sentiment.replace('_', ' ')}</span></div>`);
+  if (ext.urgency) rows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Urgency</span><span class="ai-preview-val">${ext.urgency}</span></div>`);
+  attrs.innerHTML = rows.join('');
+
+  stageWrap.style.display = 'flex';
+  stageEl.innerHTML = `
+    <div class="ai-preview-row"><span class="ai-preview-key">Stage</span><span class="ai-preview-val"><span class="ai-stage-pill ${ext.suggestedStage}">${ext.suggestedStageName}</span></span></div>
+    <div class="ai-reasoning">↳ ${ext.suggestedStageReasoning}</div>
+  `;
+
+  if (ext.action || ext.timing) {
+    actionWrap.style.display = 'flex';
+    const actionRows = [];
+    if (ext.action) actionRows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Action</span><span class="ai-preview-val">${ext.action}</span></div>`);
+    if (ext.timing) actionRows.push(`<div class="ai-preview-row"><span class="ai-preview-key">Schedule</span><span class="ai-preview-val">${ext.scheduledLabel} → <strong>${ext.scheduledDate}</strong></span></div>`);
+    actionEl.innerHTML = actionRows.join('');
+  } else {
+    actionWrap.style.display = 'none';
+  }
+}
+function createLead() {
+  const name = document.getElementById('alName').value.trim();
+  if (!name) { showToast('Business name required'); return; }
+  const product = document.getElementById('alProduct').value;
+  const requiresAmt = SUBMITTED_AMT_PRODUCTS.includes(product);
+  const amt = document.getElementById('alAmount').value.trim();
+  if (requiresAmt && !amt) { showToast('Submitted amount required for SBA/CRE/Equipment'); return; }
+  let stageDest = 'New Lead';
+  let extras = '';
+  if (pendingAIExtraction) {
+    stageDest = pendingAIExtraction.suggestedStageName;
+    const parts = [];
+    if (pendingAIExtraction.industry) parts.push(pendingAIExtraction.industry);
+    if (pendingAIExtraction.revenue) parts.push(pendingAIExtraction.revenue);
+    if (pendingAIExtraction.action && pendingAIExtraction.scheduledLabel) parts.push(`${pendingAIExtraction.action} ${pendingAIExtraction.scheduledLabel.toLowerCase()}`);
+    extras = ' · AI: ' + parts.join(' · ');
+  } else if (requiresAmt) {
+    stageDest = 'Submitted (In Review)';
+  }
+  showToast(`✓ ${name} → ${stageDest}${extras}`);
+  closeAddLead();
+}
+
+function openAddProduct(clientId) {
+  addProductForClientId = clientId;
+  const client = getClient(clientId);
+  document.getElementById('addProductInfo').innerHTML = `Adding linked card for <strong>${client.name}</strong>. Client info shared.`;
+  document.getElementById('apProduct').value = '';
+  document.getElementById('apAmount').value = '';
+  document.getElementById('apRouting').classList.remove('show');
+  closeSiblingPopover();
+  document.getElementById('addProductBg').classList.add('show');
+}
+function closeAddProduct() { document.getElementById('addProductBg').classList.remove('show'); }
+function onAddProductChange() {
+  const p = document.getElementById('apProduct').value;
+  const requiresAmt = SUBMITTED_AMT_PRODUCTS.includes(p);
+  document.getElementById('apAmountLabel').innerHTML = requiresAmt ? 'Submitted Amount<span class="req">*</span>' : 'Amount';
+  document.getElementById('apRouting').classList.toggle('show', requiresAmt);
+}
+function confirmAddProduct() {
+  const p = document.getElementById('apProduct').value;
+  if (!p) { showToast('Pick a product'); return; }
+  const stage = SUBMITTED_AMT_PRODUCTS.includes(p) ? 'Submitted' : 'Engaged';
+  showToast(`✓ Linked card created · ${PRODUCT_ICONS[p]} ${p} · stage: ${stage}`);
+  closeAddProduct();
+}
+
+function openFundedModal(id) {
+  const d = getDeal(id);
+  document.getElementById('mfDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('mfAmount').value = d.amount ? parseAmt(d.amount) : '';
+  document.getElementById('mfFunder').value = d.lenderOffers[0]?.lender || '';
+  document.getElementById('mfTerm').value = '10';
+  document.getElementById('mfProduct').value = d.product;
+  updateMilestones();
+  document.getElementById('fundedModalBg').classList.add('show');
+}
+function closeFundedModal() { document.getElementById('fundedModalBg').classList.remove('show'); }
+function updateMilestones() {
+  const dateStr = document.getElementById('mfDate').value;
+  const term = parseInt(document.getElementById('mfTerm').value) || 0;
+  if (!dateStr || !term) return;
+  const d0 = new Date(dateStr);
+  const fmt = (d) => d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  const checkin = new Date(d0); checkin.setDate(checkin.getDate() + 35);
+  const midpoint = new Date(d0); midpoint.setMonth(midpoint.getMonth() + Math.floor(term/2));
+  const warn = new Date(d0); warn.setMonth(warn.getMonth() + term - 1);
+  const payoff = new Date(d0); payoff.setMonth(payoff.getMonth() + term);
+  document.getElementById('mfMilestones').innerHTML = `<div class="ms-title">Milestones (auto-computed):</div><div class="ms-row">· Check-in: <strong>${fmt(checkin)}</strong></div><div class="ms-row">· Midpoint renewal: <strong>${fmt(midpoint)}</strong></div><div class="ms-row">· 30-day payoff warning: <strong>${fmt(warn)}</strong></div><div class="ms-row">· Payoff: <strong>${fmt(payoff)}</strong></div>`;
+}
+function confirmFunded() { showToast('✓ Marked as Funded · moved to Maintain regime · milestones scheduled'); closeFundedModal(); closeModal(); }
+
+function openCloseModal(id) { closePathSelected = 'lost'; setClosePath('lost'); document.getElementById('closeModalBg').classList.add('show'); }
+function closeCloseModal() { document.getElementById('closeModalBg').classList.remove('show'); }
+function setClosePath(path) {
+  closePathSelected = path;
+  document.getElementById('cpLost').classList.toggle('on', path === 'lost');
+  document.getElementById('cpNq').classList.toggle('on', path === 'nq');
+  document.getElementById('closeReason').innerHTML = CLOSE_REASONS[path].map(r => `<option>${r}</option>`).join('');
+  document.getElementById('reEngageField').style.display = path === 'lost' ? 'flex' : 'none';
+  const info = document.getElementById('closeInfo');
+  if (path === 'lost') info.innerHTML = '→ Auto-moves to <strong>Qualified (Nurture)</strong>. Client + offer history preserved.';
+  else info.innerHTML = '→ <strong>Closed permanently</strong>. Removed from active pipeline.';
+  const d = new Date(); d.setDate(d.getDate() + 30);
+  document.getElementById('reEngageDate').value = d.toISOString().split('T')[0];
+}
+function confirmClose() {
+  const reason = document.getElementById('closeReason').value;
+  const date = document.getElementById('reEngageDate').value;
+  if (closePathSelected === 'lost') showToast(`✓ Moved to Qualified Nurture · ${reason} · wake ${date}`);
+  else showToast(`✓ Closed: NQ · ${reason}`);
+  closeCloseModal(); closeModal();
+}
+
+function openRevive() {
+  const ready = [];
+  Object.keys(DEALS).forEach(sid => DEALS[sid].forEach(d => { if (d.machineState === 'NURTURE' && d.wakeReady) ready.push(d); }));
+  const extras = [
+    { mock:true, product:'MCA', clientName:'TRENNIC DATA SERVICES', contact:'Kevin Nichols', wakeDate:'4/27/2026', daysOver:2, prevAmount:'$22K', prevLender:'App Funding' },
+    { mock:true, product:'MCA', clientName:'NG ENTERPRISES', contact:'Nathan', wakeDate:'4/29/2026', daysOver:0, prevAmount:'$75K', prevLender:'Aspire' }
+  ];
+  const list = document.getElementById('reviveList');
+  list.innerHTML = `${ready.map(d => { const c = getClient(d.clientId); return `<div class="revive-row" onclick="closeRevive();openDeal(${d.id})"><div class="revive-emoji">${PRODUCT_ICONS[d.product]}</div><div class="revive-content"><div class="revive-name">${c.name}</div><div class="revive-meta">${c.contact} · Wake: ${d.wakeDate}</div>${d.prevOffer ? `<div class="revive-prev">${d.prevOffer.amount} prev · ${d.prevOffer.lender}</div>` : ''}</div><span class="revive-status ready">READY</span></div>`; }).join('')}${extras.map(e => `<div class="revive-row" onclick="showToast('Open mock card · ${e.clientName}')"><div class="revive-emoji">${PRODUCT_ICONS[e.product]}</div><div class="revive-content"><div class="revive-name">${e.clientName}</div><div class="revive-meta">${e.contact} · Wake: ${e.wakeDate}</div><div class="revive-prev">${e.prevAmount} prev · ${e.prevLender}</div></div><span class="revive-status ready">READY</span></div>`).join('')}`;
+  document.getElementById('reviveModalBg').classList.add('show');
+}
+function closeRevive() { document.getElementById('reviveModalBg').classList.remove('show'); }
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.innerHTML = `<span class="toast-dot"></span><span>${msg}</span>`;
+  t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(() => t.classList.remove('show'), 4500);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (document.getElementById('addLeadBg').classList.contains('show')) closeAddLead();
+    else if (document.getElementById('fundedModalBg').classList.contains('show')) closeFundedModal();
+    else if (document.getElementById('addProductBg').classList.contains('show')) closeAddProduct();
+    else if (document.getElementById('closeModalBg').classList.contains('show')) closeCloseModal();
+    else if (document.getElementById('reviveModalBg').classList.contains('show')) closeRevive();
+    else closeModal();
+  }
+});
+document.addEventListener('click', (e) => {
+  const sp = document.getElementById('siblingPopover');
+  const mh = document.querySelector('.modal-header');
+  if (sp.classList.contains('show') && mh && !mh.contains(e.target)) closeSiblingPopover();
+});
+
+renderPipeline();
+</script>
+</body>
+</html>

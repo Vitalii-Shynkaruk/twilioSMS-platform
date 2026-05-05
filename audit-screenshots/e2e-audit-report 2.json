@@ -1,0 +1,53 @@
+{
+  "ts": "2026-04-25T19:12:07.412Z",
+  "base": "https://app.sclcapital.io",
+  "checks": [
+    {
+      "name": "Login success",
+      "ok": true,
+      "details": "https://app.sclcapital.io/command-center"
+    },
+    {
+      "name": "Sidebar excludes Dashboard (prototype parity)",
+      "ok": true,
+      "details": "1"
+    },
+    {
+      "name": "Page load /command-center",
+      "ok": true,
+      "details": "url=https://app.sclcapital.io/command-center title=Dashboard"
+    },
+    {
+      "name": "Page load /pipeline",
+      "ok": true,
+      "details": "url=https://app.sclcapital.io/pipeline title="
+    },
+    {
+      "name": "Page load /inbox",
+      "ok": true,
+      "details": "url=https://app.sclcapital.io/inbox title="
+    },
+    {
+      "name": "Page load /campaigns",
+      "ok": true,
+      "details": "url=https://app.sclcapital.io/campaigns title=Campaigns"
+    },
+    {
+      "name": "Page load /leads",
+      "ok": true,
+      "details": "url=https://app.sclcapital.io/leads title=Leads"
+    },
+    {
+      "name": "Inbox has conversation rows",
+      "ok": false,
+      "details": "count=0"
+    },
+    {
+      "name": "Unread badge visible when unread exists",
+      "ok": false,
+      "details": "badge="
+    }
+  ],
+  "issues": [],
+  "consoleErrorCount": 0
+}

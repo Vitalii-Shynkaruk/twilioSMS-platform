@@ -1,0 +1,117 @@
+{
+  "module": "M1.4 Pipeline AI extractor + badges",
+  "date": "2026-05-04",
+  "status": "deployed_with_live_golden_diff_documented",
+  "environment": {
+    "workspace": "/Users/oleksandr/Documents/GitHub/twilio-sms-platform",
+    "frontend": "http://127.0.0.1:5173/pipeline",
+    "api_validation_mode": "Vite proxy to deterministic local mock API on port 3001",
+    "prototype": "scl-pipeline-ai-handoff/scl_pipeline_v11.html"
+  },
+  "implementation": {
+    "database": ["Deal.pipelineAiSignals Json?", "Deal.pipelineAiUpdatedAt DateTime?"],
+    "backend": [
+      "server/src/services/pipelineAiService.ts with canonical prompt/schema/payload markers",
+      "per-deal extraction queue",
+      "local skip guards",
+      "conversation.aiSignals fallback when deal signals are absent",
+      "POST /api/ai/extract-pipeline",
+      "note_added/note_updated fire-and-forget extraction",
+      "inbound SMS queueing for allowed post-intake stages"
+    ],
+    "frontend": [
+      "PipelineAiSignals frontend type",
+      "DealCard industry/revenue/use badges",
+      "DealPanel AI inline bar above stage/product row",
+      "Re-run AI action with loading/success/skipped/error handling",
+      "AI visual suggestions for product, revenue, next action, and requested amount without silent manual overwrite"
+    ]
+  },
+  "validation": {
+    "prisma_generate": "passed",
+    "server_test": "pipelineAiService.test.ts passed 5/5; pipelineAiGoldenGrader.test.ts passed 5/5",
+    "server_build": "npm run build passed",
+    "client_build": "npm run build passed after final stacking-chip overflow fix",
+    "problems_panel": "No errors in changed Pipeline AI TSX/CSS files; existing tsconfig deprecation warnings are unrelated"
+  },
+  "production_deploy": {
+    "commit": "991f932",
+    "host": "198.199.91.174",
+    "app_path": "/opt/sms-platform",
+    "source_update": "Applied by git bundle because production GitHub HTTPS fetch has no non-interactive credentials.",
+    "dirty_state_handling": "Existing production dirty hotfixes were preserved in stash pre-m14-pipeline-ai-20260504-124502 and re-applied after fast-forward.",
+    "database": [
+      "Added deals.pipelineAiSignals JSON NULL when absent",
+      "Added deals.pipelineAiUpdatedAt DATETIME(3) NULL when absent"
+    ],
+    "builds": ["server npm run prisma:generate passed", "server npm run build passed", "client npm run build passed"],
+    "smoke": {
+      "pm2": "sms-api restarted with --update-env and is online",
+      "health": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok",
+      "protected_endpoint": "POST /api/ai/extract-pipeline without auth returned 401 Authentication required, confirming route registration behind auth",
+      "db_columns": "information_schema returned pipelineAiSignals,pipelineAiUpdatedAt",
+      "frontend": "https://app.sclcapital.io/ returned HTTP/1.1 200 OK"
+    }
+  },
+  "live_golden_parity": {
+    "date": "2026-05-04",
+    "host": "198.199.91.174",
+    "fixture": "scl-pipeline-ai-handoff/golden_test_set.json copied to /tmp for one-time run, then removed",
+    "runner": "Production Node runner imported dist PIPELINE_AI_SYSTEM_PROMPT, PIPELINE_AI_OUTPUT_SCHEMA, and buildPipelineAiPayload; Anthropic key/model loaded from SystemSetting without printing secrets",
+    "model": "claude-sonnet-4-5",
+    "distribution": {
+      "total": 15,
+      "perfect": 11,
+      "partial": 3,
+      "fail": 1,
+      "error": 0
+    },
+    "usage": {
+      "inputTokens": 1090,
+      "outputTokens": 1738,
+      "cacheCreationInputTokens": 0,
+      "cacheReadInputTokens": 56490
+    },
+    "fieldDiffs": [
+      "golden_04 PARTIAL: pending_actions matched rep follow-up timing/action partially",
+      "golden_10 PARTIAL: industry returned healthcare with dentist context",
+      "golden_13 PARTIAL: use_of_funds category matched working_capital while detail was broader than expected",
+      "golden_14 FAIL: input is rep-only action ('Send him the offer today. Hot lead.'); lead_only boundary returns unrelated instead of creating rep pending action"
+    ],
+    "interpretation": "Golden parity gate is run live and differences are documented at field level; golden_14 is an expected scope-boundary conflict between the hand-curated expected pending action and the lead_only prompt rule to ignore rep-only actions."
+  },
+  "browser_visual_check": {
+    "method": "Opened v11 prototype and local Pipeline UI; fed deterministic mock deal with Pipeline AI signals through real React UI and Vite proxy.",
+    "retained_v11_patterns_checked": [
+      "compact card badge density and dark elevation",
+      "industry/revenue/use badge colors and mono-label styling",
+      "stacking chip warning styling and active modifier",
+      "DealPanel AI inline bar above stage/product row",
+      "source label with extracted age",
+      "quick-log/auto-nurture area coexistence",
+      "Re-run AI button in DealPanel header"
+    ],
+    "desktop_dom_metrics": {
+      "viewport": "918x667 integrated browser",
+      "pipeline_ai_badges": 3,
+      "inline_bar_overflow_x": false,
+      "card_stacking_chip_overflow_x_after_fix": false,
+      "ai_badge_overflow_x": false,
+      "ai_suggestion_pill_overflow_x": false,
+      "overlaps": 0,
+      "rerun_ai_result": "industry updated from trucking to auto repair and inline source changed to just now"
+    },
+    "screenshots": [
+      "audit-screenshots/m14-pipeline-ai-desktop-evidence.png",
+      "audit-screenshots/m14-pipeline-ai-mobile-evidence.png"
+    ]
+  },
+  "environment_notes": [
+    "Local real backend start was blocked by DATABASE_URL validation: Prisma requires a mysql:// URL. This is an environment configuration issue, not a TypeScript/build failure.",
+    "Because local real backend could not start, browser validation used a deterministic local mock API on port 3001 through the same Vite /api proxy. Production deploy smoke validated the real API route, DB columns, health, and frontend after migration.",
+    "Production Anthropic config is present through SystemSetting anthropicApiKey/anthropicModel; email OTP fallback still requires production SMTP delivery smoke."
+  ],
+  "known_deferred_items": [
+    "v11 prototype urgency/ask/confidence chips are intentionally not implemented because extractor-spec marks them outside retained v1 scope."
+  ]
+}

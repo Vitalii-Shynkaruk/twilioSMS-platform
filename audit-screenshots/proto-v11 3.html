@@ -1,0 +1,2619 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCL Capital — AI Inbox v11</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --bg2: #111118;
+  --bg3: #16161f;
+  --bg4: #1c1c26;
+  --hot: #ff4444;
+  --hot-bg: rgba(255,68,68,0.12);
+  --warm: #f59e0b;
+  --warm-bg: rgba(245,158,11,0.12);
+  --gold: #b8963e;
+  --gold-bg: rgba(184,150,62,0.12);
+  --green: #22c55e;
+  --green-bg: rgba(34,197,94,0.12);
+  --ca: #fb923c;
+  --ca-bg: rgba(251,146,60,0.12);
+  --mobile: #06b6d4;
+  --mobile-bg: rgba(6,182,212,0.12);
+  --purple: #a78bfa;
+  --purple-bg: rgba(167,139,250,0.12);
+  --sensitive: #94a3b8;
+  --sensitive-bg: rgba(148,163,184,0.12);
+  --text1: #e8e8f0;
+  --text2: #a0a0b8;
+  --text3: #606078;
+  --text4: #404058;
+  --border: rgba(255,255,255,0.06);
+  --border2: rgba(255,255,255,0.10);
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text1);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
+}
+
+button { font-family: inherit; cursor: pointer; }
+input, textarea { font-family: inherit; }
+
+.app {
+  display: grid;
+  grid-template-columns: 48px 260px 1fr 300px;
+  height: 100vh;
+}
+
+/* ===== SIDE RAIL ===== */
+.rail {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 4px;
+}
+.rail-logo {
+  width: 32px; height: 32px;
+  background: var(--gold);
+  color: #0a0a0f;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+.rail-icon {
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+.rail-icon:hover { background: var(--bg3); color: var(--text2); }
+.rail-icon.active {
+  background: var(--gold-bg);
+  color: var(--gold);
+}
+.rail-spacer { flex: 1; }
+.rail-avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #0a0a0f;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* ===== INBOX LIST ===== */
+.inbox {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.inbox-header {
+  padding: 16px 16px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.inbox-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 1.5px;
+}
+.inbox-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+}
+.inbox-search {
+  margin: 0 12px 10px;
+  position: relative;
+}
+.inbox-search input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text1);
+  padding: 6px 10px 6px 28px;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+}
+.inbox-search input:focus { border-color: var(--border2); }
+.inbox-search::before {
+  content: "🔍";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  opacity: 0.5;
+}
+.inbox-filters {
+  padding: 0 12px 8px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.filter-pill {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--bg3);
+  color: var(--text2);
+  cursor: pointer;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.filter-pill:hover { background: var(--bg4); color: var(--text1); }
+.filter-pill.active { background: var(--bg4); color: var(--text1); border-color: var(--border2); }
+.filter-pill.hot { background: var(--hot-bg); color: var(--hot); border-color: rgba(255,68,68,0.25); }
+.filter-pill.hot.active { background: rgba(255,68,68,0.2); }
+
+.inbox-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 8px 12px;
+}
+.inbox-list::-webkit-scrollbar { width: 6px; }
+.inbox-list::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+.inbox-list::-webkit-scrollbar-track { background: transparent; }
+
+.conv-card {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  border-left: 2px solid transparent;
+  transition: background 0.15s;
+}
+.conv-card:hover { background: var(--bg3); }
+.conv-card.active {
+  background: var(--bg3);
+  border-left-color: var(--gold);
+}
+.conv-card.hot { border-left-color: var(--hot); }
+.conv-card.hot.active { background: rgba(255,68,68,0.06); }
+
+.conv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.conv-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conv-time {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.conv-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.conv-preview {
+  font-size: 11.5px;
+  color: var(--text2);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+}
+.conv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.chip {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.chip.hot { background: var(--hot-bg); color: var(--hot); }
+.chip.warm { background: var(--warm-bg); color: var(--warm); }
+.chip.gold { background: var(--gold-bg); color: var(--gold); }
+.chip.green { background: var(--green-bg); color: var(--green); }
+.chip.ca { background: var(--ca-bg); color: var(--ca); }
+.chip.purple { background: var(--purple-bg); color: var(--purple); }
+.chip.sensitive { background: var(--sensitive-bg); color: var(--sensitive); }
+.chip.mobile { background: var(--mobile-bg); color: var(--mobile); }
+.chip.neutral { background: rgba(255,255,255,0.06); color: var(--text2); }
+.chip.email { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+
+/* ===== CONVERSATION VIEW ===== */
+.conv-view {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.conv-header {
+  padding: 14px 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+.conv-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.conv-header-info {
+  min-width: 0;
+}
+.conv-header-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text1);
+  margin-bottom: 2px;
+}
+.conv-header-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text3);
+}
+.conv-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.action-btn {
+  font-size: 11px;
+  padding: 5px 11px;
+  background: transparent;
+  color: var(--text2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.action-btn:hover { background: var(--bg3); color: var(--text1); border-color: var(--border2); }
+.action-btn.gold { background: var(--gold-bg); color: var(--gold); border-color: rgba(184,150,62,0.3); }
+.action-btn.gold:hover { background: rgba(184,150,62,0.2); }
+.action-btn.danger { color: var(--hot); border-color: rgba(255,68,68,0.3); }
+.action-btn.danger:hover { background: var(--hot-bg); }
+
+/* AI INTELLIGENCE BAR */
+.ai-bar {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+}
+.ai-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ai-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+.ai-bar-rep {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+.ai-chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.ai-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  line-height: 1;
+  letter-spacing: 0.2px;
+}
+.ai-chip.data {
+  background: rgba(255,255,255,0.05);
+  color: var(--text1);
+  border: 1px solid var(--border);
+}
+.ai-chip.money {
+  background: rgba(34,197,94,0.10);
+  color: var(--green);
+  border: 1px solid rgba(34,197,94,0.20);
+}
+.ai-chip.urgent {
+  background: rgba(255,68,68,0.10);
+  color: var(--hot);
+  border: 1px solid rgba(255,68,68,0.20);
+}
+.ai-chip.insight {
+  background: rgba(167,139,250,0.10);
+  color: var(--purple);
+  border: 1px solid rgba(167,139,250,0.20);
+}
+
+/* CA COMPLIANCE BAR */
+.ca-bar {
+  padding: 8px 20px;
+  background: var(--ca-bg);
+  border-bottom: 1px solid rgba(251,146,60,0.2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ca-bar-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ca);
+  letter-spacing: 0.5px;
+}
+.ca-bar-text {
+  font-size: 11.5px;
+  color: var(--text1);
+}
+
+/* MESSAGES */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.messages::-webkit-scrollbar { width: 6px; }
+.messages::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+.day-sep {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  margin: 8px 0 4px;
+  letter-spacing: 0.5px;
+}
+.msg {
+  max-width: 70%;
+  display: flex;
+  flex-direction: column;
+}
+.msg.outbound { align-self: flex-end; align-items: flex-end; }
+.msg.inbound { align-self: flex-start; align-items: flex-start; }
+.msg-bubble {
+  padding: 9px 13px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.msg.outbound .msg-bubble {
+  background: #1e3a5f;
+  color: #e8e8f0;
+  border-radius: 14px 14px 4px 14px;
+}
+.msg.inbound .msg-bubble {
+  background: var(--bg3);
+  color: var(--text1);
+  border-radius: 14px 14px 14px 4px;
+}
+.msg.inbound.hot .msg-bubble { border-left: 2px solid var(--hot); }
+.msg-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  margin-top: 3px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.msg-hot-tag {
+  background: var(--hot-bg);
+  color: var(--hot);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.system-event {
+  align-self: center;
+  background: var(--gold-bg);
+  border: 1px dashed rgba(184,150,62,0.3);
+  color: var(--gold);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin: 4px 0;
+}
+.system-event.ai-extract {
+  background: var(--purple-bg);
+  border-color: rgba(167,139,250,0.3);
+  color: var(--purple);
+}
+.system-event.dropped {
+  background: var(--hot-bg);
+  border-color: rgba(255,68,68,0.3);
+  color: var(--hot);
+}
+
+/* AI SUGGESTION */
+.ai-suggest {
+  padding: 12px 20px 0;
+  border-top: 1px solid var(--border);
+}
+.ai-suggest-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ai-suggest-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--gold);
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+.ai-suggest-signals {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text3);
+}
+.suggest-card {
+  background: rgba(184,150,62,0.04);
+  border: 1px solid rgba(184,150,62,0.25);
+  border-radius: 7px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.suggest-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+.suggest-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--gold-bg);
+  color: var(--gold);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.suggest-controls {
+  display: flex;
+  gap: 6px;
+}
+.suggest-btn {
+  font-size: 11px;
+  padding: 4px 11px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  transition: all 0.15s;
+}
+.suggest-btn:hover { background: var(--bg3); color: var(--text1); }
+.suggest-btn.primary {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: rgba(34,197,94,0.3);
+}
+.suggest-btn.primary:hover { background: rgba(34,197,94,0.2); }
+.suggest-text {
+  font-size: 12.5px;
+  color: var(--text1);
+  line-height: 1.55;
+}
+.suggest-text .hl { color: var(--green); font-weight: 500; }
+.suggest-text .hl-amber { color: var(--warm); font-weight: 500; }
+.suggest-cta {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(184,150,62,0.2);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.suggest-cta-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  background: transparent;
+  border: 1px solid rgba(184,150,62,0.3);
+  color: var(--gold);
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-weight: 500;
+  text-align: left;
+  width: 100%;
+}
+.suggest-cta-btn:hover {
+  background: rgba(184,150,62,0.12);
+  border-color: rgba(184,150,62,0.5);
+  color: #d1a949;
+}
+.suggest-cta-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.suggest-cta-btn:disabled:hover {
+  background: transparent;
+  border-color: rgba(184,150,62,0.3);
+  color: var(--gold);
+}
+
+/* COMPOSE */
+.compose {
+  padding: 8px 20px 14px;
+  border-top: 1px solid var(--border);
+}
+.compose-from {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  margin-bottom: 8px;
+}
+.compose-from .num { color: var(--text2); }
+.compose-tools {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.compose-tool {
+  width: 28px; height: 28px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text3);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.compose-tool:hover { background: var(--bg3); color: var(--text1); }
+.compose-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.compose-textarea {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text1);
+  padding: 10px 12px;
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  min-height: 40px;
+  max-height: 100px;
+}
+.compose-textarea:focus { border-color: var(--border2); }
+.compose-send {
+  background: var(--gold);
+  color: #0a0a0f;
+  border: none;
+  border-radius: 6px;
+  padding: 0 18px;
+  font-weight: 600;
+  font-size: 14px;
+  align-self: stretch;
+}
+.compose-send:hover { background: #d1a949; }
+.shortcuts {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text4);
+  flex-wrap: wrap;
+}
+.shortcut kbd {
+  background: var(--bg3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 9px;
+  border: 1px solid var(--border);
+}
+
+/* SOUND DEMO */
+.sound-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.sound-btn {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 3px 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sound-btn:hover { background: var(--bg4); color: var(--text1); }
+.sound-btn.mute { color: var(--text3); }
+
+/* ===== RIGHT PANEL ===== */
+.right-panel {
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.right-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.right-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  padding: 12px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.right-tab:hover { color: var(--text2); }
+.right-tab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+.right-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+}
+.right-content::-webkit-scrollbar { width: 6px; }
+.right-content::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+
+.section {
+  margin-bottom: 18px;
+}
+.section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 1px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 11.5px;
+  gap: 8px;
+}
+.kv-key {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.kv-val {
+  color: var(--text1);
+  text-align: right;
+  font-size: 12px;
+  word-break: break-word;
+}
+.kv-val.mono { font-family: var(--mono); font-size: 11.5px; }
+.kv-val.gold { color: var(--gold); font-weight: 500; }
+.kv-val.green { color: var(--green); font-family: var(--mono); }
+.kv-val.hot { color: var(--hot); font-weight: 600; }
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--bg3);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+}
+
+.note-box {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.note-meta {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  margin-bottom: 3px;
+}
+.note-text {
+  font-size: 11.5px;
+  color: var(--text1);
+  line-height: 1.4;
+}
+.note-textarea {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text1);
+  padding: 8px 10px;
+  font-size: 11.5px;
+  resize: vertical;
+  min-height: 50px;
+  outline: none;
+  font-family: inherit;
+}
+.note-textarea:focus { border-color: var(--border2); }
+.add-note-btn {
+  width: 100%;
+  margin-top: 6px;
+  background: var(--gold-bg);
+  color: var(--gold);
+  border: 1px solid rgba(184,150,62,0.3);
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.add-note-btn:hover { background: rgba(184,150,62,0.2); }
+
+.ai-info-note {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text3);
+  font-style: italic;
+  padding: 6px 8px;
+  background: var(--bg3);
+  border-radius: 4px;
+  border-left: 2px solid var(--purple);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+/* ALERTS TAB */
+.alert-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.alert-label {
+  font-size: 12px;
+  color: var(--text1);
+}
+.alert-sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text3);
+  margin-top: 2px;
+}
+.toggle {
+  width: 32px;
+  height: 18px;
+  background: var(--bg4);
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  border: none;
+  flex-shrink: 0;
+}
+.toggle.on { background: var(--green); }
+.toggle::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  transition: left 0.2s;
+}
+.toggle.on::after { left: 16px; }
+
+.rep-status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--border);
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+.status-dot.ok { background: var(--green); }
+.status-dot.off { background: var(--text4); }
+
+/* TOAST */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  border-left: 3px solid var(--gold);
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text1);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  z-index: 1000;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s;
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.toast.hot { border-left-color: var(--hot); }
+.toast.green { border-left-color: var(--green); }
+
+/* MOBILE MODAL */
+.modal-bg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.modal-bg.show { display: flex; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 24px;
+  width: 360px;
+  max-width: 90vw;
+}
+.modal h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.modal p {
+  font-size: 12.5px;
+  color: var(--text2);
+  margin-bottom: 16px;
+}
+.modal input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text1);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 12px;
+}
+.modal input:focus { border-color: var(--gold); }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.modal-btn {
+  padding: 8px 16px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border2);
+  background: transparent;
+  color: var(--text2);
+}
+.modal-btn.primary {
+  background: var(--gold);
+  color: #0a0a0f;
+  border-color: var(--gold);
+}
+
+/* VIEW TOGGLE & ADMIN BAR */
+.view-toggle {
+  display: flex;
+  background: var(--bg3);
+  border-radius: 6px;
+  padding: 2px;
+  margin: 0 12px 10px;
+  border: 1px solid var(--border);
+}
+.view-toggle-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.view-toggle-btn:hover { color: var(--text2); }
+.view-toggle-btn.active {
+  background: var(--bg);
+  color: var(--gold);
+  box-shadow: 0 0 0 1px var(--border2);
+}
+.admin-totals {
+  margin: 0 12px 10px;
+  padding: 10px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--gold);
+  border-radius: 6px;
+}
+.admin-totals-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--gold);
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.admin-totals-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+}
+.admin-totals-row:last-child { margin-bottom: 0; padding-top: 4px; border-top: 1px solid var(--border); }
+.admin-totals-row span:first-child { color: var(--text2); }
+.admin-totals-row span:last-child { color: var(--text1); font-weight: 500; }
+.admin-totals-row.hot span:last-child { color: var(--hot); }
+.admin-totals-row.total span:last-child { color: var(--green); font-weight: 600; }
+
+.conv-card .rep-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg4);
+  color: var(--text2);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.conv-card .rep-chip.jb { background: var(--gold-bg); color: var(--gold); }
+.conv-card .ask-prominent {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green);
+}
+.conv-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+  gap: 6px;
+}
+.conv-card-top-left { min-width: 0; flex: 1; }
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text3);
+  font-size: 12px;
+}
+
+/* FOLLOW-UP POPOVER */
+.followup-anchor {
+  position: relative;
+  display: inline-block;
+}
+.followup-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 14px;
+  width: 340px;
+  z-index: 100;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.6);
+  display: none;
+}
+.followup-pop.show { display: block; }
+.followup-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.followup-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text1);
+}
+.followup-close {
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-size: 14px;
+  cursor: pointer;
+}
+.followup-ai {
+  background: var(--gold-bg);
+  border: 1px solid rgba(184,150,62,0.3);
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+.followup-ai-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--gold);
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.followup-ai-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text1);
+  margin-bottom: 4px;
+}
+.followup-ai-reason {
+  font-size: 10.5px;
+  color: var(--text2);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.followup-ai-btn {
+  width: 100%;
+  background: var(--gold);
+  color: #0a0a0f;
+  border: none;
+  border-radius: 5px;
+  padding: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.followup-ai-btn:hover { background: #d1a949; }
+.followup-section {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text3);
+  letter-spacing: 0.8px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.followup-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.followup-opt {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 9px;
+  font-size: 11px;
+  color: var(--text2);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.followup-opt:hover { background: var(--bg4); color: var(--text1); border-color: var(--border2); }
+.followup-custom {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text1);
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  outline: none;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+}
+.followup-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* FOLLOW-UP BUTTON STATES */
+.action-btn.followup-active {
+  background: var(--gold-bg);
+  color: var(--gold);
+  border-color: rgba(184,150,62,0.3);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.action-btn.followup-active .clear-x {
+  background: rgba(0,0,0,0.3);
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  margin-left: 2px;
+}
+.action-btn.followup-active .clear-x:hover { background: var(--hot-bg); color: var(--hot); }
+
+.action-btn.followup-due {
+  background: var(--hot-bg);
+  color: var(--hot);
+  border-color: rgba(255,68,68,0.4);
+  animation: pulse 1.6s infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255,68,68,0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(255,68,68,0); }
+}
+
+.followup-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--gold-bg);
+  color: var(--gold);
+  font-weight: 500;
+}
+.followup-indicator.due {
+  background: var(--hot-bg);
+  color: var(--hot);
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ===== SIDE RAIL ===== -->
+  <nav class="rail">
+    <div class="rail-logo">S</div>
+    <div class="rail-icon" title="Command Center">⊞</div>
+    <div class="rail-icon" title="Pipeline">⌖</div>
+    <div class="rail-icon" title="Leads">◎</div>
+    <div class="rail-icon" title="Campaigns">⚡</div>
+    <div class="rail-icon active" title="Inbox">✉</div>
+    <div class="rail-icon" title="Automation">⚙</div>
+    <div class="rail-icon" title="Analytics">▦</div>
+    <div class="rail-spacer"></div>
+    <div class="rail-icon" title="Settings">⚙</div>
+    <div class="rail-avatar">JB</div>
+  </nav>
+
+  <!-- ===== INBOX ===== -->
+  <aside class="inbox">
+    <div class="inbox-header">
+      <span class="inbox-title">INBOX</span>
+      <span class="inbox-count" id="inboxCount">6</span>
+    </div>
+    <div class="view-toggle" role="tablist">
+      <button class="view-toggle-btn active" data-view="admin" onclick="setView('admin')">👁 ADMIN VIEW</button>
+      <button class="view-toggle-btn" data-view="mine" onclick="setView('mine')">👤 MY CONVS</button>
+    </div>
+    <div class="admin-totals" id="adminTotals">
+    <div class="admin-totals-label">✦ ADMIN MASTER VIEW</div>
+    <div class="admin-totals-row hot"><span>⏰ Overdue follow-ups</span><span>1</span></div>
+    <div class="admin-totals-row hot"><span>🔥 HOT (AI-flagged)</span><span>3</span></div>
+    <div class="admin-totals-row"><span>💬 New today</span><span>4</span></div>
+    <div class="admin-totals-row"><span>✉ Unread</span><span>2</span></div>
+    <div class="admin-totals-row total"><span>→ In Pipeline (qualified)</span><span>38</span></div>
+  </div>
+    <div class="inbox-search">
+      <input type="text" placeholder="Search conversations..." id="searchInput" style="">
+    </div>
+    <div class="inbox-filters">
+      <button class="filter-pill active" data-filter="all">All <span id="cAll">225</span></button>
+      <button class="filter-pill" data-filter="unread">Unread <span id="cUnread">2</span></button>
+      <button class="filter-pill hot" data-filter="hot">🔥 Hot <span id="cHot">3</span></button>
+      <button class="filter-pill" data-filter="email">✉ Email Rcv <span id="cEmail">0</span></button>
+      <button class="filter-pill" data-filter="follow">⏰ Follow-Up <span id="cFollow">3</span></button>
+      <button class="filter-pill" data-filter="pipeline">→ In Pipeline <span id="cPipe">38</span></button>
+      <button class="filter-pill" data-filter="dnc">⛔ DNC <span id="cDnc">337</span></button>
+    </div>
+    <div class="inbox-list" id="inboxList">
+    <div class="conv-card  hot" data-id="william" onclick="selectConv('william')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">William Banker</div>
+            <div class="conv-time">22 min ago</div>
+          </div>
+          <div class="conv-meta">+19547373443</div>
+        </div>
+        <span class="rep-chip " title="Assigned rep">AR</span>
+      </div>
+      <div class="conv-preview">The total amount of funding is 500k for equipment fleet expansion</div>
+      <div class="conv-chips">
+        <span class="chip hot">🔥 HOT</span><span class="chip green">$500k</span><span class="chip neutral">Trucking</span><span class="chip purple">HELOC fit</span>
+        <span class="chip hot">⏰ OVERDUE</span>
+      </div>
+    </div>
+  
+    <div class="conv-card  hot" data-id="hernandez" onclick="selectConv('hernandez')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">Hernandez Commercial Properties</div>
+            <div class="conv-time">1 min ago</div>
+          </div>
+          <div class="conv-meta">+17702559923</div>
+        </div>
+        <span class="rep-chip jb" title="Assigned rep">JB</span>
+      </div>
+      <div class="conv-preview">$2.2M mixed use, need bridge financing, 30-day close</div>
+      <div class="conv-chips">
+        <span class="chip hot">🔥 HOT</span><span class="chip green">$2.2M</span><span class="chip neutral">CRE</span>
+        
+      </div>
+    </div>
+  
+    <div class="conv-card active hot" data-id="simons" onclick="selectConv('simons')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">Simons Home Renovation</div>
+            <div class="conv-time">5 min ago</div>
+          </div>
+          <div class="conv-meta">+12817985355</div>
+        </div>
+        <span class="rep-chip " title="Assigned rep">SB</span>
+      </div>
+      <div class="conv-preview">Send me the Funding Link, let's get this done today</div>
+      <div class="conv-chips">
+        <span class="chip hot">🔥 HOT</span><span class="chip green">$1.06M</span><span class="chip neutral">Construction</span>
+        
+      </div>
+    </div>
+  
+    <div class="conv-card  " data-id="pacific" onclick="selectConv('pacific')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">Pacific Coast Logistics LLC</div>
+            <div class="conv-time">12 hrs ago</div>
+          </div>
+          <div class="conv-meta">+14155552341</div>
+        </div>
+        <span class="rep-chip " title="Assigned rep">MC</span>
+      </div>
+      <div class="conv-preview">What's the interest rate on this? APR deal?</div>
+      <div class="conv-chips">
+        <span class="chip ca">⚠ CA</span><span class="chip green">$150k</span><span class="chip neutral">Trucking</span>
+        <span class="chip gold">⏰ Tomorrow 10:00</span>
+      </div>
+    </div>
+  
+    <div class="conv-card  " data-id="bonham" onclick="selectConv('bonham')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">Bonham Land Clearing LLC</div>
+            <div class="conv-time">just now</div>
+          </div>
+          <div class="conv-meta">+15124883201</div>
+        </div>
+        <span class="rep-chip " title="Assigned rep">SB</span>
+      </div>
+      <div class="conv-preview">We do about 80 to 100k a month. Need around 150k for equipment.</div>
+      <div class="conv-chips">
+        <span class="chip warm">WARM</span><span class="chip green">$150k</span><span class="chip neutral">Construction</span>
+        
+      </div>
+    </div>
+  
+    <div class="conv-card  " data-id="debra" onclick="selectConv('debra')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">Debra Knezek</div>
+            <div class="conv-time">5 days ago</div>
+          </div>
+          <div class="conv-meta">+14698793901</div>
+        </div>
+        <span class="rep-chip " title="Assigned rep">MD</span>
+      </div>
+      <div class="conv-preview">Thank you</div>
+      <div class="conv-chips">
+        <span class="chip sensitive">🕊 SENSITIVE</span><span class="chip green">→ IN PIPELINE</span>
+        <span class="chip gold">⏰ Next Monday</span>
+      </div>
+    </div>
+  </div>
+  </aside>
+
+  <!-- ===== CONVERSATION VIEW ===== -->
+  <main class="conv-view" id="convView">
+    <div class="conv-header">
+      <div class="conv-header-row">
+        <div class="conv-header-info">
+          <div class="conv-header-name">Simons Home Renovation Company LLC</div>
+          <div class="conv-header-meta">+12817985355 · Simons Home Renovation · Source: PT3-April-List</div>
+        </div>
+        <div class="conv-actions">
+          <button class="action-btn gold" onclick="markInterested()">✓ Mark Interested</button>
+          <button class="action-btn danger" onclick="markNotInterested()">✗ Not Interested</button>
+          <button class="action-btn" onclick="markDNC()">DNC</button>
+          <button class="action-btn" onclick="markEmail()">Email Rcv</button>
+          <button class="action-btn" onclick="addToPipeline()">+ Pipeline</button>
+          <div class="followup-anchor">
+            <button class="action-btn" onclick="toggleFollowupPop(event)">⏰ Follow-Up</button>
+            
+    <div class="followup-pop" id="followupPop" onclick="event.stopPropagation()">
+      <div class="followup-head">
+        <span class="followup-title">Set Follow-Up</span>
+        <button class="followup-close" onclick="closeFollowupPop()">×</button>
+      </div>
+      <div class="followup-ai">
+        <div class="followup-ai-label">✦ AI SUGGESTS</div>
+        <div class="followup-ai-time">Today, 6:30 PM</div>
+        <div class="followup-ai-reason">HOT lead said 'today' — match urgency window before EOD</div>
+        <button class="followup-ai-btn" onclick="setFollowup('Today, 6:30 PM', 'HOT lead said \'today\' — match urgency window before EOD')">Use AI suggestion</button>
+      </div>
+      <div class="followup-section">QUICK OPTIONS</div>
+      <div class="followup-options" style="grid-template-columns: 1fr;">
+        <button class="followup-opt" onclick="setFollowup('2 hours', 'Same-day re-engage')">⚡ In 2 hours</button>
+        <button class="followup-opt" onclick="setFollowup('Tomorrow 9:00 AM', 'Next-day morning touchpoint')">📅 Tomorrow morning</button>
+        <button class="followup-opt" onclick="setFollowup('Next week (Monday 10:00 AM)', 'Weekly cadence')">📅 Next week</button>
+      </div>
+      <div class="followup-section">CUSTOM</div>
+      <input type="datetime-local" class="followup-custom" id="customFollowup" style="">
+      <input type="text" class="followup-custom" id="customReason" placeholder="Reason (optional)" style="">
+      <div class="followup-actions">
+        <button class="suggest-btn" onclick="closeFollowupPop()">Cancel</button>
+        <button class="suggest-btn primary" onclick="setCustomFollowup()">Save</button>
+      </div>
+    </div>
+  
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-bar">
+      <div class="ai-bar-row">
+        <span class="ai-label">AI INTELLIGENCE</span>
+        <span class="ai-chip hot">🔥 HOT · $1.06M DEAL</span>
+        <span class="ai-bar-rep">Rep: Stuart Benitez (SB)</span>
+      </div>
+      <div class="ai-chips">
+        <span class="ai-chip money">$850k/yr</span><span class="ai-chip money">$1.06M ask</span><span class="ai-chip urgent">⚡ "today"</span><span class="ai-chip data">Construction</span><span class="ai-chip data">Equipment</span><span class="ai-chip insight">💡 HELOC fit</span>
+      </div>
+    </div>
+
+    
+
+    <div class="messages"><div class="day-sep">APR 17, 2026 — EARLIER</div>
+      <div class="msg outbound ">
+        <div class="msg-bubble">Hey it's Stuart from SecureCreditLines. You were recently pre-qualified for business funding up to $1.2M. What's your best email?</div>
+        <div class="msg-meta">
+          <span>9:14 AM</span>
+          <span>· 0:47 ✓✓</span>
+          
+        </div>
+      </div>
+    
+      <div class="msg inbound ">
+        <div class="msg-bubble">Sure, send it to billing@simonsreno.com. Equipment capital.</div>
+        <div class="msg-meta">
+          <span>9:31 AM</span>
+          
+          
+        </div>
+      </div>
+    
+      <div class="msg outbound ">
+        <div class="msg-bubble">Perfect, sent over 'Express Biz Credit' from Stuart. Monthly revenue around $70-90k?</div>
+        <div class="msg-meta">
+          <span>9:33 AM</span>
+          <span>· 1:12 ✓✓</span>
+          
+        </div>
+      </div>
+    <div class="day-sep">APR 18, 2026 — TODAY</div>
+      <div class="msg inbound hot">
+        <div class="msg-bubble">Yeah we do closer to $850k annually. Send me the Funding Link, let's get this done today</div>
+        <div class="msg-meta">
+          <span>4:51 PM</span>
+          
+          <span class="msg-hot-tag">🔥 HOT</span>
+        </div>
+      </div>
+    <div class="system-event gold">🔥 HOT classification — admin notified via mobile SMS</div></div>
+
+    <div class="ai-suggest">
+      <div class="ai-suggest-header">
+        <span class="ai-suggest-label">✦ AI SUGGESTION</span>
+        <span class="ai-suggest-signals">— $850k/yr · ask · "today" · Construction</span>
+      </div>
+      <div class="suggest-card">
+        <div class="suggest-card-header">
+          <span class="suggest-tag">⚡ SUGGESTED RESPONSE</span>
+          <div class="suggest-controls">
+            <button class="suggest-btn primary" onclick="useSuggestion()">Use this</button>
+            <button class="suggest-btn" onclick="editSuggestion()">Edit</button>
+            <button class="suggest-btn" onclick="skipSuggestion()">Skip</button>
+          </div>
+        </div>
+        <div class="suggest-text">Got it — <span class="hl">$850k/yr</span> and moving equipment today. Funding Link going out now for <span class="hl">$1.06M</span>. Given the construction profile, the 10/30yr HELOC structure may also fit — happy to send both options. Couple minutes and we're rolling.</div>
+        <div class="suggest-cta">
+          <button class="suggest-cta-btn" onclick="openGmail('billing@simonshomerenovation.com', 'Simons Home Renovation')">→ SEND FUNDING LINK + HELOC OPTION</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="compose">
+      <div class="compose-from">
+        <span>SENDING FROM</span>
+        <span class="num">+12393606125</span>
+        <span>—</span>
+        <span class="num">(239) 360-6125</span>
+      </div>
+      <div class="compose-tools">
+        <button class="compose-tool" title="Templates">📄</button>
+        <button class="compose-tool" title="Schedule">📅</button>
+        <button class="compose-tool" title="Note">✏</button>
+        <button class="compose-tool" title="Tags">🏷</button>
+      </div>
+      <div class="compose-row">
+        <textarea class="compose-textarea" id="composeBox" placeholder="Type your message..." style=""></textarea>
+        <button class="compose-send" onclick="sendMessage()">→</button>
+      </div>
+      <div class="shortcuts">
+        <span class="shortcut"><kbd>/</kbd> TEMPLATES</span>
+        <span class="shortcut"><kbd>⌘↵</kbd> SEND</span>
+        <span class="shortcut"><kbd>N</kbd> NOTE</span>
+        <span class="shortcut"><kbd>S</kbd> SCHEDULE</span>
+        <span class="shortcut"><kbd>F</kbd> FOLLOW-UP</span>
+      </div>
+      <div class="sound-row">
+        <span style="font-family:var(--mono); font-size:9px; color:var(--text3); align-self:center; letter-spacing:0.5px; margin-right:4px;">SOUND TEST:</span>
+        <button class="sound-btn" onclick="playSound('hot')" title="Plays when a new HOT lead is classified">🔥 HOT lead</button>
+        <button class="sound-btn" onclick="playSound('sms')" title="Plays when an existing conversation gets a new reply">💬 New reply</button>
+        <button class="sound-btn mute" onclick="toggleMute()" id="muteBtn">🔇 MUTE</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== RIGHT PANEL ===== -->
+  <aside class="right-panel">
+    <div class="right-tabs">
+      <button class="right-tab active" data-tab="contact">CONTACT</button>
+      <button class="right-tab" data-tab="ai">AI STATE</button>
+      <button class="right-tab" data-tab="alerts">📱 ALERTS</button>
+    </div>
+    <div class="right-content" id="rightContent">
+      <div class="section">
+        <div class="section-label">CONTACT INFO</div>
+        <div class="kv-row"><span class="kv-key">Email</span><span class="kv-val mono">billing@simonshomerenovation.com</span></div>
+        <div class="kv-row"><span class="kv-key">Phone</span><span class="kv-val mono">+12817985355</span></div>
+        <div class="kv-row"><span class="kv-key">Company</span><span class="kv-val">Simons Home Renovation</span></div>
+        <div class="kv-row"><span class="kv-key">Source</span><span class="kv-val">PT3-April-List</span></div>
+        <div class="kv-row"><span class="kv-key">Assigned Rep</span><span class="kv-val gold">Stuart Benitez (SB)</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">DEAL INFO</div>
+        <div class="kv-row"><span class="kv-key">Product</span><span class="kv-val">Equipment / MCA</span></div>
+        <div class="kv-row"><span class="kv-key">Ask</span><span class="kv-val gold">$1.06M</span></div>
+        <div class="kv-row"><span class="kv-key">Revenue</span><span class="kv-val green">$850k/yr</span></div>
+        <div class="kv-row"><span class="kv-key">Industry</span><span class="kv-val">Construction</span></div>
+        <div class="kv-row"><span class="kv-key">AI Status</span><span class="kv-val hot">🔥 HOT</span></div>
+        <div class="kv-row"><span class="kv-key">Routing</span><span class="kv-val gold">⚡ Auto → JB</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">REP PERFORMANCE · SB</div>
+        <div class="kv-row"><span class="kv-key">Avg 1st response</span><span class="kv-val mono">3:24</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:34%"></div></div>
+        <div class="kv-row"><span class="kv-key">AI usage rate</span><span class="kv-val green">34%</span></div>
+        <div class="kv-row"><span class="kv-key">AI conversions</span><span class="kv-val green">4 pipeline adds</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">NOTES</div>
+        
+          <div class="note-box">
+            <div class="note-meta">JB (admin) · 2 hrs ago</div>
+            <div class="note-text">Construction co — wants funding fast. Likely fit for HELOC layered with equipment loan.</div>
+          </div>
+        
+        <textarea class="note-textarea" placeholder="Add a note..." id="noteInput" style=""></textarea>
+        <button class="add-note-btn" onclick="addNote()">+ Add Note</button>
+        <div class="ai-info-note">AI reads all notes for context extraction (revenue, industry, objections). Notes are universal — admin and rep notes both feed the model.</div>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-bg" id="mobileModal">
+  <div class="modal">
+    <h3 id="modalTitle">Mobile SMS Alerts</h3>
+    <p id="modalBody">Verify your number to receive HOT lead alerts directly via SMS.</p>
+    <input type="tel" id="modalInput" placeholder="(555) 123-4567" style="">
+    <div class="modal-actions">
+      <button class="modal-btn" onclick="closeMobileModal()">Cancel</button>
+      <button class="modal-btn primary" id="modalConfirm" onclick="modalNext()">Send Code</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============= DATA =============
+const SCENARIOS = [
+  {
+    id: "simons", unread: false,
+    name: "Simons Home Renovation Company LLC",
+    listName: "Simons Home Renovation",
+    phone: "+12817985355",
+    rep: "SB", repFull: "Stuart Benitez",
+    time: "5 min ago",
+    company: "Simons Home Renovation",
+    email: "billing@simonshomerenovation.com",
+    source: "PT3-April-List",
+    product: "Equipment / MCA",
+    ask: "$1.06M", revenue: "$850k/yr", industry: "Construction",
+    classification: "HOT",
+    routing: "Auto → JB",
+    chips: [
+      { kind:"hot", text:"🔥 HOT" },
+      { kind:"green", text:"$1.06M" },
+      { kind:"neutral", text:"Construction" },
+    ],
+    aiBanner: { kind:"hot", text:"🔥 HOT · $1.06M DEAL", route: false },
+    aiChips: [
+      { kind:"money", text:"$850k/yr" },
+      { kind:"money", text:"$1.06M ask" },
+      { kind:"urgent", text:"⚡ \"today\"" },
+      { kind:"data", text:"Construction" },
+      { kind:"data", text:"Equipment" },
+      { kind:"insight", text:"💡 HELOC fit" },
+    ],
+    ca: false,
+    preview: "Send me the Funding Link, let's get this done today",
+    messages: [
+      { day: "APR 17, 2026 — EARLIER" },
+      { dir:"out", text:"Hey it's Stuart from SecureCreditLines. You were recently pre-qualified for business funding up to $1.2M. What's your best email?", time:"9:14 AM", rt:"0:47 ✓✓" },
+      { dir:"in", text:"Sure, send it to billing@simonsreno.com. Equipment capital.", time:"9:31 AM" },
+      { dir:"out", text:"Perfect, sent over 'Express Biz Credit' from Stuart. Monthly revenue around $70-90k?", time:"9:33 AM", rt:"1:12 ✓✓" },
+      { day: "APR 18, 2026 — TODAY" },
+      { dir:"in", text:"Yeah we do closer to $850k annually. Send me the Funding Link, let's get this done today", time:"4:51 PM", hot:true },
+      { sys:"🔥 HOT classification — admin notified via mobile SMS", kind:"gold" },
+    ],
+    suggestion: {
+      label: "⚡ SUGGESTED RESPONSE",
+      text: 'Got it — <span class="hl">$850k/yr</span> and moving equipment today. Funding Link going out now for <span class="hl">$1.06M</span>. Given the construction profile, the 10/30yr HELOC structure may also fit — happy to send both options. Couple minutes and we\'re rolling.',
+      cta: "→ SEND FUNDING LINK + HELOC OPTION",
+      raw: "Got it — $850k/yr and moving equipment today. Funding Link going out now for $1.06M. Given the construction profile, the 10/30yr HELOC structure may also fit — happy to send both options. Couple minutes and we're rolling."
+    },
+    perf: { resp:"3:24", aiUsage:"34%", conversions:"4 pipeline adds" },
+    notes: [
+      { who:"JB (admin)", when:"2 hrs ago", text:"Construction co — wants funding fast. Likely fit for HELOC layered with equipment loan." }
+    ],
+    ownerScope: "SB",
+    followup: null,
+    aiFollowup: { time: "Today, 6:30 PM", reason: "HOT lead said 'today' — match urgency window before EOD" },
+  },
+  {
+    id: "pacific", unread: true,
+    name: "Pacific Coast Logistics LLC",
+    listName: "Pacific Coast Logistics LLC",
+    phone: "+14155552341",
+    rep: "MC", repFull: "Marcos Cruz",
+    time: "12 hrs ago",
+    company: "Pacific Coast Logistics",
+    email: "billing@pacificcoastlogistics.com",
+    source: "Retarget — PMF pt5",
+    product: "MCA / Long-term",
+    ask: "$150k", revenue: "$45k/mo", industry: "Trucking",
+    classification: "WARM",
+    routing: "—",
+    chips: [
+      { kind:"ca", text:"⚠ CA" },
+      { kind:"green", text:"$150k" },
+      { kind:"neutral", text:"Trucking" },
+    ],
+    aiBanner: { kind:"ca", text:"⚠ CA COMPLIANCE · NO APR/RATE DISCUSSION", route: false },
+    aiChips: [
+      { kind:"money", text:"$45k/mo" },
+      { kind:"money", text:"$150k ask" },
+      { kind:"data", text:"Trucking" },
+      { kind:"data", text:"MCA" },
+      { kind:"urgent", text:"⚠ rate sensitive" },
+    ],
+    ca: true,
+    preview: "What's the interest rate on this? APR deal?",
+    messages: [
+      { day: "APR 18, 2026 — TODAY" },
+      { dir:"out", text:"Hey it's Marcos from SecureCreditLines. Could a flexible credit option help your logistics business? 10-25yr terms. Best email to send details?", time:"1:48 PM", rt:"" },
+      { dir:"in", text:"Sure, what's the interest rate on this? Is this an APR deal?", time:"2:02 PM" },
+      { sys:"⚠ Rate question detected · CA number · Compliance rules apply", kind:"ai-extract" },
+    ],
+    suggestion: {
+      label: "⚡ SUGGESTED RESPONSE",
+      text: 'These programs are structured differently than traditional loans — costs vary based on your file. I\'m sending a <span class="hl-amber">full disclosure document</span> that covers everything. What\'s the best email?',
+      cta: "→ REQUEST EMAIL + SEND DOCS (no rate quotes)",
+      raw: "These programs are structured differently than traditional loans — costs vary based on your file. I'm sending a full disclosure document that covers everything. What's the best email?"
+    },
+    perf: { resp:"1:47", aiUsage:"61%", conversions:"4 pipeline adds" },
+    notes: [],
+    ownerScope: "MC",
+    followup: { time: "Tomorrow 10:00 AM", reason: "Awaiting docs review", setBy: "MC", setAt: "10 min ago", status: "scheduled" },
+    aiFollowup: { time: "Tomorrow 10:00 AM", reason: "WARM lead, sent docs — give 18 hrs to review then circle back" },
+  },
+  {
+    id: "william", unread: false,
+    name: "William Banker — Banker Trucking Co",
+    listName: "William Banker",
+    phone: "+19547373443",
+    rep: "AR", repFull: "Anthony Rack",
+    time: "22 min ago",
+    company: "Banker Trucking Co",
+    email: "wbanker@bankertruck.com",
+    source: "PMF retarget",
+    product: "Equipment Financing / LOC",
+    ask: "$500k", revenue: "$180k/mo", industry: "Trucking",
+    classification: "HOT",
+    routing: "—",
+    chips: [
+      { kind:"hot", text:"🔥 HOT" },
+      { kind:"green", text:"$500k" },
+      { kind:"neutral", text:"Trucking" },
+      { kind:"purple", text:"HELOC fit" },
+    ],
+    aiBanner: { kind:"hot", text:"🔥 HOT · $500k EQUIPMENT/LOC", route: false },
+    aiChips: [
+      { kind:"money", text:"$180k/mo" },
+      { kind:"money", text:"$500k ask" },
+      { kind:"urgent", text:"⚡ \"need this now\"" },
+      { kind:"data", text:"Trucking" },
+      { kind:"data", text:"Equipment" },
+      { kind:"insight", text:"💡 HELOC fit" },
+    ],
+    ca: false,
+    preview: "The total amount of funding is 500k for equipment fleet expansion",
+    messages: [
+      { day: "APR 18, 2026 — TODAY" },
+      { dir:"out", text:"Hey William, Anthony from SecureCreditLines. We help trucking companies with fleet expansion capital. What's your funding need?", time:"3:15 PM", rt:"0:32 ✓✓" },
+      { dir:"in", text:"The total amount of funding is 500k for equipment fleet expansion. We need this now — got 4 trucks pending order.", time:"3:42 PM", hot:true },
+      { sys:"⚡ HOT classification — owner notified via mobile SMS", kind:"gold" },
+    ],
+    suggestion: {
+      label: "⚡ SUGGESTED RESPONSE",
+      text: 'Got it William — <span class="hl">$500k</span> for fleet, time-sensitive. Equipment financing is built for exactly this. Sending the Funding Link now — should have approval terms within hours. With <span class="hl">$180k/mo</span> revenue, the HELOC layer also opens up for working capital. What\'s the best email?',
+      cta: "→ SEND EQUIPMENT FUNDING LINK",
+      raw: "Got it William — $500k for fleet, time-sensitive. Equipment financing is built for exactly this. Sending the Funding Link now — should have approval terms within hours. With $180k/mo revenue, the HELOC layer also opens up for working capital. What's the best email?"
+    },
+    perf: { resp:"2:48", aiUsage:"42%", conversions:"6 pipeline adds" },
+    notes: [],
+    ownerScope: "AR",
+    followup: { time: "30 min ago — OVERDUE", reason: "HOT lead awaiting funding link", setBy: "AR", setAt: "2 hrs ago", status: "due_now" },
+    aiFollowup: { time: "Now (overdue 30 min)", reason: "HOT lead, follow-up missed — re-engage immediately" },
+  },
+  {
+    id: "hernandez", unread: false,
+    name: "Hernandez Commercial Properties",
+    listName: "Hernandez Commercial Properties",
+    phone: "+17702559923",
+    rep: "JB", repFull: "Jonathan Baker",
+    time: "1 min ago",
+    company: "Hernandez Commercial Properties",
+    email: "rh@hernandezcre.com",
+    source: "JB campaign — CRE pipeline",
+    product: "Bridge / CRE",
+    ask: "$2.2M", revenue: "$28k/mo NOI", industry: "Commercial Real Estate",
+    classification: "HOT",
+    routing: "—",
+    chips: [
+      { kind:"hot", text:"🔥 HOT" },
+      { kind:"green", text:"$2.2M" },
+      { kind:"neutral", text:"CRE" },
+    ],
+    aiBanner: { kind:"hot", text:"🔥 HOT · $2.2M CRE BRIDGE", route: false },
+    aiChips: [
+      { kind:"money", text:"$28k/mo NOI" },
+      { kind:"money", text:"$2.2M ask" },
+      { kind:"urgent", text:"⚡ 30-day close" },
+      { kind:"data", text:"CRE Mixed Use" },
+      { kind:"data", text:"Bridge" },
+      { kind:"urgent", text:"⚠ Lender fell through" },
+    ],
+    ca: false,
+    preview: "$2.2M mixed use, need bridge financing, 30-day close",
+    messages: [
+      { day: "APR 18, 2026 — TODAY" },
+      { dir:"in", text:"Got your message. We have a $2.2M mixed use deal in Vegas, need to close in 30 days. Current lender just fell through. NOI is $28k/mo. Can you help?", time:"4:55 PM", hot:true },
+    ],
+    suggestion: {
+      label: "⚡ SUGGESTED RESPONSE",
+      text: 'This is exactly what bridge financing is built for — <span class="hl">$2.2M</span> at <span class="hl">$28k/mo NOI</span> with a 30-day close window is a strong file. Sending the bridge funding link now. Quick question: what\'s your exit strategy — refi to perm or sale?',
+      cta: "→ SEND BRIDGE LINK + QUALIFY EXIT",
+      raw: "This is exactly what bridge financing is built for — $2.2M at $28k/mo NOI with a 30-day close window is a strong file. Sending the bridge funding link now. Quick question: what's your exit strategy — refi to perm or sale?"
+    },
+    perf: { resp:"1:12", aiUsage:"58%", conversions:"12 pipeline adds" },
+    notes: [
+      { who:"JB", when:"just now", text:"Vegas mixed use. Repeat referral. Move fast." }
+    ],
+    ownerScope: "JB",
+    followup: null,
+    aiFollowup: { time: "Tomorrow 8:00 AM", reason: "30-day close — touchpoint every 24hr to keep deal warm" },
+  },
+  {
+    id: "bonham", unread: true,
+    name: "Bonham Land Clearing LLC",
+    listName: "Bonham Land Clearing LLC",
+    phone: "+15124883201",
+    rep: "SB", repFull: "Stuart Benitez",
+    time: "just now",
+    company: "Bonham Land Clearing",
+    email: "bonhamlandclearing@gmail.com",
+    source: "PT3-April-List",
+    product: "Equipment Financing",
+    ask: "$150k", revenue: "$80-100k/mo", industry: "Construction",
+    classification: "WARM",
+    routing: "—",
+    chips: [
+      { kind:"warm", text:"WARM" },
+      { kind:"green", text:"$150k" },
+      { kind:"neutral", text:"Construction" },
+    ],
+    aiBanner: { kind:"warm", text:"🌡 WARM · $150k EQUIPMENT", route: false },
+    aiChips: [
+      { kind:"money", text:"$80-100k/mo (live)" },
+      { kind:"money", text:"$150k ask" },
+      { kind:"data", text:"Land Clearing" },
+      { kind:"data", text:"Equipment" },
+    ],
+    ca: false,
+    preview: "We do about 80 to 100k a month. Need around 150k for equipment.",
+    messages: [
+      { day: "APR 18, 2026 — TODAY" },
+      { dir:"out", text:"Hey it's Stuart from SCL. We help land clearing operations get equipment financing fast. What's your monthly revenue and funding need?", time:"4:30 PM", rt:"0:18 ✓✓" },
+      { dir:"in", text:"Sure, bonhamlandclearing@gmail.com. We do about 80 to 100k a month. Need around 150k for equipment.", time:"4:47 PM" },
+      { sys:"🧠 AI extracted: revenue ~$90k/mo ($1.08M/yr) · industry: Construction/Land Clearing", kind:"ai-extract" },
+    ],
+    suggestion: {
+      label: "⚡ SUGGESTED RESPONSE",
+      text: 'Strong file — <span class="hl">$90k/mo</span> revenue against a <span class="hl">$150k</span> equipment ask is well within range. Sending the Funding Link to your gmail now. Quick: what kind of equipment are we financing?',
+      cta: "→ SEND FUNDING LINK + QUALIFY EQUIPMENT",
+      raw: "Strong file — $90k/mo revenue against a $150k equipment ask is well within range. Sending the Funding Link to your gmail now. Quick: what kind of equipment are we financing?"
+    },
+    perf: { resp:"3:24", aiUsage:"34%", conversions:"4 pipeline adds" },
+    notes: [],
+    ownerScope: "SB",
+    followup: null,
+    aiFollowup: { time: "Tomorrow 9:00 AM", reason: "WARM lead, sent funding link — give until next morning to fill out" },
+  },
+  {
+    id: "debra", unread: false,
+    name: "Debra Knezek",
+    listName: "Debra Knezek",
+    phone: "+14698793901",
+    rep: "MD", repFull: "Michael Duong",
+    time: "5 days ago",
+    company: "Knezek Holdings",
+    email: "debra@knezekholdings.com",
+    source: "Referral",
+    product: "LOC",
+    ask: "$200k", revenue: "TBD", industry: "Holdings/Real Estate",
+    classification: "SENSITIVE",
+    routing: "—",
+    chips: [
+      { kind:"sensitive", text:"🕊 SENSITIVE" },
+      { kind:"green", text:"→ IN PIPELINE" },
+    ],
+    aiBanner: { kind:"sensitive", text:"🕊 SENSITIVE · HANDLE WITH CARE", route: false },
+    aiChips: [
+      { kind:"data", text:"🕊 Family loss disclosed" },
+      { kind:"data", text:"In pipeline" },
+      { kind:"data", text:"5-day silence" },
+    ],
+    ca: false,
+    preview: "Thank you",
+    messages: [
+      { day: "APR 13, 2026 — EARLIER" },
+      { dir:"out", text:"Hey Debra, Michael from SCL. Following up on your funding inquiry — when's a good time to chat?", time:"10:15 AM", rt:"" },
+      { dir:"in", text:"Hi Michael. Although I lost my mother Monday so responding will be slow. Can we set up next week?", time:"11:42 AM" },
+      { dir:"out", text:"Debra, so sorry for your loss. No rush at all — please take the time you need. I'll reach out next week. Take care of yourself.", time:"11:48 AM", rt:"0:06 ✓✓" },
+      { dir:"in", text:"Thank you", time:"11:52 AM" },
+      { sys:"🕊 SENSITIVE flag set — pipeline maintained, no automated outreach", kind:"ai-extract" },
+      { day: "APR 18, 2026 — TODAY" },
+      { sys:"⏰ Gentle reopen window — 5 days since last touch", kind:"gold" },
+    ],
+    suggestion: {
+      label: "⚡ SUGGESTED RESPONSE",
+      text: 'Hi Debra, just thinking of you. No pressure on the funding side — only reach out when you\'re ready. Whenever that is, I\'m here.',
+      cta: "→ GENTLE REOPEN (no pitch)",
+      raw: "Hi Debra, just thinking of you. No pressure on the funding side — only reach out when you're ready. Whenever that is, I'm here."
+    },
+    perf: { resp:"0:06", aiUsage:"22%", conversions:"2 pipeline adds" },
+    notes: [
+      { who:"MD", when:"5 days ago", text:"Lost her mother. SENSITIVE flag set. Pipeline kept open. No automation." }
+    ],
+    ownerScope: "MD",
+    followup: { time: "Next Monday 11:00 AM", reason: "Gentle reopen — give space, no pitch", setBy: "MD", setAt: "5 days ago", status: "scheduled" },
+    aiFollowup: { time: "Next Monday 11:00 AM", reason: "SENSITIVE — wide window, no urgency, soft check-in" },
+  },
+];
+
+// ============= STATE =============
+let activeId = "simons";
+let activeFilter = "all";
+let activeTab = "contact";
+let activeView = "admin"; // "admin" = all reps, "mine" = JB-owned only
+const CURRENT_USER = "JB";
+let muted = false;
+let modalStep = 1;
+
+// ============= RENDER INBOX =============
+function priorityScore(s) {
+  // Lower score = higher priority (sorts to top)
+  let score = 0;
+  if (s.followup && s.followup.status === "due_now") score -= 10000; // overdue follow-ups first
+  if (s.classification === "HOT") score -= 5000;
+  else if (s.classification === "WARM") score -= 1000;
+  else if (s.classification === "SENSITIVE") score -= 500;
+  // Revenue weighting (parse $ amounts)
+  const amount = parseAmount(s.ask);
+  score -= amount / 1000; // bigger ask = higher priority
+  return score;
+}
+function parseAmount(str) {
+  if (!str) return 0;
+  const m = str.match(/\$?([\d.]+)\s*([KkMm])?/);
+  if (!m) return 0;
+  let n = parseFloat(m[1]);
+  if (m[2] && m[2].toLowerCase() === "m") n *= 1_000_000;
+  if (m[2] && m[2].toLowerCase() === "k") n *= 1_000;
+  return n;
+}
+function formatPipelineTotal(scenarios) {
+  const total = scenarios.reduce((sum, s) => sum + parseAmount(s.ask), 0);
+  if (total >= 1_000_000) return `$${(total/1_000_000).toFixed(2)}M`;
+  if (total >= 1_000) return `$${Math.round(total/1_000)}k`;
+  return `$${total}`;
+}
+
+function renderAdminTotals() {
+  const el = document.getElementById("adminTotals");
+  const visible = activeView === "admin" ? SCENARIOS : SCENARIOS.filter(s => s.rep === CURRENT_USER);
+  const hot = visible.filter(s => s.classification === "HOT").length;
+  const overdue = visible.filter(s => s.followup && s.followup.status === "due_now").length;
+  const unread = visible.filter(s => s.unread).length;
+  const inPipeline = 38; // From actual pipeline tab — qualified deals only
+  const newToday = visible.filter(s => s.time && (s.time.includes("min") || s.time.includes("just now"))).length;
+
+  el.innerHTML = `
+    <div class="admin-totals-label">${activeView === "admin" ? "✦ ADMIN MASTER VIEW" : "✦ MY BOOK · " + CURRENT_USER}</div>
+    ${overdue ? `<div class="admin-totals-row hot"><span>⏰ Overdue follow-ups</span><span>${overdue}</span></div>` : ""}
+    <div class="admin-totals-row hot"><span>🔥 HOT (AI-flagged)</span><span>${hot}</span></div>
+    <div class="admin-totals-row"><span>💬 New today</span><span>${newToday}</span></div>
+    <div class="admin-totals-row"><span>✉ Unread</span><span>${unread}</span></div>
+    <div class="admin-totals-row total"><span>→ In Pipeline (qualified)</span><span>${inPipeline}</span></div>
+  `;
+}
+
+function renderInboxList() {
+  const list = document.getElementById("inboxList");
+  const search = document.getElementById("searchInput").value.toLowerCase();
+  let filtered = SCENARIOS.filter(s => {
+    if (activeView === "mine" && s.rep !== CURRENT_USER) return false;
+    if (search && !(s.name.toLowerCase().includes(search) || s.preview.toLowerCase().includes(search))) return false;
+    if (activeFilter === "hot" && s.classification !== "HOT") return false;
+    if (activeFilter === "unread" && !s.unread) return false;
+    if (activeFilter === "email" && !(s.chips || []).some(c => /email/i.test(c.text || ""))) return false;
+    if (activeFilter === "follow" && !s.followup) return false;
+    if (activeFilter === "pipeline" && !(s.chips || []).some(c => /pipeline/i.test(c.text || ""))) return false;
+    if (activeFilter === "dnc") return false; // demo data has none in DNC
+    return true;
+  });
+
+  // Priority sort
+  filtered.sort((a, b) => priorityScore(a) - priorityScore(b));
+
+  list.innerHTML = filtered.map(s => {
+    const fuChip = s.followup
+      ? `<span class="chip ${s.followup.status==='due_now'?'hot':'gold'}">⏰ ${s.followup.status==='due_now'?'OVERDUE':s.followup.time.split(' ').slice(0,2).join(' ')}</span>`
+      : "";
+    const repChipClass = s.rep === "JB" ? "jb" : "";
+    return `
+    <div class="conv-card ${activeId===s.id?"active":""} ${s.classification==="HOT"?"hot":""}" data-id="${s.id}" onclick="selectConv('${s.id}')">
+      <div class="conv-card-top">
+        <div class="conv-card-top-left">
+          <div class="conv-row">
+            <div class="conv-name">${s.listName}</div>
+            <div class="conv-time">${s.time}</div>
+          </div>
+          <div class="conv-meta">${s.phone}</div>
+        </div>
+        <span class="rep-chip ${repChipClass}" title="Assigned rep">${s.rep}</span>
+      </div>
+      <div class="conv-preview">${s.preview}</div>
+      <div class="conv-chips">
+        ${s.chips.map(c => `<span class="chip ${c.kind}">${c.text}</span>`).join("")}
+        ${fuChip}
+      </div>
+    </div>
+  `;}).join("");
+
+  // Update count
+  document.getElementById("inboxCount").textContent = filtered.length;
+  renderAdminTotals();
+}
+
+function setView(v) {
+  activeView = v;
+  document.querySelectorAll(".view-toggle-btn").forEach(b => b.classList.toggle("active", b.dataset.view === v));
+  refreshFilterCounts();
+  renderInboxList();
+  renderAdminTotals();
+  toast(v === "admin" ? "Admin master view — all reps" : `My book — ${CURRENT_USER}`, "gold");
+}
+
+function refreshFilterCounts() {
+  // Counts always reflect the current view scope (admin = all, mine = JB only)
+  const visible = activeView === "admin" ? SCENARIOS : SCENARIOS.filter(s => s.rep === CURRENT_USER);
+  const counts = {
+    all: visible.length,
+    unread: visible.filter(s => s.unread).length,
+    hot: visible.filter(s => s.classification === "HOT").length,
+    email: visible.filter(s => (s.chips || []).some(c => /email/i.test(c.text || ""))).length,
+    follow: visible.filter(s => s.followup).length,
+    pipeline: visible.filter(s => (s.chips || []).some(c => /pipeline/i.test(c.text || ""))).length,
+  };
+  // Admin sees fuller dataset (DNC count comes from full 337 for admin, 0 for mine since JB has no DNC convs in scenarios)
+  const dncCount = activeView === "admin" ? 337 : visible.filter(s => s.classification === "DEAD").length;
+  // For admin, also reflect baseline platform totals (225 all / 38 pipeline are admin-wide platform numbers)
+  if (activeView === "admin") {
+    counts.all = 225;
+    counts.pipeline = 38;
+  }
+  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
+  set("cAll", counts.all);
+  set("cUnread", counts.unread);
+  set("cHot", counts.hot);
+  set("cEmail", counts.email);
+  set("cFollow", counts.follow);
+  set("cPipe", counts.pipeline);
+  set("cDnc", dncCount);
+}
+
+// ============= RENDER CONVERSATION =============
+function renderConv() {
+  const s = SCENARIOS.find(x => x.id === activeId);
+  if (!s) return;
+  const view = document.getElementById("convView");
+
+  const messagesHTML = s.messages.map(m => {
+    if (m.day) return `<div class="day-sep">${m.day}</div>`;
+    if (m.sys) return `<div class="system-event ${m.kind||""}">${m.sys}</div>`;
+    return `
+      <div class="msg ${m.dir==="out"?"outbound":"inbound"} ${m.hot?"hot":""}">
+        <div class="msg-bubble">${m.text}</div>
+        <div class="msg-meta">
+          <span>${m.time||""}</span>
+          ${m.rt ? `<span>· ${m.rt}</span>` : ""}
+          ${m.hot ? `<span class="msg-hot-tag">🔥 HOT</span>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  const aiBannerKind = s.aiBanner.kind === "hot" ? "hot" :
+                       s.aiBanner.kind === "ca" ? "ca" :
+                       s.aiBanner.kind === "warm" ? "warm" :
+                       s.aiBanner.kind === "sensitive" ? "sensitive" : "neutral";
+
+  view.innerHTML = `
+    <div class="conv-header">
+      <div class="conv-header-row">
+        <div class="conv-header-info">
+          <div class="conv-header-name">${s.name}</div>
+          <div class="conv-header-meta">${s.phone} · ${s.company} · Source: ${s.source}</div>
+        </div>
+        <div class="conv-actions">
+          <button class="action-btn gold" onclick="markInterested()">✓ Mark Interested</button>
+          <button class="action-btn danger" onclick="markNotInterested()">✗ Not Interested</button>
+          <button class="action-btn" onclick="markDNC()">DNC</button>
+          <button class="action-btn" onclick="markEmail()">Email Rcv</button>
+          <button class="action-btn" onclick="addToPipeline()">+ Pipeline</button>
+          <div class="followup-anchor">
+            ${renderFollowupBtn(s)}
+            ${renderFollowupPop(s)}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ai-bar">
+      <div class="ai-bar-row">
+        <span class="ai-label">AI INTELLIGENCE</span>
+        <span class="ai-chip ${aiBannerKind}">${s.aiBanner.text}</span>
+        <span class="ai-bar-rep">Rep: ${s.repFull} (${s.rep})</span>
+      </div>
+      <div class="ai-chips">
+        ${s.aiChips.map(c => `<span class="ai-chip ${c.kind}">${c.text}</span>`).join("")}
+      </div>
+    </div>
+
+    ${s.ca ? `
+      <div class="ca-bar">
+        <span class="ca-bar-label">⚠ CA COMPLIANCE</span>
+        <span class="ca-bar-text">California number detected. Do NOT quote APR, rates, or factor rates over SMS. Redirect to docs or licensed advisor only.</span>
+      </div>
+    ` : ""}
+
+    <div class="messages">${messagesHTML}</div>
+
+    <div class="ai-suggest">
+      <div class="ai-suggest-header">
+        <span class="ai-suggest-label">✦ AI SUGGESTION</span>
+        <span class="ai-suggest-signals">— ${s.aiChips.slice(0,4).map(c => c.text.replace(/^[^\s]+\s/, "")).join(" · ")}</span>
+      </div>
+      <div class="suggest-card">
+        <div class="suggest-card-header">
+          <span class="suggest-tag">${s.suggestion.label}</span>
+          <div class="suggest-controls">
+            <button class="suggest-btn primary" onclick="useSuggestion()">Use this</button>
+            <button class="suggest-btn" onclick="editSuggestion()">Edit</button>
+            <button class="suggest-btn" onclick="skipSuggestion()">Skip</button>
+          </div>
+        </div>
+        <div class="suggest-text">${s.suggestion.text}</div>
+        <div class="suggest-cta">
+          ${s.email && s.email !== "—" ? `<button class="suggest-cta-btn" onclick="openGmail('${s.email}', '${s.listName.replace(/'/g, "\\'")}')">${s.suggestion.cta}</button>` : `<button class="suggest-cta-btn" disabled title="No email on file yet">${s.suggestion.cta} · (no email on file)</button>`}
+        </div>
+      </div>
+    </div>
+
+    <div class="compose">
+      <div class="compose-from">
+        <span>SENDING FROM</span>
+        <span class="num">+12393606125</span>
+        <span>—</span>
+        <span class="num">(239) 360-6125</span>
+      </div>
+      <div class="compose-tools">
+        <button class="compose-tool" title="Templates">📄</button>
+        <button class="compose-tool" title="Schedule">📅</button>
+        <button class="compose-tool" title="Note">✏</button>
+        <button class="compose-tool" title="Tags">🏷</button>
+      </div>
+      <div class="compose-row">
+        <textarea class="compose-textarea" id="composeBox" placeholder="Type your message..."></textarea>
+        <button class="compose-send" onclick="sendMessage()">→</button>
+      </div>
+      <div class="shortcuts">
+        <span class="shortcut"><kbd>/</kbd> TEMPLATES</span>
+        <span class="shortcut"><kbd>⌘↵</kbd> SEND</span>
+        <span class="shortcut"><kbd>N</kbd> NOTE</span>
+        <span class="shortcut"><kbd>S</kbd> SCHEDULE</span>
+        <span class="shortcut"><kbd>F</kbd> FOLLOW-UP</span>
+      </div>
+      <div class="sound-row">
+        <span style="font-family:var(--mono); font-size:9px; color:var(--text3); align-self:center; letter-spacing:0.5px; margin-right:4px;">SOUND TEST:</span>
+        <button class="sound-btn" onclick="playSound('hot')" title="Plays when a new HOT lead is classified">🔥 HOT lead</button>
+        <button class="sound-btn" onclick="playSound('sms')" title="Plays when an existing conversation gets a new reply">💬 New reply</button>
+        <button class="sound-btn mute" onclick="toggleMute()" id="muteBtn">${muted?"🔊 UNMUTE":"🔇 MUTE"}</button>
+      </div>
+    </div>
+  `;
+}
+
+// ============= RENDER RIGHT PANEL =============
+function renderRight() {
+  const s = SCENARIOS.find(x => x.id === activeId);
+  if (!s) return;
+  const c = document.getElementById("rightContent");
+
+  if (activeTab === "contact") {
+    c.innerHTML = `
+      <div class="section">
+        <div class="section-label">CONTACT INFO</div>
+        <div class="kv-row"><span class="kv-key">Email</span><span class="kv-val mono">${s.email}</span></div>
+        <div class="kv-row"><span class="kv-key">Phone</span><span class="kv-val mono">${s.phone}</span></div>
+        <div class="kv-row"><span class="kv-key">Company</span><span class="kv-val">${s.company}</span></div>
+        <div class="kv-row"><span class="kv-key">Source</span><span class="kv-val">${s.source}</span></div>
+        <div class="kv-row"><span class="kv-key">Assigned Rep</span><span class="kv-val gold">${s.repFull} (${s.rep})</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">DEAL INFO</div>
+        <div class="kv-row"><span class="kv-key">Product</span><span class="kv-val">${s.product}</span></div>
+        <div class="kv-row"><span class="kv-key">Ask</span><span class="kv-val gold">${s.ask}</span></div>
+        <div class="kv-row"><span class="kv-key">Revenue</span><span class="kv-val green">${s.revenue}</span></div>
+        <div class="kv-row"><span class="kv-key">Industry</span><span class="kv-val">${s.industry}</span></div>
+        <div class="kv-row"><span class="kv-key">AI Status</span><span class="kv-val ${s.classification==='HOT'?'hot':''}">${classBadge(s.classification)}</span></div>
+        ${s.routing!=="—" ? `<div class="kv-row"><span class="kv-key">Routing</span><span class="kv-val gold">⚡ ${s.routing}</span></div>` : ""}
+      </div>
+      <div class="section">
+        <div class="section-label">REP PERFORMANCE · ${s.rep}</div>
+        <div class="kv-row"><span class="kv-key">Avg 1st response</span><span class="kv-val mono">${s.perf.resp}</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${parseInt(s.perf.aiUsage)}%"></div></div>
+        <div class="kv-row"><span class="kv-key">AI usage rate</span><span class="kv-val green">${s.perf.aiUsage}</span></div>
+        <div class="kv-row"><span class="kv-key">AI conversions</span><span class="kv-val green">${s.perf.conversions}</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">NOTES</div>
+        ${s.notes.map(n => `
+          <div class="note-box">
+            <div class="note-meta">${n.who} · ${n.when}</div>
+            <div class="note-text">${n.text}</div>
+          </div>
+        `).join("")}
+        <textarea class="note-textarea" placeholder="Add a note..." id="noteInput"></textarea>
+        <button class="add-note-btn" onclick="addNote()">+ Add Note</button>
+        <div class="ai-info-note">AI reads all notes for context extraction (revenue, industry, objections). Notes are universal — admin and rep notes both feed the model.</div>
+      </div>
+    `;
+  } else if (activeTab === "ai") {
+    c.innerHTML = `
+      <div class="section">
+        <div class="section-label">CLASSIFICATION</div>
+        <div class="kv-row"><span class="kv-key">Status</span><span class="kv-val ${s.classification==='HOT'?'hot':''}">${classBadge(s.classification)}</span></div>
+        <div class="kv-row"><span class="kv-key">Conv. State</span><span class="kv-val">${convState(s)}</span></div>
+        <div class="kv-row"><span class="kv-key">CA Flag</span><span class="kv-val ${s.ca?'gold':''}">${s.ca?'⚠ ACTIVE':'—'}</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">EXTRACTED SIGNALS</div>
+        <div class="kv-row"><span class="kv-key">Revenue</span><span class="kv-val green">${s.revenue}</span></div>
+        <div class="kv-row"><span class="kv-key">Ask</span><span class="kv-val gold">${s.ask}</span></div>
+        <div class="kv-row"><span class="kv-key">Urgency</span><span class="kv-val">${urgency(s)}</span></div>
+        <div class="kv-row"><span class="kv-key">Product</span><span class="kv-val">${s.product}</span></div>
+        <div class="kv-row"><span class="kv-key">Industry</span><span class="kv-val">${s.industry}</span></div>
+        <div class="kv-row"><span class="kv-key">Objections</span><span class="kv-val">${objections(s)}</span></div>
+        <div class="ai-info-note">Extracted from: inbound messages + notes</div>
+      </div>
+      <div class="section">
+        <div class="section-label">FOLLOW-UP TRACKING</div>
+        ${s.followup ? `
+          <div class="kv-row"><span class="kv-key">Status</span><span class="kv-val ${s.followup.status==='due_now'?'hot':'gold'}">${s.followup.status==='due_now'?'⏰ DUE NOW':'⏰ Scheduled'}</span></div>
+          <div class="kv-row"><span class="kv-key">Time</span><span class="kv-val">${s.followup.time}</span></div>
+          <div class="kv-row"><span class="kv-key">Reason</span><span class="kv-val" style="font-size:11px;">${s.followup.reason}</span></div>
+          <div class="kv-row"><span class="kv-key">Set by</span><span class="kv-val mono">${s.followup.setBy} · ${s.followup.setAt}</span></div>
+        ` : `
+          <div class="kv-row"><span class="kv-key">Status</span><span class="kv-val" style="color:var(--text3);">— None set —</span></div>
+          ${s.aiFollowup ? `<div class="ai-info-note">AI suggests: <b>${s.aiFollowup.time}</b> — ${s.aiFollowup.reason}</div>` : ""}
+        `}
+        <div class="ai-info-note">When follow-up time hits: lead resurfaces to top of inbox, button pulses red, AI re-classifies with overdue signal.</div>
+      </div>
+      <div class="section">
+        <div class="section-label">SCOPE & LEARNING</div>
+        <div class="ai-info-note">AI re-classification triggers ONLY on conversation owner's actions (${s.rep}).</div>
+        <div class="ai-info-note">Override data — scoped to ${s.rep} only.</div>
+        <div class="ai-info-note">Voice model — scoped to ${s.rep}'s campaign conversations only.</div>
+      </div>
+      <div class="section">
+        <div class="section-label">LAST SUGGESTION</div>
+        <div class="note-box">
+          <div class="note-meta">${s.suggestion.label}</div>
+          <div class="note-text">${stripHTML(s.suggestion.text)}</div>
+        </div>
+      </div>
+    `;
+  } else if (activeTab === "alerts") {
+    c.innerHTML = `
+      <div class="section">
+        <div class="section-label">MOBILE SMS — CURRENT REP</div>
+        <div class="alert-row">
+          <div>
+            <div class="alert-label">📱 Verified number</div>
+            <div class="alert-sub">+1 (786) 555-0142 · JB</div>
+          </div>
+          <button class="action-btn">Update</button>
+        </div>
+        <button class="add-note-btn" onclick="openMobileModal()" style="margin-top:10px;">+ Add another number</button>
+      </div>
+      <div class="section">
+        <div class="section-label">ALERT TYPES</div>
+        <div class="alert-row">
+          <div>
+            <div class="alert-label">🔥 HOT lead alerts</div>
+            <div class="alert-sub">Sent on classification</div>
+          </div>
+          <button class="toggle on" onclick="toggleAlert(this)"></button>
+        </div>
+        <div class="alert-row">
+          <div>
+            <div class="alert-label">⏰ 3-min no-response</div>
+            <div class="alert-sub">Reminder if rep hasn't replied</div>
+          </div>
+          <button class="toggle on" onclick="toggleAlert(this)"></button>
+        </div>
+        <div class="alert-row">
+          <div>
+            <div class="alert-label">✉ First inbound on lead</div>
+            <div class="alert-sub">Lead replied for the first time</div>
+          </div>
+          <button class="toggle" onclick="toggleAlert(this)"></button>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">ALL REPS STATUS</div>
+        <div class="rep-status-row"><span><span class="status-dot ok"></span>JB · Jonathan Baker</span><span style="color:var(--green);">Verified</span></div>
+        <div class="rep-status-row"><span><span class="status-dot off"></span>SB · Stuart Benitez</span><span style="color:var(--text3);">Not set</span></div>
+        <div class="rep-status-row"><span><span class="status-dot off"></span>MC · Marcos Cruz</span><span style="color:var(--text3);">Not set</span></div>
+        <div class="rep-status-row"><span><span class="status-dot off"></span>AR · Anthony Rack</span><span style="color:var(--text3);">Not set</span></div>
+        <div class="rep-status-row"><span><span class="status-dot off"></span>AN · Alex Nunez</span><span style="color:var(--text3);">Not set</span></div>
+        <div class="rep-status-row"><span><span class="status-dot off"></span>HB · Hammad Bhatti</span><span style="color:var(--text3);">Not set</span></div>
+        <div class="rep-status-row"><span><span class="status-dot off"></span>JJ · Javon Jones</span><span style="color:var(--text3);">Not set</span></div>
+      </div>
+      <div class="section">
+        <div class="section-label">SAMPLE ALERT</div>
+        <div class="note-box" style="border-left:2px solid var(--hot);">
+          <div class="note-meta">SMS preview · HOT alert</div>
+          <div class="note-text" style="font-family:var(--mono); font-size:11px; line-height:1.6;">🔥 HOT — Simons Home Renovation<br>$1.06M ask · $850k/yr<br>Tap to open: scl.app/c/simons</div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+// ============= HELPERS =============
+function classBadge(c) {
+  const map = { HOT:"🔥 HOT", WARM:"🌡 WARM", SENSITIVE:"🕊 SENSITIVE", DEAD:"⚫ DEAD" };
+  return map[c] || c;
+}
+function convState(s) {
+  if (s.aiBanner.route) return "Auto-routed";
+  if (s.classification === "SENSITIVE") return "Hold / care";
+  return "Active";
+}
+function urgency(s) {
+  const u = s.aiChips.find(c => c.text.includes("today") || c.text.includes("now") || c.text.includes("close") || c.text.includes("need"));
+  return u ? u.text.replace(/^[^\s]+\s/, "") : "—";
+}
+function objections(s) {
+  const o = s.aiChips.find(c => c.text.includes("rate") || c.text.includes("⚠"));
+  return o ? o.text.replace(/^[^\s]+\s/, "") : "—";
+}
+function stripHTML(s) { const d = document.createElement("div"); d.innerHTML = s; return d.textContent; }
+
+// ============= INTERACTIONS =============
+function selectConv(id) {
+  activeId = id;
+  renderInboxList();
+  renderConv();
+  renderRight();
+}
+
+function useSuggestion() {
+  const s = SCENARIOS.find(x => x.id === activeId);
+  document.getElementById("composeBox").value = s.suggestion.raw;
+  toast("Suggestion loaded into compose", "green");
+}
+function editSuggestion() {
+  const s = SCENARIOS.find(x => x.id === activeId);
+  const box = document.getElementById("composeBox");
+  box.value = s.suggestion.raw;
+  box.focus();
+  box.select();
+}
+function skipSuggestion() {
+  toast("Suggestion skipped — logged for AI training", "gold");
+}
+function openGmail(email, leadName) {
+  // Open Gmail compose with To: pre-populated. Rep selects their own template from PMF Gmail.
+  // Format: https://mail.google.com/mail/?view=cm&fs=1&to=EMAIL
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(email)}`;
+  window.open(gmailUrl, "_blank");
+  toast(`✓ Opening PMF Gmail to ${email}`, "green");
+}
+function sendMessage() {
+  const box = document.getElementById("composeBox");
+  if (!box.value.trim()) return;
+  toast(`Message sent to ${SCENARIOS.find(x=>x.id===activeId).listName}`, "green");
+  box.value = "";
+  playSound("sms");
+}
+function addNote() {
+  const inp = document.getElementById("noteInput");
+  if (!inp.value.trim()) return;
+  const s = SCENARIOS.find(x => x.id === activeId);
+  s.notes.unshift({ who: "JB (admin)", when: "just now", text: inp.value.trim() });
+  inp.value = "";
+  renderRight();
+  toast("Note saved · AI re-reading conversation context", "gold");
+}
+
+// ============= TABS & FILTERS =============
+document.querySelectorAll(".right-tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".right-tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  activeTab = t.dataset.tab;
+  renderRight();
+}));
+document.querySelectorAll(".filter-pill").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".filter-pill").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  activeFilter = t.dataset.filter;
+  renderInboxList();
+}));
+document.getElementById("searchInput").addEventListener("input", renderInboxList);
+
+// ============= TOAST =============
+function toast(msg, kind="") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show " + kind;
+  setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+// ============= SOUNDS =============
+let audioCtx;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function tone(freq, dur, type="sine", vol=0.18) {
+  if (muted) return;
+  const ctx = ensureAudio();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + dur);
+}
+function playSound(kind) {
+  if (kind === "hot") {
+    // 3-pulse alarm tone for HOT lead classification
+    tone(600, 0.12); setTimeout(() => tone(800, 0.12), 150); setTimeout(() => tone(1050, 0.18), 300);
+  }
+  if (kind === "sms") {
+    // Two-tone ping for new reply on existing conversation
+    tone(1046, 0.1); setTimeout(() => tone(784, 0.14), 100);
+  }
+}
+function toggleMute() {
+  muted = !muted;
+  document.getElementById("muteBtn").textContent = muted ? "🔊 UNMUTE" : "🔇 MUTE";
+  toast(muted ? "Sounds muted" : "Sounds on");
+}
+
+// ============= MOBILE MODAL =============
+function openMobileModal() {
+  modalStep = 1;
+  document.getElementById("modalTitle").textContent = "Mobile SMS Alerts";
+  document.getElementById("modalBody").textContent = "Verify your number to receive HOT lead alerts directly via SMS.";
+  document.getElementById("modalInput").placeholder = "(555) 123-4567";
+  document.getElementById("modalInput").value = "";
+  document.getElementById("modalConfirm").textContent = "Send Code";
+  document.getElementById("mobileModal").classList.add("show");
+}
+function closeMobileModal() {
+  document.getElementById("mobileModal").classList.remove("show");
+}
+function modalNext() {
+  if (modalStep === 1) {
+    modalStep = 2;
+    document.getElementById("modalTitle").textContent = "Enter Verification Code";
+    document.getElementById("modalBody").textContent = "We sent a 6-digit code to that number.";
+    document.getElementById("modalInput").placeholder = "123456";
+    document.getElementById("modalInput").value = "";
+    document.getElementById("modalConfirm").textContent = "Verify";
+  } else if (modalStep === 2) {
+    modalStep = 3;
+    document.getElementById("modalTitle").textContent = "✅ Verified";
+    document.getElementById("modalBody").textContent = "You'll now receive HOT lead alerts to this number.";
+    document.getElementById("modalInput").style.display = "none";
+    document.getElementById("modalConfirm").textContent = "Done";
+  } else {
+    document.getElementById("modalInput").style.display = "block";
+    closeMobileModal();
+    toast("Mobile alerts active", "green");
+  }
+}
+function toggleAlert(el) { el.classList.toggle("on"); }
+
+// ============= FOLLOW-UP =============
+function renderFollowupBtn(s) {
+  if (!s.followup) {
+    return `<button class="action-btn" onclick="toggleFollowupPop(event)">⏰ Follow-Up</button>`;
+  }
+  if (s.followup.status === "due_now") {
+    return `<button class="action-btn followup-due" onclick="toggleFollowupPop(event)">⏰ ${s.followup.time} <span class="clear-x" onclick="clearFollowup(event)">×</span></button>`;
+  }
+  return `<button class="action-btn followup-active" onclick="toggleFollowupPop(event)">⏰ ${s.followup.time} <span class="clear-x" onclick="clearFollowup(event)">×</span></button>`;
+}
+
+function renderFollowupPop(s) {
+  const ai = s.aiFollowup || { time: "Tomorrow 9:00 AM", reason: "Default follow-up window" };
+  return `
+    <div class="followup-pop" id="followupPop" onclick="event.stopPropagation()">
+      <div class="followup-head">
+        <span class="followup-title">${s.followup ? "Update Follow-Up" : "Set Follow-Up"}</span>
+        <button class="followup-close" onclick="closeFollowupPop()">×</button>
+      </div>
+      <div class="followup-ai">
+        <div class="followup-ai-label">✦ AI SUGGESTS</div>
+        <div class="followup-ai-time">${ai.time}</div>
+        <div class="followup-ai-reason">${ai.reason}</div>
+        <button class="followup-ai-btn" onclick="setFollowup('${ai.time.replace(/'/g, "\\'")}', '${ai.reason.replace(/'/g, "\\'")}')">Use AI suggestion</button>
+      </div>
+      <div class="followup-section">QUICK OPTIONS</div>
+      <div class="followup-options" style="grid-template-columns: 1fr;">
+        <button class="followup-opt" onclick="setFollowup('2 hours', 'Same-day re-engage')">⚡ In 2 hours</button>
+        <button class="followup-opt" onclick="setFollowup('Tomorrow 9:00 AM', 'Next-day morning touchpoint')">📅 Tomorrow morning</button>
+        <button class="followup-opt" onclick="setFollowup('Next week (Monday 10:00 AM)', 'Weekly cadence')">📅 Next week</button>
+      </div>
+      <div class="followup-section">CUSTOM</div>
+      <input type="datetime-local" class="followup-custom" id="customFollowup" />
+      <input type="text" class="followup-custom" id="customReason" placeholder="Reason (optional)" />
+      <div class="followup-actions">
+        <button class="suggest-btn" onclick="closeFollowupPop()">Cancel</button>
+        <button class="suggest-btn primary" onclick="setCustomFollowup()">Save</button>
+      </div>
+    </div>
+  `;
+}
+
+function toggleFollowupPop(e) {
+  if (e) e.stopPropagation();
+  const pop = document.getElementById("followupPop");
+  if (pop) pop.classList.toggle("show");
+}
+function closeFollowupPop() {
+  const pop = document.getElementById("followupPop");
+  if (pop) pop.classList.remove("show");
+}
+function setFollowup(time, reason) {
+  const s = SCENARIOS.find(x => x.id === activeId);
+  s.followup = { time, reason, setBy: s.rep, setAt: "just now", status: "scheduled" };
+  closeFollowupPop();
+  renderConv();
+  renderRight();
+  renderInboxList();
+  toast(`Follow-up set: ${time} · AI tracking it`, "gold");
+}
+function setCustomFollowup() {
+  const dt = document.getElementById("customFollowup").value;
+  const reason = document.getElementById("customReason").value || "Custom follow-up";
+  if (!dt) { toast("Pick a date/time first", "hot"); return; }
+  const formatted = new Date(dt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  setFollowup(formatted, reason);
+}
+function clearFollowup(e) {
+  if (e) e.stopPropagation();
+  const s = SCENARIOS.find(x => x.id === activeId);
+  s.followup = null;
+  renderConv();
+  renderRight();
+  renderInboxList();
+  toast("Follow-up cleared", "");
+}
+
+// ============= ACTION BUTTONS =============
+function markInterested() { toast("✓ Marked Interested · AI re-classifying", "green"); }
+function markNotInterested() { toast("✗ Marked Not Interested · AI logging override", "gold"); }
+function markDNC() { toast("DNC set · Lead removed from outreach", ""); }
+function markEmail() { toast("Email received tag set", "green"); }
+function addToPipeline() { toast("✓ Added to pipeline", "green"); }
+
+// Close follow-up pop on outside click
+document.addEventListener("click", (e) => {
+  const pop = document.getElementById("followupPop");
+  if (pop && pop.classList.contains("show") && !e.target.closest(".followup-anchor")) {
+    pop.classList.remove("show");
+  }
+});
+
+// ============= INIT =============
+refreshFilterCounts();
+renderInboxList();
+renderConv();
+renderRight();
+</script>
+
+
+
+</body></html>

@@ -1,0 +1,73 @@
+{
+  "id": "m27-sidebar-shell-correction",
+  "generatedAt": "2026-05-04T20:15:40Z",
+  "scope": "Correct Leads/Campaigns shell after client review: keep the main app sidebar and remove the separate prototype topbar/tab shell while preserving prototype styling inside the content area.",
+  "reason": "Client review flagged that Campaigns lost the side panel and switching to Leads felt like a different page. The old Leads page should be styled like the prototype inside the existing app shell, not replace the app shell.",
+  "changes": {
+    "appLayout": [
+      "Removed route-level sidebar suppression for /campaigns and /leads.",
+      "Auto-expands the sidebar on /campaigns and /leads.",
+      "Shows the full sidebar from md breakpoint on /campaigns and /leads so it remains visible at the 918px QA viewport.",
+      "Keeps the mobile drawer/topbar only below md for /campaigns and /leads."
+    ],
+    "campaignsPage": [
+      "Removed the internal prototype topbar and Leads/Campaigns tab nav.",
+      "Kept the dark prototype background, AI Retarget Suggestions, cap/cooldown/lineage styling, filters, and campaign table inside the normal app shell."
+    ],
+    "leadsPage": [
+      "Removed the internal prototype topbar and Leads/Campaigns tab nav.",
+      "Kept the old Leads route/page and applied the prototype scope note, readable source comparison, Source/State/Last Contact filters, and table styling inside the normal app shell."
+    ]
+  },
+  "browserValidation": {
+    "viewport": "918x667 actual integrated-browser viewport",
+    "campaigns": {
+      "path": "/campaigns",
+      "desktopSidebarWidth": 260,
+      "mobileSidebarDisplay": "none",
+      "mobileTopbarDisplay": "none",
+      "hasPrototypeTopbar": false,
+      "hasPrototypeTabs": false,
+      "shellBackground": "rgb(10, 15, 28)",
+      "aiCardCount": 3,
+      "hasDailyCapacity": true,
+      "hasCooldown": true,
+      "hasLineageRow": true,
+      "hasHorizontalOverflow": false
+    },
+    "leads": {
+      "path": "/leads",
+      "desktopSidebarWidth": 260,
+      "mobileSidebarDisplay": "none",
+      "mobileTopbarDisplay": "none",
+      "hasPrototypeTopbar": false,
+      "hasPrototypeTabs": false,
+      "hasScopeNote": true,
+      "hasSourceReadability": true,
+      "hasSourceFilter": true,
+      "hasStateFilter": true,
+      "hasLastContactedFilter": true,
+      "hasHorizontalOverflow": false
+    }
+  },
+  "screenshots": [
+    "audit-screenshots/m27-sidebar-campaigns-after-fix.png",
+    "audit-screenshots/m27-sidebar-leads-after-fix.png"
+  ],
+  "validation": {
+    "vscodeProblems": "No errors in AppLayout, LeadsPage, CampaignsPage, globals.css.",
+    "build": "npm run build passed after shell/sidebar correction: server tsc, client tsc, Vite production build."
+  },
+  "productionDeploy": {
+    "commit": "42daf54",
+    "host": "https://app.sclcapital.io/",
+    "method": "full local git bundle to production because non-interactive GitHub HTTPS fetch requires credentials",
+    "build": "production npm run build passed: server tsc, client tsc, Vite production build",
+    "pm2": "sms-api restarted and reported online after warm-up",
+    "smoke": {
+      "apiHealth": "http://127.0.0.1:3001/api/health returned status ok with database ok and redis ok",
+      "leads": "https://app.sclcapital.io/leads returned HTTP 200 with updated frontend timestamp",
+      "campaigns": "https://app.sclcapital.io/campaigns returned HTTP 200 with updated frontend timestamp"
+    }
+  }
+}

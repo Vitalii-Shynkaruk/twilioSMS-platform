@@ -1,0 +1,80 @@
+{
+  "gate": "dev-mode-login",
+  "date": "2026-05-04",
+  "scope": [
+    "Local QA login without OTP code",
+    "Production safety guard",
+    "Login UI dev-only switch",
+    "OTP flow preservation"
+  ],
+  "implementation": {
+    "backendEndpoint": "POST /api/auth/dev-login",
+    "backendFlags": ["DEV_MODE_LOGIN_ENABLED=true", "DEV_MODE_LOGIN_SECRET optional"],
+    "productionGuard": "NODE_ENV=production blocks dev-login even if DEV_MODE_LOGIN_ENABLED is true",
+    "frontendFlag": "VITE_DEV_MODE_LOGIN_ENABLED=true",
+    "frontendProductionGuard": "LoginPage hides Dev mode login when import.meta.env.PROD is true"
+  },
+  "tests": [
+    {
+      "command": "cd server && npx vitest run tests/authDevModeLogin.test.ts tests/authOtpPolicy.test.ts tests/clientPreservationRequirements.test.ts",
+      "result": "passed",
+      "testFiles": 3,
+      "tests": 11
+    },
+    {
+      "command": "npm run build",
+      "result": "passed",
+      "coverage": ["server tsc", "client tsc", "vite production build"]
+    }
+  ],
+  "browserEvidence": {
+    "productionPreviewUrl": "http://127.0.0.1:4174/login",
+    "productionPreviewHttpStatus": 200,
+    "productionPreviewDom": {
+      "title": "SecureCreditLines - SMS Platform",
+      "devButtonCount": 0,
+      "sendCodeCount": 1,
+      "hasVerticalOverflow": false
+    }
+  },
+  "productionDeployment": {
+    "url": "https://app.sclcapital.io/",
+    "commit": "98ac6be8d",
+    "health": {
+      "status": "ok",
+      "database": "ok",
+      "redis": "ok"
+    },
+    "http": {
+      "root": 200,
+      "login": 200,
+      "devLogin": 404
+    },
+    "browserDom": {
+      "title": "SecureCreditLines - SMS Platform",
+      "devButtonCount": 0,
+      "sendCodeCount": 1,
+      "hasVerticalOverflow": false
+    },
+    "pm2": "sms-api online after restart"
+  },
+  "securityChecks": [
+    "Dev mode requires explicit backend flag and is disabled by default",
+    "Production environment blocks backend dev-login regardless of flag value",
+    "Frontend dev button requires VITE_DEV_MODE_LOGIN_ENABLED=true and is hidden in production builds",
+    "Inactive or missing users are rejected",
+    "Dev login updates lastLoginAt and creates the same JWT/refresh session shape as OTP login",
+    "Auth refresh interceptor does not treat /auth/dev-login 401 as a normal expired-session redirect"
+  ],
+  "manualQaHowTo": [
+    "Set server DEV_MODE_LOGIN_ENABLED=true in local .env; optionally set DEV_MODE_LOGIN_SECRET.",
+    "Set client VITE_DEV_MODE_LOGIN_ENABLED=true in client/.env.local.",
+    "Run local server and client dev mode.",
+    "Open /login, enter an active user email, click Dev mode login, expect role-based redirect without OTP code.",
+    "Unset flags and confirm the button disappears and OTP-only flow remains."
+  ],
+  "knownLimitations": [
+    "The dev-mode login bypass is intentionally not available in production.",
+    "Integrated VS Code browser/Playwright navigation against Vite dev server timed out in this environment; production preview browser smoke and source regression tests passed."
+  ]
+}

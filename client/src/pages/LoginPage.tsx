@@ -112,6 +112,8 @@ export default function LoginPage() {
 
   return (
     <main className="scl-auth" aria-labelledby="scl-auth-title">
+      {/* Gradient border: bright at corners, transparent mid-side */}
+      <div className="scl-auth__border" aria-hidden="true" />
       {/* Animated border beam */}
       <div className="scl-auth__beam" aria-hidden="true" />
       {/* Corner accent brackets */}

@@ -485,14 +485,63 @@
 }
 
 /* ─── Animated border beam (CSS offset-path) ─── */
-/* Travels the rectangular perimeter. Short gradient line: bright ends, transparent center. */
+/* ─── Static gradient border: bright at corners, fades to near-transparent mid-side ─── */
+.scl-auth__border {
+  position: absolute;
+  inset: 20px;
+  pointer-events: none;
+  z-index: 5;
+  background:
+    /* top: blue-left corner → transparent mid → gold-right corner */
+    linear-gradient(90deg,
+      rgba(22, 132, 255, 0.7)  0%,
+      rgba(22, 132, 255, 0.55) 10%,
+      rgba(22, 132, 255, 0.06) 36%,
+      rgba(22, 132, 255, 0.06) 64%,
+      rgba(213, 168, 74, 0.06) 72%,
+      rgba(213, 168, 74, 0.55) 90%,
+      rgba(213, 168, 74, 0.7)  100%
+    ) top / 100% 1.5px no-repeat,
+    /* bottom: same logic */
+    linear-gradient(90deg,
+      rgba(22, 132, 255, 0.45) 0%,
+      rgba(22, 132, 255, 0.35) 10%,
+      rgba(22, 132, 255, 0.04) 36%,
+      rgba(22, 132, 255, 0.04) 64%,
+      rgba(213, 168, 74, 0.04) 72%,
+      rgba(213, 168, 74, 0.45) 90%,
+      rgba(213, 168, 74, 0.6)  100%
+    ) bottom / 100% 1.5px no-repeat,
+    /* left: blue, bright at corners, transparent mid */
+    linear-gradient(180deg,
+      rgba(22, 132, 255, 0.7)  0%,
+      rgba(22, 132, 255, 0.5)  8%,
+      rgba(22, 132, 255, 0.05) 35%,
+      rgba(22, 132, 255, 0.05) 65%,
+      rgba(22, 132, 255, 0.5)  92%,
+      rgba(22, 132, 255, 0.65) 100%
+    ) left / 1.5px 100% no-repeat,
+    /* right: gold */
+    linear-gradient(180deg,
+      rgba(213, 168, 74, 0.65) 0%,
+      rgba(213, 168, 74, 0.5)  8%,
+      rgba(213, 168, 74, 0.05) 35%,
+      rgba(213, 168, 74, 0.05) 65%,
+      rgba(213, 168, 74, 0.5)  92%,
+      rgba(213, 168, 74, 0.7)  100%
+    ) right / 1.5px 100% no-repeat;
+}
+
+/* ─── Animated border beam ─── */
+/* Short (28px) semi-transparent comet travels the perimeter. */
 .scl-auth__beam {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 6;
+  z-index: 7;
+  opacity: 0.55;
 }
 
 .scl-auth__beam::before,
@@ -501,33 +550,34 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 90px;
+  width: 28px;
   height: 2px;
   offset-path: inset(20px);
   offset-rotate: auto;
   offset-distance: 0%;
   animation: beamRun 10s linear infinite;
+  border-radius: 1px;
 }
 
-/* Blue beam — gradient: opaque at ends, transparent center */
+/* Blue beam */
 .scl-auth__beam::before {
   background: linear-gradient(90deg,
-    rgba(22, 132, 255, 0.9)  0%,
-    rgba(80, 185, 255, 0.55) 20%,
-    rgba(22, 132, 255, 0.08) 50%,
-    rgba(80, 185, 255, 0.55) 80%,
-    rgba(22, 132, 255, 0.9)  100%);
-  box-shadow: 0 0 6px 1px rgba(22, 132, 255, 0.45);
+    transparent                0%,
+    rgba(22, 132, 255, 0.5)  30%,
+    rgba(80, 185, 255, 0.95) 60%,
+    rgba(80, 185, 255, 0.6)  80%,
+    transparent              100%);
+  box-shadow: 0 0 5px 1px rgba(22, 132, 255, 0.4);
 }
 
 /* Gold beam — offset by half-cycle */
 .scl-auth__beam::after {
   background: linear-gradient(90deg,
-    rgba(213, 168, 74, 0.9)  0%,
-    rgba(224, 192, 100, 0.5) 20%,
-    rgba(213, 168, 74, 0.08) 50%,
-    rgba(224, 192, 100, 0.5) 80%,
-    rgba(213, 168, 74, 0.9)  100%);
+    transparent                0%,
+    rgba(213, 168, 74, 0.5)  30%,
+    rgba(224, 192, 100, 0.95) 60%,
+    rgba(224, 192, 100, 0.6) 80%,
+    transparent              100%);
   box-shadow: 0 0 6px 1px rgba(213, 168, 74, 0.4);
   animation-delay: -5s;
 }

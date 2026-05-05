@@ -26,7 +26,7 @@ import {
   Upload,
   RotateCcw,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNowStrict } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../stores/authStore';
 
@@ -107,6 +107,29 @@ function getCapacityPercent(cohort: AiCohort): number {
   return Math.min(100, Math.round((cohort.cap.dailyUsed / cohort.cap.dailyCap) * 100));
 }
 
+function formatAiRefresh(refreshedAt?: string): string {
+  if (!refreshedAt) return 'just now';
+  return `${formatDistanceToNowStrict(new Date(refreshedAt))} ago`;
+}
+
+function getAiPriorityTone(priorityLabel: string): 'high' | 'opp' | 'renewal' {
+  if (priorityLabel === 'HIGH PRIORITY') return 'high';
+  if (priorityLabel === 'RENEWAL') return 'renewal';
+  return 'opp';
+}
+
+function getAiDisplayLeadCount(cohort: AiCohort): number {
+  return cohort.eligibleCount > 0 ? cohort.eligibleCount : cohort.totalMatchCount;
+}
+
+function getCampaignRateTone(rate: string | null): 'high' | 'mid' | 'low' | 'empty' {
+  if (rate === null) return 'empty';
+  const numericRate = parseFloat(rate);
+  if (numericRate >= 85) return 'high';
+  if (numericRate >= 78) return 'mid';
+  return 'low';
+}
+
 export default function CampaignsPage() {
   const { user } = useAuthStore();
   const isRep = user?.role === 'REP';
@@ -151,14 +174,21 @@ export default function CampaignsPage() {
 
   const totalPages = data?.pagination?.pages || 1;
   const total = data?.pagination?.total || 0;
-  const { data: aiCohortsData, isLoading: aiCohortsLoading } = useQuery<AiCohortsResponse>({
+  const {
+    data: aiCohortsData,
+    isLoading: aiCohortsLoading,
+    isError: aiCohortsError,
+    refetch: refetchAiCohorts,
+  } = useQuery<AiCohortsResponse>({
     queryKey: ['campaign-ai-cohorts', user?.id, user?.role],
     queryFn: async () => {
       const { data } = await api.get('/campaigns/ai-cohorts');
       return data;
     },
     enabled: canManage,
+    retry: 1,
     refetchInterval: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
   const { data: outboundGate } = useQuery<{
     blocked: boolean;
@@ -189,6 +219,18 @@ export default function CampaignsPage() {
     items.push(totalPages);
     return items;
   }, [page, totalPages]);
+  const visibleCampaigns: Campaign[] = data?.campaigns || [];
+  const aiBuiltCount = visibleCampaigns.filter((campaign) => campaign.aiBuilt).length;
+  const creatorInitialsList = [
+    ...new Set(visibleCampaigns.map((campaign) => campaign.creatorInitials).filter(Boolean)),
+  ];
+  const campaignsListMeta = isRep
+    ? 'Only campaigns you created are visible in rep view'
+    : creatorInitialsList.length > 0
+      ? `All campaigns from ${creatorInitialsList.join(', ')} visible to admin${
+          aiBuiltCount > 0 ? ` · ${aiBuiltCount} ${aiBuiltCount === 1 ? 'is' : 'are'} AI-built` : ''
+        }`
+      : `All ${total} campaigns visible to admin`;
 
   const startMutation = useMutation({
     mutationFn: (id: string) => api.post(`/campaigns/${id}/start`),
@@ -321,7 +363,8 @@ export default function CampaignsPage() {
           <div>
             <h1 className="text-2xl font-bold text-dark-50">Campaigns</h1>
             <p className="text-sm text-dark-400 mt-1">
-              {total} campaigns {isRep ? 'created by you' : 'across all reps'} · {isRep ? 'rep view' : 'admin view'}
+              <strong className="text-dark-100">{total}</strong> campaigns{' '}
+              {isRep ? 'created by you' : 'across all reps'} · {isRep ? 'rep view' : 'admin view'}
             </p>
           </div>
           {canManage && (
@@ -346,8 +389,13 @@ export default function CampaignsPage() {
           <AiRetargetSection
             data={aiCohortsData}
             isLoading={aiCohortsLoading}
+            isError={aiCohortsError}
+            isRep={isRep}
             onPreview={setPreviewCohortId}
             onBuild={setBuildAiCohort}
+            onRetry={() => {
+              void refetchAiCohorts();
+            }}
             outboundLocked={outboundLocked}
             outboundLockMsg={outboundLockMsg}
           />
@@ -355,41 +403,37 @@ export default function CampaignsPage() {
 
         <div>
           <h2 className="text-lg font-semibold text-dark-100">All Campaigns</h2>
-          <p className="text-xs text-dark-500 mt-0.5">
-            {isRep ? 'Campaigns created by you' : 'All campaigns across reps'} · {total} total
-          </p>
+          <p className="text-xs text-dark-500 mt-0.5">{campaignsListMeta}</p>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+        <div className="campaigns-table-toolbar flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
           <div className="relative w-full md:flex-1 md:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
             <input
               type="text"
-              placeholder="Search campaigns..."
+              placeholder="Search campaigns…"
               className="input pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-            <div className="flex gap-2 min-w-max">
-              <button
-                onClick={() => setStatusFilter('')}
-                className={`badge cursor-pointer shrink-0 ${!statusFilter ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400 hover:text-dark-300'}`}
-              >
-                All
-              </button>
-              {statuses.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={`badge cursor-pointer shrink-0 ${statusFilter === s ? 'bg-scl-600/30 text-scl-300' : 'bg-dark-700 text-dark-400 hover:text-dark-300'}`}
-                >
-                  {s}
-                </button>
+          <div className="relative w-full md:w-auto md:min-w-[140px]">
+            <select
+              className="input campaigns-status-select appearance-none pr-8"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All Status</option>
+              {statuses.map((status) => (
+                <option key={status} value={status}>
+                  {status.charAt(0) + status.slice(1).toLowerCase()}
+                </option>
               ))}
-            </div>
+            </select>
+            <span className="campaigns-filter-caret" aria-hidden="true">
+              ▾
+            </span>
           </div>
         </div>
 
@@ -421,6 +465,7 @@ export default function CampaignsPage() {
             {data?.campaigns?.map((campaign: Campaign) => {
               const deliveryRate =
                 campaign.totalSent > 0 ? ((campaign.totalDelivered / campaign.totalSent) * 100).toFixed(1) : null;
+              const rateTone = getCampaignRateTone(deliveryRate);
 
               return (
                 <div
@@ -430,31 +475,24 @@ export default function CampaignsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-dark-200 flex flex-wrap items-center gap-2">
+                      <p className="campaign-name flex flex-wrap items-center gap-2">
+                        {campaign.creatorInitials && <RepAvatar initials={campaign.creatorInitials} />}
                         <span className="break-words">{campaign.name}</span>
-                        {campaign.aiBuilt ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/60 text-purple-300">
-                            AI
-                          </span>
-                        ) : campaign.isRetarget ? (
-                          <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
-                            ↺ Retarget
-                          </span>
-                        ) : null}
+                        {campaign.aiBuilt ? <span className="ai-source-tag">AI</span> : null}
                       </p>
                       {campaign.aiBuilt ? (
-                        <p className="text-[11px] mt-0.5 text-purple-300" style={{ opacity: 0.9 }}>
-                          ↻ from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
+                        <p className="campaign-lineage ai-source">
+                          from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
                         </p>
                       ) : campaign.isRetarget ? (
-                        <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
-                          ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                        <p className="campaign-lineage">
+                          from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
                         </p>
                       ) : (
-                        <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
+                        <p className="leads-count">{campaign.totalLeads} leads</p>
                       )}
                       <p className="text-xs text-dark-500 mt-1">
-                        Created {format(new Date(campaign.createdAt), 'MMM d, yyyy')}
+                        Created {format(new Date(campaign.createdAt), 'MMM d')}
                       </p>
                     </div>
                     <CampaignStatusBadge status={campaign.status} />
@@ -464,7 +502,7 @@ export default function CampaignsPage() {
                     <MetricCard
                       label="Sent"
                       value={campaign.totalSent.toLocaleString()}
-                      valueClassName="text-dark-200"
+                      valueClassName="text-dark-100"
                     />
                     <MetricCard
                       label="Delivered"
@@ -479,7 +517,7 @@ export default function CampaignsPage() {
                     <MetricCard
                       label="Blocked"
                       value={campaign.totalBlocked.toLocaleString()}
-                      valueClassName="text-yellow-400"
+                      valueClassName={campaign.totalBlocked > 0 ? 'text-dark-100' : 'text-dark-500'}
                     />
                     <MetricCard
                       label="Replied"
@@ -490,13 +528,13 @@ export default function CampaignsPage() {
                       label="Rate"
                       value={deliveryRate !== null ? `${deliveryRate}%` : '—'}
                       valueClassName={
-                        deliveryRate === null
+                        rateTone === 'empty'
                           ? 'text-dark-500'
-                          : parseFloat(deliveryRate) >= 80
+                          : rateTone === 'high'
                             ? 'text-green-400'
-                            : parseFloat(deliveryRate) >= 50
-                              ? 'text-yellow-400'
-                              : 'text-red-400'
+                            : rateTone === 'mid'
+                              ? 'text-[#F0C850]'
+                              : 'text-orange-400'
                       }
                     />
                   </div>
@@ -557,6 +595,7 @@ export default function CampaignsPage() {
                 {data?.campaigns?.map((campaign: Campaign) => {
                   const deliveryRate =
                     campaign.totalSent > 0 ? ((campaign.totalDelivered / campaign.totalSent) * 100).toFixed(1) : null;
+                  const rateTone = getCampaignRateTone(deliveryRate);
 
                   return (
                     <tr
@@ -570,28 +609,21 @@ export default function CampaignsPage() {
                     >
                       <td className="table-cell">
                         <div>
-                          <p className="font-medium text-dark-200 flex items-center gap-2">
+                          <p className="campaign-name flex items-center gap-2">
+                            {campaign.creatorInitials && <RepAvatar initials={campaign.creatorInitials} />}
                             <span>{campaign.name}</span>
-                            {campaign.aiBuilt ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/60 text-purple-300">
-                                AI
-                              </span>
-                            ) : campaign.isRetarget ? (
-                              <span className="text-[10px] px-2 py-0.5 rounded border border-[#C9A84C]/60 text-[#C9A84C]">
-                                ↺ Retarget
-                              </span>
-                            ) : null}
+                            {campaign.aiBuilt ? <span className="ai-source-tag">AI</span> : null}
                           </p>
                           {campaign.aiBuilt ? (
-                            <p className="text-[11px] mt-0.5 text-purple-300" style={{ opacity: 0.9 }}>
-                              ↻ from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
+                            <p className="campaign-lineage ai-source">
+                              from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
                             </p>
                           ) : campaign.isRetarget ? (
-                            <p className="text-[11px] mt-0.5 text-[#C9A84C]" style={{ opacity: 0.8 }}>
-                              ↺ from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                            <p className="campaign-lineage">
+                              from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
                             </p>
                           ) : (
-                            <p className="text-xs text-dark-500 mt-0.5">{campaign.totalLeads} leads</p>
+                            <p className="leads-count">{campaign.totalLeads} leads</p>
                           )}
                         </div>
                       </td>
@@ -603,8 +635,10 @@ export default function CampaignsPage() {
                         {campaign.totalDelivered.toLocaleString()}
                       </td>
                       <CampaignFailedTooltip campaign={campaign} />
-                      <td className="table-cell text-center font-mono text-yellow-400">
-                        {campaign.totalBlocked.toLocaleString()}
+                      <td
+                        className={`table-cell text-center font-mono ${campaign.totalBlocked > 0 ? 'text-dark-100' : 'text-dark-600'}`}
+                      >
+                        {campaign.totalBlocked > 0 ? campaign.totalBlocked.toLocaleString() : '0'}
                       </td>
                       <td className="table-cell text-center font-mono text-purple-400">
                         {campaign.totalReplied > 0 ? (
@@ -623,11 +657,11 @@ export default function CampaignsPage() {
                         {deliveryRate !== null ? (
                           <span
                             className={`text-xs font-medium ${
-                              parseFloat(deliveryRate) >= 80
+                              rateTone === 'high'
                                 ? 'text-green-400'
-                                : parseFloat(deliveryRate) >= 50
-                                  ? 'text-yellow-400'
-                                  : 'text-red-400'
+                                : rateTone === 'mid'
+                                  ? 'text-[#F0C850]'
+                                  : 'text-orange-400'
                             }`}
                           >
                             {deliveryRate}%
@@ -637,7 +671,7 @@ export default function CampaignsPage() {
                         )}
                       </td>
                       <td className="table-cell text-dark-500 text-xs">
-                        {format(new Date(campaign.createdAt), 'MMM d, yyyy')}
+                        {format(new Date(campaign.createdAt), 'MMM d')}
                       </td>
                       {canManage && <td className="table-cell">{renderCampaignActions(campaign)}</td>}
                     </tr>
@@ -841,18 +875,44 @@ function formatCompactNumber(value: number): string {
   return value.toLocaleString();
 }
 
+const REP_AVATAR_COLORS: Record<string, string> = {
+  JB: '#d4af37',
+  HB: '#a78bfa',
+  AN: '#4a9eff',
+  MC: '#fb923c',
+};
+
+function RepAvatar({ initials }: { initials: string }) {
+  return (
+    <span
+      className="rep-inline-avatar"
+      style={{ background: REP_AVATAR_COLORS[initials] || '#d4af37' }}
+      title={initials}
+      aria-label={`Rep ${initials}`}
+    >
+      {initials}
+    </span>
+  );
+}
+
 function AiRetargetSection({
   data,
   isLoading,
+  isError,
+  isRep,
   onPreview,
   onBuild,
+  onRetry,
   outboundLocked,
   outboundLockMsg,
 }: {
   data?: AiCohortsResponse;
   isLoading: boolean;
+  isError: boolean;
+  isRep: boolean;
   onPreview: (cohortId: string) => void;
   onBuild: (cohort: AiCohort) => void;
+  onRetry: () => void;
   outboundLocked: boolean;
   outboundLockMsg: string;
 }) {
@@ -860,18 +920,23 @@ function AiRetargetSection({
 
   return (
     <section className="card campaigns-ai-zone border-purple-500/20 bg-purple-500/[0.04] overflow-hidden">
-      <div className="card-header flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-start gap-3">
+      <div className="card-header ai-zone-head flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="ai-zone-title-wrap flex items-start gap-3">
           <span className="campaigns-ai-pulse" aria-hidden="true" />
           <div>
-            <h2 className="text-lg font-semibold text-dark-100">AI Retarget Suggestions</h2>
-            <p className="text-xs text-dark-500 mt-0.5">
-              Drawn from <strong className="text-dark-300">{data?.sourceCampaignCount || 0} past campaigns</strong> ·
-              refreshed {data?.refreshedAt ? format(new Date(data.refreshedAt), 'MMM d, h:mm a') : 'now'}
+            <h2 className="ai-zone-title text-lg font-semibold text-dark-100">AI Retarget Suggestions</h2>
+            <p className="ai-zone-sub text-xs text-dark-500 mt-0.5">
+              Drawn from{' '}
+              <strong className="text-dark-100">
+                {isRep
+                  ? `all your past campaigns (${data?.sourceCampaignCount || 0} total)`
+                  : `all reps' past campaigns (${data?.sourceCampaignCount || 0} total)`}
+              </strong>{' '}
+              · refreshed {formatAiRefresh(data?.refreshedAt)}
             </p>
           </div>
         </div>
-        <div className="text-xs text-dark-400">
+        <div className="ai-zone-meta text-xs text-dark-400">
           <strong className="text-dark-100">{data?.summary?.cohortCount || 0} cohorts</strong> ready ·{' '}
           <strong className="text-purple-300">~{data?.summary?.expectedFunded || 0} funded deals</strong> expected
         </div>
@@ -880,90 +945,75 @@ function AiRetargetSection({
       <div className="card-body pt-0">
         {isLoading ? (
           <div className="text-sm text-dark-500 py-4">Loading AI cohorts...</div>
+        ) : isError ? (
+          <div className="flex flex-col gap-3 py-4 text-sm text-red-300 sm:flex-row sm:items-center sm:justify-between">
+            <span>Failed to load AI cohorts. Retry the request.</span>
+            <button type="button" className="ai-card-btn" onClick={onRetry}>
+              Retry
+            </button>
+          </div>
         ) : cohorts.length === 0 ? (
           <div className="text-sm text-dark-500 py-4">No AI cohorts ready right now.</div>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="ai-cards grid gap-3 lg:grid-cols-3">
             {cohorts.map((cohort) => {
               const disabled = outboundLocked || cohort.leadCount === 0;
-              const meta = getAiCohortMeta(cohort);
-              const capacityPercent = getCapacityPercent(cohort);
+              const displayLeadCount = getAiDisplayLeadCount(cohort);
+              const priorityTone = getAiPriorityTone(cohort.priorityLabel);
+              const capacityWarning =
+                cohort.cap.trimmed > 0
+                  ? `Capacity capped at ${formatCompactNumber(cohort.leadCount)} of ${formatCompactNumber(cohort.eligibleCount)} leads.`
+                  : null;
               return (
                 <div
                   key={cohort.id}
-                  className="campaigns-ai-card rounded-lg border border-dark-700/60 bg-dark-900/50 p-4 space-y-3"
+                  className="campaigns-ai-card ai-card rounded-lg border border-dark-700/60 bg-dark-900/50 p-4"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="campaigns-ai-category">{meta.categoryLabel}</span>
-                      <h3 className="text-sm font-semibold text-dark-100 leading-snug mt-1">{cohort.title}</h3>
-                    </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded border border-purple-400/50 text-purple-300 whitespace-nowrap">
-                      {cohort.priorityLabel}
-                    </span>
+                  <div className="ai-card-head flex items-start justify-between gap-3">
+                    <h3 className="ai-card-title text-sm font-semibold text-dark-100 leading-snug">{cohort.title}</h3>
+                    <span className={`priority-badge ${priorityTone} whitespace-nowrap`}>{cohort.priorityLabel}</span>
                   </div>
 
-                  <p className="text-xs text-dark-400 leading-relaxed">{meta.description}</p>
-
-                  <div className="campaigns-ai-metrics grid grid-cols-3 gap-2">
-                    <MetricCard
-                      label="Leads"
-                      value={formatCompactNumber(cohort.leadCount)}
-                      valueClassName="text-dark-100"
-                    />
-                    <MetricCard
-                      label="Predicted reply"
-                      value={`${cohort.predictedReplyRate}%`}
-                      valueClassName="text-green-400"
-                    />
-                    <MetricCard label="Funded" value={`~${cohort.expectedFunded}`} valueClassName="text-purple-300" />
-                  </div>
-
-                  <p className="text-xs text-dark-500">↳ {cohort.historicalAnchor}</p>
-                  <p className="text-xs text-dark-400 leading-relaxed">
-                    <span className="text-purple-300 font-medium">AI:</span>{' '}
-                    <strong className="text-dark-200">{cohort.reasoningLead}</strong> {cohort.reasoningText}
-                  </p>
-
-                  <div className="campaigns-ai-capacity" aria-label="Daily capacity">
-                    <div className="campaigns-ai-capacity__summary">
-                      <span className="campaigns-ai-capacity__count">
-                        {formatCompactNumber(cohort.leadCount)} leads
-                      </span>
-                      <span className="campaigns-ai-capacity__usage">
-                        {' · '}Daily capacity: {formatCompactNumber(cohort.cap.dailyUsed)} /{' '}
-                        {formatCompactNumber(cohort.cap.dailyCap)} used · {capacityPercent}%
-                      </span>
+                  <div className="campaigns-ai-metrics ai-card-stats grid grid-cols-3 gap-2">
+                    <div className="ai-stat">
+                      <div className="ai-stat-v gold">{formatCompactNumber(displayLeadCount)}</div>
+                      <div className="ai-stat-l">Leads</div>
                     </div>
-                    <div className="campaigns-ai-capacity-bar" aria-hidden="true">
-                      <span style={{ width: `${capacityPercent}%` }} />
+                    <div className="ai-stat">
+                      <div className="ai-stat-v purple">{cohort.predictedReplyRate}%</div>
+                      <div className="ai-stat-l">Predicted Reply</div>
+                    </div>
+                    <div className="ai-stat">
+                      <div className="ai-stat-v green">~{cohort.expectedFunded}</div>
+                      <div className="ai-stat-l">Funded Expected</div>
                     </div>
                   </div>
 
-                  {cohort.cap.trimmed > 0 && (
-                    <p className="text-xs text-orange-300">
-                      Capacity trim: {formatCompactNumber(cohort.leadCount)} of{' '}
-                      {formatCompactNumber(cohort.eligibleCount)} leads selected;{' '}
-                      {formatCompactNumber(cohort.cap.trimmed)} held back by per-campaign or daily caps.
-                    </p>
-                  )}
-                  {cohort.warnings.map((warning) => (
-                    <p key={warning} className="text-xs text-yellow-300">
-                      {warning}
-                    </p>
-                  ))}
+                  <div className="ai-comparable">{cohort.historicalAnchor}</div>
+                  <div className="ai-reason text-xs text-dark-400 leading-relaxed">
+                    AI: <strong className="text-dark-200">{cohort.reasoningLead}</strong> {cohort.reasoningText}
+                  </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-1">
+                  {cohort.warnings
+                    .filter((warning) => !warning.toLowerCase().includes('capacity'))
+                    .map((warning) => (
+                      <div key={warning} className="ai-card-cooldown">
+                        {warning}
+                      </div>
+                    ))}
+                  {capacityWarning && <div className="admin-warning">{capacityWarning}</div>}
+
+                  <div className="ai-card-actions flex items-center justify-end gap-2 pt-1">
                     <button
                       type="button"
-                      className="btn-ghost text-xs py-1.5 px-3"
+                      className="btn-ghost ai-card-btn text-xs py-1.5 px-3"
                       onClick={() => onPreview(cohort.id)}
                     >
                       Preview
                     </button>
                     <button
                       type="button"
-                      className="btn-primary text-xs py-1.5 px-3"
+                      className="btn-primary ai-card-btn primary text-xs py-1.5 px-3"
                       disabled={disabled}
                       title={outboundLocked ? outboundLockMsg : undefined}
                       onClick={() => onBuild(cohort)}
@@ -1946,24 +1996,18 @@ function CreateCampaignModal({
 }
 
 function CampaignStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { icon: any; class: string }> = {
-    DRAFT: { icon: Clock, class: 'bg-dark-600/50 text-dark-300' },
-    SCHEDULED: { icon: Clock, class: 'bg-blue-500/20 text-blue-400' },
-    SENDING: { icon: Send, class: 'bg-yellow-500/20 text-yellow-400' },
-    PAUSED: { icon: Pause, class: 'bg-orange-500/20 text-orange-400' },
-    COMPLETED: { icon: CheckCircle, class: 'bg-green-500/20 text-green-400' },
-    CANCELLED: { icon: XCircle, class: 'bg-red-500/20 text-red-400' },
+  const config: Record<string, { class: string; label: string }> = {
+    DRAFT: { class: 'bg-dark-600/50 text-dark-300', label: 'draft' },
+    SCHEDULED: { class: 'bg-blue-500/20 text-blue-400', label: 'scheduled' },
+    SENDING: { class: 'bg-yellow-500/20 text-yellow-400', label: 'sending' },
+    PAUSED: { class: 'bg-orange-500/20 text-orange-400', label: 'paused' },
+    COMPLETED: { class: 'bg-green-500/20 text-green-400', label: 'completed' },
+    CANCELLED: { class: 'bg-red-500/20 text-red-400', label: 'cancelled' },
   };
 
   const cfg = config[status] || config.DRAFT;
-  const Icon = cfg.icon;
 
-  return (
-    <span className={`badge ${cfg.class}`}>
-      <Icon className="w-3 h-3 mr-1" />
-      {status}
-    </span>
-  );
+  return <span className={`badge ${cfg.class}`}>{cfg.label}</span>;
 }
 
 function MetricCard({ label, value, valueClassName }: { label: string; value: string; valueClassName: string }) {
@@ -2116,7 +2160,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   return (
     <td
       ref={triggerRef}
-      className="table-cell text-center font-mono cursor-default"
+      className="table-cell text-center font-mono text-dark-100 cursor-default"
       onMouseEnter={handleEnter}
       onMouseLeave={() => setShow(false)}
     >

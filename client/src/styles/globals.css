@@ -1765,6 +1765,304 @@
   line-height: 1.55;
 }
 
+.campaigns-scope .campaigns-table-toolbar {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.campaigns-scope .campaigns-status-select {
+  min-width: 118px;
+  padding-right: 32px;
+}
+
+.campaigns-scope .campaigns-filter-caret {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--campaign-text-3);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.campaigns-scope .rep-inline-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  margin-right: 8px;
+  color: #0a0f1c;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  vertical-align: -3px;
+  flex: 0 0 auto;
+}
+
+.campaigns-scope .campaign-name {
+  color: var(--campaign-text-1);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.campaigns-scope .leads-count {
+  margin-top: 2px;
+  color: var(--campaign-text-3);
+  font-size: 9.5px;
+}
+
+.campaigns-scope .ai-source-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--campaign-purple-dim);
+  color: var(--campaign-purple);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.campaigns-scope .campaign-lineage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  color: var(--campaign-gold);
+  font-size: 9.5px;
+  letter-spacing: 0.1px;
+}
+
+.campaigns-scope .campaign-lineage::before {
+  content: '↻';
+  color: currentColor;
+  font-size: 10px;
+}
+
+.campaigns-scope .campaign-lineage.ai-source {
+  color: var(--campaign-purple);
+}
+
+.campaigns-scope .ai-zone-head {
+  margin-bottom: 14px;
+}
+
+.campaigns-scope .ai-zone-title-wrap {
+  align-items: center;
+}
+
+.campaigns-scope .ai-zone-title {
+  color: var(--campaign-text-1);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.campaigns-scope .ai-zone-sub {
+  color: var(--campaign-text-3);
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+
+.campaigns-scope .ai-zone-meta {
+  color: var(--campaign-text-2);
+  font-size: 11px;
+}
+
+.campaigns-scope .ai-zone-meta strong:last-child {
+  color: var(--campaign-purple);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.campaigns-scope .ai-cards {
+  position: relative;
+  z-index: 1;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.campaigns-scope .ai-card {
+  position: relative;
+  border: 1px solid var(--campaign-border);
+  border-radius: 6px;
+  background: var(--campaign-bg-1);
+  padding: 14px 16px;
+  transition: border-color 0.15s ease;
+}
+
+.campaigns-scope .ai-card:hover {
+  border-color: var(--campaign-purple);
+}
+
+.campaigns-scope .ai-card-head {
+  margin-bottom: 10px;
+}
+
+.campaigns-scope .ai-card-title {
+  color: var(--campaign-text-1);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.campaigns-scope .priority-badge {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.campaigns-scope .priority-badge.high {
+  background: rgba(248, 113, 113, 0.14);
+  color: var(--campaign-red);
+}
+
+.campaigns-scope .priority-badge.opp {
+  background: rgba(251, 146, 60, 0.16);
+  color: var(--campaign-orange);
+}
+
+.campaigns-scope .priority-badge.renewal {
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--campaign-green);
+}
+
+.campaigns-scope .ai-card-stats {
+  gap: 8px;
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 5px;
+  background: var(--campaign-bg-2);
+}
+
+.campaigns-scope .ai-stat {
+  text-align: center;
+}
+
+.campaigns-scope .ai-stat-v {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.campaigns-scope .ai-stat-v.gold {
+  color: var(--campaign-gold-bright);
+}
+
+.campaigns-scope .ai-stat-v.purple {
+  color: var(--campaign-purple);
+}
+
+.campaigns-scope .ai-stat-v.green {
+  color: var(--campaign-green);
+}
+
+.campaigns-scope .ai-stat-l {
+  margin-top: 2px;
+  color: var(--campaign-text-3);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.campaigns-scope .ai-comparable {
+  margin-top: 6px;
+  padding: 5px 0 0 11px;
+  border-left: 2px solid transparent;
+  color: var(--campaign-text-3);
+  font-size: 10px;
+  font-style: italic;
+  letter-spacing: 0.1px;
+}
+
+.campaigns-scope .ai-comparable::before {
+  content: '↳ ';
+  color: var(--campaign-text-3);
+  font-style: normal;
+}
+
+.campaigns-scope .ai-reason {
+  margin: 10px 0;
+  padding: 9px 11px;
+  border-left: 2px solid var(--campaign-purple);
+  border-radius: 0 4px 4px 0;
+  background: var(--campaign-bg-2);
+  color: var(--campaign-text-2);
+  font-size: 10.5px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.campaigns-scope .ai-reason strong {
+  color: var(--campaign-text-1);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.campaigns-scope .ai-card-cooldown {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--campaign-text-3);
+  font-size: 9.5px;
+}
+
+.campaigns-scope .ai-card-cooldown::before {
+  content: '⏱';
+  font-size: 10px;
+}
+
+.campaigns-scope .admin-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: rgba(251, 146, 60, 0.16);
+  color: var(--campaign-orange);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.campaigns-scope .admin-warning::before {
+  content: '⚠';
+}
+
+.campaigns-scope .ai-card-actions {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.campaigns-scope .ai-card-btn {
+  flex: 1;
+  min-height: 32px;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.campaigns-scope .ai-card-btn.primary {
+  border-color: var(--campaign-purple);
+  background: var(--campaign-purple);
+  color: #0a0f1c;
+  box-shadow: none;
+}
+
+.campaigns-scope .ai-card-btn.primary:hover:not(:disabled) {
+  border-color: #b89cff;
+  background: #b89cff;
+}
+
 .campaigns-scope .table-header {
   border-bottom: 1px solid var(--campaign-border);
   background: var(--campaign-bg-2);

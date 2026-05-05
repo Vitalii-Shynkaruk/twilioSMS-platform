@@ -903,12 +903,25 @@ export class CampaignController {
     const specs = Object.values(AI_COHORT_SPECS).filter(
       (spec) => !spec.adminOnly || CampaignController.isAdminLike(req),
     );
-    const cohorts = [];
+    const resolvedCohorts = await Promise.allSettled(
+      specs.map((spec) =>
+        CampaignController.resolveAiCohort(spec.id, req, capacity, false, {
+          persistSnapshot: false,
+        }),
+      ),
+    );
+    const cohorts = resolvedCohorts.flatMap((result, index) => {
+      const spec = specs[index];
+      if (result.status === 'rejected') {
+        logger.warn('AI cohort resolve failed in list', {
+          cohortId: spec.id,
+          error: (result.reason as Error).message,
+        });
+        return [];
+      }
 
-    for (const spec of specs) {
-      const cohort = await CampaignController.resolveAiCohort(spec.id, req, capacity, false);
-      if (cohort.totalMatchCount > 0) cohorts.push(cohort);
-    }
+      return result.value.totalMatchCount > 0 ? [result.value] : [];
+    });
 
     res.json({
       cohorts,

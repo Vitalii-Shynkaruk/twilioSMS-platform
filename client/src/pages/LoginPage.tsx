@@ -112,9 +112,10 @@ export default function LoginPage() {
 
   return (
     <main className="scl-auth" aria-labelledby="scl-auth-title">
-      <div className="scl-auth__edge scl-auth__edge--top" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--right" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--bottom" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--top-left" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--top-right" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--bottom-left" aria-hidden="true" />
+      <div className="scl-auth__edge scl-auth__edge--bottom-right" aria-hidden="true" />
       <div className="scl-auth__ghost-mark" aria-hidden="true">
         SCL
       </div>

@@ -436,6 +436,12 @@
 .light .focus\:ring-scl-500\/50:focus { --tw-ring-color: rgba(99, 102, 241, 0.2) !important; }
 
 /* ─── SCL Auth Screen ─── */
+@keyframes authBgPan {
+  0% { transform: scale(1.02) translate(0, 0); }
+  50% { transform: scale(1.05) translate(-1%, -1%); }
+  100% { transform: scale(1.02) translate(0, 0); }
+}
+
 .scl-auth {
   --auth-bg: #020711;
   --auth-panel: rgba(5, 14, 29, 0.84);
@@ -451,66 +457,93 @@
   position: relative;
   min-height: 100vh;
   overflow: hidden;
+  background-color: var(--auth-bg);
+  color: var(--auth-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.scl-auth::before {
+  content: "";
+  position: absolute;
+  inset: -5%;
+  z-index: 0;
+  pointer-events: none;
   background:
     radial-gradient(circle at 50% 24%, rgba(26, 111, 224, 0.16), transparent 18%),
     radial-gradient(circle at 96% 6%, rgba(213, 168, 74, 0.16), transparent 22%),
     radial-gradient(circle at 0% 95%, rgba(14, 95, 190, 0.24), transparent 28%),
     linear-gradient(116deg, rgba(3, 13, 28, 0.98) 0%, rgba(2, 7, 17, 0.985) 48%, rgba(11, 9, 7, 0.98) 100%),
     repeating-linear-gradient(90deg, rgba(47, 86, 134, 0.032) 0 1px, transparent 1px 92px),
-    repeating-linear-gradient(0deg, rgba(47, 86, 134, 0.028) 0 1px, transparent 1px 82px),
-    var(--auth-bg);
-  color: var(--auth-text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-.scl-auth::before,
-.scl-auth::after {
-  content: "";
-  position: absolute;
-  inset: 18px;
-  pointer-events: none;
-  border: 1px solid rgba(45, 88, 142, 0.16);
-}
-
-.scl-auth::before {
-  clip-path: polygon(0 0, 100% 0, 100% 30%, 90% 30%, 90% 98%, 0 98%);
-}
-
-.scl-auth::after {
-  border-color: rgba(212, 166, 77, 0.28);
-  clip-path: polygon(84% 0, 100% 0, 100% 32%, 90% 32%, 90% 100%, 67% 100%, 67% 97%, 88% 97%, 88% 30%, 98% 30%, 98% 2%, 84% 2%);
+    repeating-linear-gradient(0deg, rgba(47, 86, 134, 0.028) 0 1px, transparent 1px 82px);
+  animation: authBgPan 25s ease-in-out infinite alternate;
 }
 
 .scl-auth__edge {
   position: absolute;
   pointer-events: none;
-  opacity: 0.76;
+  opacity: 0.85;
+  z-index: 10;
 }
 
-.scl-auth__edge--top {
-  top: 19px;
-  left: 4.8%;
-  width: 31%;
+/* Corner Frame Lines (HUD Style) */
+.scl-auth__edge--top-left {
+  top: 24px;
+  left: 24px;
+  width: 120px;
+  height: 60px;
+  border-top: 2px solid rgba(22, 132, 255, 0.6);
+  border-left: 2px solid rgba(22, 132, 255, 0.6);
+  border-top-left-radius: 8px;
+}
+.scl-auth__edge--top-left::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 30px;
+  width: 60px;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(31, 132, 255, 0.72), rgba(212, 166, 77, 0.45), transparent);
+  background: rgba(22, 132, 255, 1);
+  box-shadow: 0 0 8px rgba(22, 132, 255, 0.8);
 }
 
-.scl-auth__edge--right {
-  top: 20px;
-  right: 18px;
-  width: 64px;
-  height: 64px;
-  border-top: 2px solid rgba(212, 166, 77, 0.62);
-  border-right: 2px solid rgba(212, 166, 77, 0.62);
-  border-top-right-radius: 16px;
+.scl-auth__edge--top-right {
+  top: 24px;
+  right: 24px;
+  width: 120px;
+  height: 60px;
+  border-top: 2px solid rgba(213, 168, 74, 0.5);
+  border-right: 2px solid rgba(213, 168, 74, 0.5);
+  border-top-right-radius: 8px;
 }
 
-.scl-auth__edge--bottom {
-  right: 7.8%;
-  bottom: 19px;
-  width: 34%;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, rgba(212, 166, 77, 0.7), rgba(212, 166, 77, 0.34), transparent);
+.scl-auth__edge--bottom-left {
+  bottom: 24px;
+  left: 24px;
+  width: 120px;
+  height: 60px;
+  border-bottom: 2px solid rgba(22, 132, 255, 0.4);
+  border-left: 2px solid rgba(22, 132, 255, 0.4);
+  border-bottom-left-radius: 8px;
+}
+
+.scl-auth__edge--bottom-right {
+  bottom: 24px;
+  right: 24px;
+  width: 120px;
+  height: 60px;
+  border-bottom: 2px solid rgba(213, 168, 74, 0.6);
+  border-right: 2px solid rgba(213, 168, 74, 0.6);
+  border-bottom-right-radius: 8px;
+}
+.scl-auth__edge--bottom-right::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  right: 20px;
+  width: 60px;
+  height: 2px;
+  background: var(--auth-gold);
+  box-shadow: 0 0 10px rgba(213, 168, 74, 0.8);
 }
 
 .scl-auth__ghost-mark {
@@ -551,12 +584,12 @@
   display: inline-flex;
   align-items: baseline;
   justify-content: center;
-  gap: 7px;
+  gap: 2px;
   color: transparent;
-  font-size: clamp(3.95rem, 7vw, 5.35rem);
+  font-size: clamp(4.5rem, 8vw, 6rem);
   font-style: italic;
   font-weight: 900;
-  letter-spacing: -0.17em;
+  letter-spacing: -0.05em;
   line-height: 0.8;
   filter: drop-shadow(0 0 10px rgba(24, 126, 255, 0.22));
   text-shadow: 0 0 14px rgba(31, 132, 255, 0.28), 0 0 2px rgba(255, 255, 255, 0.48);
@@ -581,7 +614,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  transform: skewX(-13deg) scaleX(1.24);
+  transform: skewX(-15deg);
 }
 
 .scl-auth__wordmark span:last-child {
@@ -589,7 +622,7 @@
   -webkit-background-clip: text;
   background-clip: text;
   text-shadow: 0 0 16px rgba(212, 166, 77, 0.34);
-  transform: skewX(-13deg) scaleX(1.18);
+  transform: skewX(-15deg);
 }
 
 .scl-auth__brand-subtitle {

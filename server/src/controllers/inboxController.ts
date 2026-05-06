@@ -17,6 +17,7 @@ import {
 } from '../services/aiService';
 import { buildSuggestedFollowup, resolveFollowupStatus } from '../services/followupPolicy';
 import { resolveConversationEmailRecipient } from '../services/conversationEmailPolicy';
+import { extractPipelineSignals, getPipelineAiLocalSkipReason } from '../services/pipelineAiService';
 
 type InboxFilter =
   | 'all'
@@ -3064,6 +3065,41 @@ export class InboxController {
     }
 
     InboxController.triggerOwnerActionReclassification(req, id, 'pipeline_added', conversation.assignedRepId || null);
+
+    // Trigger pipeline AI extraction on recent inbound SMS so that signals
+    // (industry, revenue, use_of_funds, stacking) transfer immediately to the
+    // new deal card without waiting for a rep note or next inbound message.
+    void (async () => {
+      try {
+        const recentInbound = await prisma.message.findMany({
+          where: { conversationId: id, direction: 'INBOUND' },
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: { body: true, createdAt: true },
+        });
+        // Process messages newest-first; stop after the first one that actually
+        // runs (i.e. is not skipped by the local guard). This seeds the deal
+        // with the most recent meaningful client signal.
+        for (const msg of recentInbound) {
+          const text = (msg.body || '').trim();
+          if (!text) continue;
+          if (getPipelineAiLocalSkipReason(text)) continue;
+          void extractPipelineSignals({
+            dealId: deal.id,
+            inputType: 'client_sms',
+            text,
+            stageAtTime: normalizedDealStage as any,
+          });
+          break;
+        }
+      } catch (err) {
+        logger.warn('addToPipeline: failed to seed pipeline AI from inbound SMS', {
+          conversationId: id,
+          dealId: deal.id,
+          error: (err as Error).message,
+        });
+      }
+    })();
 
     res.status(201).json({ deal });
   }

@@ -245,8 +245,7 @@ export function normalizeLockedClassifierPayload(payload: unknown): Record<strin
   return {
     classification,
     leadScore: typeof raw.leadScore === 'number' ? raw.leadScore : 0,
-    creditProfile:
-      typeof raw.creditProfile === 'string' && raw.creditProfile.trim() ? raw.creditProfile.trim() : null,
+    creditProfile: typeof raw.creditProfile === 'string' && raw.creditProfile.trim() ? raw.creditProfile.trim() : null,
     propertyOwnership:
       typeof raw.propertyOwnership === 'string' && raw.propertyOwnership.trim() ? raw.propertyOwnership.trim() : null,
     revenueMonthly: typeof raw.revenueMonthly === 'number' ? raw.revenueMonthly : null,
@@ -600,7 +599,9 @@ function formatCreditProfileLabel(match: RegExpMatchArray): string | null {
     .trim()
     .toLowerCase();
   const score = Number.parseInt(String(match[2] || ''), 10);
-  const plus = String(match[3] || '').trim().toLowerCase();
+  const plus = String(match[3] || '')
+    .trim()
+    .toLowerCase();
   if (!Number.isFinite(score) || score < 400 || score > 850) return null;
 
   if (plus === '+' || plus === 'plus' || qualifier === 'over' || qualifier === 'above') {
@@ -632,7 +633,9 @@ export function extractConversationCreditProfile(messages: SuggestionResolutionM
     const previousOutboundLower = findPreviousOutboundText(messages, index).toLowerCase();
     const bodyLooksLikeBareScore =
       /^\s*(?:over|above|under|below|around|about|near|close to)?\s*[4-8]\d{2}\s*(?:\+|plus)?\s*$/i.test(body);
-    const scoreMatch = body.match(/\b(over|above|under|below|around|about|near|close to)?\s*([4-8]\d{2})\s*(\+|plus)?\b/i);
+    const scoreMatch = body.match(
+      /\b(over|above|under|below|around|about|near|close to)?\s*([4-8]\d{2})\s*(\+|plus)?\b/i,
+    );
 
     if (scoreMatch && (hasCreditSignalContext(lower, previousOutboundLower) || bodyLooksLikeBareScore)) {
       const label = formatCreditProfileLabel(scoreMatch);
@@ -650,8 +653,10 @@ export function extractConversationCreditProfile(messages: SuggestionResolutionM
 }
 
 function hasPropertySignalContext(bodyLower: string, previousOutboundLower: string): boolean {
-  return /\b(property|properties|real estate|home|house|equity|homeowner|home owner)\b/.test(bodyLower)
-    || /\b(property|properties|real estate|home|house|equity|homeowner|home owner)\b/.test(previousOutboundLower);
+  return (
+    /\b(property|properties|real estate|home|house|equity|homeowner|home owner)\b/.test(bodyLower) ||
+    /\b(property|properties|real estate|home|house|equity|homeowner|home owner)\b/.test(previousOutboundLower)
+  );
 }
 
 function extractPropertyOwnershipFromText(bodyLower: string): string | null {
@@ -987,6 +992,41 @@ function hasPhoneCallLogisticsContext(
   return hasCallContext && hasLogisticsSignal;
 }
 
+function extractSenderIntroName(previousOutboundText: string): string | null {
+  const normalized = String(previousOutboundText || '').trim();
+  if (!normalized) return null;
+
+  const patterns = [
+    /\b([A-Za-z]+)\s+with\s+secure\s*credit\s*lines\b/i,
+    /\b([A-Za-z]+)\s+with\s+securecreditlines\b/i,
+    /\b(?:this is|it'?s|it is|i am|i'm)\s+([A-Za-z]+)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const matchedName = normalized.match(pattern)?.[1]?.trim();
+    if (!matchedName) continue;
+    return `${matchedName.charAt(0).toUpperCase()}${matchedName.slice(1).toLowerCase()}`;
+  }
+
+  return null;
+}
+
+function hasIdentityClarificationContext(latestInboundLower: string, previousOutboundLower: string): boolean {
+  const normalizedInbound = String(latestInboundLower || '').toLowerCase();
+  if (!normalizedInbound) return false;
+
+  const asksWhoSenderIs =
+    /\b(who('?s| is)\s+(?:this|that|you|[a-z]+)|who are you|what company is this|what company are you with|what is secure\s*credit\s*lines|what is securecreditlines|remind me who this is)\b/.test(
+      normalizedInbound,
+    );
+  if (!asksWhoSenderIs) return false;
+
+  return (
+    !!extractSenderIntroName(previousOutboundLower) ||
+    /\bsecure\s*credit\s*lines\b|\bsecurecreditlines\b/.test(previousOutboundLower)
+  );
+}
+
 function hasCreditScoreContext(latestInboundLower: string, previousOutboundLower: string): boolean {
   if (/credit score|fico|\bscore\b/.test(latestInboundLower)) return true;
   if (
@@ -1012,6 +1052,18 @@ function suggestionLooksStaleForCreditScore(text: string): boolean {
     .toLowerCase();
   if (!lower) return false;
   if (/credit|score|fico|qualif(?:y|ies)|minimum|600|hard pull|soft pull|starter business credit line/.test(lower)) {
+    return false;
+  }
+
+  return true;
+}
+
+function suggestionLooksStaleForIdentityClarification(text: string): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+  if (/secure\s*credit\s*lines|securecreditlines|i help business owners|longer-term funding options/.test(lower)) {
     return false;
   }
 
@@ -1088,6 +1140,7 @@ function hasSubstantiveCurrentTopicContext(
     hasPaymentTermsContext(latestInboundLower) ||
     hasPayoffPenaltyContext(latestInboundLower) ||
     hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower, recentLower) ||
+    hasIdentityClarificationContext(latestInboundLower, previousOutboundLower) ||
     hasCreditScoreContext(latestInboundLower, previousOutboundLower) ||
     /hard pull|credit pull|hard credit|predatory|another mca|stacked mca|daily pay|weekly pay|\bfee|fees\b|payoff|prepay|penalty|statement|bank statement|tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording|what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
       recentLower,
@@ -1130,6 +1183,7 @@ function buildDeterministicFallbackSuggestionText(input: {
     latestInboundText,
     String(input.previousOutboundText || ''),
   );
+  const senderIntroName = extractSenderIntroName(String(input.previousOutboundText || ''));
   const hasCallContext = /\b(call|callback|call back|quick call|phone)\b/.test(
     `${recentInboundLower} ${previousOutboundLower}`,
   );
@@ -1138,11 +1192,20 @@ function buildDeterministicFallbackSuggestionText(input: {
     previousOutboundLower,
     recentInboundLower,
   );
+  const identityClarificationContext = hasIdentityClarificationContext(latestInboundLower, previousOutboundLower);
   const hasCurrentTopicContext = hasSubstantiveCurrentTopicContext(
     latestInboundLower,
     previousOutboundLower,
     recentInboundLower,
   );
+
+  if (identityClarificationContext) {
+    const senderIntro = senderIntroName ? `${senderIntroName} with SecureCreditLines here.` : 'SecureCreditLines here.';
+    if (hasEmailContext) {
+      return `${senderIntro} I help business owners review longer-term funding options that can lower monthly pressure and free up cash flow. If you want, I can send the Funding Link to your email now.`;
+    }
+    return `${senderIntro} I help business owners review longer-term funding options that can lower monthly pressure and free up cash flow. If you want the Funding Link, send the best email and I will send it over.`;
+  }
 
   if (classification === 'WRONG_NUMBER') {
     return 'Got it - sorry about that. Is there a better contact for the business, or should I close this out?';
@@ -1448,6 +1511,10 @@ function repairSuggestionsForInboundContext(input: {
     String(input.previousOutboundText || '').toLowerCase(),
     recentInboundLower,
   );
+  const identityClarificationContext = hasIdentityClarificationContext(
+    latestInboundLower,
+    String(input.previousOutboundText || '').toLowerCase(),
+  );
   const creditScoreContext = hasCreditScoreContext(
     latestInboundLower,
     String(input.previousOutboundText || '').toLowerCase(),
@@ -1468,6 +1535,7 @@ function repairSuggestionsForInboundContext(input: {
     paymentTermsContext ||
     sendTermsIntentContext ||
     phoneCallLogisticsContext ||
+    identityClarificationContext ||
     creditScoreContext ||
     callbackWithNotes ||
     /predatory|another mca|stacked mca|daily pay|weekly pay|fee|fees|payoff|prepay|penalty|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
@@ -1502,6 +1570,7 @@ function repairSuggestionsForInboundContext(input: {
       (paymentTermsContext && suggestionLooksStaleForPaymentTerms(suggestion.text)) ||
       (sendTermsIntentContext && suggestionLooksStaleForSendTermsIntent(suggestion.text, hasKnownEmailContext)) ||
       (phoneCallLogisticsContext && suggestionLooksStaleForPhoneCallLogistics(suggestion.text)) ||
+      (identityClarificationContext && suggestionLooksStaleForIdentityClarification(suggestion.text)) ||
       (creditScoreContext && suggestionLooksStaleForCreditScore(suggestion.text)) ||
       (emailIntentContext && suggestionLooksContradictoryToEmailIntent(suggestion.text)) ||
       (needsContextualRepair && suggestionLooksGenericFallback(suggestion.text));
@@ -1700,6 +1769,30 @@ export class AIService {
     return resolveClassifierPromptVersion(typeof setting?.value === 'string' ? setting.value : null);
   }
 
+  private static getProviderErrorStatus(error: unknown): number | null {
+    if (!error || typeof error !== 'object') return null;
+
+    const maybeStatus = (error as { status?: unknown }).status;
+    if (typeof maybeStatus === 'number' && Number.isFinite(maybeStatus)) return maybeStatus;
+
+    const nestedStatus = (error as { error?: { status?: unknown } }).error?.status;
+    if (typeof nestedStatus === 'number' && Number.isFinite(nestedStatus)) return nestedStatus;
+
+    const message = String((error as { message?: unknown }).message || '');
+    const matchedStatus = message.match(/\b(429|500|502|503|504|529)\b/);
+    return matchedStatus ? Number.parseInt(matchedStatus[1], 10) : null;
+  }
+
+  private static isRetryableProviderError(error: unknown): boolean {
+    const status = AIService.getProviderErrorStatus(error);
+    if (status === 429 || status === 529) return true;
+    return typeof status === 'number' && status >= 500;
+  }
+
+  private static async waitForRetry(delayMs: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
   /**
    * Унифицированный low-level вызов LLM. Возвращает текст ответа.
    * Поддерживает messages-API (system + user/assistant turns).
@@ -1712,50 +1805,66 @@ export class AIService {
   ): Promise<string | null> {
     const maxTokens = opts.maxTokens ?? 800;
     const temperature = opts.temperature ?? 0.4;
+    const maxAttempts = cfg.provider === 'anthropic' ? 3 : 2;
 
-    try {
-      if (cfg.provider === 'anthropic') {
-        const client = new Anthropic({ apiKey: cfg.apiKey });
-        const resp = await client.messages.create({
-          model: cfg.model,
-          max_tokens: maxTokens,
-          temperature,
-          system: systemPrompt,
-          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        if (cfg.provider === 'anthropic') {
+          const client = new Anthropic({ apiKey: cfg.apiKey });
+          const resp = await client.messages.create({
+            model: cfg.model,
+            max_tokens: maxTokens,
+            temperature,
+            system: systemPrompt,
+            messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          });
+          const block = resp.content.find((b) => b.type === 'text');
+          return block && block.type === 'text' ? block.text.trim() : null;
+        }
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${cfg.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: cfg.model,
+            messages: [{ role: 'system', content: systemPrompt }, ...messages],
+            max_tokens: maxTokens,
+            temperature,
+          }),
         });
-        const block = resp.content.find((b) => b.type === 'text');
-        return block && block.type === 'text' ? block.text.trim() : null;
-      }
-
-      // OpenAI fallback
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        body: JSON.stringify({
+        if (!response.ok) {
+          const errText = await response.text();
+          const apiError = new Error(`OpenAI API ${response.status}: ${errText}`) as Error & { status?: number };
+          apiError.status = response.status;
+          throw apiError;
+        }
+        const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        return data.choices?.[0]?.message?.content?.trim() || null;
+      } catch (err) {
+        const retryable = AIService.isRetryableProviderError(err);
+        logger.error('AI: LLM call failed', {
+          provider: cfg.provider,
           model: cfg.model,
-          messages: [{ role: 'system', content: systemPrompt }, ...messages],
-          max_tokens: maxTokens,
-          temperature,
-        }),
-      });
-      if (!response.ok) {
-        const err = await response.text();
-        logger.error('AI: OpenAI API error', { status: response.status, error: err });
+          attempt,
+          maxAttempts,
+          retryable,
+          status: AIService.getProviderErrorStatus(err),
+          error: (err as Error).message,
+        });
+
+        if (retryable && attempt < maxAttempts) {
+          await AIService.waitForRetry(1500 * attempt);
+          continue;
+        }
+
         return null;
       }
-      const data: any = await response.json();
-      return data.choices?.[0]?.message?.content?.trim() || null;
-    } catch (err) {
-      logger.error('AI: LLM call failed', {
-        provider: cfg.provider,
-        model: cfg.model,
-        error: (err as Error).message,
-      });
-      return null;
     }
+
+    return null;
   }
 
   static async generateCohortReasoning(input: CohortReasoningInput): Promise<{ text: string; model: string } | null> {

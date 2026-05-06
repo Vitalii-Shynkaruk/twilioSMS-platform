@@ -41,7 +41,7 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
   const convForLead = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: {
-      lead: { select: { firstName: true, lastName: true } },
+      lead: { select: { firstName: true, lastName: true, status: true, optedOut: true } },
       aiSignals: true,
       extractedIndustry: true,
       helocFitFlag: true,
@@ -58,9 +58,20 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
   const leadFirst = convForLead?.lead?.firstName || '';
   const leadLast = convForLead?.lead?.lastName || '';
   const leadName = `${leadFirst} ${leadLast}`.trim() || 'Lead';
+  const isEligibleConversation =
+    !!convForLead &&
+    !!convForLead.lead &&
+    convForLead.lead.optedOut !== true &&
+    String(convForLead.lead.status || '').toUpperCase() !== 'DNC' &&
+    (convForLead.messages?.length || 0) > 0;
 
   const ai = await AIService.classifyInbound(conversationId);
-  if (!ai) return;
+  if (!ai) {
+    if (isEligibleConversation) {
+      throw new Error(`AI classification returned null for eligible inbound conversation ${conversationId}`);
+    }
+    return;
+  }
 
   const existingSignals = ((convForLead?.aiSignals as Record<string, unknown> | null) || {}) as Record<string, unknown>;
   const incomingSignals = (ai.signals as Record<string, unknown>) || {};

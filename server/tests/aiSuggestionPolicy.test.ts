@@ -592,6 +592,37 @@ describe('AI suggestion policy', () => {
     expect(suggestions[0].text).not.toMatch(/funding link|i have your email|what problem are you trying to solve/i);
   });
 
+  it('должна чинить stale funding-link suggestion, если lead уточняет кто такой Jonathan после intro outreach', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'WRONG_NUMBER',
+      signals: {
+        staleState: 'active',
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Jonathan with SecureCreditLines here. If the business can benefit from longer term option 10/30 yrs - reply with best email to send terms.',
+        },
+        {
+          direction: 'INBOUND',
+          body: 'Who is Jonathan',
+        },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/jonathan with securecreditlines here|i help business owners/i);
+    expect(suggestions[0].text).toMatch(/best email|send it over/i);
+    expect(suggestions[0].text).not.toMatch(/i have your email|sending the funding link there now/i);
+  });
+
   it('должна чинить stale email/funding suggestion, если lead уточняет credit score over 600', () => {
     const suggestions = resolveAiSuggestions({
       suggestions: [

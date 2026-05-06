@@ -621,6 +621,7 @@ body.execution-view .touched-by{display:flex;}
 .pipeline-ai-inline-chip__value{font-weight:600;overflow:hidden;text-overflow:ellipsis;}
 .pipeline-ai-inline-chip--industry{background:rgba(167,139,250,.1);border-color:rgba(167,139,250,.34);color:#c4b5fd;}
 .pipeline-ai-inline-chip--revenue{background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.34);color:#86efac;}
+.pipeline-ai-inline-chip--ask{background:rgba(74,158,232,.12);border-color:rgba(74,158,232,.32);color:#8fc7ff;}
 .pipeline-ai-inline-chip--use{background:rgba(212,168,90,.12);border-color:rgba(212,168,90,.38);color:#d4a85a;}
 .pipeline-ai-inline-chip--empty{background:transparent;border-style:dashed;border-color:rgba(255,255,255,.14);color:#6b7280;font-style:italic;}
 .pipeline-ai-inline-stacking{min-height:22px;border-radius:5px;padding:3px 8px;}

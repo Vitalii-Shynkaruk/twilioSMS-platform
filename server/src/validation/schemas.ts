@@ -219,10 +219,12 @@ export const createClassificationFeedbackSchema = z.object({
 });
 
 // Phase 1: SMS-шаблоны
+const templateCategorySchema = z.string().max(100).trim().nullable().optional();
+
 export const createTemplateSchema = z.object({
   name: z.string().min(1).max(200).trim(),
   body: z.string().min(1).max(1600).trim(),
-  category: z.string().max(100).optional(),
+  category: templateCategorySchema,
   visibility: z.enum(['PRIVATE', 'TEAM', 'GLOBAL']).default('PRIVATE'),
 });
 

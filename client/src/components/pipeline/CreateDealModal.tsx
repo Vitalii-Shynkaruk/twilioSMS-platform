@@ -70,6 +70,14 @@ function formatAiMoney(signal?: { raw?: string | null; value_usd?: number | null
   return '—';
 }
 
+function formatAiPositions(signal?: PipelineAiSignals['current_active_positions'] | null): string {
+  if (!signal) return '—';
+  if (typeof signal.count === 'number' && Number.isFinite(signal.count)) {
+    return `${signal.count} active position${signal.count === 1 ? '' : 's'}`;
+  }
+  return 'Active positions detected';
+}
+
 export default function CreateDealModal({ onClose, onCreated, prefill }: CreateDealModalProps) {
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
@@ -147,7 +155,7 @@ export default function CreateDealModal({ onClose, onCreated, prefill }: CreateD
     }, 650);
 
     return () => window.clearTimeout(timer);
-  }, [leadContext, previewMutation]);
+  }, [leadContext]);
 
   const mutation = useMutation({
     mutationFn: (payload: CreateDealPayload) => dealApi.createDeal(payload),
@@ -281,35 +289,49 @@ export default function CreateDealModal({ onClose, onCreated, prefill }: CreateD
               aria-describedby="pipeline-ai-preview"
             />
             <div id="pipeline-ai-preview" aria-live="polite" className="mt-2 min-h-[28px]">
-              {previewMutation.isPending ? (
-                <div className="text-[11px] text-blue-400">Pipeline AI reading lead context...</div>
-              ) : aiPreview ? (
-                <div className="rounded-lg border border-blue-500/25 bg-blue-500/10 p-2">
-                  <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-300">
-                    AI preview
+              {aiPreview ? (
+                <div className="rounded-lg border border-blue-500/25 bg-blue-500/10 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-300">
+                      Extracted attributes
+                    </div>
+                    {previewMutation.isPending ? (
+                      <div className="text-[10px] uppercase tracking-[0.08em] text-blue-400">
+                        Updating AI preview...
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="flex flex-wrap gap-1.5 text-[11px] text-[var(--text-secondary)]">
-                    <span className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-2 py-1">
-                      Industry: {aiPreview.industry || '?'}
-                    </span>
-                    <span className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-2 py-1">
-                      Revenue: {formatAiMoney(aiPreview.monthly_revenue)}
-                    </span>
-                    <span className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-2 py-1">
-                      Amount: {formatAiMoney(aiPreview.requested_amount)}
-                    </span>
-                    <span className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-2 py-1">
-                      Product: {aiPreview.product_interest[0] || '?'}
-                    </span>
-                    <span className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-2 py-1">
-                      Use: {aiPreview.use_of_funds?.detail || aiPreview.use_of_funds?.category || '?'}
-                    </span>
-                    <span className="rounded border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-2 py-1">
-                      Action: {aiPreview.pending_actions[0]?.action || '?'}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-[var(--text-secondary)]">
+                    <div>
+                      <span className="text-[var(--text-muted)]">Industry:</span> {aiPreview.industry || '—'}
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-muted)]">Revenue:</span>{' '}
+                      {formatAiMoney(aiPreview.monthly_revenue)}
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-muted)]">Ask:</span> {formatAiMoney(aiPreview.requested_amount)}
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-muted)]">Product:</span> {aiPreview.product_interest[0] || '—'}
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-muted)]">Use:</span>{' '}
+                      {aiPreview.use_of_funds?.detail || aiPreview.use_of_funds?.category || '—'}
+                    </div>
+                    <div>
+                      <span className="text-[var(--text-muted)]">Borrowing:</span>{' '}
+                      {formatAiPositions(aiPreview.current_active_positions)}
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-[var(--text-muted)]">Action:</span>{' '}
+                      {aiPreview.pending_actions[0]?.action || '—'}
                       {aiPreview.pending_actions[0]?.timing ? ` · ${aiPreview.pending_actions[0]?.timing}` : ''}
-                    </span>
+                    </div>
                   </div>
                 </div>
+              ) : previewMutation.isPending ? (
+                <div className="text-[11px] text-blue-400">Pipeline AI reading lead context...</div>
               ) : aiPreviewSkipped ? (
                 <div className="text-[11px] text-[var(--text-muted)]">Pipeline AI skipped: {aiPreviewSkipped}</div>
               ) : null}

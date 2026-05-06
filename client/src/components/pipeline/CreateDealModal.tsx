@@ -39,6 +39,7 @@ interface CreateDealPayload {
   nextAction?: string;
   nextActionDue?: string;
   notes?: string;
+  pipelineAiSignals?: PipelineAiSignals;
 }
 
 type PipelinePreviewResponse = { signals: PipelineAiSignals } | { skipped: true; reason: string };
@@ -130,9 +131,10 @@ export default function CreateDealModal({ onClose, onCreated, prefill }: CreateD
       setAiPreview(null);
       setAiPreviewSkipped(result.reason);
     },
-    onError: () => {
+    onError: (error: unknown) => {
+      const apiError = error as { response?: { data?: { error?: string } }; message?: string };
       setAiPreview(null);
-      setAiPreviewSkipped('preview_failed');
+      setAiPreviewSkipped(apiError.response?.data?.error || apiError.message || 'preview_failed');
     },
   });
 
@@ -197,11 +199,15 @@ export default function CreateDealModal({ onClose, onCreated, prefill }: CreateD
       nextAction: nextAction || undefined,
       nextActionDue: nextActionDue || undefined,
       notes: combinedNotes || undefined,
+      pipelineAiSignals: aiPreview || undefined,
     });
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto p-4"
+      onClick={onClose}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-lg max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xl border border-[var(--border-primary)] bg-[var(--bg-primary)] p-5 shadow-xl"

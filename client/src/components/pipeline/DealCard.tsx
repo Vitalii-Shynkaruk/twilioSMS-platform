@@ -38,6 +38,10 @@ export const PRODUCT_ICONS: Record<string, string> = {
   BRIDGE: '🌉',
 };
 
+function amountIcon(productType?: string | null): string {
+  return PRODUCT_ICONS[productType || ''] || '💰';
+}
+
 export function formatCurrency(amount?: number | null): string {
   if (!amount) return '$0';
   if (amount >= 1000000) return `$${(amount / 1000000).toFixed(2)}M`;
@@ -60,7 +64,9 @@ function formatWakeDate(value?: string | null): string {
   return `Wake ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 }
 
-export function getDealStatePill(deal: Pick<Deal, 'stage' | 'contactAttempts' | 'contactAttemptThreshold' | 'nextActionDue' | 'followUpDate'>): {
+export function getDealStatePill(
+  deal: Pick<Deal, 'stage' | 'contactAttempts' | 'contactAttemptThreshold' | 'nextActionDue' | 'followUpDate'>,
+): {
   state: DealMachineState;
   timing: string;
   color: string;
@@ -222,23 +228,28 @@ function attemptBanner(deal: Deal): { text: string; cls: string } | null {
 
 function simpleAmount(deal: Deal): { text: string; cls: string } {
   if (deal.stage === 'FUNDED' && deal.fundingEvents?.length) {
-    return { text: `💰 ${formatCurrency(deal.fundingEvents[0].amountFunded)}`, cls: 'sca-green' };
+    return {
+      text: `${amountIcon(deal.productType)} ${formatCurrency(deal.fundingEvents[0].amountFunded)}`,
+      cls: 'sca-green',
+    };
   }
   if (deal.stage === 'FUNDED' && deal.dealAmount) {
-    return { text: `💰 ${formatCurrency(deal.dealAmount)}`, cls: 'sca-green' };
+    return { text: `${amountIcon(deal.productType)} ${formatCurrency(deal.dealAmount)}`, cls: 'sca-green' };
   }
 
   if (deal.stage === 'APPROVED_OFFERS' || deal.stage === 'COMMITTED_FUNDING') {
     const best = deal.offers?.length ? deal.offers.reduce((a, b) => (a.amount > b.amount ? a : b)) : null;
     const amt = best?.amount || deal.dealAmount;
     if (amt) {
-      const prefix = deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : '💰 ';
-      return { text: `${prefix}${formatCurrency(amt)}`, cls: amt >= 100000 ? 'sca-green' : 'sca-amber' };
+      return {
+        text: `${amountIcon(deal.productType)} ${formatCurrency(amt)}`,
+        cls: amt >= 100000 ? 'sca-green' : 'sca-amber',
+      };
     }
   }
 
   if (deal.stage === 'NURTURE' && deal.prevOffer) {
-    return { text: `💰 ${formatCurrency(deal.prevOffer)} prev`, cls: 'sca-prev' };
+    return { text: `${amountIcon(deal.productType)} ${formatCurrency(deal.prevOffer)} prev`, cls: 'sca-prev' };
   }
 
   if (deal.stage === 'SUBMITTED_IN_REVIEW') {
@@ -329,7 +340,8 @@ function useGuardedCardClick(onClick?: () => void) {
       };
     },
     onClick: (event: React.MouseEvent<HTMLDivElement>) => {
-      const moved = Math.abs(event.clientX - pointerRef.current.x) > 4 || Math.abs(event.clientY - pointerRef.current.y) > 4;
+      const moved =
+        Math.abs(event.clientX - pointerRef.current.x) > 4 || Math.abs(event.clientY - pointerRef.current.y) > 4;
       const hasSelection = !!window.getSelection()?.toString().trim();
       if (pointerRef.current.textTarget || moved || hasSelection) {
         event.stopPropagation();
@@ -636,8 +648,7 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
           <div className={`offer-block ${offerStrength(deal.dealAmount)}`}>
             <div className="ob-main">
               <span className="ob-amount">
-                {deal.stage === 'COMMITTED_FUNDING' ? '✅ ' : ''}
-                {formatCurrency(deal.dealAmount)}
+                {amountIcon(deal.productType)} {formatCurrency(deal.dealAmount)}
               </span>
             </div>
           </div>
@@ -647,7 +658,9 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
         {deal.stage === 'FUNDED' && deal.fundingEvents?.length ? (
           <>
             <div className="funded-block">
-              <div className="fb-amount">💰 {formatCurrency(deal.fundingEvents[0].amountFunded)}</div>
+              <div className="fb-amount">
+                {amountIcon(deal.productType)} {formatCurrency(deal.fundingEvents[0].amountFunded)}
+              </div>
               <div className="fb-meta">
                 {deal.fundingEvents[0].lender ? `${deal.fundingEvents[0].lender} · ` : ''}
                 {deal.cycleTime ? `${deal.cycleTime}d cycle` : ''}
@@ -660,7 +673,9 @@ function ExecutionCard({ deal, onClick, highlightTerm }: { deal: Deal; onClick?:
           </>
         ) : deal.stage === 'FUNDED' && deal.dealAmount ? (
           <div className="funded-block">
-            <div className="fb-amount">💰 {formatCurrency(deal.dealAmount)}</div>
+            <div className="fb-amount">
+              {amountIcon(deal.productType)} {formatCurrency(deal.dealAmount)}
+            </div>
           </div>
         ) : null}
 

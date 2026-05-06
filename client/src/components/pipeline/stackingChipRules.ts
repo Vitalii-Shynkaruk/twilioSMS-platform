@@ -33,11 +33,6 @@ function normalizeCount(count?: number | null): number | null {
 function resolveBaseChip(signals: PipelineAiSignals): Omit<StackingChipConfig, 'isActive'> | null {
   const currentPositions = signals.current_active_positions ?? null;
   const count = normalizeCount(currentPositions?.count);
-  const isExplicitlyClean =
-    hasSignalKey(signals, 'has_stacked_history') &&
-    signals.has_stacked_history === false &&
-    hasSignalKey(signals, 'current_active_positions') &&
-    signals.current_active_positions === null;
 
   if (count !== null) {
     if (count >= 3) {
@@ -65,14 +60,6 @@ function resolveBaseChip(signals: PipelineAiSignals): Omit<StackingChipConfig, '
     }
   }
 
-  if (isExplicitlyClean) {
-    return {
-      label: '1ST POSITION',
-      tone: 'first',
-      title: 'No stacking history detected. Clean first-position borrower.',
-    };
-  }
-
   if (currentPositions && typeof currentPositions.total_debt_usd === 'number') {
     return {
       label: 'POSITIONS',
@@ -94,6 +81,14 @@ function resolveBaseChip(signals: PipelineAiSignals): Omit<StackingChipConfig, '
 
 export function resolveStackingChip(signals?: PipelineAiSignals | null): StackingChipConfig | null {
   if (!signals) return null;
+  if (
+    hasSignalKey(signals, 'has_stacked_history') &&
+    signals.has_stacked_history === false &&
+    hasSignalKey(signals, 'current_active_positions') &&
+    signals.current_active_positions === null
+  ) {
+    return null;
+  }
 
   const baseChip = resolveBaseChip(signals);
   const isActive = signals.recent_stacking_activity?.active === true;

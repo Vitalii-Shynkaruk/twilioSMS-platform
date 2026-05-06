@@ -115,7 +115,7 @@ describe('DealController board scope', () => {
     expect(nurture.value).toBe(0);
     expect(nurture.prevOfferSubtotal).toBe(120000);
     expect(approved.value).toBe(30000);
-    expect(approved.prevOfferSubtotal).toBe(5000);
+    expect(approved.prevOfferSubtotal).toBe(0);
   });
 
   it('должен отдавать linkedDeals для карточек одного clientId в getDeal', async () => {
@@ -227,6 +227,19 @@ describe('DealController board scope', () => {
       lastReplyAt: null,
       lenderEngaged: false,
       appSubmitted: false,
+      pipelineAiSignals: {
+        _extraction_scope: 'lead_only',
+        skip_reason: null,
+        industry: 'Construction',
+        monthly_revenue: { value_usd: 100000, raw: '$100k/mo' },
+        use_of_funds: { category: 'equipment', detail: 'New excavator' },
+        requested_amount: { value_usd: 50000, raw: '$50k' },
+        product_interest: ['MCA'],
+        pending_actions: [{ actor: 'rep', action: 'Call merchant', timing: 'today' }],
+        has_stacked_history: false,
+        current_active_positions: null,
+        recent_stacking_activity: { active: false, window: null },
+      },
       client: { id: 'client-created-1', businessName: 'Fresh Deal LLC' },
       assignedRep: { id: 'rep-2', firstName: 'Rep', lastName: 'Two', initials: 'RT' },
     };
@@ -247,6 +260,7 @@ describe('DealController board scope', () => {
           productType: 'MCA',
           dealAmount: '50000',
           assignedRepId: 'rep-2',
+          pipelineAiSignals: createdDeal.pipelineAiSignals,
         },
         'ADMIN',
       ),
@@ -265,6 +279,8 @@ describe('DealController board scope', () => {
           productType: 'MCA',
           dealAmount: 50000,
           submittedAmount: null,
+          pipelineAiSignals: createdDeal.pipelineAiSignals,
+          pipelineAiUpdatedAt: expect.any(Date),
           nextAction: 'Make first contact within 24h',
         }),
       }),

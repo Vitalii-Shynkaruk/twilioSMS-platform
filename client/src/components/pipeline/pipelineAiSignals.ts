@@ -1,7 +1,7 @@
 import type { Deal, PipelineAiSignals } from '../../types';
 
 export interface PipelineAiBadgeConfig {
-  key: 'industry' | 'revenue' | 'use';
+  key: 'industry' | 'revenue' | 'use' | 'ask';
   label: string;
   value: string;
   title: string;
@@ -13,6 +13,26 @@ export function formatUseOfFundsCategory(category: string): string {
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ');
+}
+
+export function formatPipelineAiMoney(signal?: { raw?: string | null; value_usd?: number | null } | null): string {
+  if (!signal) return '';
+  if (signal.raw) return signal.raw;
+  if (typeof signal.value_usd === 'number' && Number.isFinite(signal.value_usd)) {
+    if (signal.value_usd >= 1000000) {
+      return `$${(signal.value_usd / 1000000).toFixed(signal.value_usd % 1000000 === 0 ? 0 : 1)}M`;
+    }
+    if (signal.value_usd >= 1000) {
+      return `$${Math.round(signal.value_usd / 1000)}k`;
+    }
+    return `$${Math.round(signal.value_usd).toLocaleString('en-US')}`;
+  }
+  return '';
+}
+
+export function formatUseOfFundsDisplayValue(signals: PipelineAiSignals): string {
+  if (!signals.use_of_funds) return '';
+  return signals.use_of_funds.detail?.trim() || formatUseOfFundsCategory(signals.use_of_funds.category);
 }
 
 export function formatPipelineAiAge(value?: string | null): string {
@@ -47,12 +67,22 @@ export function getPipelineAiBadges(signals?: PipelineAiSignals | null): Pipelin
   }
 
   if (signals.use_of_funds) {
-    const value = formatUseOfFundsCategory(signals.use_of_funds.category);
+    const value = formatUseOfFundsDisplayValue(signals);
     badges.push({
       key: 'use',
       label: 'Use',
       value,
       title: signals.use_of_funds.detail ? `Use of funds: ${signals.use_of_funds.detail}` : `Use of funds: ${value}`,
+    });
+  }
+
+  const askValue = formatPipelineAiMoney(signals.requested_amount);
+  if (askValue) {
+    badges.push({
+      key: 'ask',
+      label: 'Ask',
+      value: askValue,
+      title: `Ask: ${askValue}`,
     });
   }
 

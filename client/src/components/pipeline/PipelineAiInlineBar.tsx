@@ -1,6 +1,6 @@
 import type { PipelineAiSignals } from '../../types';
 import StackingChip from './StackingChip';
-import { formatPipelineAiAge, formatUseOfFundsCategory } from './pipelineAiSignals';
+import { formatPipelineAiAge, formatUseOfFundsDisplayValue } from './pipelineAiSignals';
 
 interface PipelineAiInlineBarProps {
   signals?: PipelineAiSignals | null;
@@ -28,7 +28,7 @@ function InlineChip({ label, value, tone, title }: { label: string; value?: stri
 export default function PipelineAiInlineBar({ signals, updatedAt }: PipelineAiInlineBarProps) {
   const industry = signals?.skip_reason ? '' : signals?.industry?.trim() || '';
   const revenue = signals?.skip_reason ? '' : signals?.monthly_revenue?.raw || '';
-  const useOfFunds = signals?.skip_reason || !signals?.use_of_funds ? '' : formatUseOfFundsCategory(signals.use_of_funds.category);
+  const useOfFunds = signals?.skip_reason ? '' : signals ? formatUseOfFundsDisplayValue(signals) : '';
   const useOfFundsTitle = signals?.use_of_funds?.detail ? `Use of funds: ${signals.use_of_funds.detail}` : undefined;
 
   return (

@@ -401,7 +401,8 @@ export class DealController {
     const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED'];
     const stages = STAGE_ORDER.map((stage, index) => {
       const deals = board[stage] || [];
-      const prevOfferSubtotal = deals.reduce((sum: number, d: any) => sum + (d.prevOffer || 0), 0);
+      const prevOfferSubtotal =
+        stage === DealStage.NURTURE ? deals.reduce((sum: number, d: any) => sum + (d.prevOffer || 0), 0) : 0;
       // Dollar value ONLY from lender offers (Approved/Committed) or funding events (Funded)
       let value = 0;
       if (!NO_AMOUNT_STAGES.includes(stage)) {
@@ -612,6 +613,7 @@ export class DealController {
       nextAction,
       nextActionDue,
       notes,
+      pipelineAiSignals,
       clientId: existingClientId,
     } = req.body;
 
@@ -662,6 +664,10 @@ export class DealController {
       parseOptionalFloat(submittedAmount) ?? (isSubmittedAmountProduct(parsedProductType) ? parsedDealAmount : null);
 
     const initialNotes = typeof notes === 'string' ? notes.trim() : '';
+    const initialPipelineAiSignals =
+      pipelineAiSignals && typeof pipelineAiSignals === 'object' && !Array.isArray(pipelineAiSignals)
+        ? (pipelineAiSignals as Prisma.InputJsonObject)
+        : undefined;
 
     // Stage-aware default next action (Bug 3 fix)
     const defaultNextAction =
@@ -684,6 +690,8 @@ export class DealController {
         nextAction: nextAction || defaultNextAction,
         nextActionDue: nextActionDue ? new Date(nextActionDue) : new Date(Date.now() + 24 * 60 * 60 * 1000),
         notes: initialNotes || null,
+        pipelineAiSignals: initialPipelineAiSignals,
+        pipelineAiUpdatedAt: initialPipelineAiSignals ? new Date() : null,
       } as any,
       include: { client: true, assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } } },
     });

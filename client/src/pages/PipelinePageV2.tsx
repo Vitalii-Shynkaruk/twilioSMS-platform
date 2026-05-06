@@ -501,7 +501,8 @@ export default function PipelinePage() {
 
         // Recalculate value based on filtered deals
         let value = 0;
-        const prevOfferSubtotal = filteredDeals.reduce((sum: number, d: Deal) => sum + (d.prevOffer || 0), 0);
+        const prevOfferSubtotal =
+          s.stage === 'NURTURE' ? filteredDeals.reduce((sum: number, d: Deal) => sum + (d.prevOffer || 0), 0) : 0;
         if (!NO_AMOUNT_STAGES.includes(s.stage)) {
           if (s.stage === 'FUNDED') {
             value = filteredDeals.reduce((sum: number, d: Deal) => sum + (d.dealAmount || 0), 0);
@@ -1552,7 +1553,8 @@ function StageColumn({
     (d) => isPastDueDate(d.nextActionDue) || d.renewalTasks?.some((t) => t.status === 'PENDING'),
   ).length;
   const dealCountLabel = `${count} ${count === 1 ? 'deal' : 'deals'}`;
-  const activeTotalLabel = count === 0 ? '— · 0 deals' : value ? `${formatCurrency(value)} · ${dealCountLabel}` : `${dealCountLabel} · no $`;
+  const activeTotalLabel =
+    count === 0 ? '— · 0 deals' : value ? `${formatCurrency(value)} · ${dealCountLabel}` : `${dealCountLabel} · no $`;
 
   return (
     <div ref={setNodeRef} className={`col ${config.colClass || ''}`}>
@@ -1587,7 +1589,9 @@ function StageColumn({
           <>
             <div className={`col-stage ${config.stageClass || ''}`}>{config.short}</div>
             <div className={`col-vol ${value ? '' : 'dim'}`}>{activeTotalLabel}</div>
-            {prevOfferSubtotal > 0 && <div className="col-prev-total">{formatCurrency(prevOfferSubtotal)} prev offers</div>}
+            {prevOfferSubtotal > 0 && (
+              <div className="col-prev-total">{formatCurrency(prevOfferSubtotal)} prev offers</div>
+            )}
             {(config.value === 'APPROVED_OFFERS' || config.value === 'COMMITTED_FUNDING') &&
               (() => {
                 const offerCount = deals.reduce((acc, d) => acc + (d.offers?.length || 0), 0);

@@ -4,7 +4,7 @@ import prisma from '../config/database';
 import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus, Prisma } from '@prisma/client';
 import { parse } from 'csv-parse/sync';
 import { OutboundGateService } from '../services/outboundGateService';
-import { extractPipelineSignals } from '../services/pipelineAiService';
+import { extractPipelineSignals, getPipelineAiLocalSkipReason } from '../services/pipelineAiService';
 import {
   canUseUnscopedTeamScope,
   fundingRepScopeFilter,
@@ -773,6 +773,18 @@ export class DealController {
           note: initialNotes,
         },
       });
+
+      // Auto-seed pipeline AI from initial notes (covers race condition where
+      // user submits before the modal preview completes, or preview was skipped)
+      if (!getPipelineAiLocalSkipReason(initialNotes)) {
+        void extractPipelineSignals({
+          dealId: deal.id,
+          inputType: 'rep_note',
+          text: initialNotes,
+          stageAtTime: deal.stage,
+          productAtTime: deal.productType,
+        });
+      }
     }
 
     // Emit real-time update

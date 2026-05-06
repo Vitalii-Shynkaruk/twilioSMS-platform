@@ -305,10 +305,10 @@ function hasCompactPipelineSignal(text: string): boolean {
       normalized,
     );
 
-  // Ordinal stacking phrases: "2nd position", "3rd position", "4-stacked" etc.
-  const hasOrdinalStacking = /\b\d+(?:st|nd|rd|th)\s+positions?\b|\b\d+[-\s]stacked\b/i.test(text);
+  // Explicit stacking count phrases: cardinal ("3 positions") + ordinal ("2nd position") + X-stacked
+  const hasStackingCount = /\b\d+\s+positions?\b|\b\d+[-\s]stacked\b|\b\d+(?:st|nd|rd|th)\s+positions?\b/i.test(text);
 
-  return (hasMoneyValue && hasPipelineContext) || hasOrdinalStacking;
+  return (hasMoneyValue && hasPipelineContext) || hasStackingCount;
 }
 
 /**
@@ -325,40 +325,43 @@ function tryDeterministicStackingOverride(
 
   const normalized = text.toLowerCase();
 
+  // Helper: build merged stacking override — preserves ALL existing signals,
+  // only overrides stacking-related fields
+  const buildStackingOverride = (count: number): PipelineAiSignals => ({
+    _extraction_scope: 'lead_only',
+    skip_reason: null,
+    // Preserve existing non-stacking fields; fall back to parsed (empty defaults) if no existing
+    industry: existingSignals?.industry ?? parsed.industry,
+    monthly_revenue: existingSignals?.monthly_revenue ?? parsed.monthly_revenue,
+    use_of_funds: existingSignals?.use_of_funds ?? parsed.use_of_funds,
+    requested_amount: existingSignals?.requested_amount ?? parsed.requested_amount,
+    product_interest: existingSignals?.product_interest?.length
+      ? existingSignals.product_interest
+      : parsed.product_interest,
+    pending_actions: existingSignals?.pending_actions?.length
+      ? existingSignals.pending_actions
+      : parsed.pending_actions,
+    // Stacking fields — set from detected count
+    has_stacked_history: true,
+    current_active_positions: {
+      count,
+      total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
+    },
+    recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
+  });
+
   // "X positions" — e.g. "3 positions.", "in 4 positions", "has 2 positions"
   const posMatch = normalized.match(/\b(\d+)\s+positions?\b/);
   if (posMatch) {
     const count = parseInt(posMatch[1], 10);
-    if (count >= 1 && count <= 20) {
-      return {
-        ...parsed,
-        skip_reason: null,
-        has_stacked_history: true,
-        current_active_positions: {
-          count,
-          total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
-        },
-        recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
-      };
-    }
+    if (count >= 1 && count <= 20) return buildStackingOverride(count);
   }
 
   // "X-stacked" or "X stacked" — e.g. "3-stacked", "2 stacked"
   const stackMatch = normalized.match(/\b(\d+)[-\s]stacked\b/);
   if (stackMatch) {
     const count = parseInt(stackMatch[1], 10);
-    if (count >= 1 && count <= 20) {
-      return {
-        ...parsed,
-        skip_reason: null,
-        has_stacked_history: true,
-        current_active_positions: {
-          count,
-          total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
-        },
-        recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
-      };
-    }
+    if (count >= 1 && count <= 20) return buildStackingOverride(count);
   }
 
   // "Nth position" ordinal — e.g. "2nd position", "3rd position", "in 4th position"
@@ -366,18 +369,7 @@ function tryDeterministicStackingOverride(
   const ordinalPosMatch = normalized.match(/\b(\d+)(?:st|nd|rd|th)\s+positions?\b/);
   if (ordinalPosMatch) {
     const count = parseInt(ordinalPosMatch[1], 10);
-    if (count >= 2 && count <= 20) {
-      return {
-        ...parsed,
-        skip_reason: null,
-        has_stacked_history: true,
-        current_active_positions: {
-          count,
-          total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
-        },
-        recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
-      };
-    }
+    if (count >= 2 && count <= 20) return buildStackingOverride(count);
   }
 
   return parsed;

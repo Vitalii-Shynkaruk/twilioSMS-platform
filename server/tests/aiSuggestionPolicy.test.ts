@@ -1007,6 +1007,56 @@ describe('AI suggestion policy', () => {
 }`);
   });
 
+  it('должна чинить stale funding-link suggestion, если lead спрашивает про общие программы', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: { staleState: 'active' },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Jonathan with SecureCreditLines here. If the business can benefit from longer term options 10/30 yrs - reply with best email to send terms. Reply STOP to opt out',
+        },
+        { direction: 'INBOUND', body: "what's your general programs" },
+        { direction: 'INBOUND', body: 'what are they based on' },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/program|credit line|revolving|based on/i);
+    expect(suggestions[0].text).not.toMatch(/i have your email|sending the funding link|i am sending/i);
+  });
+
+  it('должна чинить stale funding-link suggestion, если lead спрашивает что предлагаете', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: { staleState: 'active' },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Jonathan with SecureCreditLines here. We offer longer term business credit line options. Best email to send terms?',
+        },
+        { direction: 'INBOUND', body: 'what are they based on' },
+      ],
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).not.toMatch(/i have your email|sending the funding link|i am sending/i);
+  });
+
   it('должна нормализовать near-valid locked payload вместо null на schema drift', () => {
     const normalized = normalizeLockedClassifierPayload({
       classification: 'HOT',

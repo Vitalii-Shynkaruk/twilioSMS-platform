@@ -1046,6 +1046,31 @@ function hasCreditScoreContext(latestInboundLower: string, previousOutboundLower
   return hasScoreNumber && previousAskedScoreRange;
 }
 
+function hasGeneralProgramInquiryContext(
+  latestInboundLower: string,
+  previousOutboundLower: string,
+  recentInboundLower?: string,
+): boolean {
+  const recentLower = String(recentInboundLower || latestInboundLower || '').toLowerCase();
+
+  // Direct questions about what programs/products are available
+  const directProgramQuestion =
+    /\b(what(?:'?s| is|are)\s+(?:your\s+)?(?:general\s+)?programs?|what programs?\s+do\s+you\s+(?:have|offer|do)|what(?:'?s| is)\s+(?:the|your)\s+program|what are\s+(?:the\s+)?programs?|what do\s+you\s+(?:offer|do|have|provide)|what do\s+you\s+guys?\s+(?:do|offer)|what(?:'?s| is)\s+(?:your\s+)?(?:product|service|offering|option)s?)\b/.test(
+      recentLower,
+    );
+
+  // "What are they based on" / "what's it based on" — follow-up after outbound mentioned programs
+  const basedOnFollowup =
+    /\bwhat(?:\s+(?:is|are)|'s)\s+(?:it|they|this|that|those)\s+based\s+on\b|\bbased\s+on\s+what\b/.test(recentLower);
+
+  const hasProgramIntroOutbound =
+    /longer[- ]?term|program|option|line\s+of\s+credit|loc|heloc|revolving|term\s+loan|credit\s+line/.test(
+      previousOutboundLower,
+    );
+
+  return directProgramQuestion || (basedOnFollowup && hasProgramIntroOutbound);
+}
+
 function suggestionLooksStaleForCreditScore(text: string): boolean {
   const lower = String(text || '')
     .trim()
@@ -1056,6 +1081,18 @@ function suggestionLooksStaleForCreditScore(text: string): boolean {
   }
 
   return true;
+}
+
+function suggestionLooksStaleForProgramInquiry(text: string): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+
+  // Suggestions that assume lead wants email/funding link are stale when lead is asking about programs
+  return /i have your email|i am sending|sending the funding link|funding link there now|send the funding link|i'll send the funding link|i have your email[.,]/.test(
+    lower,
+  );
 }
 
 function suggestionLooksStaleForIdentityClarification(text: string): boolean {
@@ -1142,6 +1179,7 @@ function hasSubstantiveCurrentTopicContext(
     hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower, recentLower) ||
     hasIdentityClarificationContext(latestInboundLower, previousOutboundLower) ||
     hasCreditScoreContext(latestInboundLower, previousOutboundLower) ||
+    hasGeneralProgramInquiryContext(latestInboundLower, previousOutboundLower, recentLower) ||
     /hard pull|credit pull|hard credit|predatory|another mca|stacked mca|daily pay|weekly pay|\bfee|fees\b|payoff|prepay|penalty|statement|bank statement|tried to call|call(?:ed)? you back|call me back|got a recording|voicemail|recording|what('?s| is) (that|this|it)|how does it work|what do you mean|can you explain|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
       recentLower,
     )
@@ -1345,6 +1383,10 @@ function buildDeterministicFallbackSuggestionText(input: {
     return 'Send the statements when you have them and I will review them right away. I want to see where the cash-flow squeeze is coming from so we match the right structure instead of layering on the wrong payment.';
   }
 
+  if (hasGeneralProgramInquiryContext(latestInboundLower, previousOutboundLower, recentInboundLower)) {
+    return 'The main program is a revolving business credit line - up to 750K, structured over longer terms, rates starting at 6.6%. It is based on business revenue, time in business, and credit profile. What amount of access would help, and are you looking to lower an existing payment or add working capital?';
+  }
+
   if (availableEmail) {
     return 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?';
   }
@@ -1519,6 +1561,11 @@ function repairSuggestionsForInboundContext(input: {
     latestInboundLower,
     String(input.previousOutboundText || '').toLowerCase(),
   );
+  const generalProgramInquiryContext = hasGeneralProgramInquiryContext(
+    latestInboundLower,
+    String(input.previousOutboundText || '').toLowerCase(),
+    recentInboundLower,
+  );
   const emailIntentContext =
     hasKnownEmailContext &&
     /email|terms?|funding link|details/.test(String(input.previousOutboundText || '').toLowerCase());
@@ -1537,6 +1584,7 @@ function repairSuggestionsForInboundContext(input: {
     phoneCallLogisticsContext ||
     identityClarificationContext ||
     creditScoreContext ||
+    generalProgramInquiryContext ||
     callbackWithNotes ||
     /predatory|another mca|stacked mca|daily pay|weekly pay|fee|fees|payoff|prepay|penalty|rate|rates|term|terms|payment|cost|hard pull|credit pull|wrong number|my personal cell|did not give you this number|remove (me|this number|it) from (your )?(list|system)|what('?s| is) (that|this|it)|how does this work|what('?s| is)(?: a)? (heloc|loc|line of credit|home equity line of credit)|explain (?:a )?(heloc|loc|line of credit)|tell me about (?:a )?(heloc|loc|line of credit)|\b\d{1,2}\s*(?:to|-|\/)\s*\d{1,2}\s*(?:years?|yrs?|year|yr)\b/.test(
       recentInboundLower,
@@ -1572,6 +1620,7 @@ function repairSuggestionsForInboundContext(input: {
       (phoneCallLogisticsContext && suggestionLooksStaleForPhoneCallLogistics(suggestion.text)) ||
       (identityClarificationContext && suggestionLooksStaleForIdentityClarification(suggestion.text)) ||
       (creditScoreContext && suggestionLooksStaleForCreditScore(suggestion.text)) ||
+      (generalProgramInquiryContext && suggestionLooksStaleForProgramInquiry(suggestion.text)) ||
       (emailIntentContext && suggestionLooksContradictoryToEmailIntent(suggestion.text)) ||
       (needsContextualRepair && suggestionLooksGenericFallback(suggestion.text));
     if (!shouldRepairSuggestion) return suggestion;

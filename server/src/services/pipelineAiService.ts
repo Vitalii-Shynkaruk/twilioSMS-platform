@@ -124,6 +124,9 @@ For ranges ("20-30k"), use the midpoint as value_usd and keep the raw string.
 For open-ended ("$110k+"), use the floor as value_usd.
 For ambiguous ("330.000k" — could be 330k or 330000k), prefer the smaller plausible interpretation.
 
+REQUESTED AMOUNT:
+- requested_amount: the dollar amount the borrower is asking for / seeking to borrow. Extract from phrases like "seeking $X", "needs $X", "looking for $X", "asking for $X", "wants $X", "requesting $X", "can use $X", "take $X", "need $X". This is NOT the revenue figure — revenue goes in monthly_revenue. When text contains both a seek amount and a revenue figure ("seeking $100k... grosses $100k monthly"), place each in its correct field. Example: "Contractor seeking $100k to buy land. Grosses $100k monthly." → requested_amount={value_usd:100000, raw:"$100k"}, monthly_revenue={value_usd:100000, raw:"$100k monthly"}. If only one dollar amount appears and context clearly indicates revenue (e.g. "Grosses $X monthly"), requested_amount=null.
+
 USE_OF_FUNDS vs PENDING_ACTIONS:
 - use_of_funds.detail: WHAT the funds will be used for — the lead's stated purpose, including future ambitions ("3 more vehicles", "expand to a 2nd location"). Write it as a noun phrase.
 - pending_actions: discrete next steps that must happen for the deal to advance, with a named actor and optional timing. Format: { actor: "rep" | "lead", action: "...", timing: "today" | "this_week" | "next_week" | "later" | null }. Examples: { actor: "lead", action: "send last 3 bank statements", timing: null }, { actor: "rep", action: "follow up Monday", timing: "next_week" }. Only set timing when the input names a specific window.
@@ -141,7 +144,7 @@ Stacking = the lead carries, currently carries, or has recently taken multiple c
    When set, return:
    - count (integer | null): the explicit number of active positions if stated; null if implied but not numbered
    - total_debt_usd (integer | null): integer dollars of outstanding stacked debt if stated; null otherwise
-   Trigger phrases: "X positions", "X-stacked", "X active MCAs", "in Nth position", "has 2 mca", "currently paying [LENDER1] and [LENDER2]", "stacked", lists of [LENDER] - $X frequency entries.
+   Trigger phrases: "X positions", "X-stacked", "X active MCAs", "in Nth position", "Xnd/Xrd/Xth position" (ordinal — e.g. "2nd position" → count=2, "3rd position" → count=3), "has 2 mca", "currently paying [LENDER1] and [LENDER2]", "stacked", lists of [LENDER] - $X frequency entries.
    has_stacked_history MUST be true whenever current_active_positions is non-null.
 
 3. recent_stacking_activity (object, always present):
@@ -302,7 +305,10 @@ function hasCompactPipelineSignal(text: string): boolean {
       normalized,
     );
 
-  return hasMoneyValue && hasPipelineContext;
+  // Ordinal stacking phrases: "2nd position", "3rd position", "4-stacked" etc.
+  const hasOrdinalStacking = /\b\d+(?:st|nd|rd|th)\s+positions?\b|\b\d+[-\s]stacked\b/i.test(text);
+
+  return (hasMoneyValue && hasPipelineContext) || hasOrdinalStacking;
 }
 
 /**
@@ -342,6 +348,25 @@ function tryDeterministicStackingOverride(
   if (stackMatch) {
     const count = parseInt(stackMatch[1], 10);
     if (count >= 1 && count <= 20) {
+      return {
+        ...parsed,
+        skip_reason: null,
+        has_stacked_history: true,
+        current_active_positions: {
+          count,
+          total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
+        },
+        recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
+      };
+    }
+  }
+
+  // "Nth position" ordinal — e.g. "2nd position", "3rd position", "in 4th position"
+  // count >= 2 to avoid "1st position" (clean) triggering a stacking badge
+  const ordinalPosMatch = normalized.match(/\b(\d+)(?:st|nd|rd|th)\s+positions?\b/);
+  if (ordinalPosMatch) {
+    const count = parseInt(ordinalPosMatch[1], 10);
+    if (count >= 2 && count <= 20) {
       return {
         ...parsed,
         skip_reason: null,

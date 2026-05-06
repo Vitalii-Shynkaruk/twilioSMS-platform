@@ -231,6 +231,8 @@ export default function CampaignsPage() {
           aiBuiltCount > 0 ? ` · ${aiBuiltCount} ${aiBuiltCount === 1 ? 'is' : 'are'} AI-built` : ''
         }`
       : `All ${total} campaigns visible to admin`;
+  const startingCampaignIdRef = useRef<string | null>(null);
+  const [startingCampaignId, setStartingCampaignId] = useState<string | null>(null);
 
   const startMutation = useMutation({
     mutationFn: (id: string) => api.post(`/campaigns/${id}/start`),
@@ -239,7 +241,23 @@ export default function CampaignsPage() {
       toast.success('Campaign started!');
     },
     onError: (err: any) => toast.error(err.response?.data?.error || 'Failed to start'),
+    onSettled: (_data, _error, id) => {
+      if (startingCampaignIdRef.current === id) {
+        startingCampaignIdRef.current = null;
+      }
+      setStartingCampaignId((currentId) => (currentId === id ? null : currentId));
+    },
   });
+
+  const startCampaign = (campaignId: string) => {
+    if (startingCampaignIdRef.current) {
+      return;
+    }
+
+    startingCampaignIdRef.current = campaignId;
+    setStartingCampaignId(campaignId);
+    startMutation.mutate(campaignId);
+  };
 
   const pauseMutation = useMutation({
     mutationFn: (id: string) => api.post(`/campaigns/${id}/pause`),
@@ -277,76 +295,84 @@ export default function CampaignsPage() {
     [user],
   );
 
-  const renderCampaignActions = (campaign: Campaign, mobile = false) => (
-    <div className={`flex items-center ${mobile ? 'flex-wrap gap-2' : 'gap-1'}`}>
-      <button
-        onClick={() => setRetargetCampaign(campaign)}
-        className={`rounded transition-colors ${mobile ? 'p-2' : 'p-1.5'} ${
-          canRetargetCampaign(campaign) && !outboundLocked
-            ? 'text-dark-400 hover:text-[#C9A84C] hover:bg-[#C9A84C]/10'
-            : 'text-dark-600 cursor-not-allowed'
-        }`}
-        title={
-          outboundLocked
-            ? outboundLockMsg
-            : canRetargetCampaign(campaign)
-              ? 'Retarget — send to non-responders'
-              : 'You can only retarget your own campaigns'
-        }
-        disabled={!canRetargetCampaign(campaign) || outboundLocked}
-        aria-label="Retarget campaign"
-      >
-        <RotateCcw className="w-4 h-4" />
-      </button>
-      {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status) && (
+  const renderCampaignActions = (campaign: Campaign, mobile = false) => {
+    const isStartingThisCampaign = startingCampaignId === campaign.id;
+
+    return (
+      <div className={`flex items-center ${mobile ? 'flex-wrap gap-2' : 'gap-1'}`}>
         <button
-          onClick={() => {
-            if (!outboundLocked) startMutation.mutate(campaign.id);
-          }}
-          className={`rounded text-dark-400 hover:text-green-400 transition-colors ${mobile ? 'p-2 hover:bg-green-600/20' : 'p-1.5 hover:bg-green-600/20'}`}
-          title={outboundLocked ? outboundLockMsg : 'Start'}
-          disabled={outboundLocked}
-          aria-label="Start campaign"
+          onClick={() => setRetargetCampaign(campaign)}
+          className={`rounded transition-colors ${mobile ? 'p-2' : 'p-1.5'} ${
+            canRetargetCampaign(campaign) && !outboundLocked
+              ? 'text-dark-400 hover:text-[#C9A84C] hover:bg-[#C9A84C]/10'
+              : 'text-dark-600 cursor-not-allowed'
+          }`}
+          title={
+            outboundLocked
+              ? outboundLockMsg
+              : canRetargetCampaign(campaign)
+                ? 'Retarget — send to non-responders'
+                : 'You can only retarget your own campaigns'
+          }
+          disabled={!canRetargetCampaign(campaign) || outboundLocked}
+          aria-label="Retarget campaign"
         >
-          <Play className="w-4 h-4" />
+          <RotateCcw className="w-4 h-4" />
         </button>
-      )}
-      {campaign.status === 'SENDING' && (
-        <button
-          onClick={() => pauseMutation.mutate(campaign.id)}
-          className={`rounded text-dark-400 hover:text-yellow-400 transition-colors ${mobile ? 'p-2 hover:bg-yellow-600/20' : 'p-1.5 hover:bg-yellow-600/20'}`}
-          title="Pause"
-          aria-label="Pause campaign"
-        >
-          <Pause className="w-4 h-4" />
-        </button>
-      )}
-      {['SENDING', 'PAUSED', 'SCHEDULED'].includes(campaign.status) && (
-        <button
-          onClick={() => {
-            if (window.confirm('Cancel this campaign?')) cancelMutation.mutate(campaign.id);
-          }}
-          className={`rounded text-dark-400 hover:text-red-400 transition-colors ${mobile ? 'p-2 hover:bg-red-600/20' : 'p-1.5 hover:bg-red-600/20'}`}
-          title="Cancel"
-          aria-label="Cancel campaign"
-        >
-          <XCircle className="w-4 h-4" />
-        </button>
-      )}
-      {canDeleteCampaign && ['DRAFT', 'COMPLETED', 'CANCELLED'].includes(campaign.status) && (
-        <button
-          onClick={() => {
-            if (window.confirm('Delete this campaign?')) deleteMutation.mutate(campaign.id);
-          }}
-          className={`rounded text-dark-400 hover:text-red-400 transition-colors ${mobile ? 'p-2 hover:bg-red-600/20' : 'p-1.5 hover:bg-red-600/20'}`}
-          title="Delete"
-          aria-label="Delete campaign"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      )}
-    </div>
-  );
+        {['DRAFT', 'SCHEDULED', 'PAUSED'].includes(campaign.status) && (
+          <button
+            onClick={() => {
+              if (!outboundLocked) startCampaign(campaign.id);
+            }}
+            className={`rounded transition-colors ${mobile ? 'p-2' : 'p-1.5'} ${
+              outboundLocked || startingCampaignId
+                ? 'text-dark-600 cursor-not-allowed'
+                : 'text-dark-400 hover:text-green-400 hover:bg-green-600/20'
+            }`}
+            title={outboundLocked ? outboundLockMsg : isStartingThisCampaign ? 'Starting...' : 'Start'}
+            disabled={outboundLocked || !!startingCampaignId}
+            aria-label={isStartingThisCampaign ? 'Starting campaign' : 'Start campaign'}
+          >
+            <Play className="w-4 h-4" />
+          </button>
+        )}
+        {campaign.status === 'SENDING' && (
+          <button
+            onClick={() => pauseMutation.mutate(campaign.id)}
+            className={`rounded text-dark-400 hover:text-yellow-400 transition-colors ${mobile ? 'p-2 hover:bg-yellow-600/20' : 'p-1.5 hover:bg-yellow-600/20'}`}
+            title="Pause"
+            aria-label="Pause campaign"
+          >
+            <Pause className="w-4 h-4" />
+          </button>
+        )}
+        {['SENDING', 'PAUSED', 'SCHEDULED'].includes(campaign.status) && (
+          <button
+            onClick={() => {
+              if (window.confirm('Cancel this campaign?')) cancelMutation.mutate(campaign.id);
+            }}
+            className={`rounded text-dark-400 hover:text-red-400 transition-colors ${mobile ? 'p-2 hover:bg-red-600/20' : 'p-1.5 hover:bg-red-600/20'}`}
+            title="Cancel"
+            aria-label="Cancel campaign"
+          >
+            <XCircle className="w-4 h-4" />
+          </button>
+        )}
+        {canDeleteCampaign && ['DRAFT', 'COMPLETED', 'CANCELLED'].includes(campaign.status) && (
+          <button
+            onClick={() => {
+              if (window.confirm('Delete this campaign?')) deleteMutation.mutate(campaign.id);
+            }}
+            className={`rounded text-dark-400 hover:text-red-400 transition-colors ${mobile ? 'p-2 hover:bg-red-600/20' : 'p-1.5 hover:bg-red-600/20'}`}
+            title="Delete"
+            aria-label="Delete campaign"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="campaigns-prototype-shell">
@@ -787,12 +813,12 @@ export default function CampaignsPage() {
                         setCtxMenu(null);
                         return;
                       }
-                      startMutation.mutate(ctxMenu.campaign.id);
+                      startCampaign(ctxMenu.campaign.id);
                       setCtxMenu(null);
                     }}
                     className="w-full text-left px-3 py-2 text-sm text-green-400 hover:bg-dark-700/50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={outboundLocked ? outboundLockMsg : undefined}
-                    disabled={outboundLocked}
+                    title={outboundLocked ? outboundLockMsg : startingCampaignId ? 'Starting...' : undefined}
+                    disabled={outboundLocked || !!startingCampaignId}
                   >
                     <Play className="w-3.5 h-3.5" /> Start Campaign
                   </button>

@@ -311,6 +311,58 @@ function hasCompactPipelineSignal(text: string): boolean {
   return (hasMoneyValue && hasPipelineContext) || hasStackingCount;
 }
 
+function parsePipelineMoneyToken(amountRaw: string, suffixRaw?: string | null): number | null {
+  const normalized = String(amountRaw || '')
+    .replace(/,/g, '')
+    .trim();
+  if (!normalized) return null;
+
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const suffix = String(suffixRaw || '')
+    .trim()
+    .toLowerCase();
+  if (suffix === 'm') return Math.round(amount * 1_000_000);
+  if (suffix === 'k') return Math.round(amount * 1_000);
+  return Math.round(amount);
+}
+
+function parsePipelineMoneyLabel(label: string): number | null {
+  const normalized = String(label || '').trim();
+  if (!normalized) return null;
+
+  const rangeMatch = normalized.match(/^\$?\s*([\d,.]+)\s*([kKmM]?)\s*(?:-|to)\s*\$?\s*([\d,.]+)\s*([kKmM]?)\+?$/);
+  if (rangeMatch) {
+    const start = parsePipelineMoneyToken(rangeMatch[1], rangeMatch[2]);
+    const end = parsePipelineMoneyToken(rangeMatch[3], rangeMatch[4]);
+    if (start && end) return Math.round((start + end) / 2);
+  }
+
+  const singleMatch = normalized.match(/^\$?\s*([\d,.]+)\s*([kKmM]?)\+?$/);
+  if (!singleMatch) return null;
+  return parsePipelineMoneyToken(singleMatch[1], singleMatch[2]);
+}
+
+export function extractDeterministicRequestedAmount(text: string): { value_usd: number; raw: string } | null {
+  const normalized = String(text || '').trim();
+  if (!normalized) return null;
+
+  const askMatch = normalized.match(
+    /\b(?:seeking|needs?|looking\s+for|asking\s+for|wants?|requesting|can\s+use|could\s+use|take|interested\s+in)\b(?:\s+(?:about|around|roughly))?(?:\s+for)?\s+(\$?\s*[\d,.]+\s*[kKmM]?(?:\s*(?:-|to)\s*\$?\s*[\d,.]+\s*[kKmM]?)?\+?)/i,
+  );
+  if (!askMatch) return null;
+
+  const raw = askMatch[1].replace(/\s+/g, ' ').trim();
+  const valueUsd = parsePipelineMoneyLabel(raw);
+  if (!valueUsd || valueUsd < 1000) return null;
+
+  return {
+    value_usd: valueUsd,
+    raw,
+  };
+}
+
 /**
  * When the AI returns skip_reason="too_short" but the text contains an explicit stacking
  * count phrase ("3 positions", "2-stacked", etc.), override the skip and extract stacking
@@ -373,6 +425,25 @@ function tryDeterministicStackingOverride(
   }
 
   return parsed;
+}
+
+function applyDeterministicPipelineOverrides(
+  text: string,
+  parsed: PipelineAiSignals,
+  existingSignals: PipelineAiSignals | null,
+): PipelineAiSignals {
+  const withStacking = tryDeterministicStackingOverride(text, parsed, existingSignals);
+  const requestedAmount = extractDeterministicRequestedAmount(text);
+  if (!requestedAmount) return withStacking;
+
+  return {
+    ...withStacking,
+    skip_reason:
+      withStacking.skip_reason === 'too_short' || withStacking.skip_reason === 'no_signal'
+        ? null
+        : withStacking.skip_reason,
+    requested_amount: requestedAmount,
+  };
 }
 
 export function getPipelineAiLocalSkipReason(text: string | null | undefined): PipelineSkipReason | null {
@@ -561,6 +632,7 @@ export async function previewPipelineSignals(args: {
       return null;
     }
 
+    const finalParsed = applyDeterministicPipelineOverrides(args.text, parsed, null);
     const usage = response.usage;
     logger.info('AI: previewPipelineSignals complete', {
       model: cfg.model,
@@ -569,11 +641,11 @@ export async function previewPipelineSignals(args: {
       outputTokens: usage?.output_tokens,
       cacheCreationInputTokens: usage?.cache_creation_input_tokens,
       cacheReadInputTokens: usage?.cache_read_input_tokens,
-      skipReason: parsed.skip_reason,
+      skipReason: finalParsed.skip_reason,
       durationMs: Date.now() - startedAt,
     });
 
-    return parsed;
+    return finalParsed;
   } catch (error) {
     logger.error('AI: previewPipelineSignals failed', {
       inputType: args.inputType,
@@ -656,9 +728,9 @@ export async function extractPipelineSignals(args: {
         return null;
       }
 
-      // Apply deterministic stacking override before saving (handles short notes like "3 positions.")
+      // Apply deterministic overrides before saving (stacking + explicit ask phrases)
       const existingSignalsTyped = isPipelineSignals(existingSignals) ? existingSignals : null;
-      const finalParsed = tryDeterministicStackingOverride(args.text, parsed, existingSignalsTyped);
+      const finalParsed = applyDeterministicPipelineOverrides(args.text, parsed, existingSignalsTyped);
 
       await prisma.deal.update({
         where: { id: args.dealId },

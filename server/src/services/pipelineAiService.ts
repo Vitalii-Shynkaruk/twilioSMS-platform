@@ -640,7 +640,8 @@ export async function extractPipelineSignals(args: {
       }
 
       // Apply deterministic stacking override before saving (handles short notes like "3 positions.")
-      const finalParsed = tryDeterministicStackingOverride(args.text, parsed, existingSignals);
+      const existingSignalsTyped = isPipelineSignals(existingSignals) ? existingSignals : null;
+      const finalParsed = tryDeterministicStackingOverride(args.text, parsed, existingSignalsTyped);
 
       await prisma.deal.update({
         where: { id: args.dealId },

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ArrowRight, KeyRound, Mail, RefreshCw, UserRound } from 'lucide-react';
 import { OtpChannel, useAuthStore } from '../stores/authStore';
-import { ArrowRight, KeyRound, Mail, RefreshCw, Shield, Smartphone, UserRound } from 'lucide-react';
+import '../styles/login-page.css';
 
 type LoginStep = 'email' | 'code';
 
@@ -31,10 +32,6 @@ export default function LoginPage() {
   const { requestOtp, verifyOtp, devModeLogin, isLoginLoading, isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
   const isEmailStep = step === 'email';
-  const panelFooterText =
-    step === 'code' && channel === 'email'
-      ? "We'll send a verification code to your email"
-      : "We'll send a verification code to your phone";
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -54,12 +51,32 @@ export default function LoginPage() {
 
   const parseOtpError = (err: any, fallback: string) => {
     const response = err?.response?.data;
+    const status = err?.response?.status;
+    const serviceError = typeof response?.error === 'string' ? response.error : '';
     if (response?.retryAfterSeconds) {
       setResendRemaining(Math.max(1, Number(response.retryAfterSeconds)));
     }
-    if (err?.response?.status >= 500) {
+
+    if (serviceError === 'Email sign-in fallback is not configured') {
+      return 'Email login code is not configured yet. Please use SMS or contact your admin.';
+    }
+
+    if (serviceError === 'Email sign-in fallback failed') {
+      return "We couldn't send the email login code. Please check spam or use SMS instead.";
+    }
+
+    if (serviceError === 'SMS sign-in is not configured') {
+      return 'SMS login code is not configured yet. Please contact your admin.';
+    }
+
+    if (serviceError) {
+      return serviceError;
+    }
+
+    if (status >= 500) {
       return 'Sign-in service is temporarily unavailable. Please try again.';
     }
+
     return response?.error || err.message || fallback;
   };
 
@@ -111,74 +128,88 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="scl-auth" aria-labelledby="scl-auth-title">
-      {/* Gradient border: bright at corners, transparent mid-side */}
-      <div className="scl-auth__border" aria-hidden="true" />
-      {/* Animated border beam */}
-      <div className="scl-auth__beam" aria-hidden="true" />
-      {/* Corner accent brackets */}
-      <div className="scl-auth__edge scl-auth__edge--tl" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--tr" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--bl" aria-hidden="true" />
-      <div className="scl-auth__edge scl-auth__edge--br" aria-hidden="true" />
-      <div className="scl-auth__ghost-mark" aria-hidden="true">
-        SCL
-      </div>
+    <main className="scl-login" aria-labelledby="scl-login-title">
+      <h1 id="scl-login-title" className="scl-login__sr-only">
+        Sign in to SCL
+      </h1>
 
-      <div className="scl-auth__shell">
-        <header className="scl-auth__brand">
-          <div className="scl-auth__wordmark" aria-label="SCL Sales Command Layer">
-            <span>S</span>
-            <span>C</span>
-            <span>L</span>
-          </div>
-          <p className="scl-auth__brand-subtitle">Sales Command Layer</p>
-          <h1 id="scl-auth-title" className="scl-auth__headline">
-            <span>Command</span> your pipeline
-          </h1>
-          <p className="scl-auth__tagline">Execution. Focus. Results.</p>
-        </header>
+      <div className="scl-login__stage">
+        <img className="scl-login__bg" src="/scl-login/SCL-Login-BG.png" alt="" aria-hidden="true" />
 
-        <section className="scl-auth__panel" aria-label="Sign in to SCL">
-          <div className="scl-auth__panel-title">
-            {isEmailStep ? <UserRound aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
-            <h2>{isEmailStep ? 'Sign in to SCL' : 'Enter verification code'}</h2>
-          </div>
-
+        <div className="scl-login__overlay">
           {error && (
-            <div id="login-error" aria-live="polite" className="scl-auth__error">
+            <div id="login-error" aria-live="polite" className="scl-login__error-banner">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="scl-auth__form">
-            <div className="scl-auth__field">
-              <label htmlFor="login-email">Email address</label>
-              <div className="scl-auth__input-wrap">
-                <Mail aria-hidden="true" />
+          {isEmailStep ? (
+            <>
+              <div className="scl-login__edge-effects" aria-hidden="true">
+                <span className="scl-login__edge scl-login__edge--top-blue" />
+                <span className="scl-login__edge scl-login__edge--top-gold" />
+                <span className="scl-login__edge scl-login__edge--right-gold" />
+                <span className="scl-login__edge scl-login__edge--bottom-gold" />
+              </div>
+
+              <div className="scl-login__button-glow" aria-hidden="true" />
+
+              <form onSubmit={handleSubmit} className="scl-login__hotspots" noValidate>
+                <label className="scl-login__sr-only" htmlFor="login-email">
+                  Email address
+                </label>
                 <input
                   id="login-email"
+                  className="scl-login__email-input"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email"
                   required
-                  autoFocus
                   autoComplete="email"
-                  disabled={!isEmailStep}
-                  aria-invalid={!!error && isEmailStep}
-                  aria-describedby={error && isEmailStep ? 'login-error' : undefined}
+                  aria-invalid={!!error}
+                  aria-describedby={error ? 'login-error' : undefined}
                 />
-              </div>
-            </div>
+                <button
+                  type="submit"
+                  className="scl-login__send-button"
+                  disabled={isLoginLoading || !email.trim()}
+                  aria-label={isLoginLoading ? 'Sending code' : 'Send code'}
+                >
+                  <span className="scl-login__sr-only">Send code</span>
+                </button>
+              </form>
 
-            {step === 'code' && (
-              <div className="scl-auth__field">
-                <div className="scl-auth__field-row">
+              {devModeLoginEnabled && (
+                <button
+                  type="button"
+                  onClick={handleDevModeLogin}
+                  disabled={isLoginLoading || !email.trim()}
+                  className="scl-login__dev-button"
+                >
+                  <KeyRound aria-hidden="true" />
+                  Dev mode login
+                </button>
+              )}
+            </>
+          ) : (
+            <section className="scl-login__otp-card" aria-label="Verify sign-in code">
+              <div className="scl-login__otp-title">
+                {channel === 'email' ? <Mail aria-hidden="true" /> : <UserRound aria-hidden="true" />}
+                <h2>Enter verification code</h2>
+              </div>
+
+              <p className="scl-login__otp-copy">
+                We sent a 6-digit code to <strong>{maskedDestination}</strong>.
+              </p>
+
+              <form onSubmit={handleSubmit} className="scl-login__otp-form">
+                <div className="scl-login__otp-row">
                   <label htmlFor="login-code">Verification code</label>
                   <span>{formatCountdown(expiresRemaining)}</span>
                 </div>
-                <div className="scl-auth__input-wrap scl-auth__input-wrap--code">
+
+                <div className="scl-login__otp-input-wrap">
                   <KeyRound aria-hidden="true" />
                   <input
                     id="login-code"
@@ -189,95 +220,65 @@ export default function LoginPage() {
                     required
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    aria-invalid={!!error && step === 'code'}
-                    aria-describedby={error && step === 'code' ? 'login-error' : undefined}
+                    autoFocus
+                    aria-invalid={!!error}
+                    aria-describedby={error ? 'login-error' : undefined}
                   />
                 </div>
-                <p className="scl-auth__hint">Sent to {maskedDestination}</p>
-              </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={isLoginLoading || !email || (step === 'code' && code.length !== 6)}
-              className="scl-auth__primary"
-            >
-              {isLoginLoading ? (
-                <span className="scl-auth__spinner" aria-label="Loading" />
-              ) : (
-                <>
-                  <span>{isEmailStep ? 'Send code' : 'Verify code'}</span>
-                  <ArrowRight aria-hidden="true" />
-                </>
-              )}
-            </button>
-
-            {isEmailStep && (
-              <>
-                {devModeLoginEnabled && (
-                  <button
-                    type="button"
-                    onClick={handleDevModeLogin}
-                    disabled={isLoginLoading || !email}
-                    className="scl-auth__dev"
-                  >
-                    <KeyRound className="w-4 h-4" />
-                    Dev mode login
-                  </button>
-                )}
-              </>
-            )}
-
-            {step === 'code' && (
-              <div className="flex flex-col gap-3">
-                <button
-                  type="button"
-                  onClick={() => sendCode(channel)}
-                  disabled={isLoginLoading || resendRemaining > 0}
-                  className="scl-auth__link"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  {resendRemaining > 0 ? `Resend in ${formatCountdown(resendRemaining)}` : 'Resend code'}
+                <button type="submit" disabled={isLoginLoading || code.length !== 6} className="scl-login__otp-primary">
+                  {isLoginLoading ? (
+                    <span className="scl-login__spinner" aria-label="Loading" />
+                  ) : (
+                    <>
+                      <span>Verify code</span>
+                      <ArrowRight aria-hidden="true" />
+                    </>
+                  )}
                 </button>
 
-                {channel === 'sms' && (
+                <div className="scl-login__otp-actions">
                   <button
                     type="button"
-                    onClick={() => sendCode('email')}
-                    disabled={isLoginLoading}
-                    className="scl-auth__link"
+                    onClick={() => sendCode(channel)}
+                    disabled={isLoginLoading || resendRemaining > 0}
+                    className="scl-login__otp-link"
                   >
-                    <Mail className="w-4 h-4" />
-                    Lost access to your phone? Use email instead
+                    <RefreshCw aria-hidden="true" />
+                    {resendRemaining > 0 ? `Resend in ${formatCountdown(resendRemaining)}` : 'Resend code'}
                   </button>
-                )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('email');
-                    setCode('');
-                    setError('');
-                    setMaskedDestination('');
-                  }}
-                  className="scl-auth__subtle-link"
-                >
-                  Change email
-                </button>
-              </div>
-            )}
-          </form>
+                  {channel === 'sms' && (
+                    <button
+                      type="button"
+                      onClick={() => sendCode('email')}
+                      disabled={isLoginLoading}
+                      className="scl-login__otp-link"
+                    >
+                      <Mail aria-hidden="true" />
+                      Use email instead
+                    </button>
+                  )}
 
-          <div className="scl-auth__panel-footer">
-            <Smartphone aria-hidden="true" />
-            <p>{panelFooterText}</p>
-          </div>
-        </section>
-
-        <footer className="scl-auth__footer">
-          <Shield className="scl-auth__footer-icon" aria-hidden="true" />
-          <span>SCL Systems • Secure • Intelligent • Relentless</span>
-        </footer>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('email');
+                      setCode('');
+                      setError('');
+                      setMaskedDestination('');
+                      setExpiresRemaining(0);
+                      setResendRemaining(0);
+                    }}
+                    className="scl-login__otp-link scl-login__otp-link--subtle"
+                  >
+                    Change email
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
+        </div>
       </div>
     </main>
   );

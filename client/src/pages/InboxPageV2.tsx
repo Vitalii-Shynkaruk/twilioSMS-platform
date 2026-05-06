@@ -45,6 +45,8 @@ type InboxFilter =
   | 'dnc';
 type InboxSort = 'ai_priority' | 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
+const INBOX_VISUAL_MODE_KEY = 'scl_inbox_visual_mode';
+
 // Pixel-perfect: 1:1 с прототипом scl-inbox-v11.html
 // Одна строка-flex-wrap, как в .inbox-filters прототипа
 const FILTER_ALL: Array<{ id: InboxFilter; label: string; tone?: 'hot' }> = [
@@ -167,6 +169,10 @@ export default function InboxPage() {
   const { user } = useAuthStore();
   const isAdminOrManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [visualMode, setVisualMode] = useState<'dark' | 'light'>(() => {
+    const saved = localStorage.getItem(INBOX_VISUAL_MODE_KEY);
+    return saved === 'light' ? 'light' : 'dark';
+  });
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
   const [filter, setFilter] = useState<InboxFilter>('all');
@@ -183,6 +189,10 @@ export default function InboxPage() {
   const [campaignFilter, setCampaignFilter] = useState<string | null>(() => searchParams.get('campaign'));
   const [inboxScope, setInboxScope] = useState<'admin' | 'mine'>(() => (isAdminOrManager ? 'admin' : 'mine'));
   const effectiveInboxScope = isAdminOrManager ? inboxScope : 'mine';
+
+  useEffect(() => {
+    localStorage.setItem(INBOX_VISUAL_MODE_KEY, visualMode);
+  }, [visualMode]);
 
   // Обработка ?campaign=ID и ?lead=ID — очищаем URL после считывания
   useEffect(() => {
@@ -333,7 +343,9 @@ export default function InboxPage() {
   const totalConversations = convData?.pagination?.total ?? conversations.length;
 
   return (
-    <div className={clsx('inbox-root', 'phase1', selectedId && 'has-selected')}>
+    <div
+      className={clsx('inbox-root', 'phase1', selectedId && 'has-selected', visualMode === 'light' && 'inbox-light')}
+    >
       <HOTToast />
       <div className="inbox-left">
         {/* Campaign filter banner */}
@@ -531,6 +543,14 @@ export default function InboxPage() {
           </div>
         </div>
       )}
+
+      <button
+        className="inbox-theme-toggle"
+        onClick={() => setVisualMode((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+        title={visualMode === 'dark' ? 'Enable light mode' : 'Enable dark mode'}
+      >
+        {visualMode === 'dark' ? '◐' : '◑'}
+      </button>
     </div>
   );
 }

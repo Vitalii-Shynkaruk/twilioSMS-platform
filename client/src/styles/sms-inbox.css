@@ -103,6 +103,197 @@
   background: var(--inbox-bg);
 }
 
+.inbox-root.phase1.inbox-light {
+  --inbox-bg: #f4f7fb;
+  --inbox-bg2: #ffffff;
+  --inbox-bg3: #edf2f9;
+  --inbox-bg4: #e2e8f0;
+  --inbox-text1: #0f172a;
+  --inbox-text2: #334155;
+  --inbox-text3: #64748b;
+  --inbox-border: rgba(148, 163, 184, 0.38);
+  --inbox-border-strong: rgba(59, 130, 246, 0.28);
+  --inbox-gold: #b8963e;
+  --inbox-gold-bg: rgba(184, 150, 62, 0.12);
+  --inbox-hot: #dc2626;
+  --inbox-hot-bg: rgba(220, 38, 38, 0.1);
+  --bg-primary: #f4f7fb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #edf2f9;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: #e9eff8;
+  --border-color: rgba(148, 163, 184, 0.38);
+  --border-subtle: rgba(203, 213, 225, 0.85);
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --accent-primary: #b8963e;
+  --accent-hover: #a67d2d;
+  background: linear-gradient(180deg, #f7f9fc 0%, #eef3f9 100%);
+}
+
+.inbox-root.inbox-light .inbox-rail {
+  background: rgba(255, 255, 255, 0.92);
+  border-right-color: rgba(203, 213, 225, 0.9);
+}
+
+.inbox-root.inbox-light .inbox-rail-icon:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+}
+
+.inbox-root.inbox-light .inbox-title {
+  color: #9a6c10;
+}
+
+.inbox-root.inbox-light .inbox-title-count,
+.inbox-root.inbox-light .inbox-master-label,
+.inbox-root.inbox-light .inbox-contact-key,
+.inbox-root.inbox-light .inbox-sound-row,
+.inbox-root.inbox-light .thread-source {
+  color: #64748b;
+}
+
+.inbox-root.inbox-light .inbox-master-card,
+.inbox-root.inbox-light .inbox-sort-select,
+.inbox-root.inbox-light .inbox-sort-menu,
+.inbox-root.inbox-light .inbox-popover,
+.inbox-root.inbox-light .inbox-template-modal {
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.1);
+}
+
+.inbox-root.inbox-light .inbox-master-card {
+  border-color: rgba(184, 150, 62, 0.32);
+}
+
+.inbox-root.inbox-light .inbox-master-title {
+  color: #9a6c10;
+}
+
+.inbox-root.inbox-light .inbox-master-value,
+.inbox-root.inbox-light .inbox-contact-value {
+  color: #0f172a;
+}
+
+.inbox-root.inbox-light .inbox-view-toggle {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(203, 213, 225, 0.9);
+}
+
+.inbox-root.inbox-light .inbox-view-toggle-btn {
+  color: #64748b;
+}
+
+.inbox-root.inbox-light .inbox-view-toggle-btn:hover {
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.inbox-root.inbox-light .inbox-view-toggle-btn.active {
+  background: rgba(184, 150, 62, 0.12);
+  color: #9a6c10;
+}
+
+.inbox-root.inbox-light .inbox-filter-count {
+  background: rgba(15, 23, 42, 0.06);
+  color: #475569;
+}
+
+.inbox-root.inbox-light .inbox-conv-item {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(203, 213, 225, 0.95);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.inbox-root.inbox-light .inbox-conv-item:hover {
+  background: #eef4fb;
+}
+
+.inbox-root.inbox-light .inbox-conv-item.selected {
+  background: rgba(251, 245, 230, 0.96);
+  border-color: rgba(184, 150, 62, 0.42);
+  box-shadow: inset 2px 0 0 rgba(184, 150, 62, 0.92);
+}
+
+.inbox-root.inbox-light .inbox-conv-item.unread {
+  background: rgba(233, 241, 252, 0.98);
+}
+
+.inbox-root.inbox-light .inbox-avatar {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.inbox-root.inbox-light .inbox-conv-number-pill,
+.inbox-root.inbox-light .inbox-strip-badge.from {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: rgba(37, 99, 235, 0.28);
+  color: #2563eb;
+}
+
+.inbox-root.inbox-light .inbox-thread-row.row2.status-strip {
+  background: #f8fafc;
+}
+
+.inbox-root.inbox-light .inbox-back-btn,
+.inbox-root.inbox-light .inbox-action-btn,
+.inbox-root.inbox-light .inbox-tool-btn,
+.inbox-root.inbox-light .inbox-assign,
+.inbox-root.inbox-light .inbox-pipeline-btn,
+.inbox-root.inbox-light .inbox-popover.followup-popover > button,
+.inbox-root.inbox-light .inbox-popover.compose-schedule-popover > button,
+.inbox-root.inbox-light .inbox-popover-actions button,
+.inbox-root.inbox-light .inbox-template-create-actions button {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.inbox-root.inbox-light .inbox-msg.outbound {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.inbox-root.inbox-light .inbox-msg.inbound,
+.inbox-root.inbox-light .inbox-msg.inbound .inbox-msg-bubble {
+  background: #ffffff;
+  border-color: rgba(203, 213, 225, 0.95);
+  color: #0f172a;
+}
+
+.inbox-root.inbox-light .inbox-msg.outbound .inbox-msg-bubble {
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+}
+
+.inbox-root.inbox-light .inbox-msg.outbound .inbox-msg-time {
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.inbox-root.inbox-light .inbox-msg.inbound .inbox-msg-time,
+.inbox-root.inbox-light .inbox-msg-status.sent {
+  color: #64748b;
+}
+
+.inbox-root.inbox-light .inbox-empty-icon {
+  color: #94a3b8;
+}
+
+.inbox-root.inbox-light .inbox-empty-text {
+  color: #334155;
+}
+
+.inbox-root.inbox-light .inbox-empty-sub {
+  color: #64748b;
+}
+
+.inbox-root.inbox-light .inbox-pagination button {
+  background: rgba(255, 255, 255, 0.95);
+  color: #334155;
+}
+
+.inbox-root.inbox-light .inbox-pagination button:disabled {
+  background: rgba(241, 245, 249, 0.95);
+}
+
 /* ─── Левая панель: список разговоров ─── */
 .inbox-left {
   width: 308px;
@@ -2446,6 +2637,28 @@
   border: 1px dashed rgba(184, 150, 62, 0.3);
   color: #b8963e;
   font-family: "JetBrains Mono", "Fira Code", monospace;
+
+.inbox-theme-toggle {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2400;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--inbox-border, var(--border-color));
+  background: var(--inbox-bg3, var(--bg-card));
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+
+.inbox-theme-toggle:hover {
+  border-color: rgba(184, 150, 62, 0.48);
+  color: var(--inbox-gold, #b8963e);
+}
   font-size: 10px;
   padding: 5px 10px;
   border-radius: 4px;

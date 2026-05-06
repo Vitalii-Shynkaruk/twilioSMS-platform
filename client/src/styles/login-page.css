@@ -9,6 +9,11 @@
 }
 
 .scl-login__stage {
+  --scl-login-field-top: 55.92%;
+  --scl-login-field-width: 34.68%;
+  --scl-login-field-height: 5.85%;
+  --scl-login-button-top: 64.62%;
+  --scl-login-button-width: 35.11%;
   position: relative;
   width: 1440px;
   height: 900px;
@@ -35,75 +40,6 @@
 
 .scl-login__overlay {
   z-index: 1;
-}
-
-.scl-login__edge-effects {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-
-.scl-login__edge {
-  position: absolute;
-  opacity: 0;
-  filter: drop-shadow(0 0 6px currentColor);
-}
-
-.scl-login__edge--top-blue {
-  top: 2.7%;
-  left: 5.1%;
-  width: 220px;
-  height: 2px;
-  color: #2aa8ff;
-  background: linear-gradient(90deg, transparent, #2aa8ff, white, transparent);
-  animation: sclLoginScanBlue 5.2s infinite;
-}
-
-.scl-login__edge--top-gold {
-  top: 2.7%;
-  right: 7.7%;
-  width: 260px;
-  height: 2px;
-  color: #d9a34b;
-  background: linear-gradient(90deg, transparent, #d9a34b, #ffd98a, transparent);
-  animation: sclLoginScanGoldTop 6.4s infinite;
-}
-
-.scl-login__edge--right-gold {
-  top: 4%;
-  right: 2.8%;
-  width: 2px;
-  height: 200px;
-  color: #d9a34b;
-  background: linear-gradient(180deg, transparent, #d9a34b, #ffd98a, transparent);
-  animation: sclLoginScanGoldRight 6.8s infinite;
-}
-
-.scl-login__edge--bottom-gold {
-  bottom: 2.9%;
-  right: 8%;
-  width: 320px;
-  height: 2px;
-  color: #d9a34b;
-  background: linear-gradient(90deg, transparent, #d9a34b, #ffd98a, transparent);
-  animation: sclLoginScanGoldBottom 7.2s infinite;
-}
-
-.scl-login__button-glow {
-  position: absolute;
-  left: 50%;
-  top: 66.2%;
-  width: 507px;
-  height: 60px;
-  transform: translateX(-50%);
-  border-radius: 7px;
-  z-index: 2;
-  pointer-events: none;
-  opacity: 0;
-  box-shadow: 0 0 24px rgba(8, 116, 255, 0.55);
-  animation: sclLoginButtonPulse 4.8s ease-in-out infinite;
 }
 
 .scl-login__sr-only {
@@ -137,62 +73,95 @@
 
 .scl-login__hotspots {
   position: absolute;
-  left: 50%;
-  top: 58.2%;
-  width: 507px;
-  height: 200px;
-  transform: translate(-50%, -50%);
+  inset: 0;
   z-index: 3;
 }
 
-.scl-login__email-input,
+.scl-login__email-shell {
+  position: absolute;
+  left: 50%;
+  top: var(--scl-login-field-top);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: var(--scl-login-field-width);
+  height: var(--scl-login-field-height);
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  border: 1px solid rgba(61, 96, 145, 0.62);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(8, 18, 35, 0.97), rgba(7, 14, 27, 0.98));
+  padding: 0 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(121, 162, 228, 0.1),
+    0 0 0 1px rgba(13, 34, 67, 0.24);
+}
+
+.scl-login__email-shell:focus-within {
+  border-color: rgba(67, 126, 219, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(121, 162, 228, 0.12),
+    0 0 0 1px rgba(13, 34, 67, 0.28),
+    0 0 0 3px rgba(24, 132, 255, 0.14);
+}
+
+.scl-login__email-shell svg {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  color: rgba(109, 148, 207, 0.86);
+}
+
 .scl-login__send-button {
   position: absolute;
-  left: 0;
-  width: 100%;
+  left: 50%;
+  top: var(--scl-login-button-top);
+  width: var(--scl-login-button-width);
+  height: 6%;
+  transform: translateX(-50%);
+  border: none;
+  border-radius: 10px;
   background: transparent;
-}
-
-.scl-login__email-input {
-  top: 48px;
-  height: 52px;
-  padding-left: 54px;
-  padding-right: 2px;
-  border: none;
-  outline: none;
-  box-sizing: content-box;
-  color: #eef4ff;
-  font-size: 16px;
-  font-family: Arial, sans-serif;
-  caret-color: #2aa8ff;
-}
-
-.scl-login__email-input::placeholder {
-  color: transparent;
-}
-
-.scl-login__email-input:focus {
-  background: rgba(42, 168, 255, 0.035);
-  box-shadow: inset 0 0 18px rgba(42, 168, 255, 0.08);
-  border-radius: 7px;
-}
-
-.scl-login__send-button {
-  top: 124px;
-  height: 60px;
-  border: none;
-  border-radius: 7px;
   cursor: pointer;
 }
 
 .scl-login__send-button:hover:not(:disabled),
 .scl-login__send-button:focus-visible {
-  background: rgba(255, 255, 255, 0.025);
-  box-shadow: 0 0 22px rgba(8, 116, 255, 0.22);
+  box-shadow: 0 0 0 2px rgba(146, 192, 255, 0.16);
+  outline: none;
 }
 
 .scl-login__send-button:disabled {
   cursor: not-allowed;
+}
+
+.scl-login__email-input {
+  position: static;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #eef4ff;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+  font-family: Arial, sans-serif;
+  caret-color: #2aa8ff;
+}
+
+.scl-login__email-input::placeholder {
+  color: rgba(122, 144, 181, 0.84);
+}
+
+.scl-login__email-input:-webkit-autofill,
+.scl-login__email-input:-webkit-autofill:hover,
+.scl-login__email-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #eef4ff;
+  caret-color: #2aa8ff;
+  box-shadow: inset 0 0 0 1000px rgba(7, 16, 31, 0.96);
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 .scl-login__dev-button {
@@ -408,84 +377,6 @@
   }
 }
 
-@keyframes sclLoginScanBlue {
-  0%, 80%, 100% {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-
-  85% {
-    opacity: 0.9;
-    transform: translateX(40px);
-  }
-
-  90% {
-    opacity: 0.2;
-  }
-}
-
-@keyframes sclLoginScanGoldTop {
-  0%, 75%, 100% {
-    opacity: 0;
-    transform: translateX(40px);
-  }
-
-  80% {
-    opacity: 0.8;
-    transform: translateX(-40px);
-  }
-
-  85% {
-    opacity: 0.2;
-  }
-}
-
-@keyframes sclLoginScanGoldRight {
-  0%, 78%, 100% {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-
-  83% {
-    opacity: 0.7;
-    transform: translateY(30px);
-  }
-
-  88% {
-    opacity: 0.2;
-  }
-}
-
-@keyframes sclLoginScanGoldBottom {
-  0%, 70%, 100% {
-    opacity: 0;
-    transform: translateX(60px);
-  }
-
-  75% {
-    opacity: 0.7;
-    transform: translateX(-50px);
-  }
-
-  80% {
-    opacity: 0.2;
-  }
-}
-
-@keyframes sclLoginButtonPulse {
-  0%, 48%, 70%, 100% {
-    opacity: 0;
-  }
-
-  54% {
-    opacity: 0.28;
-  }
-
-  62% {
-    opacity: 0.08;
-  }
-}
-
 @media (max-width: 900px) {
   .scl-login__stage {
     width: 100vw;
@@ -493,9 +384,18 @@
     max-height: 100vh;
   }
 
-  .scl-login__hotspots,
-  .scl-login__button-glow {
-    width: 35.2%;
+  .scl-login__email-shell {
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .scl-login__email-shell svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .scl-login__email-input {
+    font-size: 14px;
   }
 
   .scl-login__otp-card {

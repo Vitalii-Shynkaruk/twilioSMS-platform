@@ -145,31 +145,25 @@ export default function LoginPage() {
 
           {isEmailStep ? (
             <>
-              <div className="scl-login__edge-effects" aria-hidden="true">
-                <span className="scl-login__edge scl-login__edge--top-blue" />
-                <span className="scl-login__edge scl-login__edge--top-gold" />
-                <span className="scl-login__edge scl-login__edge--right-gold" />
-                <span className="scl-login__edge scl-login__edge--bottom-gold" />
-              </div>
-
-              <div className="scl-login__button-glow" aria-hidden="true" />
-
               <form onSubmit={handleSubmit} className="scl-login__hotspots" noValidate>
                 <label className="scl-login__sr-only" htmlFor="login-email">
                   Email address
                 </label>
-                <input
-                  id="login-email"
-                  className="scl-login__email-input"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
-                  required
-                  autoComplete="email"
-                  aria-invalid={!!error}
-                  aria-describedby={error ? 'login-error' : undefined}
-                />
+                <div className="scl-login__email-shell">
+                  <Mail aria-hidden="true" />
+                  <input
+                    id="login-email"
+                    className="scl-login__email-input"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    required
+                    autoComplete="email"
+                    aria-invalid={!!error}
+                    aria-describedby={error ? 'login-error' : undefined}
+                  />
+                </div>
                 <button
                   type="submit"
                   className="scl-login__send-button"

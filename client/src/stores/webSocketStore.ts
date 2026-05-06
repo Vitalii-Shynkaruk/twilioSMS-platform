@@ -125,6 +125,11 @@ export function useWebSocketQuerySync() {
       'lead-update': () => {
         queryClient.invalidateQueries({ queryKey: ['leads'] });
       },
+      'deal:pipeline-updated': (data: { dealId: string }) => {
+        queryClient.invalidateQueries({ queryKey: ['deal', data.dealId] });
+        queryClient.invalidateQueries({ queryKey: ['deals'] });
+        queryClient.invalidateQueries({ queryKey: ['board'] });
+      },
     };
 
     for (const [event, handler] of Object.entries(handlers)) {

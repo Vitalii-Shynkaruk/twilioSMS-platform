@@ -1,36 +1,37 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { DealStage, ProductType } from "@prisma/client";
-import type { AuthRequest } from "../middleware/auth";
-import prisma from "../config/database";
-import logger from "../config/logger";
-import { extractJsonObjectFromLlmResponse } from "./aiService";
-import { isAdminLike } from "./dealScopePolicy";
+import Anthropic from '@anthropic-ai/sdk';
+import { DealStage, ProductType } from '@prisma/client';
+import type { AuthRequest } from '../middleware/auth';
+import prisma from '../config/database';
+import logger from '../config/logger';
+import { extractJsonObjectFromLlmResponse } from './aiService';
+import { isAdminLike } from './dealScopePolicy';
+import { getSocketIO } from '../realtime/socket';
 
-export type PipelineInputType = "rep_note" | "client_sms";
-export type PipelineSkipReason = "contact_info_only" | "too_short" | "unrelated" | "unintelligible" | "no_signal";
-export type PipelineProductInterest = "MCA" | "LOC" | "HELOC" | "SBA" | "EQUIPMENT" | "CRE" | "BRIDGE";
+export type PipelineInputType = 'rep_note' | 'client_sms';
+export type PipelineSkipReason = 'contact_info_only' | 'too_short' | 'unrelated' | 'unintelligible' | 'no_signal';
+export type PipelineProductInterest = 'MCA' | 'LOC' | 'HELOC' | 'SBA' | 'EQUIPMENT' | 'CRE' | 'BRIDGE';
 
 export interface PipelineAiSignals {
-  _extraction_scope: "lead_only";
+  _extraction_scope: 'lead_only';
   skip_reason: PipelineSkipReason | null;
   industry: string;
   monthly_revenue: { value_usd: number; raw: string } | null;
   use_of_funds: {
-    category: "equipment" | "working_capital" | "debt_consolidation" | "real_estate" | "expansion" | "unspecified";
+    category: 'equipment' | 'working_capital' | 'debt_consolidation' | 'real_estate' | 'expansion' | 'unspecified';
     detail: string | null;
   } | null;
   requested_amount: { value_usd: number; raw: string } | null;
   product_interest: PipelineProductInterest[];
   pending_actions: Array<{
-    actor: "rep" | "lead";
+    actor: 'rep' | 'lead';
     action: string;
-    timing: "today" | "this_week" | "next_week" | "later" | null;
+    timing: 'today' | 'this_week' | 'next_week' | 'later' | null;
   }>;
   has_stacked_history: boolean;
   current_active_positions: { count: number | null; total_debt_usd: number | null } | null;
   recent_stacking_activity: {
     active: boolean;
-    window: "last_30d" | "last_60d" | "last_90d" | null;
+    window: 'last_30d' | 'last_60d' | 'last_90d' | null;
   };
 }
 
@@ -45,7 +46,7 @@ interface RelatedPipelineDeal {
   productType: ProductType | null;
 }
 
-const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5";
+const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-5';
 
 export const PIPELINE_AI_SYSTEM_PROMPT = `You extract structured signals from rep notes and inbound client SMS in a small-business lending CRM, to enrich a deal card. You receive (a) any existing signals previously extracted on this deal, and (b) one new note or message. You return a single updated signals object representing the full picture.
 
@@ -161,122 +162,116 @@ OUTPUT:
 Return a single JSON object matching the provided schema. Strict JSON. No prose, no markdown fences, no commentary.`;
 
 export const PIPELINE_AI_OUTPUT_SCHEMA = {
-  type: "object",
+  type: 'object',
   additionalProperties: false,
   required: [
-    "_extraction_scope",
-    "skip_reason",
-    "industry",
-    "monthly_revenue",
-    "use_of_funds",
-    "requested_amount",
-    "product_interest",
-    "pending_actions",
-    "has_stacked_history",
-    "current_active_positions",
-    "recent_stacking_activity",
+    '_extraction_scope',
+    'skip_reason',
+    'industry',
+    'monthly_revenue',
+    'use_of_funds',
+    'requested_amount',
+    'product_interest',
+    'pending_actions',
+    'has_stacked_history',
+    'current_active_positions',
+    'recent_stacking_activity',
   ],
   properties: {
-    _extraction_scope: { const: "lead_only" },
+    _extraction_scope: { const: 'lead_only' },
     skip_reason: {
       anyOf: [
-        { type: "null" },
-        { type: "string", enum: ["contact_info_only", "too_short", "unrelated", "unintelligible", "no_signal"] },
+        { type: 'null' },
+        { type: 'string', enum: ['contact_info_only', 'too_short', 'unrelated', 'unintelligible', 'no_signal'] },
       ],
     },
-    industry: { type: "string" },
+    industry: { type: 'string' },
     monthly_revenue: {
       anyOf: [
-        { type: "null" },
+        { type: 'null' },
         {
-          type: "object",
+          type: 'object',
           additionalProperties: false,
-          required: ["value_usd", "raw"],
+          required: ['value_usd', 'raw'],
           properties: {
-            value_usd: { type: "integer" },
-            raw: { type: "string" },
+            value_usd: { type: 'integer' },
+            raw: { type: 'string' },
           },
         },
       ],
     },
     use_of_funds: {
       anyOf: [
-        { type: "null" },
+        { type: 'null' },
         {
-          type: "object",
+          type: 'object',
           additionalProperties: false,
-          required: ["category", "detail"],
+          required: ['category', 'detail'],
           properties: {
             category: {
-              enum: ["equipment", "working_capital", "debt_consolidation", "real_estate", "expansion", "unspecified"],
+              enum: ['equipment', 'working_capital', 'debt_consolidation', 'real_estate', 'expansion', 'unspecified'],
             },
-            detail: { type: ["string", "null"] },
+            detail: { type: ['string', 'null'] },
           },
         },
       ],
     },
     requested_amount: {
       anyOf: [
-        { type: "null" },
+        { type: 'null' },
         {
-          type: "object",
+          type: 'object',
           additionalProperties: false,
-          required: ["value_usd", "raw"],
+          required: ['value_usd', 'raw'],
           properties: {
-            value_usd: { type: "integer" },
-            raw: { type: "string" },
+            value_usd: { type: 'integer' },
+            raw: { type: 'string' },
           },
         },
       ],
     },
     product_interest: {
-      type: "array",
-      items: { enum: ["MCA", "LOC", "HELOC", "SBA", "EQUIPMENT", "CRE", "BRIDGE"] },
+      type: 'array',
+      items: { enum: ['MCA', 'LOC', 'HELOC', 'SBA', 'EQUIPMENT', 'CRE', 'BRIDGE'] },
     },
     pending_actions: {
-      type: "array",
+      type: 'array',
       items: {
-        type: "object",
+        type: 'object',
         additionalProperties: false,
-        required: ["actor", "action", "timing"],
+        required: ['actor', 'action', 'timing'],
         properties: {
-          actor: { enum: ["rep", "lead"] },
-          action: { type: "string" },
+          actor: { enum: ['rep', 'lead'] },
+          action: { type: 'string' },
           timing: {
-            anyOf: [
-              { type: "null" },
-              { type: "string", enum: ["today", "this_week", "next_week", "later"] },
-            ],
+            anyOf: [{ type: 'null' }, { type: 'string', enum: ['today', 'this_week', 'next_week', 'later'] }],
           },
         },
       },
     },
-    has_stacked_history: { type: "boolean" },
+    has_stacked_history: { type: 'boolean' },
     current_active_positions: {
       anyOf: [
-        { type: "null" },
+        { type: 'null' },
         {
-          type: "object",
+          type: 'object',
           additionalProperties: false,
-          required: ["count", "total_debt_usd"],
+          required: ['count', 'total_debt_usd'],
           properties: {
-            count: { type: ["integer", "null"] },
-            total_debt_usd: { type: ["integer", "null"] },
+            count: { type: ['integer', 'null'] },
+            total_debt_usd: { type: ['integer', 'null'] },
           },
         },
       ],
     },
     recent_stacking_activity: {
-      type: "object",
+      type: 'object',
       additionalProperties: false,
-      required: ["active", "window"],
+      required: ['active', 'window'],
       properties: {
-        active: { type: "boolean" },
+        active: { type: 'boolean' },
         window: {
-          anyOf: [
-            { type: "null" },
-            { type: "string", enum: ["last_30d", "last_60d", "last_90d"] },
-          ],
+          anyOf: [{ type: 'null' }, { type: 'string', enum: ['last_30d', 'last_60d', 'last_90d'] }],
         },
       },
     },
@@ -293,9 +288,9 @@ const pipelineDealQueues = new Map<string, Promise<PipelineAiSignals | null>>();
 
 function meaningfulWords(text: string): string[] {
   return text
-    .replace(/\[[A-Z_]+\]/g, " ")
+    .replace(/\[[A-Z_]+\]/g, ' ')
     .split(/\s+/u)
-    .map((word) => word.replace(/[^a-zA-Z0-9'$-]/g, "").trim())
+    .map((word) => word.replace(/[^a-zA-Z0-9'$-]/g, '').trim())
     .filter((word) => word.length > 1);
 }
 
@@ -310,24 +305,82 @@ function hasCompactPipelineSignal(text: string): boolean {
   return hasMoneyValue && hasPipelineContext;
 }
 
-export function getPipelineAiLocalSkipReason(text: string | null | undefined): PipelineSkipReason | null {
-  const normalized = String(text || "").trim();
-  if (!normalized) return "too_short";
+/**
+ * When the AI returns skip_reason="too_short" but the text contains an explicit stacking
+ * count phrase ("3 positions", "2-stacked", etc.), override the skip and extract stacking
+ * signals deterministically. This prevents short but meaningful rep notes from being lost.
+ */
+function tryDeterministicStackingOverride(
+  text: string,
+  parsed: PipelineAiSignals,
+  existingSignals: PipelineAiSignals | null,
+): PipelineAiSignals {
+  if (parsed.skip_reason !== 'too_short') return parsed;
 
-  const contactOnly = /^(?:\[[A-Z_]+\]|[\w.%+-]+@[\w.-]+\.[A-Z]{2,}|\+?[\d\s().-]{7,}|https?:\/\/\S+)$/i.test(normalized);
-  if (contactOnly) return "contact_info_only";
+  const normalized = text.toLowerCase();
+
+  // "X positions" — e.g. "3 positions.", "in 4 positions", "has 2 positions"
+  const posMatch = normalized.match(/\b(\d+)\s+positions?\b/);
+  if (posMatch) {
+    const count = parseInt(posMatch[1], 10);
+    if (count >= 1 && count <= 20) {
+      return {
+        ...parsed,
+        skip_reason: null,
+        has_stacked_history: true,
+        current_active_positions: {
+          count,
+          total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
+        },
+        recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
+      };
+    }
+  }
+
+  // "X-stacked" or "X stacked" — e.g. "3-stacked", "2 stacked"
+  const stackMatch = normalized.match(/\b(\d+)[-\s]stacked\b/);
+  if (stackMatch) {
+    const count = parseInt(stackMatch[1], 10);
+    if (count >= 1 && count <= 20) {
+      return {
+        ...parsed,
+        skip_reason: null,
+        has_stacked_history: true,
+        current_active_positions: {
+          count,
+          total_debt_usd: existingSignals?.current_active_positions?.total_debt_usd ?? null,
+        },
+        recent_stacking_activity: existingSignals?.recent_stacking_activity ?? { active: false, window: null },
+      };
+    }
+  }
+
+  return parsed;
+}
+
+export function getPipelineAiLocalSkipReason(text: string | null | undefined): PipelineSkipReason | null {
+  const normalized = String(text || '').trim();
+  if (!normalized) return 'too_short';
+
+  const contactOnly = /^(?:\[[A-Z_]+\]|[\w.%+-]+@[\w.-]+\.[A-Z]{2,}|\+?[\d\s().-]{7,}|https?:\/\/\S+)$/i.test(
+    normalized,
+  );
+  if (contactOnly) return 'contact_info_only';
 
   if (hasCompactPipelineSignal(normalized)) return null;
 
-  return meaningfulWords(normalized).length < 5 ? "too_short" : null;
+  return meaningfulWords(normalized).length < 5 ? 'too_short' : null;
 }
 
-export function canUserAccessPipelineDeal(user: AuthRequest["user"], deal: { assignedRepId?: string | null; assistingRepIds?: unknown }): boolean {
+export function canUserAccessPipelineDeal(
+  user: AuthRequest['user'],
+  deal: { assignedRepId?: string | null; assistingRepIds?: unknown },
+): boolean {
   if (isAdminLike(user)) return true;
   if (!user?.id) return false;
   if (deal.assignedRepId === user.id) return true;
   const assistingRepIds = Array.isArray(deal.assistingRepIds)
-    ? deal.assistingRepIds.filter((repId): repId is string => typeof repId === "string")
+    ? deal.assistingRepIds.filter((repId): repId is string => typeof repId === 'string')
     : [];
   return assistingRepIds.includes(user.id);
 }
@@ -339,52 +392,52 @@ export function buildPipelineAiPayload(args: {
   stageAtTime?: DealStage | null;
   productAtTime?: ProductType | null;
 }): string {
-  const existingSignals = args.existingSignals ? JSON.stringify(args.existingSignals) : "(none)";
-  const stageAtTime = args.stageAtTime || "(none)";
-  const productAtTime = args.productAtTime || "(none)";
-  const indentedText = String(args.text || "")
+  const existingSignals = args.existingSignals ? JSON.stringify(args.existingSignals) : '(none)';
+  const stageAtTime = args.stageAtTime || '(none)';
+  const productAtTime = args.productAtTime || '(none)';
+  const indentedText = String(args.text || '')
     .split(/\r?\n/u)
     .map((line) => `  ${line}`)
-    .join("\n");
+    .join('\n');
 
   return [
-    "[EXISTING SIGNALS]",
+    '[EXISTING SIGNALS]',
     existingSignals,
-    "",
-    "[NEW INPUT]",
+    '',
+    '[NEW INPUT]',
     `type: ${args.inputType}`,
     `stage_at_time: ${stageAtTime}`,
     `product_at_time: ${productAtTime}`,
-    "text: |",
+    'text: |',
     indentedText,
-  ].join("\n");
+  ].join('\n');
 }
 
 function isPipelineSignals(value: unknown): value is PipelineAiSignals {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const payload = value as Partial<PipelineAiSignals>;
   return (
-    payload._extraction_scope === "lead_only" &&
-    (payload.skip_reason === null || typeof payload.skip_reason === "string") &&
-    typeof payload.industry === "string" &&
+    payload._extraction_scope === 'lead_only' &&
+    (payload.skip_reason === null || typeof payload.skip_reason === 'string') &&
+    typeof payload.industry === 'string' &&
     Array.isArray(payload.product_interest) &&
     Array.isArray(payload.pending_actions) &&
-    typeof payload.has_stacked_history === "boolean" &&
+    typeof payload.has_stacked_history === 'boolean' &&
     !!payload.recent_stacking_activity &&
-    typeof payload.recent_stacking_activity === "object" &&
-    typeof payload.recent_stacking_activity.active === "boolean"
+    typeof payload.recent_stacking_activity === 'object' &&
+    typeof payload.recent_stacking_activity.active === 'boolean'
   );
 }
 
 function extractTextFromAnthropicResponse(response: Anthropic.Messages.Message): string | null {
   const parsedOutput = (response as unknown as { parsed_output?: unknown }).parsed_output;
-  if (parsedOutput && typeof parsedOutput === "object") return JSON.stringify(parsedOutput);
+  if (parsedOutput && typeof parsedOutput === 'object') return JSON.stringify(parsedOutput);
 
   for (const block of response.content) {
-    if (block.type === "text") return block.text.trim();
+    if (block.type === 'text') return block.text.trim();
     const maybeJson = block as unknown as { json?: unknown; data?: unknown };
-    if (maybeJson.json && typeof maybeJson.json === "object") return JSON.stringify(maybeJson.json);
-    if (maybeJson.data && typeof maybeJson.data === "object") return JSON.stringify(maybeJson.data);
+    if (maybeJson.json && typeof maybeJson.json === 'object') return JSON.stringify(maybeJson.json);
+    if (maybeJson.data && typeof maybeJson.data === 'object') return JSON.stringify(maybeJson.data);
   }
 
   return null;
@@ -392,18 +445,18 @@ function extractTextFromAnthropicResponse(response: Anthropic.Messages.Message):
 
 async function getPipelineAiConfig(): Promise<PipelineAiConfig | null> {
   const settings = await prisma.systemSetting.findMany({
-    where: { key: { in: ["anthropicApiKey", "anthropicModel"] } },
+    where: { key: { in: ['anthropicApiKey', 'anthropicModel'] } },
   });
   const map = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
-  const apiKey = String(map.anthropicApiKey || "");
+  const apiKey = String(map.anthropicApiKey || '');
 
   if (!apiKey) {
-    logger.warn("AI: Pipeline extraction skipped, Anthropic API key missing");
+    logger.warn('AI: Pipeline extraction skipped, Anthropic API key missing');
     return null;
   }
 
-  const configuredModel = String(map.anthropicModel || "");
-  const model = configuredModel.includes("claude-sonnet-4-5") ? configuredModel : DEFAULT_ANTHROPIC_MODEL;
+  const configuredModel = String(map.anthropicModel || '');
+  const model = configuredModel.includes('claude-sonnet-4-5') ? configuredModel : DEFAULT_ANTHROPIC_MODEL;
   return { apiKey, model };
 }
 
@@ -421,7 +474,7 @@ async function readExistingPipelineSignals(deal: {
 
   const conversations = await prisma.conversation.findMany({
     where: { OR: orFilters },
-    orderBy: { updatedAt: "desc" },
+    orderBy: { updatedAt: 'desc' },
     select: { aiSignals: true },
   });
   const conversation = conversations.find((item) => item.aiSignals);
@@ -450,7 +503,7 @@ export async function previewPipelineSignals(args: {
   const startedAt = Date.now();
   const localSkipReason = getPipelineAiLocalSkipReason(args.text);
   if (localSkipReason) {
-    logger.info("AI: previewPipelineSignals skipped by local guard", {
+    logger.info('AI: previewPipelineSignals skipped by local guard', {
       inputType: args.inputType,
       skipReason: localSkipReason,
       durationMs: Date.now() - startedAt,
@@ -474,25 +527,25 @@ export async function previewPipelineSignals(args: {
       model: cfg.model,
       max_tokens: 2048,
       temperature: 0,
-      system: [{ type: "text", text: PIPELINE_AI_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      output_config: { format: { type: "json_schema", schema: PIPELINE_AI_OUTPUT_SCHEMA } },
-      messages: [{ role: "user", content: payload }],
+      system: [{ type: 'text', text: PIPELINE_AI_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      output_config: { format: { type: 'json_schema', schema: PIPELINE_AI_OUTPUT_SCHEMA } },
+      messages: [{ role: 'user', content: payload }],
     });
     const raw = extractTextFromAnthropicResponse(response);
     const extractedJson = extractJsonObjectFromLlmResponse(raw);
     if (!extractedJson) {
-      logger.error("AI: previewPipelineSignals empty response");
+      logger.error('AI: previewPipelineSignals empty response');
       return null;
     }
 
     const parsed = JSON.parse(extractedJson) as unknown;
     if (!isPipelineSignals(parsed)) {
-      logger.error("AI: previewPipelineSignals invalid schema");
+      logger.error('AI: previewPipelineSignals invalid schema');
       return null;
     }
 
     const usage = response.usage;
-    logger.info("AI: previewPipelineSignals complete", {
+    logger.info('AI: previewPipelineSignals complete', {
       model: cfg.model,
       inputType: args.inputType,
       inputTokens: usage?.input_tokens,
@@ -505,7 +558,7 @@ export async function previewPipelineSignals(args: {
 
     return parsed;
   } catch (error) {
-    logger.error("AI: previewPipelineSignals failed", {
+    logger.error('AI: previewPipelineSignals failed', {
       inputType: args.inputType,
       error: (error as Error).message,
       durationMs: Date.now() - startedAt,
@@ -525,7 +578,7 @@ export async function extractPipelineSignals(args: {
     const startedAt = Date.now();
     const localSkipReason = getPipelineAiLocalSkipReason(args.text);
     if (localSkipReason) {
-      logger.info("AI: extractPipelineSignals skipped by local guard", {
+      logger.info('AI: extractPipelineSignals skipped by local guard', {
         dealId: args.dealId,
         inputType: args.inputType,
         skipReason: localSkipReason,
@@ -547,11 +600,12 @@ export async function extractPipelineSignals(args: {
           pipelineAiSignals: true,
           smsConversationId: true,
           leadId: true,
+          assignedRepId: true,
         },
       });
 
       if (!deal) {
-        logger.warn("AI: extractPipelineSignals deal not found", { dealId: args.dealId });
+        logger.warn('AI: extractPipelineSignals deal not found', { dealId: args.dealId });
         return null;
       }
 
@@ -568,33 +622,42 @@ export async function extractPipelineSignals(args: {
         model: cfg.model,
         max_tokens: 2048,
         temperature: 0,
-        system: [{ type: "text", text: PIPELINE_AI_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        output_config: { format: { type: "json_schema", schema: PIPELINE_AI_OUTPUT_SCHEMA } },
-        messages: [{ role: "user", content: payload }],
+        system: [{ type: 'text', text: PIPELINE_AI_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        output_config: { format: { type: 'json_schema', schema: PIPELINE_AI_OUTPUT_SCHEMA } },
+        messages: [{ role: 'user', content: payload }],
       });
       const raw = extractTextFromAnthropicResponse(response);
       const extractedJson = extractJsonObjectFromLlmResponse(raw);
       if (!extractedJson) {
-        logger.error("AI: extractPipelineSignals empty response", { dealId: args.dealId });
+        logger.error('AI: extractPipelineSignals empty response', { dealId: args.dealId });
         return null;
       }
 
       const parsed = JSON.parse(extractedJson) as unknown;
       if (!isPipelineSignals(parsed)) {
-        logger.error("AI: extractPipelineSignals invalid schema", { dealId: args.dealId });
+        logger.error('AI: extractPipelineSignals invalid schema', { dealId: args.dealId });
         return null;
       }
+
+      // Apply deterministic stacking override before saving (handles short notes like "3 positions.")
+      const finalParsed = tryDeterministicStackingOverride(args.text, parsed, existingSignals);
 
       await prisma.deal.update({
         where: { id: args.dealId },
         data: {
-          pipelineAiSignals: parsed as unknown as object,
+          pipelineAiSignals: finalParsed as unknown as object,
           pipelineAiUpdatedAt: new Date(),
         },
       });
 
+      // Notify the pipeline frontend that signals have been updated
+      const io = getSocketIO();
+      if (io && deal.assignedRepId) {
+        io.to(`inbox:${deal.assignedRepId}`).emit('deal:pipeline-updated', { dealId: args.dealId });
+      }
+
       const usage = response.usage;
-      logger.info("AI: extractPipelineSignals complete", {
+      logger.info('AI: extractPipelineSignals complete', {
         dealId: args.dealId,
         model: cfg.model,
         inputType: args.inputType,
@@ -602,13 +665,13 @@ export async function extractPipelineSignals(args: {
         outputTokens: usage?.output_tokens,
         cacheCreationInputTokens: usage?.cache_creation_input_tokens,
         cacheReadInputTokens: usage?.cache_read_input_tokens,
-        skipReason: parsed.skip_reason,
+        skipReason: finalParsed.skip_reason,
         durationMs: Date.now() - startedAt,
       });
 
-      return parsed;
+      return finalParsed;
     } catch (error) {
-      logger.error("AI: extractPipelineSignals failed", {
+      logger.error('AI: extractPipelineSignals failed', {
         dealId: args.dealId,
         inputType: args.inputType,
         error: (error as Error).message,
@@ -631,12 +694,12 @@ export async function queuePipelineExtractionForInboundSms(args: {
   for (const deal of targets.deals) {
     void extractPipelineSignals({
       dealId: deal.id,
-      inputType: "client_sms",
+      inputType: 'client_sms',
       text: args.text,
       stageAtTime: deal.stage,
       productAtTime: deal.productType,
     }).catch((error) =>
-      logger.error("AI: inbound Pipeline extraction enqueue failed", {
+      logger.error('AI: inbound Pipeline extraction enqueue failed', {
         dealId: deal.id,
         conversationId: args.conversationId || null,
         error: (error as Error).message,
@@ -659,7 +722,7 @@ export async function findPipelineExtractionTargetsForInboundSms(args: {
   const orFilters: Array<{ smsConversationId?: string; leadId?: string; id?: { in: string[] } }> = [];
   if (args.conversationId) orFilters.push({ smsConversationId: args.conversationId });
   if (args.leadId) orFilters.push({ leadId: args.leadId });
-  const dealIds = Array.from(new Set((args.dealIds || []).filter((id) => typeof id === "string" && id.trim())));
+  const dealIds = Array.from(new Set((args.dealIds || []).filter((id) => typeof id === 'string' && id.trim())));
   if (dealIds.length > 0) orFilters.push({ id: { in: dealIds } });
   if (orFilters.length === 0) return { deals: [] };
 

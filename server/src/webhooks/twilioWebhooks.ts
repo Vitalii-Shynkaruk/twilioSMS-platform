@@ -384,8 +384,25 @@ router.post('/inbound', async (req: Request, res: Response) => {
 
     const inboundTwilioNumber = await prisma.phoneNumber.findUnique({
       where: { phoneNumber: To },
-      select: { id: true },
+      select: {
+        id: true,
+        assignments: {
+          where: { isActive: true },
+          orderBy: { assignedDate: 'desc' },
+          take: 1,
+          select: {
+            userId: true,
+            user: {
+              select: {
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
     });
+    const inboundNumberAssignedRepId =
+      inboundTwilioNumber?.assignments.find((assignment) => assignment.user?.isActive)?.userId || null;
 
     const leadPhoneVariants = phoneLookupVariants(From);
     const repMobiles = await prisma.user.findMany({
@@ -526,7 +543,11 @@ router.post('/inbound', async (req: Request, res: Response) => {
         .map((message) => message.sentByUserId)
         .filter((id): id is string => !!id);
       const activeRepLookupIds = Array.from(
-        new Set([conversation.assignedRepId, lead.assignedRepId, ...candidateIds].filter((id): id is string => !!id)),
+        new Set(
+          [conversation.assignedRepId, lead.assignedRepId, inboundNumberAssignedRepId, ...candidateIds].filter(
+            (id): id is string => !!id,
+          ),
+        ),
       );
       const activeUsers =
         activeRepLookupIds.length > 0
@@ -538,6 +559,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       const nextOwnerRepId = resolveInboundOwnerRepId({
         currentAssignedRepId: conversation.assignedRepId,
         leadAssignedRepId: lead.assignedRepId,
+        inboundNumberAssignedRepId,
         recentHumanOutboundRepIds: candidateIds,
         activeRepIds: activeUsers.map((user) => user.id),
       });
@@ -688,6 +710,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
         : null;
 
       const parsedContact = splitContactName(matchedClient?.contactName);
+      const inferredAssignedRepId = matchedDeal?.assignedRepId || inboundNumberAssignedRepId || null;
       const newLead = await prisma.lead.create({
         data: {
           firstName: parsedContact.firstName || 'Unknown',
@@ -695,7 +718,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
           phone: From,
           email: matchedClient?.email || undefined,
           company: matchedClient?.businessName || undefined,
-          assignedRepId: matchedDeal?.assignedRepId || null,
+          assignedRepId: inferredAssignedRepId,
           source: 'inbound_sms',
           status: 'REPLIED',
           lastRepliedAt: new Date(),
@@ -714,7 +737,7 @@ router.post('/inbound', async (req: Request, res: Response) => {
       const conversation = await prisma.conversation.create({
         data: {
           leadId: newLead.id,
-          assignedRepId: newLead.assignedRepId || null,
+          assignedRepId: inferredAssignedRepId,
           twilioNumberId: inboundTwilioNumber?.id || null,
           stickyNumberId: inboundTwilioNumber?.id || null,
           isActive: true,

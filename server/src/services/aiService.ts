@@ -1046,6 +1046,33 @@ function hasCreditScoreContext(latestInboundLower: string, previousOutboundLower
   return hasScoreNumber && previousAskedScoreRange;
 }
 
+/**
+ * Detects skepticism/objection signals: "can you guarantee", "bullshit",
+ * "not jumping through hoops", "all the same", "waste of time", etc.
+ * These require a direct objection-handling reply — not an email/funding-link push.
+ */
+function hasSkepticismObjectionContext(latestInboundLower: string): boolean {
+  const n = String(latestInboundLower || '').toLowerCase();
+  if (!n) return false;
+  return /\b(guarantee|guaranteed|guarantees)\b|\b(bullshit|bs|b\.s\.|crap|scam|fraud|joke|waste of (?:my )?time)\b|\bnot(?:\s+going to|\s+gonna)?\s+jump(?:ing)?\s+through\s+hoops?\b|\ball\s+(?:the\s+)?same|\bsame\s+(?:as\s+)?(?:all|every|every\s+other)|\bheard\s+it\s+(?:all|before)|\bseen\s+(?:this|it)\s+(?:all|before)\b|\bnot\s+interested\s+in\s+(?:the\s+)?same|\btoo\s+good\s+to\s+be\s+true\b|\bsounds\s+like\s+(?:a\s+)?scam\b|\bprove\s+it\b|\bshow\s+me\b(?!.{0,40}\bemail\b)|\bhow\s+is\s+this\s+different\b/.test(
+    n,
+  );
+}
+
+/**
+ * A suggestion is stale for skepticism when it promotes email/funding-link instead
+ * of addressing the objection directly.
+ */
+function suggestionLooksStaleForSkepticism(text: string): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+  return /i have your email|i am sending|sending the funding link|funding link (?:there|now)|send the funding link|best email to send|what is the best email|i'll send the funding link/.test(
+    lower,
+  );
+}
+
 function hasGeneralProgramInquiryContext(
   latestInboundLower: string,
   previousOutboundLower: string,
@@ -1236,6 +1263,15 @@ function buildDeterministicFallbackSuggestionText(input: {
     previousOutboundLower,
     recentInboundLower,
   );
+
+  // Skepticism / objection — address the doubt directly BEFORE email or any other path
+  const skepticismContext = hasSkepticismObjectionContext(latestInboundLower);
+  if (skepticismContext) {
+    if (/\bguarantee\b/.test(latestInboundLower)) {
+      return 'Fair question. I cannot guarantee a number before seeing the business profile — but I can show you the structure so you judge it yourself. No hoops before you see the terms. What problem is the capital supposed to solve, and roughly how much would fix it?';
+    }
+    return 'Understood — you have heard a lot of noise. I am not here to pitch you. The only way to know if this is different is to see the actual structure, not a sales line. What would the capital fix in the business, and about how much would it take?';
+  }
 
   if (identityClarificationContext) {
     const senderIntro = senderIntroName ? `${senderIntroName} with SecureCreditLines here.` : 'SecureCreditLines here.';
@@ -1622,6 +1658,7 @@ function repairSuggestionsForInboundContext(input: {
       (creditScoreContext && suggestionLooksStaleForCreditScore(suggestion.text)) ||
       (generalProgramInquiryContext && suggestionLooksStaleForProgramInquiry(suggestion.text)) ||
       (emailIntentContext && suggestionLooksContradictoryToEmailIntent(suggestion.text)) ||
+      (hasSkepticismObjectionContext(latestInboundLower) && suggestionLooksStaleForSkepticism(suggestion.text)) ||
       (needsContextualRepair && suggestionLooksGenericFallback(suggestion.text));
     if (!shouldRepairSuggestion) return suggestion;
     changed = true;
@@ -2580,7 +2617,9 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
       ) &&
         suggestionLooksStaleForPhoneCallLogistics(finalSuggestedReplyText)) ||
       (hasCreditScoreContext(finalLatestInboundLower, finalPreviousOutboundText.toLowerCase()) &&
-        suggestionLooksStaleForCreditScore(finalSuggestedReplyText));
+        suggestionLooksStaleForCreditScore(finalSuggestedReplyText)) ||
+      (hasSkepticismObjectionContext(finalLatestInboundLower) &&
+        suggestionLooksStaleForSkepticism(finalSuggestedReplyText));
 
     if (shouldForceCurrentTopicReply) {
       const forcedReplyText = sanitizeAiSuggestionText(

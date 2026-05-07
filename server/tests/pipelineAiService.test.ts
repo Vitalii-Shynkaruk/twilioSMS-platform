@@ -69,6 +69,7 @@ describe('M1.4 Pipeline AI service', () => {
     expect(getPipelineAiLocalSkipReason('[EMAIL]')).toBe('contact_info_only');
     expect(getPipelineAiLocalSkipReason('Have not received yet')).toBe('too_short');
     expect(getPipelineAiLocalSkipReason('$20k monthly gross')).toBeNull();
+    expect(getPipelineAiLocalSkipReason('seeking $10m')).toBeNull();
     expect(getPipelineAiLocalSkipReason('Trucking business does $80k a month and wants equipment')).toBeNull();
   });
 
@@ -84,6 +85,14 @@ describe('M1.4 Pipeline AI service', () => {
     expect(extractDeterministicRequestedAmount('wants $75k-$100k for payroll and projects')).toEqual({
       value_usd: 87500,
       raw: '$75k-$100k',
+    });
+    expect(extractDeterministicRequestedAmount('seeking $10m')).toEqual({
+      value_usd: 10000000,
+      raw: '$10m',
+    });
+    expect(extractDeterministicRequestedAmount('Looking to receive $10M.')).toEqual({
+      value_usd: 10000000,
+      raw: '$10M',
     });
     expect(extractDeterministicRequestedAmount('Grosses $50k monthly and is in construction')).toBeNull();
   });

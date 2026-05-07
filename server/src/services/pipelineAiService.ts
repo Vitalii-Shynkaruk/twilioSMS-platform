@@ -301,7 +301,7 @@ function hasCompactPipelineSignal(text: string): boolean {
   const normalized = text.toLowerCase();
   const hasMoneyValue = /\$?\s*\d[\d,.]*(?:\s?[km])?\+?\b/i.test(text);
   const hasPipelineContext =
-    /\b(monthly|gross|revenue|sales|funding|capital|need|needs|want|wants|looking|equipment|inventory|debt|payroll|mca|heloc|sba|loc|line of credit|working capital|positions?|stacked)\b/.test(
+    /\b(monthly|gross|revenue|sales|funding|capital|need|needs|want|wants|looking|seeking|asking|requesting|receive|receiving|borrow|borrowing|equipment|inventory|debt|payroll|mca|heloc|sba|loc|line of credit|working capital|positions?|stacked)\b/.test(
       normalized,
     );
 
@@ -349,7 +349,7 @@ export function extractDeterministicRequestedAmount(text: string): { value_usd: 
   if (!normalized) return null;
 
   const askMatch = normalized.match(
-    /\b(?:seeking|needs?|looking\s+for|asking\s+for|wants?|requesting|can\s+use|could\s+use|take|interested\s+in)\b(?:\s+(?:about|around|roughly))?(?:\s+for)?\s+(\$?\s*[\d,.]+\s*[kKmM]?(?:\s*(?:-|to)\s*\$?\s*[\d,.]+\s*[kKmM]?)?\+?)/i,
+    /\b(?:seeking|needs?|looking\s+for|looking\s+to\s+receive|looking\s+to\s+get|asking\s+for|wants?|requesting|receive|receiving|can\s+use|could\s+use|take|interested\s+in)\b(?:\s+(?:about|around|roughly))?(?:\s+for)?\s+(\$?\s*[\d,.]+\s*[kKmM]?(?:\s*(?:-|to)\s*\$?\s*[\d,.]+\s*[kKmM]?)?\+?)/i,
   );
   if (!askMatch) return null;
 

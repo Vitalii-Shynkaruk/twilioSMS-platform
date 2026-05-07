@@ -95,12 +95,27 @@ function formatMonthlyRevenue(value: unknown): string {
   return `$${value.toLocaleString()}/mo`;
 }
 
-function formatLastContact(lead: any): string {
+function getLastContactParts(
+  lead: any,
+  currentUser: any,
+): {
+  actor: string;
+  relative: string;
+  showAdminFlag: boolean;
+} | null {
   const at = lead.enrichment?.lastContactAt || lead.lastRepliedAt || lead.lastContactedAt;
-  if (!at) return '—';
+  if (!at) return null;
   const initials = lead.enrichment?.lastContactRepInitials || lead.assignedRep?.initials || '';
+  const lastContactUserId = lead.enrichment?.lastContactUserId || lead.lastContactedByUserId || null;
   const relative = formatDistanceToNow(new Date(at), { addSuffix: true }).replace(/^about /, '');
-  return initials ? `${initials} ${relative}` : relative;
+  const isRepView = currentUser?.role === 'REP';
+  const actor = isRepView && lastContactUserId === currentUser?.id ? 'You' : initials || 'Unknown';
+
+  return {
+    actor,
+    relative,
+    showAdminFlag: Boolean(isRepView && lastContactUserId && lastContactUserId !== currentUser?.id),
+  };
 }
 
 function revenueSourceClass(source: string | null | undefined): string {
@@ -682,6 +697,7 @@ export default function LeadsPage() {
                       removeTagMutation={removeTagMutation}
                       addTagMutation={addTagMutation}
                       allTags={allTags}
+                      currentUser={user}
                       tagPickerLead={tagPickerLead}
                       setTagPickerLead={setTagPickerLead}
                       tagPickerRef={tagPickerRef}
@@ -853,10 +869,13 @@ function LeadRow({
   removeTagMutation,
   addTagMutation,
   allTags,
+  currentUser,
   tagPickerLead,
   setTagPickerLead,
   tagPickerRef,
 }: any) {
+  const lastContact = getLastContactParts(lead, currentUser);
+
   return (
     <tr
       className="border-b border-dark-800/50 hover:bg-dark-800/30 transition-colors cursor-pointer"
@@ -901,7 +920,20 @@ function LeadRow({
         <StatusBadge status={lead.status} />
       </td>
       <td className="table-td">
-        <span className="text-xs text-dark-400 whitespace-nowrap">{formatLastContact(lead)}</span>
+        {lastContact ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-dark-400 whitespace-nowrap">
+            <span>{lastContact.actor}</span>
+            <span>·</span>
+            {lastContact.showAdminFlag && (
+              <span className="rounded border border-orange-500/40 bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-orange-300">
+                ADMIN
+              </span>
+            )}
+            <span>{lastContact.relative}</span>
+          </span>
+        ) : (
+          <span className="text-xs text-dark-500 whitespace-nowrap">—</span>
+        )}
       </td>
       <td className="table-td">
         <span className="text-sm text-dark-300 max-w-[140px] block truncate" title={lead.enrichment?.industry || ''}>

@@ -49,6 +49,8 @@ export interface CohortReasoningInput {
     dailyUsed: number;
     dailyRemaining: number;
   };
+  predictedReplyRate: number;
+  expectedFunded: number;
   historicalAnchor: string;
   sampleLeads: CohortReasoningLeadSample[];
 }
@@ -2042,6 +2044,8 @@ export class AIService {
       criteria: input.criteria,
       counts: input.counts,
       capacity: input.capacity,
+      predictedReplyRate: input.predictedReplyRate,
+      expectedFunded: input.expectedFunded,
       fundedHistoryAggregate: input.historicalAnchor,
       anonymizedSampleLeads: input.sampleLeads,
       output: 'One or two sentences. No markdown. No bullets.',

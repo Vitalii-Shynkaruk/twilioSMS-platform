@@ -283,8 +283,9 @@ function resolveLeadEnrichment(lead: any) {
     readString(signals, ['industry']);
   const latestMessage = conversation?.messages?.[0] || null;
   const lastContactAt =
-    latestMessage?.createdAt || lead.lastRepliedAt || lead.lastContactedAt || conversation?.lastMessageAt || null;
+    lead.lastContactedAt || latestMessage?.createdAt || lead.lastRepliedAt || conversation?.lastMessageAt || null;
   const repForLastContact =
+    lead.lastContactedBy ||
     latestMessage?.sentByUser ||
     conversation?.assignedRep ||
     lead.assignedRep ||
@@ -297,6 +298,8 @@ function resolveLeadEnrichment(lead: any) {
     revenueSource,
     lastContactAt,
     lastContactRepInitials: userInitials(repForLastContact),
+    lastContactUserId: repForLastContact?.id || lead.lastContactedByUserId || null,
+    lastContactUserRole: repForLastContact?.role || null,
     lastContactDirection: latestMessage?.direction || null,
     readableSourcePrimary: source.primary,
     readableSourceSecondary: source.secondary,
@@ -411,6 +414,9 @@ export class LeadController {
           assignedRep: {
             select: { id: true, firstName: true, lastName: true, initials: true },
           },
+          lastContactedBy: {
+            select: { id: true, firstName: true, lastName: true, initials: true, role: true },
+          },
           deal: {
             select: {
               id: true,
@@ -438,7 +444,7 @@ export class LeadController {
                   id: true,
                   direction: true,
                   createdAt: true,
-                  sentByUser: { select: { id: true, firstName: true, lastName: true, initials: true } },
+                  sentByUser: { select: { id: true, firstName: true, lastName: true, initials: true, role: true } },
                 },
               },
             },
@@ -1492,6 +1498,7 @@ export class LeadController {
         include: {
           tags: { include: { tag: true } },
           assignedRep: { select: { firstName: true, lastName: true, initials: true } },
+          lastContactedBy: { select: { id: true, firstName: true, lastName: true, initials: true, role: true } },
           deal: {
             select: {
               client: { select: { monthlyRevenue: true } },
@@ -1512,7 +1519,7 @@ export class LeadController {
                 select: {
                   direction: true,
                   createdAt: true,
-                  sentByUser: { select: { firstName: true, lastName: true, initials: true } },
+                  sentByUser: { select: { id: true, firstName: true, lastName: true, initials: true, role: true } },
                 },
               },
             },

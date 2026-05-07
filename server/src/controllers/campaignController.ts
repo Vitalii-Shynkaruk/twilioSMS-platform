@@ -557,7 +557,9 @@ export class CampaignController {
           dailyUsed: capacity.dailyUsed,
           dailyRemaining: capacity.dailyRemaining,
         },
-        historicalAnchor: spec.historicalAnchor,
+        predictedReplyRate: performanceMetrics.predictedReplyRate,
+        expectedFunded,
+        historicalAnchor: performanceMetrics.historicalAnchor,
         sampleLeads,
       });
       reasoningText = generatedReasoning?.text || spec.reasoningText;

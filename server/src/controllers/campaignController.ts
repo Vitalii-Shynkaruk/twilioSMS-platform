@@ -153,16 +153,21 @@ export class CampaignController {
   }
 
   private static async getAiCampaignCapacity(req: AuthRequest): Promise<AiCohortCapacity> {
-    const { campaignCap, dailyCap: defaultDailyCap } = CampaignController.getCampaignCaps(req);
+    const { campaignCap: defaultCampaignCap, dailyCap: defaultDailyCap } = CampaignController.getCampaignCaps(req);
     const userId = req.user?.id;
     const assignedCapacity = userId ? await NumberService.getAssignedNumberCapacity(userId) : null;
 
+    let campaignCap = defaultCampaignCap;
     let dailyCap = defaultDailyCap;
     let dailyUsed: number;
 
     if (assignedCapacity) {
       dailyCap = assignedCapacity.dailyCap;
       dailyUsed = assignedCapacity.dailyUsed;
+
+      if (req.user?.role === 'REP') {
+        campaignCap = Math.max(defaultCampaignCap, assignedCapacity.dailyCap);
+      }
     } else {
       const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
       dailyUsed = await prisma.campaignLead.count({

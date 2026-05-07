@@ -5,6 +5,7 @@ import prisma from '../src/config/database';
 import type { AuthRequest } from '../src/middleware/auth';
 import { OutboundGateService } from '../src/services/outboundGateService';
 import { AIService } from '../src/services/aiService';
+import { NumberService } from '../src/services/numberService';
 import * as twilioConfig from '../src/config/twilio';
 
 function createRequest(overrides: Partial<AuthRequest> = {}): AuthRequest {
@@ -348,7 +349,7 @@ describe('M2.3 AI retarget cohorts', () => {
           willReceive: 286,
         }),
         capacity: expect.objectContaining({
-          campaignCap: 500,
+          campaignCap: 1600,
           dailyCap: 1600,
           dailyUsed: 574,
           dailyRemaining: 1026,
@@ -530,6 +531,48 @@ describe('M2.3 AI retarget cohorts', () => {
       }),
     );
     expect(campaignCreate).not.toHaveBeenCalled();
+  });
+
+  it('разрешает rep manual campaign create выше базового 500 cap, когда assigned number capacity выше', async () => {
+    vi.spyOn(NumberService, 'getAssignedNumberCapacity').mockResolvedValue({
+      phoneNumberIds: ['number-1', 'number-2', 'number-3'],
+      dailyCap: 1200,
+      dailyUsed: 0,
+      dailyRemaining: 1200,
+    });
+    vi.spyOn(prisma.lead, 'findMany').mockResolvedValue(
+      Array.from({ length: 830 }, (_, index) => ({ id: `lead-${index}` })) as never,
+    );
+    vi.spyOn(prisma.campaignLead, 'createMany').mockResolvedValue({ count: 830 } as never);
+    const campaignCreate = vi.spyOn(prisma.campaign, 'create').mockResolvedValue({ id: 'campaign-1' } as never);
+    vi.spyOn(prisma.campaign, 'update').mockResolvedValue({ id: 'campaign-1', totalLeads: 830 } as never);
+    const response = createResponse();
+
+    await CampaignController.create(
+      createRequest({
+        user: {
+          id: 'rep-1',
+          email: 'rep@sclcapital.io',
+          role: 'REP',
+          firstName: 'Rep',
+          lastName: 'One',
+        },
+        body: {
+          name: 'Rep campaign with expanded capacity',
+          messageTemplate: 'Hi {{firstName}}',
+          leadIds: ['lead-1'],
+        },
+      }),
+      response,
+    );
+
+    expect(campaignCreate).toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(201);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        campaign: expect.objectContaining({ id: 'campaign-1' }),
+      }),
+    );
   });
 
   it('блокирует manual campaign create при превышении rolling daily cap', async () => {

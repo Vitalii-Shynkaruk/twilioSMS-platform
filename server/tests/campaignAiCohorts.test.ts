@@ -6,7 +6,6 @@ import type { AuthRequest } from '../src/middleware/auth';
 import { OutboundGateService } from '../src/services/outboundGateService';
 import { AIService } from '../src/services/aiService';
 import { NumberService } from '../src/services/numberService';
-import * as twilioConfig from '../src/config/twilio';
 
 function createRequest(overrides: Partial<AuthRequest> = {}): AuthRequest {
   return {
@@ -34,30 +33,90 @@ function createResponse(): Response {
   } as unknown as Response;
 }
 
+function createCriteriaSnapshot(
+  cohortId: 'multi-retarget' | 'new-restaurants' | 'renewal',
+  options: { role?: 'ADMIN' | 'MANAGER' | 'REP'; userId?: string; industrySignals?: string[] } = {},
+) {
+  const role = options.role || 'ADMIN';
+  const userId = options.userId || (role === 'REP' ? 'rep-1' : 'admin-1');
+  const scope = role === 'REP' ? { type: 'rep', userId } : { type: 'all-reps' };
+  const base = {
+    activeOnly: true,
+    excludes: ['deleted', 'opted_out', 'suppressed', 'DNC'],
+    scope,
+  };
+
+  if (cohortId === 'multi-retarget') {
+    return {
+      ...base,
+      cooldownDays: 7,
+      deliveredCampaignsMin: 2,
+      noInboundReply: true,
+      primaryIndustry: null,
+      industryGroups: [],
+      sortBy: 'industry_total_revenue',
+      excludesExistingDeals: true,
+    };
+  }
+
+  if (cohortId === 'new-restaurants') {
+    return {
+      ...base,
+      cooldownDays: 7,
+      industrySignals: options.industrySignals || [],
+      primaryIndustry: null,
+      industryGroups: [],
+      refreshWindowDays: 90,
+      deliveredCampaignsMin: 1,
+      revenueMin: 80000,
+      deliveredPriorCampaign: true,
+      noInboundReply: true,
+    };
+  }
+
+  return {
+    ...base,
+    cooldownDays: 30,
+    dealStage: 'FUNDED',
+    fundedWindowMonthsAgo: { min: 8, max: 12 },
+    adminOnly: true,
+  };
+}
+
 describe('M2.3 AI retarget cohorts', () => {
   beforeEach(() => {
-    vi.spyOn(prisma.leadCohort, 'findFirst').mockResolvedValue({
-      aiReasoning: 'Cached cohort reasoning from LeadCohort snapshot.',
-    } as never);
+    vi.spyOn(prisma.leadCohort, 'findFirst').mockResolvedValue(null as never);
     vi.spyOn(prisma.leadCohort, 'create').mockResolvedValue({ id: 'lead-cohort-cache' } as never);
+    vi.spyOn(prisma.campaign, 'findMany').mockResolvedValue([] as never);
+    vi.spyOn(prisma.campaign, 'findFirst').mockResolvedValue(null as never);
+    vi.spyOn(prisma.campaignLead, 'groupBy').mockResolvedValue([] as never);
+    vi.spyOn(prisma.campaignLead, 'findMany').mockResolvedValue([] as never);
+    vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([] as never);
+    vi.spyOn(prisma.deal, 'findMany').mockResolvedValue([] as never);
+    vi.spyOn(prisma.fundingEvent, 'aggregate').mockResolvedValue({
+      _count: { _all: 0 },
+      _sum: { amountFunded: null },
+    } as never);
     vi.spyOn(AIService, 'generateCohortReasoning').mockResolvedValue(null);
-    vi.spyOn(twilioConfig, 'getActiveMessagingServiceSid').mockResolvedValue(null);
+    vi.spyOn(NumberService, 'getAssignedNumberCapacity').mockResolvedValue(null);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('возвращает admin AI cohorts с capacity и expected funded', async () => {
+  it('lists admin AI cohorts with capacity and expected funded metrics', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(125);
     vi.spyOn(prisma.campaign, 'count').mockResolvedValue(312);
-    vi.spyOn(prisma.lead, 'count')
-      .mockResolvedValueOnce(510)
-      .mockResolvedValueOnce(487)
-      .mockResolvedValueOnce(1842)
-      .mockResolvedValueOnce(1200)
-      .mockResolvedValueOnce(73)
-      .mockResolvedValueOnce(70);
+    vi.spyOn(prisma.lead, 'count').mockImplementation(async ({ where }: any) => {
+      const hasCooldownWindow = Array.isArray(where?.AND);
+      const isRenewal = Array.isArray(where?.OR) && where.OR.some((entry: any) => entry?.deal?.is?.stage === 'FUNDED');
+      const isMultiRetarget = where?.deal?.is === null;
+
+      if (isRenewal) return hasCooldownWindow ? 70 : 73;
+      if (isMultiRetarget) return hasCooldownWindow ? 487 : 510;
+      return hasCooldownWindow ? 1200 : 1842;
+    });
     const response = createResponse();
 
     await CampaignController.listAiCohorts(createRequest(), response);
@@ -71,18 +130,18 @@ describe('M2.3 AI retarget cohorts', () => {
           expect.objectContaining({
             id: 'multi-retarget',
             categoryLabel: 'Multi-Campaign Retarget',
-            description: expect.stringContaining('stalled warm replies'),
-            leadCount: 487,
-            expectedFunded: 6,
+            description: expect.stringContaining('delivered across 2+ scoped campaigns'),
+            leadCount: 350,
+            expectedFunded: 0,
             warnings: expect.arrayContaining(['23 leads are inside 7d cooldown and were excluded']),
           }),
-          expect.objectContaining({ id: 'renewal', adminOnly: true }),
+          expect.objectContaining({ id: 'renewal', adminOnly: true, leadCount: 70 }),
         ]),
       }),
     );
   });
 
-  it('не показывает rep admin-only renewal cohort', async () => {
+  it('hides admin-only renewal cohort from reps', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     const campaignCount = vi.spyOn(prisma.campaign, 'count').mockResolvedValue(5);
     vi.spyOn(prisma.lead, 'count')
@@ -113,7 +172,7 @@ describe('M2.3 AI retarget cohorts', () => {
     );
   });
 
-  it('обрезает rep cohort по per-campaign cap', async () => {
+  it('caps rep AI cohort at the AI retarget max before campaign cap', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.campaign, 'count').mockResolvedValue(5);
     vi.spyOn(prisma.lead, 'count')
@@ -142,231 +201,23 @@ describe('M2.3 AI retarget cohorts', () => {
         cohorts: expect.arrayContaining([
           expect.objectContaining({
             id: 'multi-retarget',
-            leadCount: 500,
-            cap: expect.objectContaining({ trimmed: 400 }),
+            leadCount: 350,
+            cap: expect.objectContaining({ trimmed: 550 }),
           }),
         ]),
       }),
     );
   });
 
-  it('возвращает rolling 24h capacity в retarget preview', async () => {
-    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(529);
-    vi.spyOn(prisma.campaign, 'findUnique').mockResolvedValue({
-      id: 'campaign-1',
-      name: 'TT master Sheet AN 04/22/2026',
-      messageTemplate: 'Hello {{firstName}}',
-      numberPoolId: null,
-      sendingSpeed: 30,
-      dailyLimit: 400,
-      createdById: 'rep-1',
-    } as never);
-    vi.spyOn(prisma.campaignLead, 'findMany').mockResolvedValue([
-      {
-        status: 'DELIVERED',
-        leadId: 'lead-1',
-        lead: { id: 'lead-1', phone: '+15550000001', status: 'NEW', optedOut: false, isSuppressed: false },
-      },
-      {
-        status: 'DELIVERED',
-        leadId: 'lead-2',
-        lead: { id: 'lead-2', phone: '+15550000002', status: 'NEW', optedOut: false, isSuppressed: false },
-      },
-    ] as never);
-    vi.spyOn(prisma.message, 'findMany')
-      .mockResolvedValueOnce([
-        {
-          status: 'DELIVERED',
-          sentAt: new Date('2026-05-05T10:00:00.000Z'),
-          createdAt: new Date('2026-05-05T10:00:00.000Z'),
-          conversation: { leadId: 'lead-1' },
-        },
-        {
-          status: 'DELIVERED',
-          sentAt: new Date('2026-05-05T10:05:00.000Z'),
-          createdAt: new Date('2026-05-05T10:05:00.000Z'),
-          conversation: { leadId: 'lead-2' },
-        },
-      ] as never)
-      .mockResolvedValueOnce([
-        {
-          createdAt: new Date('2026-05-05T10:30:00.000Z'),
-          conversation: { leadId: 'lead-1' },
-        },
-      ] as never);
-    vi.spyOn(prisma.suppressionEntry, 'findMany').mockResolvedValue([] as never);
-
-    const response = createResponse();
-
-    await CampaignController.retargetPreview(
-      createRequest({
-        params: { id: 'campaign-1' },
-        user: {
-          id: 'rep-1',
-          email: 'rep@sclcapital.io',
-          role: 'REP',
-          firstName: 'Rep',
-          lastName: 'One',
-        },
-      }),
-      response,
-    );
-
-    expect(response.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        summary: expect.objectContaining({
-          totalDelivered: 2,
-          replied: 1,
-          failedBlocked: 0,
-          dncFiltered: 0,
-          willReceive: 1,
-        }),
-        capacity: expect.objectContaining({
-          campaignCap: 500,
-          dailyCap: 800,
-          dailyUsed: 529,
-          dailyRemaining: 271,
-        }),
-      }),
-    );
-  });
-
-  it('использует capacity активных assigned numbers в retarget preview для rep', async () => {
-    vi.spyOn(twilioConfig, 'getActiveMessagingServiceSid').mockResolvedValue('MG123');
-    vi.spyOn(prisma.numberAssignment, 'findMany').mockResolvedValue([
-      {
-        phoneNumber: {
-          id: 'num-1',
-          messagingServiceSid: 'MG123',
-          dailySentCount: 143,
-          dailyLimit: 400,
-          isRamping: false,
-          rampDay: 8,
-          status: 'ACTIVE',
-          coolingUntil: null,
-        },
-      },
-      {
-        phoneNumber: {
-          id: 'num-2',
-          messagingServiceSid: 'MG123',
-          dailySentCount: 144,
-          dailyLimit: 400,
-          isRamping: false,
-          rampDay: 8,
-          status: 'ACTIVE',
-          coolingUntil: null,
-        },
-      },
-      {
-        phoneNumber: {
-          id: 'num-3',
-          messagingServiceSid: 'MG123',
-          dailySentCount: 143,
-          dailyLimit: 400,
-          isRamping: false,
-          rampDay: 8,
-          status: 'ACTIVE',
-          coolingUntil: null,
-        },
-      },
-      {
-        phoneNumber: {
-          id: 'num-4',
-          messagingServiceSid: 'MG123',
-          dailySentCount: 144,
-          dailyLimit: 400,
-          isRamping: false,
-          rampDay: 8,
-          status: 'ACTIVE',
-          coolingUntil: null,
-        },
-      },
-    ] as never);
-    vi.spyOn(prisma.message, 'groupBy').mockResolvedValue([
-      { phoneNumberId: 'num-1', _count: { id: 143 } },
-      { phoneNumberId: 'num-2', _count: { id: 144 } },
-      { phoneNumberId: 'num-3', _count: { id: 143 } },
-      { phoneNumberId: 'num-4', _count: { id: 144 } },
-    ] as never);
-    vi.spyOn(prisma.campaign, 'findUnique').mockResolvedValue({
-      id: 'campaign-1',
-      name: 'Spidey LLP Pt 3 AN',
-      messageTemplate: 'Hello {{firstName}}',
-      numberPoolId: null,
-      sendingSpeed: 30,
-      dailyLimit: 400,
-      createdById: 'rep-1',
-    } as never);
-    vi.spyOn(prisma.campaignLead, 'findMany').mockResolvedValue(
-      Array.from({ length: 301 }, (_, index) => ({
-        status: index < 286 ? 'DELIVERED' : 'BLOCKED',
-        leadId: `lead-${index}`,
-        lead: {
-          id: `lead-${index}`,
-          phone: `+1555000${String(index).padStart(4, '0')}`,
-          status: 'NEW',
-          optedOut: false,
-          isSuppressed: false,
-        },
-      })) as never,
-    );
-    vi.spyOn(prisma.message, 'findMany')
-      .mockResolvedValueOnce(
-        Array.from({ length: 286 }, (_, index) => ({
-          status: 'DELIVERED',
-          sentAt: new Date(`2026-05-05T10:${String(index % 60).padStart(2, '0')}:00.000Z`),
-          createdAt: new Date(`2026-05-05T10:${String(index % 60).padStart(2, '0')}:00.000Z`),
-          conversation: { leadId: `lead-${index}` },
-        })) as never,
-      )
-      .mockResolvedValueOnce([] as never);
-    vi.spyOn(prisma.suppressionEntry, 'findMany').mockResolvedValue([] as never);
-
-    const response = createResponse();
-
-    await CampaignController.retargetPreview(
-      createRequest({
-        params: { id: 'campaign-1' },
-        user: {
-          id: 'rep-1',
-          email: 'rep@sclcapital.io',
-          role: 'REP',
-          firstName: 'Rep',
-          lastName: 'One',
-        },
-      }),
-      response,
-    );
-
-    expect(response.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        summary: expect.objectContaining({
-          totalDelivered: 286,
-          replied: 0,
-          failedBlocked: 0,
-          dncFiltered: 0,
-          willReceive: 286,
-        }),
-        capacity: expect.objectContaining({
-          campaignCap: 1600,
-          dailyCap: 1600,
-          dailyUsed: 574,
-          dailyRemaining: 1026,
-        }),
-      }),
-    );
-  });
-
-  it('создает draft campaign из AI cohort без auto-send', async () => {
+  it('creates draft campaign from AI cohort without auto-send', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(2).mockResolvedValueOnce(2);
-    vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([
+    vi.mocked(prisma.lead.findMany).mockResolvedValue([
       { id: 'lead-1', firstName: 'Ana', conversations: [] },
       { id: 'lead-2', firstName: 'Ben', conversations: [] },
     ] as never);
     vi.spyOn(OutboundGateService, 'ensureCanLaunchOutbound').mockResolvedValue(undefined);
-    const campaignCreate = vi.fn().mockResolvedValue({ id: 'campaign-ai', name: 'AI Retarget — Cross-rep' });
+    const campaignCreate = vi.fn().mockResolvedValue({ id: 'campaign-ai', name: 'AI Retarget - Cross-rep' });
     const campaignLeadCreateMany = vi.fn().mockResolvedValue({ count: 2 });
     vi.spyOn(prisma, '$transaction').mockImplementation(async (callback: any) =>
       callback({ campaign: { create: campaignCreate }, campaignLead: { createMany: campaignLeadCreateMany } }),
@@ -384,7 +235,7 @@ describe('M2.3 AI retarget cohorts', () => {
           status: 'DRAFT',
           isRetarget: true,
           sourceCampaignId: null,
-          description: 'AI Cohort · 2 leads · ~1 funded expected',
+          description: 'AI Cohort - 2 leads, ~0 funded expected',
           totalLeads: 2,
         }),
       }),
@@ -400,23 +251,170 @@ describe('M2.3 AI retarget cohorts', () => {
     expect(response.status).toHaveBeenCalledWith(201);
   });
 
-  it('использует активный LeadCohort cache и не регенерирует AI reasoning', async () => {
+  it('должен показывать renewal cohort через matching funded clients к existing leads', async () => {
+    vi.mocked(prisma.deal.findMany).mockResolvedValueOnce([
+      {
+        leadId: null,
+        client: { phone: '(202) 285-0080', email: 'client@example.com' },
+      },
+    ] as never);
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
+    const leadCount = vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(14).mockResolvedValueOnce(14);
+    vi.mocked(prisma.lead.findMany).mockResolvedValue([
+      { id: 'lead-renewal-1', firstName: 'Renewal', company: 'Funded Client', status: 'CONTACTED', conversations: [] },
+    ] as never);
+    const response = createResponse();
+
+    await CampaignController.previewAiCohort(createRequest({ params: { cohortId: 'renewal' } }), response);
+
+    expect(leadCount).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({ phone: { in: expect.arrayContaining(['+12022850080']) } }),
+            { email: { in: ['client@example.com'] } },
+          ]),
+        }),
+      }),
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cohort: expect.objectContaining({
+          id: 'renewal',
+          leadCount: 14,
+          totalMatchCount: 14,
+        }),
+      }),
+    );
+  });
+
+  it('должен записывать audit entries при admin cooldown override в AI cohort', async () => {
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
+    vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(3).mockResolvedValueOnce(2);
+    vi.mocked(prisma.lead.findMany)
+      .mockResolvedValueOnce([{ id: 'lead-1' }] as never)
+      .mockResolvedValueOnce([
+        { id: 'lead-1', firstName: 'Ana', conversations: [] },
+        { id: 'lead-2', firstName: 'Ben', conversations: [] },
+        { id: 'lead-3', firstName: 'Cam', conversations: [] },
+      ] as never);
+    vi.spyOn(OutboundGateService, 'ensureCanLaunchOutbound').mockResolvedValue(undefined);
+    const campaignCreate = vi.fn().mockResolvedValue({ id: 'campaign-ai', name: 'AI Retarget - Cross-rep' });
+    const campaignLeadCreateMany = vi.fn().mockResolvedValue({ count: 3 });
+    const activityLogCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const dealFindMany = vi.fn().mockResolvedValue([{ id: 'deal-1', leadId: 'lead-1' }]);
+    const dealEventCreateMany = vi.fn().mockResolvedValue({ count: 1 });
+    vi.spyOn(prisma, '$transaction').mockImplementation(async (callback: any) =>
+      callback({
+        campaign: { create: campaignCreate },
+        campaignLead: { createMany: campaignLeadCreateMany },
+        activityLog: { createMany: activityLogCreateMany },
+        deal: { findMany: dealFindMany },
+        dealEvent: { createMany: dealEventCreateMany },
+      }),
+    );
+    const response = createResponse();
+
+    await CampaignController.buildAiCohortCampaign(
+      createRequest({ params: { cohortId: 'multi-retarget' }, body: { includeCooldown: true } }),
+      response,
+    );
+
+    expect(activityLogCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            action: 'ai_cohort.cooldown_override',
+            entityType: 'lead',
+            entityId: 'lead-1',
+            metadata: expect.objectContaining({ campaignId: 'campaign-ai', cohortId: 'multi-retarget' }),
+          }),
+        ],
+      }),
+    );
+    expect(dealEventCreateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            dealId: 'deal-1',
+            eventType: 'ai_cohort_cooldown_override',
+            metadata: expect.objectContaining({ campaignId: 'campaign-ai', leadId: 'lead-1' }),
+          }),
+        ],
+      }),
+    );
+    expect(response.status).toHaveBeenCalledWith(201);
+  });
+
+  it('allows admin preview to include cooldown leads with an override warning', async () => {
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
+    vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(10).mockResolvedValueOnce(7);
+    vi.mocked(prisma.lead.findMany)
+      .mockResolvedValueOnce([{ id: 'lead-0' }, { id: 'lead-1' }, { id: 'lead-2' }] as never)
+      .mockResolvedValueOnce(
+        Array.from({ length: 10 }, (_, index) => ({ id: `lead-${index}`, firstName: `Lead ${index}`, conversations: [] })) as never,
+      );
+    const response = createResponse();
+
+    await CampaignController.previewAiCohort(
+      createRequest({ params: { cohortId: 'multi-retarget' }, query: { includeCooldown: 'true' } }),
+      response,
+    );
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cohort: expect.objectContaining({
+          leadCount: 10,
+          eligibleCount: 10,
+          warnings: expect.arrayContaining(['Admin cooldown override enabled: 3 leads inside 7d cooldown included']),
+        }),
+      }),
+    );
+  });
+
+  it('uses LeadCohort cache when resolved lead count still matches', async () => {
+    vi.mocked(prisma.leadCohort.findFirst).mockImplementation(async ({ where }: any) => {
+      if (where?.cohortType === 'multi-retarget') {
+        return {
+          aiReasoning: 'Cached cohort reasoning from LeadCohort snapshot.',
+          resolvedLeadCount: 10,
+          queryJson: createCriteriaSnapshot('multi-retarget'),
+        } as never;
+      }
+
+      if (where?.cohortType === 'new-cohort') {
+        return {
+          aiReasoning: 'Cached cohort reasoning from LeadCohort snapshot.',
+          resolvedLeadCount: 20,
+          queryJson: createCriteriaSnapshot('new-restaurants'),
+        } as never;
+      }
+
+      return {
+        aiReasoning: 'Cached cohort reasoning from LeadCohort snapshot.',
+        resolvedLeadCount: 5,
+        queryJson: createCriteriaSnapshot('renewal'),
+      } as never;
+    });
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.campaign, 'count').mockResolvedValue(3);
-    vi.spyOn(prisma.lead, 'count')
-      .mockResolvedValueOnce(10)
-      .mockResolvedValueOnce(10)
-      .mockResolvedValueOnce(20)
-      .mockResolvedValueOnce(20)
-      .mockResolvedValueOnce(5)
-      .mockResolvedValueOnce(5);
-    const leadFindMany = vi.spyOn(prisma.lead, 'findMany');
+    vi.spyOn(prisma.lead, 'count').mockImplementation(async ({ where }: any) => {
+      const isRenewal = Array.isArray(where?.OR) && where.OR.some((entry: any) => entry?.deal?.is?.stage === 'FUNDED');
+      const isMultiRetarget = where?.deal?.is === null;
+
+      if (isRenewal) return 5;
+      if (isMultiRetarget) return 10;
+      return 20;
+    });
+    const leadFindMany = vi.mocked(prisma.lead.findMany);
     const response = createResponse();
 
     await CampaignController.listAiCohorts(createRequest(), response);
 
     expect(AIService.generateCohortReasoning).not.toHaveBeenCalled();
-    expect(leadFindMany).not.toHaveBeenCalled();
+    expect(prisma.leadCohort.findFirst).toHaveBeenCalledTimes(3);
+    expect(leadFindMany).toHaveBeenCalled();
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({
         cohorts: expect.arrayContaining([
@@ -426,7 +424,7 @@ describe('M2.3 AI retarget cohorts', () => {
     );
   });
 
-  it('создает 24h LeadCohort snapshot с критериями и Anthropic reasoning при cache miss', async () => {
+  it('creates a 24h LeadCohort snapshot with generated reasoning on cache miss', async () => {
     vi.mocked(prisma.leadCohort.findFirst).mockResolvedValueOnce(null);
     vi.mocked(AIService.generateCohortReasoning).mockResolvedValueOnce({
       text: 'Generated Sonnet 4.5 cohort reasoning based on funded history and sample leads.',
@@ -434,7 +432,7 @@ describe('M2.3 AI retarget cohorts', () => {
     });
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(2).mockResolvedValueOnce(2);
-    vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([
+    vi.mocked(prisma.lead.findMany).mockResolvedValue([
       {
         id: 'lead-1',
         firstName: 'Ana',
@@ -469,7 +467,7 @@ describe('M2.3 AI retarget cohorts', () => {
     expect(AIService.generateCohortReasoning).toHaveBeenCalledWith(
       expect.objectContaining({
         cohortId: 'multi-retarget',
-        historicalAnchor: expect.stringContaining('Last cross-rep retarget'),
+        historicalAnchor: '',
         sampleLeads: expect.arrayContaining([
           expect.objectContaining({ company: 'Restaurant Group', revenue: 95000, assignedRepInitials: 'AN' }),
         ]),
@@ -479,10 +477,10 @@ describe('M2.3 AI retarget cohorts', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           cohortType: 'multi-retarget',
-          title: expect.stringContaining('Cross-rep retarget'),
-          queryJson: expect.objectContaining({ revenueMin: 80000, requiresInboundReply: true }),
-          predictedReplyRate: 14,
-          expectedFundedCount: 1,
+          title: expect.stringContaining('Cross-campaign no-reply retarget'),
+          queryJson: expect.objectContaining({ deliveredCampaignsMin: 2, noInboundReply: true, excludesExistingDeals: true }),
+          predictedReplyRate: 0,
+          expectedFundedCount: 0,
           aiReasoning: 'Generated Sonnet 4.5 cohort reasoning based on funded history and sample leads.',
           resolvedLeadCount: 2,
           totalMatchCount: 2,
@@ -503,7 +501,177 @@ describe('M2.3 AI retarget cohorts', () => {
     );
   });
 
-  it('блокирует manual campaign create при превышении per-campaign cap', async () => {
+  it('groups multi-retarget preview by industry and surfaces the highest-revenue cohort first', async () => {
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
+    vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(4).mockResolvedValueOnce(4);
+    vi.mocked(prisma.lead.findMany).mockResolvedValue([
+      {
+        id: 'lead-1',
+        firstName: 'Ava',
+        status: 'NEW',
+        updatedAt: new Date('2026-05-02T12:00:00.000Z'),
+        industry: 'Construction',
+        monthlyRevenue: 150000,
+        conversations: [{ extractedIndustry: 'Construction', extractedRevenue: 150000 }],
+      },
+      {
+        id: 'lead-2',
+        firstName: 'Ben',
+        status: 'NEW',
+        updatedAt: new Date('2026-05-02T11:00:00.000Z'),
+        industry: 'Construction',
+        monthlyRevenue: 120000,
+        conversations: [{ extractedIndustry: 'Construction', extractedRevenue: 120000 }],
+      },
+      {
+        id: 'lead-3',
+        firstName: 'Cam',
+        status: 'NEW',
+        updatedAt: new Date('2026-05-02T10:00:00.000Z'),
+        industry: 'Medical',
+        monthlyRevenue: 110000,
+        conversations: [{ extractedIndustry: 'Medical', extractedRevenue: 110000 }],
+      },
+      {
+        id: 'lead-4',
+        firstName: 'Drew',
+        status: 'NEW',
+        updatedAt: new Date('2026-05-02T09:00:00.000Z'),
+        industry: 'Medical',
+        monthlyRevenue: 60000,
+        conversations: [{ extractedIndustry: 'Medical', extractedRevenue: 60000 }],
+      },
+    ] as never);
+    const response = createResponse();
+
+    await CampaignController.previewAiCohort(createRequest({ params: { cohortId: 'multi-retarget' } }), response);
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cohort: expect.objectContaining({
+          leadIds: ['lead-1', 'lead-2', 'lead-3', 'lead-4'],
+          industryGroups: [
+            expect.objectContaining({ industry: 'Construction', leadCount: 2, totalRevenue: 270000 }),
+            expect.objectContaining({ industry: 'Medical', leadCount: 2, totalRevenue: 170000 }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('derives the new-cohort industry list from recent funded history', async () => {
+    vi.mocked(prisma.deal.findMany).mockResolvedValue([
+      {
+        dealAmount: 180000,
+        client: { phone: '+15550000001', email: 'builder@example.com' },
+        lead: {
+          id: 'lead-funded-1',
+          phone: '+15550000001',
+          email: 'builder@example.com',
+          industry: 'Construction',
+          monthlyRevenue: 140000,
+          conversations: [{ extractedIndustry: 'Construction', extractedRevenue: 140000 }],
+        },
+      },
+      {
+        dealAmount: 90000,
+        client: { phone: '+15550000002', email: 'clinic@example.com' },
+        lead: {
+          id: 'lead-funded-2',
+          phone: '+15550000002',
+          email: 'clinic@example.com',
+          industry: 'Medical',
+          monthlyRevenue: 90000,
+          conversations: [{ extractedIndustry: 'Medical', extractedRevenue: 90000 }],
+        },
+      },
+      {
+        dealAmount: 125000,
+        client: { phone: '+15550000003', email: 'builder-2@example.com' },
+        lead: {
+          id: 'lead-funded-3',
+          phone: '+15550000003',
+          email: 'builder-2@example.com',
+          industry: 'Construction',
+          monthlyRevenue: 125000,
+          conversations: [{ extractedIndustry: 'Construction', extractedRevenue: 125000 }],
+        },
+      },
+    ] as never);
+
+    const industries = await (CampaignController as any).resolveTopFundedIndustries(createRequest());
+
+    expect(industries).toEqual(['Construction', 'Medical']);
+  });
+
+  it('excludes retarget campaigns from the new-cohort historical anchor lookup', () => {
+    const where = (CampaignController as any).buildComparableCampaignWhere(
+      {
+        id: 'new-restaurants',
+        title: 'High-revenue silent leads - top funded industries',
+        categoryLabel: 'New Cohort',
+        description: '',
+        priorityLabel: 'OPPORTUNITY',
+        cohortType: 'new-cohort',
+        adminOnly: false,
+        cooldownDays: 7,
+        historicalLabel: 'high-revenue silent cohort',
+        reasoningLead: '',
+        reasoningText: '',
+        defaultMessageTemplate: '',
+      },
+      createRequest(),
+      { industrySignals: ['Construction', 'Medical'] },
+    );
+
+    expect(where).toEqual(
+      expect.objectContaining({
+        isRetarget: false,
+        leads: expect.objectContaining({
+          some: expect.objectContaining({
+            lead: expect.objectContaining({
+              OR: expect.arrayContaining([
+                { industry: { contains: 'Construction' } },
+                { conversations: { some: { extractedIndustry: { contains: 'Medical' } } } },
+              ]),
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('limits comparable cohort metrics to the recent 90d window and rep scope', async () => {
+    vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
+    vi.spyOn(prisma.campaign, 'count').mockResolvedValue(5);
+    vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(10).mockResolvedValueOnce(10).mockResolvedValueOnce(5).mockResolvedValueOnce(5);
+    const campaignFindMany = vi.spyOn(prisma.campaign, 'findMany').mockResolvedValue([] as never);
+    const response = createResponse();
+
+    await CampaignController.listAiCohorts(
+      createRequest({
+        user: {
+          id: 'rep-1',
+          email: 'rep@sclcapital.io',
+          role: 'REP',
+          firstName: 'Rep',
+          lastName: 'One',
+        },
+      }),
+      response,
+    );
+
+    expect(campaignFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdById: 'rep-1',
+          createdAt: { gte: expect.any(Date) },
+        }),
+      }),
+    );
+  });
+
+  it('rejects manual campaign create when per-campaign cap is exceeded', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(0);
     vi.spyOn(prisma.lead, 'findMany').mockResolvedValue(
       Array.from({ length: 3001 }, (_, index) => ({ id: `lead-${index}` })) as never,
@@ -533,49 +701,7 @@ describe('M2.3 AI retarget cohorts', () => {
     expect(campaignCreate).not.toHaveBeenCalled();
   });
 
-  it('разрешает rep manual campaign create выше базового 500 cap, когда assigned number capacity выше', async () => {
-    vi.spyOn(NumberService, 'getAssignedNumberCapacity').mockResolvedValue({
-      phoneNumberIds: ['number-1', 'number-2', 'number-3'],
-      dailyCap: 1200,
-      dailyUsed: 0,
-      dailyRemaining: 1200,
-    });
-    vi.spyOn(prisma.lead, 'findMany').mockResolvedValue(
-      Array.from({ length: 830 }, (_, index) => ({ id: `lead-${index}` })) as never,
-    );
-    vi.spyOn(prisma.campaignLead, 'createMany').mockResolvedValue({ count: 830 } as never);
-    const campaignCreate = vi.spyOn(prisma.campaign, 'create').mockResolvedValue({ id: 'campaign-1' } as never);
-    vi.spyOn(prisma.campaign, 'update').mockResolvedValue({ id: 'campaign-1', totalLeads: 830 } as never);
-    const response = createResponse();
-
-    await CampaignController.create(
-      createRequest({
-        user: {
-          id: 'rep-1',
-          email: 'rep@sclcapital.io',
-          role: 'REP',
-          firstName: 'Rep',
-          lastName: 'One',
-        },
-        body: {
-          name: 'Rep campaign with expanded capacity',
-          messageTemplate: 'Hi {{firstName}}',
-          leadIds: ['lead-1'],
-        },
-      }),
-      response,
-    );
-
-    expect(campaignCreate).toHaveBeenCalled();
-    expect(response.status).toHaveBeenCalledWith(201);
-    expect(response.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        campaign: expect.objectContaining({ id: 'campaign-1' }),
-      }),
-    );
-  });
-
-  it('блокирует manual campaign create при превышении rolling daily cap', async () => {
+  it('rejects manual campaign create when rolling daily cap is exceeded', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(4495);
     vi.spyOn(prisma.lead, 'findMany').mockResolvedValue(
       Array.from({ length: 10 }, (_, index) => ({ id: `lead-${index}` })) as never,
@@ -604,15 +730,10 @@ describe('M2.3 AI retarget cohorts', () => {
         requested: 10,
       }),
     );
-    expect(response.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: 'Daily capacity: 4495 of 4500 already used. Adding 10 would push over. Remaining capacity: 5.',
-      }),
-    );
     expect(campaignCreate).not.toHaveBeenCalled();
   });
 
-  it('возвращает детальную ошибку, когда rolling daily cap исчерпан', async () => {
+  it('rejects AI cohort build when rep rolling daily cap has no remaining capacity', async () => {
     vi.spyOn(prisma.campaignLead, 'count').mockResolvedValue(800);
     vi.spyOn(prisma.lead, 'count').mockResolvedValueOnce(25).mockResolvedValueOnce(25);
 

@@ -47,6 +47,9 @@ type AiCohort = {
   reasoningText: string;
   warnings: string[];
   adminOnly: boolean;
+  cooldownOverrideCount?: number;
+  cooldownOverrideLeadIds?: string[];
+  cooldownDays: number;
   cap: {
     campaignCap: number;
     dailyCap: number;
@@ -58,6 +61,13 @@ type AiCohort = {
     name: string;
     messageTemplate: string;
   };
+  industryGroups?: Array<{
+    industry: string;
+    leadCount: number;
+    totalRevenue: number;
+    averageRevenue: number;
+  }>;
+  industrySignals?: string[];
   leadIds?: string[];
   sampleLeads?: Array<{
     id: string;
@@ -66,6 +76,7 @@ type AiCohort = {
     company?: string | null;
     source?: string | null;
     status: string;
+    cooldownOverride?: boolean;
     conversations?: Array<{ extractedIndustry?: string | null; extractedRevenue?: number | null }>;
   }>;
 };
@@ -110,6 +121,13 @@ function getCapacityPercent(cohort: AiCohort): number {
 function formatAiRefresh(refreshedAt?: string): string {
   if (!refreshedAt) return 'just now';
   return `${formatDistanceToNowStrict(new Date(refreshedAt))} ago`;
+}
+
+function formatIndustryRevenue(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '$0/mo';
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M/mo`;
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}K/mo`;
+  return `$${Math.round(value).toLocaleString()}/mo`;
 }
 
 function getAiPriorityTone(priorityLabel: string): 'high' | 'opp' | 'renewal' {
@@ -203,7 +221,7 @@ export default function CampaignsPage() {
   });
   const outboundLocked = isRep && !!outboundGate?.blocked;
   const outboundLockMsg =
-    outboundGate?.message || `${outboundGate?.overdueTasks || 0} overdue tasks — clear to unlock SMS`;
+    outboundGate?.message || `${outboundGate?.overdueTasks || 0} overdue tasks - clear to unlock SMS`;
   const paginationItems = useMemo(() => {
     if (totalPages <= 1) return [1];
     if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -228,9 +246,10 @@ export default function CampaignsPage() {
     ? 'Only campaigns you created are visible in rep view'
     : creatorInitialsList.length > 0
       ? `All campaigns from ${creatorInitialsList.join(', ')} visible to admin${
-          aiBuiltCount > 0 ? ` · ${aiBuiltCount} ${aiBuiltCount === 1 ? 'is' : 'are'} AI-built` : ''
+          aiBuiltCount > 0 ? ` text ${aiBuiltCount} ${aiBuiltCount === 1 ? 'is' : 'are'} AI-built` : ''
         }`
       : `All ${total} campaigns visible to admin`;
+
   const startingCampaignIdRef = useRef<string | null>(null);
   const [startingCampaignId, setStartingCampaignId] = useState<string | null>(null);
 
@@ -311,7 +330,7 @@ export default function CampaignsPage() {
             outboundLocked
               ? outboundLockMsg
               : canRetargetCampaign(campaign)
-                ? 'Retarget — send to non-responders'
+                ? 'Retarget - send to non-responders'
                 : 'You can only retarget your own campaigns'
           }
           disabled={!canRetargetCampaign(campaign) || outboundLocked}
@@ -390,7 +409,7 @@ export default function CampaignsPage() {
             <h1 className="text-2xl font-bold text-dark-50">Campaigns</h1>
             <p className="text-sm text-dark-400 mt-1">
               <strong className="text-dark-100">{total}</strong> campaigns{' '}
-              {isRep ? 'created by you' : 'across all reps'} · {isRep ? 'rep view' : 'admin view'}
+              {isRep ? 'created by you' : 'across all reps'} - {isRep ? 'rep view' : 'admin view'}
             </p>
           </div>
           {canManage && (
@@ -438,7 +457,7 @@ export default function CampaignsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
             <input
               type="text"
-              placeholder="Search campaigns…"
+              placeholder="Search campaigns..."
               className="input pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -458,7 +477,7 @@ export default function CampaignsPage() {
               ))}
             </select>
             <span className="campaigns-filter-caret" aria-hidden="true">
-              ▾
+              v
             </span>
           </div>
         </div>
@@ -508,11 +527,11 @@ export default function CampaignsPage() {
                       </p>
                       {campaign.aiBuilt ? (
                         <p className="campaign-lineage ai-source">
-                          from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
+                          from {campaign.aiLineageLabel || `AI Cohort - ${campaign.totalLeads} leads`}
                         </p>
                       ) : campaign.isRetarget ? (
                         <p className="campaign-lineage">
-                          from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                          from {campaign.sourceCampaignName || 'Unknown'} - {campaign.totalLeads} leads
                         </p>
                       ) : (
                         <p className="leads-count">{campaign.totalLeads} leads</p>
@@ -552,7 +571,7 @@ export default function CampaignsPage() {
                     />
                     <MetricCard
                       label="Rate"
-                      value={deliveryRate !== null ? `${deliveryRate}%` : '—'}
+                      value={deliveryRate !== null ? `${deliveryRate}%` : '-'}
                       valueClassName={
                         rateTone === 'empty'
                           ? 'text-dark-500'
@@ -642,11 +661,11 @@ export default function CampaignsPage() {
                           </p>
                           {campaign.aiBuilt ? (
                             <p className="campaign-lineage ai-source">
-                              from {campaign.aiLineageLabel || `AI Cohort · ${campaign.totalLeads} leads`}
+                              from {campaign.aiLineageLabel || `AI Cohort - ${campaign.totalLeads} leads`}
                             </p>
                           ) : campaign.isRetarget ? (
                             <p className="campaign-lineage">
-                              from {campaign.sourceCampaignName || 'Unknown'} · {campaign.totalLeads} leads
+                              from {campaign.sourceCampaignName || 'Unknown'} - {campaign.totalLeads} leads
                             </p>
                           ) : (
                             <p className="leads-count">{campaign.totalLeads} leads</p>
@@ -693,7 +712,7 @@ export default function CampaignsPage() {
                             {deliveryRate}%
                           </span>
                         ) : (
-                          <span className="text-xs text-dark-500">—</span>
+                          <span className="text-xs text-dark-500">-</span>
                         )}
                       </td>
                       <td className="table-cell text-dark-500 text-xs">
@@ -736,7 +755,7 @@ export default function CampaignsPage() {
                       </button>
                     ) : (
                       <span key={`${item}-${idx}`} className="text-xs text-dark-500 px-1">
-                        …
+                        ...
                       </span>
                     ),
                   )}
@@ -958,12 +977,12 @@ function AiRetargetSection({
                   ? `all your past campaigns (${data?.sourceCampaignCount || 0} total)`
                   : `all reps' past campaigns (${data?.sourceCampaignCount || 0} total)`}
               </strong>{' '}
-              · refreshed {formatAiRefresh(data?.refreshedAt)}
+              text refreshed {formatAiRefresh(data?.refreshedAt)}
             </p>
           </div>
         </div>
         <div className="ai-zone-meta text-xs text-dark-400">
-          <strong className="text-dark-100">{data?.summary?.cohortCount || 0} cohorts</strong> ready ·{' '}
+          <strong className="text-dark-100">{data?.summary?.cohortCount || 0} cohorts</strong> ready text{' '}
           <strong className="text-purple-300">~{data?.summary?.expectedFunded || 0} funded deals</strong> expected
         </div>
       </div>
@@ -986,6 +1005,8 @@ function AiRetargetSection({
               const disabled = outboundLocked || cohort.leadCount === 0;
               const displayLeadCount = getAiDisplayLeadCount(cohort);
               const priorityTone = getAiPriorityTone(cohort.priorityLabel);
+              const primaryIndustry = cohort.industryGroups?.[0];
+              const secondaryIndustries = (cohort.industryGroups || []).slice(1, 3);
               const capacityWarning =
                 cohort.cap.trimmed > 0
                   ? `Capacity capped at ${formatCompactNumber(cohort.leadCount)} of ${formatCompactNumber(cohort.eligibleCount)} leads.`
@@ -1015,7 +1036,30 @@ function AiRetargetSection({
                     </div>
                   </div>
 
-                  <div className="ai-comparable">{cohort.historicalAnchor}</div>
+                  {primaryIndustry ? (
+                    <div className="rounded-lg border border-dark-700/60 bg-dark-950/40 px-3 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide text-dark-500">Primary Industry</div>
+                          <div className="text-sm font-medium text-dark-100">{primaryIndustry.industry}</div>
+                          <div className="text-xs text-dark-400">
+                            {formatCompactNumber(primaryIndustry.leadCount)} leads · {formatIndustryRevenue(primaryIndustry.totalRevenue)}
+                          </div>
+                        </div>
+                        {secondaryIndustries.length > 0 ? (
+                          <div className="max-w-[45%] text-right text-[11px] leading-relaxed text-dark-500">
+                            Next: {secondaryIndustries.map((group) => group.industry).join(' · ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : cohort.industrySignals && cohort.industrySignals.length > 0 ? (
+                    <div className="rounded-lg border border-dark-700/60 bg-dark-950/40 px-3 py-2 text-xs text-dark-400">
+                      Focus industries: <span className="text-dark-200">{cohort.industrySignals.slice(0, 3).join(' · ')}</span>
+                    </div>
+                  ) : null}
+
+                  {cohort.historicalAnchor ? <div className="ai-comparable">{cohort.historicalAnchor}</div> : null}
                   <div className="ai-reason text-xs text-dark-400 leading-relaxed">
                     AI: <strong className="text-dark-200">{cohort.reasoningLead}</strong> {cohort.reasoningText}
                   </div>
@@ -1044,7 +1088,7 @@ function AiRetargetSection({
                       title={outboundLocked ? outboundLockMsg : undefined}
                       onClick={() => onBuild(cohort)}
                     >
-                      Build Campaign →
+                      Build Campaign
                     </button>
                   </div>
                 </div>
@@ -1101,6 +1145,30 @@ function AiCohortPreviewModal({ cohortId, onClose }: { cohortId: string; onClose
                   valueClassName="text-purple-300"
                 />
               </div>
+              {cohort.industryGroups && cohort.industryGroups.length > 0 ? (
+                <div className="rounded-lg border border-dark-700/60 overflow-hidden">
+                  <div className="px-3 py-2 text-[11px] uppercase tracking-wide text-dark-500 bg-dark-800/60">
+                    Industry Priority
+                  </div>
+                  <div className="divide-y divide-dark-700/50">
+                    {cohort.industryGroups.slice(0, 5).map((group, index) => (
+                      <div key={`${group.industry}-${index}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                        <div className="min-w-0">
+                          <p className="text-dark-200 truncate">{index + 1}. {group.industry}</p>
+                          <p className="text-xs text-dark-500">
+                            {formatCompactNumber(group.leadCount)} leads · avg {formatIndustryRevenue(group.averageRevenue)}
+                          </p>
+                        </div>
+                        <span className="text-xs text-dark-400 whitespace-nowrap">{formatIndustryRevenue(group.totalRevenue)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : cohort.industrySignals && cohort.industrySignals.length > 0 ? (
+                <div className="rounded-lg border border-dark-700/60 bg-dark-900/40 px-3 py-2 text-xs text-dark-400">
+                  Funded-history industries: <span className="text-dark-200">{cohort.industrySignals.slice(0, 5).join(' · ')}</span>
+                </div>
+              ) : null}
               <div className="rounded-lg border border-dark-700/60 overflow-hidden">
                 <div className="grid grid-cols-[1.2fr_1fr_0.8fr] gap-3 px-3 py-2 text-[11px] uppercase tracking-wide text-dark-500 bg-dark-800/60">
                   <span>Lead</span>
@@ -1116,14 +1184,14 @@ function AiCohortPreviewModal({ cohortId, onClose }: { cohortId: string; onClose
                           <p className="text-dark-200 truncate">
                             {lead.firstName} {lead.lastName || ''}
                           </p>
-                          <p className="text-xs text-dark-500 truncate">{lead.company || lead.source || '—'}</p>
+                          <p className="text-xs text-dark-500 truncate">{lead.company || lead.source || '-'}</p>
                         </div>
                         <div className="text-xs text-dark-400 min-w-0">
-                          <p className="truncate">{conversation?.extractedIndustry || '— unknown'}</p>
+                          <p className="truncate">{conversation?.extractedIndustry || 'unknown'}</p>
                           <p className="text-dark-500">
                             {conversation?.extractedRevenue
                               ? `$${conversation.extractedRevenue.toLocaleString()}/mo`
-                              : '—'}
+                              : '-'}
                           </p>
                         </div>
                         <span className="text-xs text-dark-400 self-center">{lead.status}</span>
@@ -1317,7 +1385,7 @@ function RetargetCampaignModal({
                 setNameEdited(true);
                 setNameDraft(e.target.value);
               }}
-              placeholder="Retarget — Source Campaign"
+              placeholder="Retarget - Source Campaign"
             />
           </div>
 
@@ -1367,7 +1435,10 @@ function CreateCampaignModal({
   outboundLocked: boolean;
   outboundLockMsg: string;
 }) {
+  const { user } = useAuthStore();
   const queryClient = useQueryClient();
+  const canOverrideCooldown = !!aiCohort && (user?.role === 'ADMIN' || user?.role === 'MANAGER');
+  const [includeCooldown, setIncludeCooldown] = useState(false);
   const [formData, setFormData] = useState({
     name: aiCohort?.defaults.name || '',
     messageTemplate: aiCohort?.defaults.messageTemplate || '',
@@ -1417,10 +1488,13 @@ function CreateCampaignModal({
   const poolCountLabel = (count: number) => `${count} ${count === 1 ? 'number' : 'numbers'}`;
 
   const { data: aiPreviewData, isLoading: aiPreviewLoading } = useQuery<{ cohort: AiCohort }>({
-    queryKey: ['campaign-ai-cohort-preview', aiCohort?.id, 'build-modal'],
+    queryKey: ['campaign-ai-cohort-preview', aiCohort?.id, 'build-modal', includeCooldown],
     queryFn: async () => {
       if (!aiCohort) throw new Error('AI cohort is required');
-      const { data } = await api.get(`/campaigns/ai-cohorts/${aiCohort.id}/preview`);
+      const params = new URLSearchParams();
+      if (includeCooldown) params.set('includeCooldown', 'true');
+      const query = params.toString();
+      const { data } = await api.get(`/campaigns/ai-cohorts/${aiCohort.id}/preview${query ? `?${query}` : ''}`);
       return data;
     },
     enabled: !!aiCohort,
@@ -1465,6 +1539,7 @@ function CreateCampaignModal({
         return api.post(`/campaigns/ai-cohorts/${aiCohort.id}/build`, {
           name: data.name,
           messageTemplate: data.messageTemplate,
+          includeCooldown,
         });
       }
       return api.post('/campaigns', data);
@@ -1510,7 +1585,7 @@ function CreateCampaignModal({
         filterTags: Array.from(selectedLists),
       });
     } else if (selectAll) {
-      // Server-side filtering — no 200-lead cap
+      // Server-side filtering - no 200-lead cap
       createMutation.mutate({
         ...payload,
         filterStatus: leadFilter.status ? [leadFilter.status] : undefined,
@@ -1624,6 +1699,8 @@ function CreateCampaignModal({
         : selectAll
           ? totalAvailable
           : selectedLeadIds.size;
+  const cooldownOverrideSampleLeads = (resolvedAiCohort?.sampleLeads || []).filter((lead) => lead.cooldownOverride);
+  const cooldownOverrideTotal = resolvedAiCohort?.cooldownOverrideCount || cooldownOverrideSampleLeads.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
@@ -1733,7 +1810,7 @@ function CreateCampaignModal({
                   <MetricCard label="Leads" value={leadCount.toLocaleString()} valueClassName="text-dark-100" />
                   <MetricCard
                     label="Reply"
-                    value={`${resolvedAiCohort?.predictedReplyRate || aiCohort.predictedReplyRate}%`}
+                    value={`${resolvedAiCohort?.predictedReplyRate ?? aiCohort.predictedReplyRate}%`}
                     valueClassName="text-green-400"
                   />
                   <MetricCard
@@ -1747,6 +1824,40 @@ function CreateCampaignModal({
                     {warning}
                   </p>
                 ))}
+                {canOverrideCooldown && (
+                  <label className="flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-200">
+                    <input
+                      type="checkbox"
+                      checked={includeCooldown}
+                      onChange={(e) => setIncludeCooldown(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-yellow-500/40 bg-dark-900 text-yellow-400 focus:ring-yellow-500"
+                    />
+                    <span>
+                      Include leads inside the {resolvedAiCohort?.cooldownDays || aiCohort.cooldownDays}d cooldown.
+                      This override is admin-only and is recorded on the draft campaign.
+                    </span>
+                  </label>
+                )}
+                {includeCooldown && cooldownOverrideSampleLeads.length > 0 && (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/[0.07] p-2">
+                    <div className="mb-2 flex items-center justify-between gap-2 text-xs text-yellow-200">
+                      <span>{cooldownOverrideTotal.toLocaleString()} cooldown override leads flagged</span>
+                      <span className="rounded border border-yellow-400/40 px-2 py-0.5 text-[10px] uppercase text-yellow-200">
+                        Admin override
+                      </span>
+                    </div>
+                    <div className="max-h-28 space-y-1 overflow-y-auto pr-1">
+                      {cooldownOverrideSampleLeads.slice(0, 25).map((lead) => (
+                        <div key={lead.id} className="flex items-center justify-between gap-2 text-xs text-dark-300">
+                          <span className="truncate">{lead.company || `${lead.firstName} ${lead.lastName || ''}`.trim() || lead.source || lead.id}</span>
+                          <span className="shrink-0 rounded border border-yellow-400/35 bg-yellow-500/10 px-1.5 py-0.5 text-[10px] text-yellow-200">
+                            cooldown
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : leadSource === 'lists' ? (
               <div className="bg-dark-800/50 rounded-lg border border-dark-700/50 p-3 space-y-2">
@@ -2197,7 +2308,7 @@ function CampaignFailedTooltip({ campaign }: { campaign: Campaign }) {
   );
 }
 
-/* ── Тултип разбивки Sent для кампаний ── */
+/* Campaign sent breakdown tooltip */
 function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number; flip: boolean }>({ x: 0, y: 0, flip: false });
@@ -2262,7 +2373,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
             </div>
           )}
 
-          {/* Статусы */}
+          {/* Delivery statuses */}
           <div className="space-y-1 mb-3">
             {[
               { label: 'Delivered', value: campaign.totalDelivered, color: '#10b981' },
@@ -2284,14 +2395,14 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
               ))}
           </div>
 
-          {/* По номерам */}
+          {/* By number */}
           {bd.numbers.length > 0 && (
             <div className="border-t border-dark-700 pt-2 mb-3">
               <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Number</p>
               <div className="space-y-1">
                 {bd.numbers.map((n) => (
                   <div key={n.number} className="flex items-center justify-between text-[11px]">
-                    <span className="text-dark-400 font-mono text-[10px]">📱 {n.number}</span>
+                    <span className="text-dark-400 font-mono text-[10px]">{n.number}</span>
                     <span className="text-dark-300 font-medium">{n.count.toLocaleString()}</span>
                   </div>
                 ))}
@@ -2299,14 +2410,14 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
             </div>
           )}
 
-          {/* По репам */}
+          {/* By rep */}
           {bd.reps.length > 0 && (
             <div className="border-t border-dark-700 pt-2">
               <p className="text-[10px] text-dark-500 uppercase tracking-wider mb-1.5">By Rep (Total Attempts)</p>
               <div className="space-y-1">
                 {bd.reps.map((r) => (
                   <div key={r.name} className="flex items-center justify-between text-[11px]">
-                    <span className="text-dark-400">👤 {r.name}</span>
+                    <span className="text-dark-400">{r.name}</span>
                     <span className="text-dark-300 font-medium">{r.count.toLocaleString()}</span>
                   </div>
                 ))}
@@ -2314,7 +2425,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
             </div>
           )}
 
-          {/* Пояснение */}
+          {/* text */}
           <p className="text-[10px] text-dark-500 mt-3 leading-tight border-t border-dark-700 pt-2">
             <strong className="text-dark-400">Skipped</strong> leads were not sent because they already have an existing
             conversation thread, belong to another rep, or failed a compliance check. To follow up with
@@ -2322,7 +2433,7 @@ function CampaignSentTooltip({ campaign }: { campaign: Campaign }) {
             campaign.
           </p>
 
-          {/* Стрелочка */}
+          {/* Tooltip arrow */}
           <div
             className={`absolute left-1/2 -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${
               pos.flip ? 'bottom-full border-b-[6px] border-b-dark-600' : 'top-full border-t-[6px] border-t-dark-600'

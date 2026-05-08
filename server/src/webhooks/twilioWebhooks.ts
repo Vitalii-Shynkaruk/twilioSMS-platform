@@ -24,6 +24,7 @@ import {
 import { phoneLookupVariants, splitContactName } from './inboundParsing';
 import { resolveInboundOwnerRepId } from './inboundOwnership';
 import { getSocketIO } from '../realtime/socket';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
 
 const router = Router();
 
@@ -42,6 +43,7 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
     where: { id: conversationId },
     select: {
       lead: { select: { firstName: true, lastName: true, status: true, optedOut: true } },
+      followupStatus: true,
       aiSignals: true,
       extractedIndustry: true,
       helocFitFlag: true,
@@ -157,18 +159,23 @@ async function processInboundAiClassification(jobData: InboundAiClassificationJo
 
   await prisma.conversation.update({
     where: { id: conversationId },
-    data: {
-      aiClassification: ai.classification,
-      aiSignals: persistedSignals as object,
-      aiSuggestions: ai.suggestions as object,
-      extractedIndustry,
-      helocFitFlag,
-      extractedRevenue,
-      extractedAsk,
-      isCaliforniaNumber: ai.isCaliforniaNumber,
-      aiLeadScore: ai.leadScore,
-      aiClassifiedAt: new Date(),
-    },
+    data: withInboxAiPriorityRank(
+      {
+        followupStatus: convForLead?.followupStatus,
+      },
+      {
+        aiClassification: ai.classification,
+        aiSignals: persistedSignals as object,
+        aiSuggestions: ai.suggestions as object,
+        extractedIndustry,
+        helocFitFlag,
+        extractedRevenue,
+        extractedAsk,
+        isCaliforniaNumber: ai.isCaliforniaNumber,
+        aiLeadScore: ai.leadScore,
+        aiClassifiedAt: new Date(),
+      },
+    ),
   });
 
   await prisma.conversationAudit.create({
@@ -486,20 +493,26 @@ router.post('/inbound', async (req: Request, res: Response) => {
       // Update conversation
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: {
-          lastMessageAt: new Date(),
-          lastDirection: 'inbound',
-          unreadCount: { increment: 1 },
-          nextFollowupAt: null,
-          followupTime: null,
-          followupStatus: 'completed',
-          ...(inboundTwilioNumber?.id
-            ? {
-                twilioNumberId: inboundTwilioNumber.id,
-                stickyNumberId: conversation.stickyNumberId || inboundTwilioNumber.id,
-              }
-            : {}),
-        },
+        data: withInboxAiPriorityRank(
+          {
+            aiClassification: conversation.aiClassification,
+            followupStatus: conversation.followupStatus,
+          },
+          {
+            lastMessageAt: new Date(),
+            lastDirection: 'inbound',
+            unreadCount: { increment: 1 },
+            nextFollowupAt: null,
+            followupTime: null,
+            followupStatus: 'completed',
+            ...(inboundTwilioNumber?.id
+              ? {
+                  twilioNumberId: inboundTwilioNumber.id,
+                  stickyNumberId: conversation.stickyNumberId || inboundTwilioNumber.id,
+                }
+              : {}),
+          },
+        ),
       });
 
       if (shouldResetDealEngagement) {

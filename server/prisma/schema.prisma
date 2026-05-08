@@ -334,6 +334,8 @@ model Conversation {
   followupSetBy    String?   @map("followup_set_by")
   followupSetAt    DateTime? @map("followup_set_at")
   followupStatus   String    @default("cleared") @map("followup_status") // "scheduled" | "due_now" | "completed" | "cleared"
+  aiPriorityRank   Int       @default(9) @map("ai_priority_rank")
+  emailReceived   Boolean   @default(false)   // text text "Email Rcv"
   emailReceived   Boolean   @default(false)   // Помечен как "Email Rcv"
 
   // Phase 1 AI Inbox: Anthropic classifyInbound() output — written on every inbound
@@ -373,6 +375,7 @@ model Conversation {
   @@index([nextFollowupAt])
   @@index([followupTime])
   @@index([followupStatus])
+  @@index([aiPriorityRank, lastMessageAt])
   @@index([aiClassification])
   @@index([aiLeadScore])
   @@index([extractedIndustry])

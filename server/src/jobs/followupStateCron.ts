@@ -3,6 +3,7 @@ import logger from '../config/logger';
 import { AIService } from '../services/aiService';
 import { config } from '../config';
 import { getSocketIO } from '../realtime/socket';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
 
 let followupTimer: NodeJS.Timeout | null = null;
 
@@ -37,7 +38,7 @@ async function processDueFollowups(): Promise<void> {
   const dueIds = dueConversations.map((conversation) => conversation.id);
   await prisma.conversation.updateMany({
     where: { id: { in: dueIds } },
-    data: { followupState: 'due_now', followupStatus: 'due_now' },
+    data: { followupState: 'due_now', followupStatus: 'due_now', aiPriorityRank: 1 },
   });
 
   logger.info('Follow-up cron: marked conversations as due_now', { count: dueIds.length });
@@ -63,15 +64,20 @@ async function processDueFollowups(): Promise<void> {
 
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: {
-          aiClassification: ai.classification,
-          aiSignals: persistedSignals as object,
-          aiSuggestions: ai.suggestions as object,
-          ...aiPersistence,
-          isCaliforniaNumber: ai.isCaliforniaNumber,
-          aiLeadScore: ai.leadScore,
-          aiClassifiedAt: new Date(),
-        },
+        data: withInboxAiPriorityRank(
+          {
+            followupStatus: 'due_now',
+          },
+          {
+            aiClassification: ai.classification,
+            aiSignals: persistedSignals as object,
+            aiSuggestions: ai.suggestions as object,
+            ...aiPersistence,
+            isCaliforniaNumber: ai.isCaliforniaNumber,
+            aiLeadScore: ai.leadScore,
+            aiClassifiedAt: new Date(),
+          },
+        ),
       });
 
       if (io) {

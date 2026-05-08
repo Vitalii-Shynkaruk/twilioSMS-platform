@@ -7,6 +7,7 @@ import { ComplianceService } from './complianceService';
 import { validateOutboundMessageBody } from './outboundMessageGuard';
 import { shouldSuppressRetargetForRecentInbound } from './retargetSuppression';
 import { buildTwilioStatusCallbackUrl } from './sendingUrlBuilder';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
 import { Queue } from 'bullmq';
 import redis from '../config/redis';
 
@@ -642,13 +643,19 @@ export class SendingEngine {
           });
           await prisma.conversation.update({
             where: { id: msg.conversationId },
-            data: {
-              lastMessageAt: new Date(),
-              lastDirection: 'outbound',
-              nextFollowupAt: null,
-              followupTime: null,
-              followupStatus: 'completed',
-            },
+            data: withInboxAiPriorityRank(
+              {
+                aiClassification: msg.conversation.aiClassification,
+                followupStatus: msg.conversation.followupStatus,
+              },
+              {
+                lastMessageAt: new Date(),
+                lastDirection: 'outbound',
+                nextFollowupAt: null,
+                followupTime: null,
+                followupStatus: 'completed',
+              },
+            ),
           });
 
           // Auto-move pipeline card to Contacted stage
@@ -734,13 +741,19 @@ export class SendingEngine {
         });
         await prisma.conversation.update({
           where: { id: msg.conversationId },
-          data: {
-            lastMessageAt: new Date(),
-            lastDirection: 'outbound',
-            nextFollowupAt: null,
-            followupTime: null,
-            followupStatus: 'completed',
-          },
+          data: withInboxAiPriorityRank(
+            {
+              aiClassification: msg.conversation.aiClassification,
+              followupStatus: msg.conversation.followupStatus,
+            },
+            {
+              lastMessageAt: new Date(),
+              lastDirection: 'outbound',
+              nextFollowupAt: null,
+              followupTime: null,
+              followupStatus: 'completed',
+            },
+          ),
         });
 
         // Auto-move pipeline card to Contacted stage

@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/auth';
 import { AuthRequest } from '../middleware/auth';
 import prisma from '../config/database';
 import { asyncHandler } from '../utils/asyncHandler';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
 
 const router = Router();
 
@@ -157,7 +158,7 @@ router.post(
 
     const conv = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { id: true, assignedRepId: true },
+      select: { id: true, assignedRepId: true, followupStatus: true },
     });
     if (!conv) {
       res.status(404).json({ error: 'Conversation not found' });
@@ -187,18 +188,23 @@ router.post(
     // Сохраняем результат на Conversation для последующих refresh'ей UI
     await prisma.conversation.update({
       where: { id: conversationId },
-      data: {
-        aiClassification: result.classification,
-        aiSignals: result.signals as object,
-        aiSuggestions: result.suggestions as object,
-        extractedIndustry,
-        helocFitFlag,
-        extractedRevenue,
-        extractedAsk,
-        isCaliforniaNumber: result.isCaliforniaNumber,
-        aiLeadScore: result.leadScore,
-        aiClassifiedAt: new Date(),
-      },
+      data: withInboxAiPriorityRank(
+        {
+          followupStatus: conv.followupStatus,
+        },
+        {
+          aiClassification: result.classification,
+          aiSignals: result.signals as object,
+          aiSuggestions: result.suggestions as object,
+          extractedIndustry,
+          helocFitFlag,
+          extractedRevenue,
+          extractedAsk,
+          isCaliforniaNumber: result.isCaliforniaNumber,
+          aiLeadScore: result.leadScore,
+          aiClassifiedAt: new Date(),
+        },
+      ),
     });
 
     res.json(result);

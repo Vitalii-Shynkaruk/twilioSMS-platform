@@ -119,6 +119,29 @@ function getConversationFollowupAt(conv: Conversation): string | null {
   return conv.followupTime || conv.nextFollowupAt || null;
 }
 
+function getConversationAiPriorityRank(conv: Conversation): number {
+  const followupStatus = String(conv.followupStatus || '')
+    .trim()
+    .toLowerCase();
+
+  if (followupStatus === 'due_now') return 1;
+
+  switch (String(conv.aiClassification || '').trim().toUpperCase()) {
+    case 'HOT':
+      return 2;
+    case 'WARM':
+      return 3;
+    case 'SENSITIVE':
+    case 'NURTURE':
+      return 4;
+    case 'DEAD':
+    case 'WRONG_NUMBER':
+      return 5;
+    default:
+      return 9;
+  }
+}
+
 function getConversationBadges(conv: Conversation): Array<{ label: string; cls: string }> {
   const badges: Array<{ label: string; cls: string }> = [];
   if (conv.hotLead) badges.push({ label: '🔥 Hot', cls: 'inbox-badge-hot' });
@@ -176,7 +199,7 @@ export default function InboxPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
   const [filter, setFilter] = useState<InboxFilter>('all');
-  const [sort, setSort] = useState<InboxSort>('newest_activity');
+  const [sort, setSort] = useState<InboxSort>('ai_priority');
   const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const sortRef = useRef<HTMLDivElement | null>(null);
@@ -313,18 +336,13 @@ export default function InboxPage() {
   const sortedConversations = useMemo(() => {
     if (sort !== 'ai_priority') return conversations;
     return [...conversations].sort((a, b) => {
-      const followupA = getConversationFollowupAt(a);
-      const followupB = getConversationFollowupAt(b);
-      const overdueA = followupA && new Date(followupA).getTime() < conversationsUpdatedAt ? 2000 : 0;
-      const overdueB = followupB && new Date(followupB).getTime() < conversationsUpdatedAt ? 2000 : 0;
-      const sa = overdueA + (a.aiClassification === 'HOT' ? 1000 : 0) + (a.aiLeadScore ?? 0);
-      const sb = overdueB + (b.aiClassification === 'HOT' ? 1000 : 0) + (b.aiLeadScore ?? 0);
-      if (sb !== sa) return sb - sa;
+      const rankDiff = getConversationAiPriorityRank(a) - getConversationAiPriorityRank(b);
+      if (rankDiff !== 0) return rankDiff;
       const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
       const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
       return tb - ta;
     });
-  }, [conversations, conversationsUpdatedAt, sort]);
+  }, [conversations, sort]);
   const filterCounts = (convData?.filterCounts || {}) as Record<string, number>;
   const summaryCounts = (convData?.summaryCounts || {
     overdueFollowups: 0,

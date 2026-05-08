@@ -18,6 +18,8 @@ import {
 import { buildSuggestedFollowup, resolveFollowupStatus } from '../services/followupPolicy';
 import { resolveConversationEmailRecipient } from '../services/conversationEmailPolicy';
 import { extractPipelineSignals, getPipelineAiLocalSkipReason } from '../services/pipelineAiService';
+import { LeadClassifierService } from '../services/leadClassifierService';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
 
 type InboxFilter =
   | 'all'
@@ -377,6 +379,7 @@ export class InboxController {
         id: true,
         assignedRepId: true,
         aiClassification: true,
+        followupStatus: true,
         aiLeadScore: true,
         aiSignals: true,
         extractedRevenue: true,
@@ -461,9 +464,17 @@ export class InboxController {
         (conversation.aiLeadScore || 0) > 0 ? conversation.aiLeadScore : nextClassification === 'HOT' ? 78 : 58;
     }
 
+    const updatePayload = withInboxAiPriorityRank(
+      {
+        aiClassification: conversation.aiClassification,
+        followupStatus: conversation.followupStatus,
+      },
+      updateData,
+    )
+
     await prisma.conversation.update({
       where: { id: conversationId },
-      data: updateData,
+      data: updatePayload,
     });
 
     await InboxController.logAuditEvent({
@@ -486,7 +497,7 @@ export class InboxController {
       const payload = {
         conversationId,
         classification: nextClassification,
-        leadScore: (updateData.aiLeadScore as number | undefined) ?? conversation.aiLeadScore ?? 0,
+        leadScore: (updatePayload.aiLeadScore as number | undefined) ?? conversation.aiLeadScore ?? 0,
         signals: nextSignals,
         suggestions: null,
         promptVersion: 'fastpath_note',
@@ -538,6 +549,7 @@ export class InboxController {
           where: { id: conversationId },
           select: {
             aiSignals: true,
+            followupStatus: true,
             extractedIndustry: true,
             helocFitFlag: true,
             extractedRevenue: true,
@@ -609,15 +621,20 @@ export class InboxController {
 
         await prisma.conversation.update({
           where: { id: conversationId },
-          data: {
-            aiClassification: ai.classification,
-            aiSignals: persistedSignals as object,
-            aiSuggestions: ai.suggestions as object,
-            ...aiPersistence,
-            isCaliforniaNumber: ai.isCaliforniaNumber,
-            aiLeadScore: ai.leadScore,
-            aiClassifiedAt: new Date(),
-          },
+          data: withInboxAiPriorityRank(
+            {
+              followupStatus: existingConversation?.followupStatus,
+            },
+            {
+              aiClassification: ai.classification,
+              aiSignals: persistedSignals as object,
+              aiSuggestions: ai.suggestions as object,
+              ...aiPersistence,
+              isCaliforniaNumber: ai.isCaliforniaNumber,
+              aiLeadScore: ai.leadScore,
+              aiClassifiedAt: new Date(),
+            },
+          ),
         });
 
         await InboxController.logAuditEvent({
@@ -793,13 +810,7 @@ export class InboxController {
   private static buildOrderBy(sort: InboxSort): any {
     switch (sort) {
       case 'ai_priority':
-        return [
-          { aiClassification: 'desc' },
-          { aiLeadScore: 'desc' },
-          { unreadCount: 'desc' },
-          { lastMessageAt: 'desc' },
-          { updatedAt: 'desc' },
-        ];
+        return [{ aiPriorityRank: 'asc' }, { lastMessageAt: 'desc' }, { updatedAt: 'desc' }];
       case 'oldest_untouched':
         return [{ lastMessageAt: 'asc' }, { updatedAt: 'asc' }];
       case 'unread_first':
@@ -2135,16 +2146,22 @@ export class InboxController {
     // Update conversation
     await prisma.conversation.update({
       where: { id },
-      data: {
-        ...(req.user?.role === 'REP' && !conversation.assignedRepId ? { assignedRepId: req.user.id } : {}),
-        lastMessageAt: new Date(),
-        lastDirection: 'outbound',
-        nextFollowupAt: null,
-        followupTime: null,
-        followupStatus: 'completed',
-        followupSetBy: req.user?.id || null,
-        followupSetAt: new Date(),
-      },
+      data: withInboxAiPriorityRank(
+        {
+          aiClassification: conversation.aiClassification,
+          followupStatus: conversation.followupStatus,
+        },
+        {
+          ...(req.user?.role === 'REP' && !conversation.assignedRepId ? { assignedRepId: req.user.id } : {}),
+          lastMessageAt: new Date(),
+          lastDirection: 'outbound',
+          nextFollowupAt: null,
+          followupTime: null,
+          followupStatus: 'completed',
+          followupSetBy: req.user?.id || null,
+          followupSetAt: new Date(),
+        },
+      ),
     });
 
     if (req.user?.role === 'REP' && !conversation.lead.assignedRepId) {
@@ -2328,7 +2345,13 @@ export class InboxController {
 
     const updated = await prisma.conversation.update({
       where: { id },
-      data,
+      data: withInboxAiPriorityRank(
+        {
+          aiClassification: conversation.aiClassification,
+          followupStatus: conversation.followupStatus,
+        },
+        data,
+      ),
       include: {
         lead: {
           select: { id: true, firstName: true, lastName: true, phone: true, status: true },

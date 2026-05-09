@@ -63,6 +63,29 @@ const STAGE_ORDER: DealStage[] = [
   DealStage.CLOSED,
 ];
 
+async function syncLinkedLeadStatusFromDealStage(input: {
+  dealId: string;
+  stage: DealStage;
+  leadId?: string | null;
+  clientPhone?: string | null;
+}): Promise<void> {
+  const newLeadStatus = DEAL_TO_LEAD[input.stage];
+  if (!newLeadStatus) return;
+
+  let resolvedLeadId = input.leadId || null;
+  if (!resolvedLeadId && input.clientPhone) {
+    const lead = await prisma.lead.findUnique({ where: { phone: input.clientPhone }, select: { id: true } });
+    if (lead) {
+      resolvedLeadId = lead.id;
+      await prisma.deal.update({ where: { id: input.dealId }, data: { leadId: lead.id } });
+    }
+  }
+
+  if (!resolvedLeadId) return;
+
+  await prisma.lead.update({ where: { id: resolvedLeadId }, data: { status: newLeadStatus } }).catch(() => {});
+}
+
 const SUBMITTED_AMOUNT_PRODUCTS = new Set<ProductType>([ProductType.SBA, ProductType.CRE, ProductType.EQUIPMENT]);
 
 const QUICK_LOG_KINDS = {
@@ -1454,21 +1477,12 @@ export class DealController {
       },
     });
 
-    // Sync deal stage → linked lead status
-    const newLeadStatus = DEAL_TO_LEAD[stage as DealStage];
-    if (newLeadStatus) {
-      let leadId = existing.leadId;
-      if (!leadId && deal.client?.phone) {
-        const lead = await prisma.lead.findUnique({ where: { phone: deal.client.phone }, select: { id: true } });
-        if (lead) {
-          leadId = lead.id;
-          await prisma.deal.update({ where: { id }, data: { leadId: lead.id } });
-        }
-      }
-      if (leadId) {
-        await prisma.lead.update({ where: { id: leadId }, data: { status: newLeadStatus } }).catch(() => {});
-      }
-    }
+    await syncLinkedLeadStatusFromDealStage({
+      dealId: id,
+      stage: stage as DealStage,
+      leadId: existing.leadId,
+      clientPhone: deal.client?.phone || null,
+    });
 
     const io = (req.app as any).io;
     emitDealUpdatedScoped(io, {
@@ -1756,6 +1770,13 @@ export class DealController {
         staleDays: 0,
         daysInStage: 0,
       },
+    });
+
+    await syncLinkedLeadStatusFromDealStage({
+      dealId: id,
+      stage: DealStage.FUNDED,
+      leadId: deal.leadId,
+      clientPhone: deal.client?.phone || null,
     });
 
     // Update client totals

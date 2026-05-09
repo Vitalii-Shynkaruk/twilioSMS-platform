@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import { parse } from 'csv-parse/sync';
 import { DealStage, LeadStatus, Prisma } from '@prisma/client';
+import { buildLeadStatusWhere } from '../utils/leadStatusFilter';
 
 // Lead status → Deal stage mapping
 const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
@@ -315,7 +316,17 @@ function withLeadEnrichment<T extends Record<string, unknown>>(
   };
 }
 
-function buildLastContactedWhere(value: unknown): Record<string, unknown> | null {
+type LeadListFilters = {
+  search?: unknown;
+  status?: unknown;
+  tags?: unknown;
+  assignedRepId?: unknown;
+  source?: unknown;
+  state?: unknown;
+  lastContactedBefore?: unknown;
+};
+
+function buildLastContactedWhere(value: unknown): Prisma.LeadWhereInput | null {
   const filter = String(value || '').trim();
   if (!filter) return null;
   if (filter === 'never') return { lastContactedAt: null };
@@ -336,10 +347,55 @@ function buildLastContactedWhere(value: unknown): Record<string, unknown> | null
   };
 }
 
-function appendAnd(where: Record<string, unknown>, condition: Record<string, unknown> | null): void {
+function appendAnd(where: Prisma.LeadWhereInput, condition: Prisma.LeadWhereInput | null): void {
   if (!condition) return;
   const existing = Array.isArray(where.AND) ? where.AND : [];
   where.AND = [...existing, condition];
+}
+
+function buildLeadListWhere(filters: LeadListFilters, req: AuthRequest): Prisma.LeadWhereInput {
+  const { search, status, tags, assignedRepId, source, state, lastContactedBefore } = filters;
+  const where: Prisma.LeadWhereInput = { deletedAt: null };
+
+  if (search) {
+    appendAnd(where, {
+      OR: [
+        { firstName: { contains: search as string } },
+        { lastName: { contains: search as string } },
+        { phone: { contains: search as string } },
+        { email: { contains: search as string } },
+        { company: { contains: search as string } },
+      ],
+    });
+  }
+
+  appendAnd(where, buildLeadStatusWhere(status));
+
+  if (tags) {
+    where.tags = {
+      some: { tagId: { in: (tags as string).split(',') } },
+    };
+  }
+
+  if (assignedRepId) {
+    where.assignedRepId = assignedRepId as string;
+  }
+
+  if (source) {
+    where.source = { contains: source as string };
+  }
+
+  if (state) {
+    where.state = { contains: state as string };
+  }
+
+  appendAnd(where, buildLastContactedWhere(lastContactedBefore));
+
+  if (req.user?.role === 'REP') {
+    where.assignedRepId = req.user.id;
+  }
+
+  return where;
 }
 
 export class LeadController {
@@ -360,48 +416,18 @@ export class LeadController {
 
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
-    const where: any = { deletedAt: null };
-
-    if (search) {
-      appendAnd(where, {
-        OR: [
-          { firstName: { contains: search as string } },
-          { lastName: { contains: search as string } },
-          { phone: { contains: search as string } },
-          { email: { contains: search as string } },
-          { company: { contains: search as string } },
-        ],
-      });
-    }
-
-    if (status) {
-      where.status = { in: (status as string).split(',') };
-    }
-
-    if (tags) {
-      where.tags = {
-        some: { tagId: { in: (tags as string).split(',') } },
-      };
-    }
-
-    if (assignedRepId) {
-      where.assignedRepId = assignedRepId;
-    }
-
-    if (source) {
-      where.source = { contains: source as string };
-    }
-
-    if (state) {
-      where.state = { contains: state as string };
-    }
-
-    appendAnd(where, buildLastContactedWhere(lastContactedBefore));
-
-    // Rep can only see their leads
-    if (req.user?.role === 'REP') {
-      where.assignedRepId = req.user.id;
-    }
+    const where = buildLeadListWhere(
+      {
+        search,
+        status,
+        tags,
+        assignedRepId,
+        source,
+        state,
+        lastContactedBefore,
+      },
+      req,
+    );
 
     const [leads, total] = await Promise.all([
       prisma.lead.findMany({
@@ -1428,28 +1454,18 @@ export class LeadController {
   static async exportCSV(req: AuthRequest, res: Response): Promise<void> {
     const { status, tags, assignedRepId, search, source, state, lastContactedBefore } = req.query;
 
-    const where: any = {};
-
-    if (search) {
-      appendAnd(where, {
-        OR: [
-          { firstName: { contains: search as string } },
-          { lastName: { contains: search as string } },
-          { phone: { contains: search as string } },
-          { email: { contains: search as string } },
-          { company: { contains: search as string } },
-        ],
-      });
-    }
-    if (status) where.status = { in: (status as string).split(',') };
-    if (tags) where.tags = { some: { tagId: { in: (tags as string).split(',') } } };
-    if (source) where.source = { contains: source as string };
-    if (state) where.state = { contains: state as string };
-    appendAnd(where, buildLastContactedWhere(lastContactedBefore));
-    if (assignedRepId) where.assignedRepId = assignedRepId;
-    if (req.user?.role === 'REP') where.assignedRepId = req.user.id;
-    // Exclude soft-deleted
-    where.deletedAt = null;
+    const where = buildLeadListWhere(
+      {
+        search,
+        status,
+        tags,
+        assignedRepId,
+        source,
+        state,
+        lastContactedBefore,
+      },
+      req,
+    );
 
     const escapeCSV = (val: string) => {
       if (val.includes(',') || val.includes('"') || val.includes('\n')) {

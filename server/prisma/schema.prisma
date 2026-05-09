@@ -55,6 +55,7 @@ model User {
 
   // Relations
   assignedLeads     Lead[]
+  lastContactedLeads Lead[] @relation("LeadLastContactedBy")
   conversations     Conversation[]
   sentMessages      Message[]
   campaigns         Campaign[]
@@ -249,8 +250,16 @@ model Lead {
   
   // Tracking
   lastContactedAt DateTime?
+  lastContactedByUserId String? @db.VarChar(36) @map("last_contacted_by_user_id")
+  lastContactedBy User? @relation("LeadLastContactedBy", fields: [lastContactedByUserId], references: [id], onDelete: SetNull)
   lastRepliedAt   DateTime?
   contactCount    Int        @default(0)
+
+  // Phase 2 enrichment persistence
+  industry              String?  @db.VarChar(100)
+  monthlyRevenue        Decimal? @db.Decimal(12,2) @map("monthly_revenue")
+  monthlyRevenueSource  String?  @db.VarChar(20) @map("monthly_revenue_source")
+  aiSignalsSyncedAt     DateTime? @map("ai_signals_synced_at")
   
   // Custom fields stored as JSON
   customFields    Json?
@@ -272,6 +281,8 @@ model Lead {
   @@index([assignedRepId])
   @@index([isSuppressed, optedOut])
   @@index([lastContactedAt])
+  @@index([lastContactedByUserId])
+  @@index([industry])
   @@index([createdAt])
   @@index([source])
   @@index([deletedAt])
@@ -335,7 +346,6 @@ model Conversation {
   followupSetAt    DateTime? @map("followup_set_at")
   followupStatus   String    @default("cleared") @map("followup_status") // "scheduled" | "due_now" | "completed" | "cleared"
   aiPriorityRank   Int       @default(9) @map("ai_priority_rank")
-  emailReceived   Boolean   @default(false)   // text text "Email Rcv"
   emailReceived   Boolean   @default(false)   // Помечен как "Email Rcv"
 
   // Phase 1 AI Inbox: Anthropic classifyInbound() output — written on every inbound

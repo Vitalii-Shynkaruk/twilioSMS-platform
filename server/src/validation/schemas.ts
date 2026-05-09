@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// ─── Common ───
+// -�-�-� Common -�-�-�
 const e164Phone = z
   .string()
   .transform((val) => {
@@ -9,7 +9,7 @@ const e164Phone = z
     if (digits.length === 10) return `+1${digits}`;
     // If it starts with 1 and has 11 digits, it's US with country code
     if (digits.startsWith('1') && digits.length === 11) return `+${digits}`;
-    // Otherwise treat as international — just prepend +
+    // Otherwise treat as international - just prepend +
     return `+${digits}`;
   })
   .pipe(z.string().regex(/^\+\d{7,15}$/, 'Must be a valid phone number in E.164 format'));
@@ -19,7 +19,7 @@ const paginationQuery = {
   limit: z.coerce.number().int().min(1).max(500).default(50),
 };
 
-// ─── Auth ───
+// -�-�-� Auth -�-�-�
 export const loginSchema = z.object({
   email: z
     .string()
@@ -107,7 +107,7 @@ export const updateUserSchema = z.object({
   hotAlertsEnabled: z.boolean().optional(),
 });
 
-// ─── Leads ───
+// -�-�-� Leads -�-�-�
 export const createLeadSchema = z.object({
   firstName: z.string().min(1).max(100).trim(),
   lastName: z.string().max(100).trim().optional().default(''),
@@ -141,6 +141,7 @@ export const leadListQuery = z.object({
   status: z.string().optional().default(''),
   source: z.string().optional().default(''),
   state: z.string().optional().default(''),
+  revenueMin: z.coerce.number().int().min(0).optional().default(0),
   lastContactedBefore: z.string().optional().default(''),
   tags: z.string().optional().default(''),
   assignedRepId: z.string().optional().default(''),
@@ -161,7 +162,7 @@ export const bulkActionSchema = z.object({
   data: z.record(z.unknown()).optional(),
 });
 
-// ─── Campaigns ───
+// -�-�-� Campaigns -�-�-�
 export const createCampaignSchema = z.object({
   name: z.string().min(1).max(200).trim(),
   description: z.string().max(2000).optional().default(''),
@@ -195,7 +196,7 @@ export const buildAiCohortSchema = z.object({
   messageTemplate: z.string().min(1).max(1600).optional(),
 });
 
-// ─── Inbox ───
+// -�-�-� Inbox -�-�-�
 export const sendReplySchema = z.object({
   body: z.string().min(1).max(1600).trim(),
 });
@@ -204,7 +205,7 @@ export const assignRepSchema = z.object({
   repId: z.string().min(1),
 });
 
-// Phase 1: Обновление статуса разговора
+// Phase 1: text ---text --text
 export const updateConversationStatusSchema = z.object({
   hotLead: z.boolean().optional(),
   leadStatus: z.enum(['Interested', 'Not Interested', 'DNC', '']).optional(),
@@ -215,7 +216,7 @@ export const updateConversationStatusSchema = z.object({
   followupStatus: z.enum(['scheduled', 'due_now', 'completed', 'cleared']).optional(),
 });
 
-// Phase 1: Заметки к разговору
+// Phase 1: -text text ---
 export const createNoteSchema = z.object({
   body: z.string().min(1).max(5000).trim(),
   dealId: z.string().optional(),
@@ -227,7 +228,7 @@ export const createClassificationFeedbackSchema = z.object({
   reason: z.string().max(5000).trim().optional(),
 });
 
-// Phase 1: SMS-шаблоны
+// Phase 1: SMS---
 const templateCategorySchema = z.string().max(100).trim().nullable().optional();
 
 export const createTemplateSchema = z.object({
@@ -239,14 +240,14 @@ export const createTemplateSchema = z.object({
 
 export const updateTemplateSchema = createTemplateSchema.partial();
 
-// Phase 1: Отложенные сообщения
+// Phase 1: --text -text
 export const createScheduledMessageSchema = z.object({
   conversationId: z.string().min(1),
   body: z.string().min(1).max(1600).trim(),
   scheduledAt: z.string().datetime(),
 });
 
-// Phase 1: Добавить в pipeline из inbox
+// Phase 1: -- text pipeline text inbox
 export const addToPipelineSchema = z.object({
   stageId: z.string().min(1).optional(),
   dealStage: z
@@ -264,7 +265,7 @@ export const addToPipelineSchema = z.object({
   stage: z.string().optional(),
 });
 
-// ─── Numbers ───
+// -�-�-� Numbers -�-�-�
 export const createNumberSchema = z.object({
   phoneNumber: e164Phone,
   twilioSid: z.string().min(1),
@@ -290,7 +291,7 @@ export const createPoolSchema = z.object({
   numberIds: z.array(cuid).optional(),
 });
 
-// ─── Pipeline ───
+// -�-�-� Pipeline -�-�-�
 export const createStageSchema = z.object({
   name: z.string().min(1).max(100).trim(),
   color: z
@@ -306,7 +307,7 @@ export const moveCardSchema = z.object({
   position: z.number().int().min(0),
 });
 
-// ─── Automation ───
+// -�-�-� Automation -�-�-�
 export const createRuleSchema = z.object({
   name: z.string().min(1).max(200).trim(),
   type: z.enum([
@@ -337,7 +338,7 @@ export const createRuleSchema = z.object({
 
 export const updateRuleSchema = createRuleSchema.partial();
 
-// ─── Settings ───
+// -�-�-� Settings -�-�-�
 export const updateSettingSchema = z.object({
   value: z.unknown(),
 });
@@ -360,7 +361,7 @@ export const bulkSuppressionSchema = z.object({
   reason: z.string().default('manual'),
 });
 
-// ─── Helpers ───
+// -�-�-� Helpers -�-�-�
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;

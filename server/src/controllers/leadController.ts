@@ -6,7 +6,7 @@ import { parse } from 'csv-parse/sync';
 import { DealStage, LeadStatus, Prisma } from '@prisma/client';
 import { buildLeadStatusWhere } from '../utils/leadStatusFilter';
 
-// Lead status → Deal stage mapping
+// Lead status to deal stage mapping
 const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
   NEW: DealStage.NEW_LEAD,
   CONTACTED: DealStage.ENGAGED_INTERESTED,
@@ -80,17 +80,64 @@ function importCustomFields(fields: {
   return Object.keys(customFields).length > 0 ? customFields : undefined;
 }
 
-type LeadUpsertPayload = Prisma.LeadUncheckedCreateInput & {
-  phone: string;
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  company: string | null;
-  state: string | null;
-  source: string;
-  notes: string | null;
-  assignedRepId?: string;
-};
+function importLeadEnrichmentFields(fields: {
+  industry?: unknown;
+  monthlyRevenue?: unknown;
+  annualRevenue?: unknown;
+}): Partial<Prisma.LeadUncheckedCreateInput> {
+  const industry = nullableLeadValue(fields.industry, 100);
+  const monthlyRevenue =
+    parseMonthlyRevenue(fields.monthlyRevenue) ?? parseMonthlyRevenue(fields.annualRevenue, true);
+
+  return {
+    ...(industry ? { industry } : {}),
+    ...(monthlyRevenue !== null
+      ? {
+          monthlyRevenue,
+          monthlyRevenueSource: 'csv_import',
+        }
+      : {}),
+  };
+}
+
+function normalizePersistedRevenue(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === 'string') return parseMonthlyRevenue(value);
+  if (value && typeof value === 'object' && 'toString' in value) return parseMonthlyRevenue(String(value));
+  return null;
+}
+
+function normalizeRevenueSource(value: unknown): 'AI' | 'MANUAL' | 'CSV' | null {
+  const source = String(value || '').trim().toLowerCase();
+  if (source === 'ai_extracted' || source === 'ai') return 'AI';
+  if (source === 'manual') return 'MANUAL';
+  if (source === 'csv_import' || source === 'csv') return 'CSV';
+  return null;
+}
+
+function buildImportEnrichmentUpdate(
+  lead: LeadUpsertPayload,
+  existing?: {
+    industry: string | null;
+    monthlyRevenue: Prisma.Decimal | null;
+    monthlyRevenueSource: string | null;
+  },
+): Prisma.LeadUncheckedUpdateInput {
+  const update: Prisma.LeadUncheckedUpdateInput = {};
+
+  if (lead.industry && !existing?.industry) {
+    update.industry = lead.industry;
+  }
+
+  if (lead.monthlyRevenue && !existing?.monthlyRevenue && existing?.monthlyRevenueSource !== 'manual') {
+    update.monthlyRevenue = lead.monthlyRevenue;
+    update.monthlyRevenueSource = 'csv_import';
+  }
+
+  return update;
+}
+
+type LeadUpsertPayload = Prisma.LeadUncheckedCreateInput & { phone: string };
 
 function dedupeLeadUpserts(leadsToUpsert: LeadUpsertPayload[]): {
   uniqueLeadsToUpsert: LeadUpsertPayload[];
@@ -208,9 +255,15 @@ function parseMonthlyRevenue(value: unknown, annual = false): number | null {
   const normalized = value.trim().toLowerCase();
   if (!normalized) return null;
 
-  const multiplier = normalized.includes('m') ? 1_000_000 : normalized.includes('k') ? 1_000 : 1;
-  const numeric = Number(normalized.replace(/[^0-9.]/g, ''));
+  const compact = normalized.replace(/[$,\s]/g, '');
+  const match = compact.match(/(\d+(?:\.\d+)?)([km])?/i);
+  if (!match) return null;
+
+  const numeric = Number(match[1]);
   if (!Number.isFinite(numeric) || numeric <= 0) return null;
+
+  const suffix = String(match[2] || '').toLowerCase();
+  const multiplier = suffix === 'm' ? 1_000_000 : suffix === 'k' ? 1_000 : 1;
 
   const monthly = numeric * multiplier;
   const looksAnnual = annual || /annual|year|yr/.test(normalized);
@@ -260,13 +313,15 @@ function resolveLeadSource(lead: any): { primary: string; secondary: string | nu
   }
 
   if (rawSource) return { primary: 'Imported list', secondary: null };
-  return { primary: '—', secondary: null };
+  return { primary: '-', secondary: null };
 }
 
 function resolveLeadEnrichment(lead: any) {
   const conversation = Array.isArray(lead.conversations) ? lead.conversations[0] : null;
   const signals = asRecord(conversation?.aiSignals);
   const customFields = asRecord(lead.customFields);
+  const persistedRevenue = normalizePersistedRevenue(lead.monthlyRevenue);
+  const persistedRevenueSource = normalizeRevenueSource(lead.monthlyRevenueSource);
   const manualRevenue = parseMonthlyRevenue(lead.deal?.client?.monthlyRevenue);
   const csvRevenue =
     readNumber(customFields, ['monthlyRevenue', 'monthly_revenue', 'monthly_revenue_usd', 'revenueMonthly']) ||
@@ -274,9 +329,18 @@ function resolveLeadEnrichment(lead: any) {
   const aiRevenue =
     (typeof conversation?.extractedRevenue === 'number' ? conversation.extractedRevenue : null) ||
     readNumber(signals, ['revenueMonthly']);
-  const monthlyRevenue = manualRevenue || csvRevenue || aiRevenue || null;
-  const revenueSource = manualRevenue ? 'MANUAL' : csvRevenue ? 'CSV' : aiRevenue ? 'AI' : null;
+  const monthlyRevenue = persistedRevenue || manualRevenue || csvRevenue || aiRevenue || null;
+  const revenueSource = persistedRevenue
+    ? persistedRevenueSource
+    : manualRevenue
+      ? 'MANUAL'
+      : csvRevenue
+        ? 'CSV'
+        : aiRevenue
+          ? 'AI'
+          : null;
   const industry =
+    (typeof lead.industry === 'string' && lead.industry.trim() ? lead.industry.trim() : null) ||
     readString(customFields, ['industry', 'businessIndustry', 'business_industry']) ||
     (typeof conversation?.extractedIndustry === 'string' && conversation.extractedIndustry.trim()
       ? conversation.extractedIndustry.trim()
@@ -347,6 +411,23 @@ function buildLastContactedWhere(value: unknown): Prisma.LeadWhereInput | null {
   };
 }
 
+function parseRevenueMinFilter(value: unknown): number {
+  if (value === undefined || value === null || value === '') return 0;
+
+  const threshold = Number(value);
+  if (!Number.isFinite(threshold) || threshold < 0) {
+    throw new AppError('Invalid revenueMin filter', 400);
+  }
+
+  return Math.round(threshold);
+}
+
+function meetsRevenueMin(lead: Record<string, unknown>, revenueMin: number): boolean {
+  if (revenueMin <= 0) return true;
+  const enrichment = resolveLeadEnrichment(lead);
+  return typeof enrichment.monthlyRevenue === 'number' && enrichment.monthlyRevenue >= revenueMin;
+}
+
 function appendAnd(where: Prisma.LeadWhereInput, condition: Prisma.LeadWhereInput | null): void {
   if (!condition) return;
   const existing = Array.isArray(where.AND) ? where.AND : [];
@@ -413,8 +494,10 @@ export class LeadController {
       sortBy = 'createdAt',
       sortOrder = 'desc',
     } = req.query;
+    const revenueMin = parseRevenueMinFilter(req.query.revenueMin) || 0;
 
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
+    const take = parseInt(limit as string);
 
     const where = buildLeadListWhere(
       {
@@ -429,61 +512,86 @@ export class LeadController {
       req,
     );
 
+    const include = {
+      tags: { include: { tag: true } },
+      assignedRep: {
+        select: { id: true, firstName: true, lastName: true, initials: true },
+      },
+      lastContactedBy: {
+        select: { id: true, firstName: true, lastName: true, initials: true, role: true },
+      },
+      deal: {
+        select: {
+          id: true,
+          stage: true,
+          stageLabel: true,
+          dealAmount: true,
+          isHot: true,
+          client: { select: { monthlyRevenue: true } },
+        },
+      },
+      conversations: {
+        take: 1,
+        orderBy: { updatedAt: 'desc' as const },
+        select: {
+          id: true,
+          lastMessageAt: true,
+          extractedIndustry: true,
+          extractedRevenue: true,
+          aiSignals: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+          messages: {
+            take: 1,
+            orderBy: { createdAt: 'desc' as const },
+            select: {
+              id: true,
+              direction: true,
+              createdAt: true,
+              sentByUser: { select: { id: true, firstName: true, lastName: true, initials: true, role: true } },
+            },
+          },
+        },
+      },
+      campaignLeads: {
+        take: 1,
+        orderBy: { createdAt: 'desc' as const },
+        include: { campaign: { select: { id: true, name: true, isRetarget: true } } },
+      },
+      _count: {
+        select: { conversations: true },
+      },
+    };
+
+    if (revenueMin > 0) {
+      const matchingLeads = await prisma.lead.findMany({
+        where,
+        orderBy: { [sortBy as string]: sortOrder },
+        include,
+      });
+      const enrichedLeads = matchingLeads
+        .map((lead) => withLeadEnrichment(lead as unknown as Record<string, unknown>))
+        .filter((lead) => meetsRevenueMin(lead as unknown as Record<string, unknown>, revenueMin));
+      const total = enrichedLeads.length;
+
+      res.json({
+        leads: enrichedLeads.slice(skip, skip + take),
+        pagination: {
+          page: parseInt(page as string),
+          limit: take,
+          total,
+          pages: Math.ceil(total / take),
+        },
+      });
+      return;
+    }
+
     const [leads, total] = await Promise.all([
       prisma.lead.findMany({
         where,
         skip,
-        take: parseInt(limit as string),
+        take,
         orderBy: { [sortBy as string]: sortOrder },
-        include: {
-          tags: { include: { tag: true } },
-          assignedRep: {
-            select: { id: true, firstName: true, lastName: true, initials: true },
-          },
-          lastContactedBy: {
-            select: { id: true, firstName: true, lastName: true, initials: true, role: true },
-          },
-          deal: {
-            select: {
-              id: true,
-              stage: true,
-              stageLabel: true,
-              dealAmount: true,
-              isHot: true,
-              client: { select: { monthlyRevenue: true } },
-            },
-          },
-          conversations: {
-            take: 1,
-            orderBy: { updatedAt: 'desc' },
-            select: {
-              id: true,
-              lastMessageAt: true,
-              extractedIndustry: true,
-              extractedRevenue: true,
-              aiSignals: true,
-              assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
-              messages: {
-                take: 1,
-                orderBy: { createdAt: 'desc' },
-                select: {
-                  id: true,
-                  direction: true,
-                  createdAt: true,
-                  sentByUser: { select: { id: true, firstName: true, lastName: true, initials: true, role: true } },
-                },
-              },
-            },
-          },
-          campaignLeads: {
-            take: 1,
-            orderBy: { createdAt: 'desc' },
-            include: { campaign: { select: { id: true, name: true, isRetarget: true } } },
-          },
-          _count: {
-            select: { conversations: true },
-          },
-        },
+        include,
       }),
       prisma.lead.count({ where }),
     ]);
@@ -503,41 +611,16 @@ export class LeadController {
     const where: any = { deletedAt: null };
     if (req.user?.role === 'REP') where.assignedRepId = req.user.id;
 
-    const [sourceRows, stateRows] = await Promise.all([
-      prisma.lead.findMany({
-        where: { ...where, source: { not: null } },
-        select: {
-          source: true,
-          tags: { include: { tag: true } },
-          campaignLeads: {
-            take: 1,
-            orderBy: { createdAt: 'desc' },
-            include: { campaign: { select: { id: true, name: true, isRetarget: true } } },
-          },
-        },
-        orderBy: { source: 'asc' },
-        take: 10000,
-      }),
-      prisma.lead.findMany({
-        where: { ...where, state: { not: null } },
-        select: { state: true },
-        distinct: ['state'],
-        orderBy: { state: 'asc' },
-        take: 200,
-      }),
-    ]);
-
-    const sourceMap = new Map<string, { value: string; label: string; count: number }>();
-    for (const row of sourceRows) {
-      const value = String(row.source || '').trim();
-      if (!value) continue;
-      const label = resolveLeadSource(row).primary;
-      const existing = sourceMap.get(value);
-      sourceMap.set(value, { value, label, count: (existing?.count || 0) + 1 });
-    }
+    const stateRows = await prisma.lead.findMany({
+      where: { ...where, state: { not: null } },
+      select: { state: true },
+      distinct: ['state'],
+      orderBy: { state: 'asc' },
+      take: 200,
+    });
 
     res.json({
-      sources: Array.from(sourceMap.values()).sort((a, b) => a.label.localeCompare(b.label)),
+      sources: [],
       states: stateRows
         .map((row) => String(row.state || '').trim())
         .filter(Boolean)
@@ -718,12 +801,24 @@ export class LeadController {
 
   static async update(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const { firstName, lastName, email, company, state, source, status, assignedRepId, notes } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      company,
+      state,
+      source,
+      status,
+      assignedRepId,
+      notes,
+      industry,
+      monthlyRevenue,
+    } = req.body;
 
     const existing = await prisma.lead.findUnique({ where: { id } });
     if (!existing) throw new AppError('Lead not found', 404);
 
-    // Проверка авторизации: REP может обновлять только свои лиды
+    // Access control: reps can only update their own assigned leads.
     if (req.user?.role === 'REP' && existing.assignedRepId !== req.user.id) {
       throw new AppError('Access denied: you can only update your own leads', 403);
     }
@@ -743,6 +838,16 @@ export class LeadController {
       data.assignedRepId = assignedRepId;
     }
     if (notes !== undefined) data.notes = notes;
+    if (industry !== undefined) data.industry = nullableLeadValue(industry, 100);
+    if (monthlyRevenue !== undefined) {
+      const parsedMonthlyRevenue = parseMonthlyRevenue(monthlyRevenue);
+      const rawMonthlyRevenue = normalizeCell(monthlyRevenue);
+      if (rawMonthlyRevenue && parsedMonthlyRevenue === null) {
+        throw new AppError('Monthly revenue must be a valid number, e.g. 80000 or $80k', 400);
+      }
+      data.monthlyRevenue = parsedMonthlyRevenue;
+      data.monthlyRevenueSource = parsedMonthlyRevenue === null ? null : 'manual';
+    }
 
     const lead = await prisma.lead.update({
       where: { id },
@@ -753,7 +858,7 @@ export class LeadController {
       },
     });
 
-    // Sync lead status → deal stage when status changes (or when no deal exists yet)
+    // Sync lead status to deal stage when status changes or when no deal exists yet.
     const effectiveStatus = status || existing.status;
     const statusChanged = status && status !== existing.status;
     const newDealStage = LEAD_TO_DEAL[effectiveStatus as LeadStatus];
@@ -796,7 +901,7 @@ export class LeadController {
           });
         }
       } else {
-        // No deal exists — create one from the lead
+        // No deal exists, so create one from the lead.
         console.log('[LeadUpdate] Creating new deal for lead', id, 'stage:', newDealStage);
 
         const contactName = `${existing.firstName} ${existing.lastName || ''}`.trim();
@@ -935,10 +1040,20 @@ export class LeadController {
           email: nullableLeadValue(record.email || record.Email || record.EMAIL),
           company: nullableLeadValue(record.company || record.Company || record.COMPANY),
           state: nullableLeadValue(record.state || record.State || record.STATE),
-          // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
+          // Preserve the original source value from CSV imports.
           source: requiredLeadValue(record.source || record.Source, listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(record.notes || record.Notes || record.NOTE || record.COMMENTS, 4000),
           customFields: importCustomFields({
+            industry: record.industry || record.Industry || record.INDUSTRY,
+            monthlyRevenue:
+              record.monthlyRevenue ||
+              record.monthly_revenue ||
+              record['Monthly Revenue'] ||
+              record.revenue ||
+              record.Revenue,
+            annualRevenue: record.annualRevenue || record.annual_revenue || record['Annual Revenue'],
+          }),
+          ...importLeadEnrichmentFields({
             industry: record.industry || record.Industry || record.INDUSTRY,
             monthlyRevenue:
               record.monthlyRevenue ||
@@ -961,7 +1076,15 @@ export class LeadController {
         const phones = uniqueLeadsToUpsert.map((lead) => lead.phone);
         const existingLeads = await prisma.lead.findMany({
           where: { phone: { in: phones } },
-          select: { id: true, phone: true, deletedAt: true, assignedRepId: true },
+          select: {
+            id: true,
+            phone: true,
+            deletedAt: true,
+            assignedRepId: true,
+            industry: true,
+            monthlyRevenue: true,
+            monthlyRevenueSource: true,
+          },
         });
         const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
 
@@ -972,11 +1095,12 @@ export class LeadController {
               existing?.deletedAt && !existing.assignedRepId && importAssignedRepId
                 ? { assignedRepId: importAssignedRepId }
                 : {};
+            const enrichmentPatch = buildImportEnrichmentUpdate(lead, existing);
 
             return prisma.lead.upsert({
               where: { phone: lead.phone },
               create: lead,
-              update: { deletedAt: null, ...restoreOwnerPatch },
+              update: { deletedAt: null, ...restoreOwnerPatch, ...enrichmentPatch },
             });
           }),
         );
@@ -1042,7 +1166,7 @@ export class LeadController {
   }
 
   /**
-   * POST /leads/preview — Parse first N rows of CSV for preview + column detection
+  * POST /leads/preview - Parse first N rows of CSV for preview + column detection
    * Returns detected columns, sample data rows, and auto-mapping suggestions.
    */
   static async previewCSV(req: AuthRequest, res: Response): Promise<void> {
@@ -1113,7 +1237,7 @@ export class LeadController {
   }
 
   /**
-   * POST /leads/import-mapped — Import CSV with explicit column mapping from frontend
+  * POST /leads/import-mapped - Import CSV with explicit column mapping from frontend
    */
   static async importMappedCSV(req: AuthRequest, res: Response): Promise<void> {
     if (!req.file) {
@@ -1183,10 +1307,15 @@ export class LeadController {
           email: nullableLeadValue(mapping.email ? record[mapping.email] : ''),
           company: nullableLeadValue(mapping.company ? record[mapping.company] : ''),
           state: nullableLeadValue(combinedState),
-          // Phase 1 fix: используем имя импорт-листа как Source (раньше все лиды получали "csv_import")
+          // Preserve the original source value from CSV imports.
           source: requiredLeadValue(mapping.source ? record[mapping.source] : '', listName?.trim() || 'csv_import'),
           notes: nullableLeadValue(mapping.notes ? record[mapping.notes] : '', 4000),
           customFields: importCustomFields({
+            industry: mapping.industry ? record[mapping.industry] : '',
+            monthlyRevenue: mapping.monthlyRevenue ? record[mapping.monthlyRevenue] : '',
+            annualRevenue: mapping.annualRevenue ? record[mapping.annualRevenue] : '',
+          }),
+          ...importLeadEnrichmentFields({
             industry: mapping.industry ? record[mapping.industry] : '',
             monthlyRevenue: mapping.monthlyRevenue ? record[mapping.monthlyRevenue] : '',
             annualRevenue: mapping.annualRevenue ? record[mapping.annualRevenue] : '',
@@ -1203,7 +1332,15 @@ export class LeadController {
         const phones = uniqueLeadsToUpsert.map((lead) => lead.phone);
         const existingLeads = await prisma.lead.findMany({
           where: { phone: { in: phones } },
-          select: { id: true, phone: true, deletedAt: true, assignedRepId: true },
+          select: {
+            id: true,
+            phone: true,
+            deletedAt: true,
+            assignedRepId: true,
+            industry: true,
+            monthlyRevenue: true,
+            monthlyRevenueSource: true,
+          },
         });
         const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
 
@@ -1214,11 +1351,12 @@ export class LeadController {
               existing?.deletedAt && !existing.assignedRepId && importAssignedRepId
                 ? { assignedRepId: importAssignedRepId }
                 : {};
+            const enrichmentPatch = buildImportEnrichmentUpdate(lead, existing);
 
             return prisma.lead.upsert({
               where: { phone: lead.phone },
               create: lead,
-              update: { deletedAt: null, ...restoreOwnerPatch },
+              update: { deletedAt: null, ...restoreOwnerPatch, ...enrichmentPatch },
             });
           }),
         );
@@ -1449,10 +1587,11 @@ export class LeadController {
   }
 
   /**
-   * GET /leads/export — Export leads as streaming CSV (cursor-based, OOM-safe)
+  * GET /leads/export - Export leads as streaming CSV (cursor-based, OOM-safe)
    */
   static async exportCSV(req: AuthRequest, res: Response): Promise<void> {
-    const { status, tags, assignedRepId, search, source, state, lastContactedBefore } = req.query;
+    const { status, tags, assignedRepId, search, source, state, revenueMin, lastContactedBefore } = req.query;
+    const revenueMinThreshold = parseRevenueMinFilter(revenueMin) || 0;
 
     const where = buildLeadListWhere(
       {
@@ -1467,8 +1606,9 @@ export class LeadController {
       req,
     );
 
-    const escapeCSV = (val: string) => {
-      if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    const escapeCSV = (value: unknown): string => {
+      const val = value === null || value === undefined ? '' : String(value);
+      if (/[",\n\r]/.test(val)) {
         return `"${val.replace(/"/g, '""')}"`;
       }
       return val;
@@ -1493,10 +1633,9 @@ export class LeadController {
       'Last Contact Rep',
       'Industry',
       'Monthly Revenue',
-      'Revenue Source',
+      'Revenue Origin',
       'Readable Source',
       'Source Detail',
-      'Raw Source',
       'Tags',
       'Assigned Rep',
       'Created At',
@@ -1558,6 +1697,9 @@ export class LeadController {
 
       for (const l of leads) {
         const enrichment = resolveLeadEnrichment(l);
+        if (revenueMinThreshold > 0 && (!enrichment.monthlyRevenue || enrichment.monthlyRevenue < revenueMinThreshold)) {
+          continue;
+        }
         const row = [
           l.firstName,
           l.lastName || '',
@@ -1573,7 +1715,6 @@ export class LeadController {
           enrichment.revenueSource || '',
           enrichment.readableSourcePrimary || '',
           enrichment.readableSourceSecondary || '',
-          l.source || '',
           l.tags.map((t) => t.tag.name).join('; '),
           l.assignedRep ? `${l.assignedRep.firstName} ${l.assignedRep.lastName}` : '',
           l.createdAt.toISOString(),

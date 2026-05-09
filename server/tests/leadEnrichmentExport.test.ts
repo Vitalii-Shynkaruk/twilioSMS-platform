@@ -76,7 +76,7 @@ describe('M2.2 Leads enrichment/export', () => {
     vi.restoreAllMocks();
   });
 
-  it('должен добавлять enrichment в список лидов', async () => {
+  it('returns lead enrichment fields in list responses', async () => {
     vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([createLeadFixture()] as never);
     vi.spyOn(prisma.lead, 'count').mockResolvedValue(1);
     const response = createResponse();
@@ -101,27 +101,80 @@ describe('M2.2 Leads enrichment/export', () => {
     );
   });
 
-  it('должен экспортировать enrichment columns и сохранять REP scope', async () => {
+  it('persists manual industry and monthly revenue on lead update', async () => {
+    const existingLead = createLeadFixture({
+      status: 'NEW',
+      industry: null,
+      monthlyRevenue: null,
+      monthlyRevenueSource: null,
+      deal: { id: 'deal-1', stage: 'NEW_LEAD' },
+    });
+    vi.spyOn(prisma.lead, 'findUnique').mockResolvedValue(existingLead as never);
+    const updateLead = vi.spyOn(prisma.lead, 'update').mockResolvedValue({
+      ...existingLead,
+      industry: 'Restaurants',
+      monthlyRevenue: 80000,
+      monthlyRevenueSource: 'manual',
+      deal: { id: 'deal-1', stage: 'NEW_LEAD' },
+    } as never);
+    const response = createResponse();
+
+    await LeadController.update(
+      {
+        params: { id: 'lead-1' },
+        body: { firstName: 'Ana', industry: 'Restaurants', monthlyRevenue: '$80k' },
+        user: {
+          id: 'rep-1',
+          email: 'rep@sclcapital.io',
+          role: 'REP',
+          firstName: 'Rep',
+          lastName: 'One',
+        },
+      } as AuthRequest,
+      response,
+    );
+
+    expect(updateLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'lead-1' },
+        data: expect.objectContaining({
+          industry: 'Restaurants',
+          monthlyRevenue: 80000,
+          monthlyRevenueSource: 'manual',
+        }),
+      }),
+    );
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lead: expect.objectContaining({ monthlyRevenueSource: 'manual' }),
+      }),
+    );
+  });
+
+  it('exports enrichment columns while preserving rep scope', async () => {
     const findMany = vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([createLeadFixture()] as never);
     const response = createResponse();
 
-    await LeadController.exportCSV(createRequest({ search: 'Ana', status: 'REPLIED', tags: 'tag-1' }), response);
+    await LeadController.exportCSV(
+      createRequest({ search: 'Ana', status: 'REPLIED', tags: 'tag-1', revenueMin: '80000' }),
+      response,
+    );
 
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           assignedRepId: 'rep-1',
-          status: { in: ['REPLIED'] },
           tags: { some: { tagId: { in: ['tag-1'] } } },
           AND: expect.arrayContaining([
             expect.objectContaining({ OR: expect.arrayContaining([{ company: { contains: 'Ana' } }]) }),
+            expect.objectContaining({ status: { in: ['REPLIED'] } }),
           ]),
         }),
       }),
     );
     expect(response.write).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('Last Contact,Last Contact Rep,Industry,Monthly Revenue,Revenue Source,Readable Source'),
+      expect.stringContaining('Last Contact,Last Contact Rep,Industry,Monthly Revenue,Revenue Origin,Readable Source'),
     );
     expect(response.write).toHaveBeenNthCalledWith(
       2,
@@ -130,7 +183,67 @@ describe('M2.2 Leads enrichment/export', () => {
     expect(response.end).toHaveBeenCalled();
   });
 
-  it('должен применять Last Contacted фильтр без перезаписи search OR', async () => {
+  it('applies revenueMin to list queries', async () => {
+    const findMany = vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([createLeadFixture()] as never);
+    const countSpy = vi.spyOn(prisma.lead, 'count');
+    const response = createResponse();
+
+    await LeadController.list(createRequest({ revenueMin: '100000' }, 'ADMIN'), response);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ deletedAt: null }),
+      }),
+    );
+    expect(countSpy).not.toHaveBeenCalled();
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leads: [],
+        pagination: expect.objectContaining({ total: 0 }),
+      }),
+    );
+  });
+
+  it('applies revenueMin using the same fallback revenue sources as the UI', async () => {
+    vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([
+      createLeadFixture({
+        customFields: null,
+        monthlyRevenue: null,
+        monthlyRevenueSource: null,
+        deal: {
+          id: 'deal-1',
+          stage: 'QUALIFIED',
+          stageLabel: 'Qualified',
+          dealAmount: 0,
+          isHot: false,
+          client: { monthlyRevenue: '$120k/mo' },
+        },
+        conversations: [
+          {
+            id: 'conv-1',
+            lastMessageAt: new Date('2026-05-02T12:00:00.000Z'),
+            extractedIndustry: 'Restaurants',
+            extractedRevenue: null,
+            aiSignals: { industry: 'Food service' },
+            assignedRep: { id: 'rep-1', firstName: 'Jordan', lastName: 'Baker', initials: 'JB' },
+            messages: [],
+          },
+        ],
+      }),
+    ] as never);
+    const response = createResponse();
+
+    await LeadController.list(createRequest({ revenueMin: '100000' }, 'ADMIN'), response);
+
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leads: [expect.objectContaining({ enrichment: expect.objectContaining({ monthlyRevenue: 120000, revenueSource: 'MANUAL' }) })],
+        pagination: expect.objectContaining({ total: 1 }),
+      }),
+    );
+  });
+
+  it('combines last-contact filter with search OR conditions', async () => {
     const findMany = vi.spyOn(prisma.lead, 'findMany').mockResolvedValue([createLeadFixture()] as never);
     vi.spyOn(prisma.lead, 'count').mockResolvedValue(1);
     const response = createResponse();
@@ -151,7 +264,7 @@ describe('M2.2 Leads enrichment/export', () => {
     );
   });
 
-  it('должен отдавать динамические Source и State options с REP scope', async () => {
+  it('returns state filter options without source options in rep scope', async () => {
     vi.spyOn(prisma.lead, 'findMany')
       .mockResolvedValueOnce([createLeadFixture()] as never)
       .mockResolvedValueOnce([{ state: 'CA' }] as never);
@@ -165,7 +278,7 @@ describe('M2.2 Leads enrichment/export', () => {
     );
     expect(response.json).toHaveBeenCalledWith(
       expect.objectContaining({
-        sources: [expect.objectContaining({ value: 'CJ 10.8 12K', label: 'CJ 10.8 12K', count: 1 })],
+        sources: [],
         states: [{ value: 'CA', label: 'CA' }],
       }),
     );

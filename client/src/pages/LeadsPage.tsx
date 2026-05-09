@@ -57,6 +57,14 @@ const LAST_CONTACTED_OPTIONS: LeadFilterOption[] = [
   { value: '90d', label: '90+ days' },
 ];
 
+const REVENUE_FILTER_OPTIONS: LeadFilterOption[] = [
+  { value: '', label: 'Any revenue' },
+  { value: '50000', label: '>=$50K/mo' },
+  { value: '80000', label: '>=$80K/mo' },
+  { value: '100000', label: '>=$100K/mo' },
+  { value: '200000', label: '>=$200K/mo' },
+];
+
 function sourceLooksOpaque(value: string): boolean {
   return (
     value === 'csv_import' ||
@@ -95,10 +103,7 @@ function formatMonthlyRevenue(value: unknown): string {
   return `$${value.toLocaleString()}/mo`;
 }
 
-function getLastContactParts(
-  lead: any,
-  currentUser: any,
-): {
+function getLastContactParts(lead: any, currentUser: any): {
   actor: string;
   relative: string;
   showAdminFlag: boolean;
@@ -130,8 +135,8 @@ export default function LeadsPage() {
   const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [listFilter, setListFilter] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('');
   const [stateFilter, setStateFilter] = useState('');
+  const [revenueMinFilter, setRevenueMinFilter] = useState('');
   const [lastContactedFilter, setLastContactedFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -175,8 +180,8 @@ export default function LeadsPage() {
       debouncedSearch,
       statusFilter,
       listFilter,
-      sourceFilter,
       stateFilter,
+      revenueMinFilter,
       lastContactedFilter,
       page,
     ],
@@ -187,8 +192,8 @@ export default function LeadsPage() {
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (listFilter) params.set('tags', listFilter);
-      if (sourceFilter) params.set('source', sourceFilter);
       if (stateFilter) params.set('state', stateFilter);
+      if (revenueMinFilter) params.set('revenueMin', revenueMinFilter);
       if (lastContactedFilter) params.set('lastContactedBefore', lastContactedFilter);
       const { data } = await api.get(`/leads?${params}`);
       return data;
@@ -295,7 +300,6 @@ export default function LeadsPage() {
       return data;
     },
   });
-  const sourceOptions = filterOptionsData?.sources || [];
   const stateOptions = filterOptionsData?.states || [];
   const exportMutation = useMutation({
     mutationFn: async () => {
@@ -303,8 +307,8 @@ export default function LeadsPage() {
       if (debouncedSearch) params.set('search', debouncedSearch);
       if (statusFilter) params.set('status', statusFilter);
       if (listFilter) params.set('tags', listFilter);
-      if (sourceFilter) params.set('source', sourceFilter);
       if (stateFilter) params.set('state', stateFilter);
+      if (revenueMinFilter) params.set('revenueMin', revenueMinFilter);
       if (lastContactedFilter) params.set('lastContactedBefore', lastContactedFilter);
       return api.get(`/leads/export?${params}`, { responseType: 'blob' });
     },
@@ -332,27 +336,6 @@ export default function LeadsPage() {
       </nav>
 
       <div className="campaigns-scope leads-prototype-scope p-4 sm:p-6 lg:p-6 space-y-4 sm:space-y-6">
-        <section className="leads-prototype-scope-note" aria-label="Prototype scope">
-          <p>Scope on this prototype — 4 fixes only</p>
-          <div>
-            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--blue">
-              <strong>Phase 1 · Bug fixes</strong> — Reps see only leads they uploaded; reps see only campaigns they
-              created.
-            </span>
-            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--gold">
-              <strong>Phase 2.1 · Source readable</strong> — Source column shows list name, not UUID.
-            </span>
-            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--green">
-              <strong>Phase 2.2–6 · Industry + Revenue + Last Contact + Export CSV</strong> — New columns wired from AI
-              classifier. Last Contact shows admin attribution. Filter-aware export.
-            </span>
-            <span className="leads-prototype-scope-note__item leads-prototype-scope-note__item--purple">
-              <strong>Phase 3 · AI Retarget</strong> — All-campaigns cohorts, predicted funded deals + historical
-              anchor. AI-built campaigns appear in All Campaigns list with lineage marker.
-            </span>
-          </div>
-        </section>
-
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
@@ -372,17 +355,6 @@ export default function LeadsPage() {
               <span>+</span>
               <span>Add Lead</span>
             </button>
-          </div>
-        </div>
-
-        <div className="leads-source-comparison" aria-label="Source readability example">
-          <div className="leads-source-comparison__item leads-source-comparison__item--before">
-            <span>BEFORE — Source column today</span>
-            <strong>ce83f1d9-6c5f-452f-9bc3-0e988ff8f223</strong>
-          </div>
-          <div className="leads-source-comparison__item leads-source-comparison__item--after">
-            <span>AFTER — Phase 2.1 fix</span>
-            <strong>CJ 10.8 12K — Verizon</strong>
           </div>
         </div>
 
@@ -432,23 +404,6 @@ export default function LeadsPage() {
             ))}
           </select>
           <select
-            className="input w-auto max-w-[220px] truncate"
-            value={sourceFilter}
-            onChange={(e) => {
-              setSourceFilter(e.target.value);
-              setPage(1);
-            }}
-            aria-label="Source filter"
-          >
-            <option value="">All Sources</option>
-            {sourceOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-                {option.count ? ` (${option.count})` : ''}
-              </option>
-            ))}
-          </select>
-          <select
             className="input w-auto max-w-[180px] truncate"
             value={stateFilter}
             onChange={(e) => {
@@ -460,6 +415,21 @@ export default function LeadsPage() {
             <option value="">All States</option>
             {stateOptions.map((option) => (
               <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input w-auto max-w-[180px] truncate"
+            value={revenueMinFilter}
+            onChange={(e) => {
+              setRevenueMinFilter(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Revenue filter"
+          >
+            {REVENUE_FILTER_OPTIONS.map((option) => (
+              <option key={option.value || 'any-revenue'} value={option.value}>
                 {option.label}
               </option>
             ))}
@@ -626,8 +596,8 @@ export default function LeadsPage() {
                 tagPickerRef={tagPickerRef}
                 searchFilter={debouncedSearch}
                 statusFilter={statusFilter}
-                sourceFilter={sourceFilter}
                 stateFilter={stateFilter}
+                revenueMinFilter={revenueMinFilter}
                 lastContactedFilter={lastContactedFilter}
               />
             ))}
@@ -1101,22 +1071,22 @@ function LeadListGroup({
   toggleSelect,
   searchFilter,
   statusFilter,
-  sourceFilter,
   stateFilter,
+  revenueMinFilter,
   lastContactedFilter,
   ...rowProps
 }: any) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['list-leads', tag.id, searchFilter, statusFilter, sourceFilter, stateFilter, lastContactedFilter],
+    queryKey: ['list-leads', tag.id, searchFilter, statusFilter, stateFilter, revenueMinFilter, lastContactedFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('tags', tag.id);
       params.set('limit', '500');
       if (searchFilter) params.set('search', searchFilter);
       if (statusFilter) params.set('status', statusFilter);
-      if (sourceFilter) params.set('source', sourceFilter);
       if (stateFilter) params.set('state', stateFilter);
+      if (revenueMinFilter) params.set('revenueMin', revenueMinFilter);
       if (lastContactedFilter) params.set('lastContactedBefore', lastContactedFilter);
       const { data } = await api.get(`/leads?${params}`);
       return data;
@@ -1778,12 +1748,23 @@ function EditLeadModal({ lead, onClose }: { lead: any; onClose: () => void }) {
     company: lead.company || '',
     state: lead.state || '',
     source: lead.source || '',
+    industry: lead.industry || lead.enrichment?.industry || '',
+    monthlyRevenue:
+      lead.monthlyRevenueSource === 'manual' && lead.enrichment?.monthlyRevenue
+        ? String(Math.round(lead.enrichment.monthlyRevenue))
+        : '',
     notes: lead.notes || '',
   });
   const queryClient = useQueryClient();
 
   const updateMutation = useMutation({
-    mutationFn: (data: typeof form) => api.put(`/leads/${lead.id}`, data),
+    mutationFn: (data: typeof form) => {
+      const payload: Record<string, string> = { ...data };
+      if (!data.monthlyRevenue.trim() && lead.monthlyRevenueSource !== 'manual') {
+        delete payload.monthlyRevenue;
+      }
+      return api.put(`/leads/${lead.id}`, payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leads'] });
       queryClient.invalidateQueries({ queryKey: ['lead-detail', lead.id] });
@@ -1867,6 +1848,31 @@ function EditLeadModal({ lead, onClose }: { lead: any; onClose: () => void }) {
               value={form.source}
               onChange={(e) => setForm({ ...form, source: e.target.value })}
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Industry</label>
+              <input
+                className="input"
+                value={form.industry}
+                onChange={(e) => setForm({ ...form, industry: e.target.value })}
+                placeholder="Restaurant, Auto, Retail..."
+              />
+            </div>
+            <div>
+              <label className="label">Monthly Revenue</label>
+              <input
+                className="input"
+                value={form.monthlyRevenue}
+                onChange={(e) => setForm({ ...form, monthlyRevenue: e.target.value })}
+                placeholder={
+                  lead.enrichment?.monthlyRevenue
+                    ? `Current: ${formatMonthlyRevenue(lead.enrichment.monthlyRevenue)}`
+                    : 'e.g. 80000 or $80k'
+                }
+              />
+              <p className="text-xs text-dark-500 mt-1">Saving a value marks revenue as MANUAL.</p>
+            </div>
           </div>
           <div>
             <label className="label">Notes</label>

@@ -110,7 +110,8 @@ const AI_COHORT_SPECS: Record<AiCohortId, AiCohortSpec> = {
     id: AI_COHORT_IDS.MULTI_RETARGET,
     title: 'Cross-campaign no-reply retarget - top industry first',
     categoryLabel: 'Multi-Campaign Retarget',
-    description: 'Find leads delivered across 2+ scoped campaigns with no reply, then rank industries by revenue before build.',
+    description:
+      'Find leads delivered across 2+ scoped campaigns with no reply, then rank industries by revenue before build.',
     priorityLabel: 'HIGH PRIORITY',
     cohortType: 'multi-retarget',
     adminOnly: false,
@@ -126,7 +127,8 @@ const AI_COHORT_SPECS: Record<AiCohortId, AiCohortSpec> = {
     id: AI_COHORT_IDS.NEW_RESTAURANTS,
     title: 'High-revenue silent leads - top funded industries',
     categoryLabel: 'New Cohort',
-    description: 'Target $80K+ delivered, no-reply leads in the industries that converted most in the last 90 days of funded history.',
+    description:
+      'Target $80K+ delivered, no-reply leads in the industries that converted most in the last 90 days of funded history.',
     priorityLabel: 'OPPORTUNITY',
     cohortType: 'new-cohort',
     adminOnly: false,
@@ -355,7 +357,11 @@ export class CampaignController {
     const clientEmails = Array.from(
       new Set(
         fundedDeals
-          .map((deal) => String(deal.client?.email || '').trim().toLowerCase())
+          .map((deal) =>
+            String(deal.client?.email || '')
+              .trim()
+              .toLowerCase(),
+          )
           .filter((email) => email.length > 0),
       ),
     );
@@ -445,7 +451,9 @@ export class CampaignController {
   }
 
   private static getLeadIndustry(lead: Pick<AiCohortLeadRow, 'industry' | 'conversations'>): string | null {
-    return CampaignController.normalizeIndustryLabel(lead.industry || lead.conversations?.[0]?.extractedIndustry || null);
+    return CampaignController.normalizeIndustryLabel(
+      lead.industry || lead.conversations?.[0]?.extractedIndustry || null,
+    );
   }
 
   private static getLeadRevenue(lead: Pick<AiCohortLeadRow, 'monthlyRevenue' | 'conversations'>): number {
@@ -562,9 +570,11 @@ export class CampaignController {
     );
 
     const orderedLeadRows = [...leadRows].sort((left, right) => {
-      const leftGroup = groupOrder.get(CampaignController.industryGroupKey(CampaignController.getLeadIndustry(left) || 'Unknown')) ??
+      const leftGroup =
+        groupOrder.get(CampaignController.industryGroupKey(CampaignController.getLeadIndustry(left) || 'Unknown')) ??
         Number.POSITIVE_INFINITY;
-      const rightGroup = groupOrder.get(CampaignController.industryGroupKey(CampaignController.getLeadIndustry(right) || 'Unknown')) ??
+      const rightGroup =
+        groupOrder.get(CampaignController.industryGroupKey(CampaignController.getLeadIndustry(right) || 'Unknown')) ??
         Number.POSITIVE_INFINITY;
       if (leftGroup !== rightGroup) return leftGroup - rightGroup;
 
@@ -626,7 +636,11 @@ export class CampaignController {
       new Set(
         fundedDeals
           .filter((deal) => !deal.lead)
-          .map((deal) => String(deal.client?.email || '').trim().toLowerCase())
+          .map((deal) =>
+            String(deal.client?.email || '')
+              .trim()
+              .toLowerCase(),
+          )
           .filter((email) => email.length > 0),
       ),
     );
@@ -669,7 +683,9 @@ export class CampaignController {
         fallbackLeadByPhone.set(variant, lead);
       });
 
-      const normalizedEmail = String(lead.email || '').trim().toLowerCase();
+      const normalizedEmail = String(lead.email || '')
+        .trim()
+        .toLowerCase();
       if (normalizedEmail) {
         fallbackLeadByEmail.set(normalizedEmail, lead);
       }
@@ -683,7 +699,11 @@ export class CampaignController {
         CampaignController.phoneLookupVariants(deal.client?.phone)
           .map((variant) => fallbackLeadByPhone.get(variant))
           .find((lead): lead is NonNullable<typeof lead> => Boolean(lead)) ||
-        fallbackLeadByEmail.get(String(deal.client?.email || '').trim().toLowerCase()) ||
+        fallbackLeadByEmail.get(
+          String(deal.client?.email || '')
+            .trim()
+            .toLowerCase(),
+        ) ||
         null;
       const industry = matchedLead ? CampaignController.getLeadIndustry(matchedLead) : null;
       const industryKey = CampaignController.industryGroupKey(industry);
@@ -692,7 +712,9 @@ export class CampaignController {
 
       const current = industryStats.get(industryKey) || { industry, fundedCount: 0, totalVolume: 0 };
       current.fundedCount += 1;
-      current.totalVolume += CampaignController.toFiniteNumber(deal.dealAmount) || (matchedLead ? CampaignController.getLeadRevenue(matchedLead) : 0);
+      current.totalVolume +=
+        CampaignController.toFiniteNumber(deal.dealAmount) ||
+        (matchedLead ? CampaignController.getLeadRevenue(matchedLead) : 0);
       industryStats.set(industryKey, current);
     });
 
@@ -862,7 +884,9 @@ export class CampaignController {
       where.isRetarget = false;
 
       const industrySignals = Array.isArray(metadata.industrySignals)
-        ? metadata.industrySignals.filter((industry): industry is string => typeof industry === 'string' && industry.trim().length > 0)
+        ? metadata.industrySignals.filter(
+            (industry): industry is string => typeof industry === 'string' && industry.trim().length > 0,
+          )
         : [];
 
       if (industrySignals.length > 0) {
@@ -889,7 +913,10 @@ export class CampaignController {
     return where;
   }
 
-  private static async countFundedOutcomes(campaignIds: string[], since?: Date): Promise<{ count: number; total: number }> {
+  private static async countFundedOutcomes(
+    campaignIds: string[],
+    since?: Date,
+  ): Promise<{ count: number; total: number }> {
     if (campaignIds.length === 0) return { count: 0, total: 0 };
 
     const aggregate = await prisma.fundingEvent.aggregate({
@@ -917,12 +944,15 @@ export class CampaignController {
     };
   }
 
-  private static formatHistoricalAnchor(spec: AiCohortSpec, input: {
-    leadCount: number;
-    replyCount: number;
-    fundedCount: number;
-    fundedTotal: number;
-  }): string {
+  private static formatHistoricalAnchor(
+    spec: AiCohortSpec,
+    input: {
+      leadCount: number;
+      replyCount: number;
+      fundedCount: number;
+      fundedTotal: number;
+    },
+  ): string {
     const fundedTotalK = Math.round(input.fundedTotal / 1000);
     const totalLabel = fundedTotalK > 0 ? `$${fundedTotalK.toLocaleString()}K total` : '$0 total';
     return `Last ${spec.historicalLabel}: ${input.leadCount.toLocaleString()} leads -> ${input.replyCount.toLocaleString()} replies -> ${input.fundedCount.toLocaleString()} funded · ${totalLabel}`;
@@ -992,7 +1022,9 @@ export class CampaignController {
       const scopedMetrics = await CampaignController.readCohortPerformanceMetrics(spec, req, metadata);
       if (req.user?.role !== 'REP' || scopedMetrics.deliveredCount >= 50) return scopedMetrics;
 
-      const allRepMetrics = await CampaignController.readCohortPerformanceMetrics(spec, req, metadata, { allReps: true });
+      const allRepMetrics = await CampaignController.readCohortPerformanceMetrics(spec, req, metadata, {
+        allReps: true,
+      });
       return allRepMetrics.deliveredCount > 0 ? allRepMetrics : scopedMetrics;
     } catch (error) {
       logger.warn('AI cohort performance metrics unavailable', {
@@ -1032,7 +1064,10 @@ export class CampaignController {
         select: { aiReasoning: true, resolvedLeadCount: true, queryJson: true },
       });
       if (!cached || cached.resolvedLeadCount !== resolvedLeadCount) return null;
-      if (CampaignController.stableJsonStringify(cached.queryJson || {}) !== CampaignController.stableJsonStringify(criteria)) {
+      if (
+        CampaignController.stableJsonStringify(cached.queryJson || {}) !==
+        CampaignController.stableJsonStringify(criteria)
+      ) {
         return null;
       }
       return cached.aiReasoning || null;
@@ -1123,7 +1158,11 @@ export class CampaignController {
       prisma.lead.count({ where: baseWhere }),
       prisma.lead.count({ where: cooldownWhere }),
       includeCooldown
-        ? prisma.lead.findMany({ where: cooldownOverrideWhere, select: { id: true }, take: CampaignController.AI_RETARGET_MAX_LEADS })
+        ? prisma.lead.findMany({
+            where: cooldownOverrideWhere,
+            select: { id: true },
+            take: CampaignController.AI_RETARGET_MAX_LEADS,
+          })
         : Promise.resolve([]),
       CampaignController.computeCohortPerformanceMetrics(spec, req, cohortWhere.metadata || {}),
     ]);
@@ -1159,8 +1198,7 @@ export class CampaignController {
       warnings.push(`Daily capacity nearly full: ${capacity.dailyRemaining} of ${capacity.dailyCap} remaining`);
     }
 
-    const needsIndustryRanking =
-      spec.id === AI_COHORT_IDS.MULTI_RETARGET || spec.id === AI_COHORT_IDS.NEW_RESTAURANTS;
+    const needsIndustryRanking = spec.id === AI_COHORT_IDS.MULTI_RETARGET || spec.id === AI_COHORT_IDS.NEW_RESTAURANTS;
     const candidateLeadRows =
       needsIndustryRanking && eligibleCount > 0
         ? await CampaignController.fetchAiCohortLeadRows(eligibleWhere)
@@ -2619,7 +2657,14 @@ export class CampaignController {
         status: { in: ['SENT', 'QUEUED', 'SENDING'] },
         twilioMessageSid: { not: null },
       },
-      select: { id: true, twilioMessageSid: true, status: true, phoneNumberId: true, conversationId: true },
+      select: {
+        id: true,
+        twilioMessageSid: true,
+        status: true,
+        phoneNumberId: true,
+        conversationId: true,
+        toNumber: true,
+      },
     });
 
     if (stuckMessages.length === 0) {
@@ -2669,6 +2714,13 @@ export class CampaignController {
               : {}),
           },
         });
+
+        if (finalStatus === 'FAILED' || finalStatus === 'UNDELIVERED' || finalStatus === 'BLOCKED') {
+          await ComplianceService.handleDeliveryFailure(msg.toNumber, twilioMsg.errorCode, {
+            errorMessage: twilioMsg.errorMessage || null,
+            source: 'twilio_status_sync',
+          });
+        }
 
         if (finalStatus === 'DELIVERED') delivered++;
         else if (['FAILED', 'UNDELIVERED', 'BLOCKED'].includes(finalStatus)) failed++;

@@ -11,6 +11,8 @@ const TEST_PHONE_2 = '+10005550002';
 const TEST_PHONE_3 = '+10005550003';
 const TEST_PHONE_4 = '+10005550004';
 const TEST_PHONE_5 = '+10005550005';
+const TEST_PHONE_6 = '+10005550006';
+const TEST_PHONE_7 = '+10005550007';
 const hasMysqlDatabaseUrl = (process.env.DATABASE_URL || '').startsWith('mysql://');
 const describeWithDb = hasMysqlDatabaseUrl ? describe : describe.skip;
 let quietHoursSpy: ReturnType<typeof vi.spyOn>;
@@ -271,6 +273,77 @@ describeWithDb('ComplianceService', () => {
 
       const result = await ComplianceService.canSendTo(TEST_PHONE_5);
       expect(result.allowed).toBe(true);
+    });
+  });
+
+  describe('handleDeliveryFailure', () => {
+    it('должен автоматически suppress invalid destination после 30005', async () => {
+      await prisma.lead.create({
+        data: {
+          firstName: 'InvalidDestination',
+          phone: TEST_PHONE_6,
+          source: 'test',
+        },
+      });
+
+      const result = await ComplianceService.handleDeliveryFailure(TEST_PHONE_6, '30005', {
+        errorMessage: 'Unknown destination',
+        source: 'test_status_callback',
+      });
+
+      const lead = await prisma.lead.findUnique({
+        where: { phone: TEST_PHONE_6 },
+        select: {
+          isSuppressed: true,
+          suppressReason: true,
+        },
+      });
+      const entry = await prisma.suppressionEntry.findUnique({
+        where: { phone: TEST_PHONE_6 },
+      });
+
+      expect(result).toBe(true);
+      expect(lead).toMatchObject({
+        isSuppressed: true,
+        suppressReason: 'INVALID_DESTINATION',
+      });
+      expect(entry).toMatchObject({
+        reason: 'INVALID_DESTINATION',
+        source: 'test_status_callback',
+      });
+    });
+
+    it('не должен suppress временный 30003', async () => {
+      await prisma.lead.create({
+        data: {
+          firstName: 'TransientFailure',
+          phone: TEST_PHONE_7,
+          source: 'test',
+        },
+      });
+
+      const result = await ComplianceService.handleDeliveryFailure(TEST_PHONE_7, '30003', {
+        errorMessage: 'Unreachable destination handset',
+        source: 'test_status_callback',
+      });
+
+      const lead = await prisma.lead.findUnique({
+        where: { phone: TEST_PHONE_7 },
+        select: {
+          isSuppressed: true,
+          suppressReason: true,
+        },
+      });
+      const entry = await prisma.suppressionEntry.findUnique({
+        where: { phone: TEST_PHONE_7 },
+      });
+
+      expect(result).toBe(false);
+      expect(lead).toMatchObject({
+        isSuppressed: false,
+        suppressReason: null,
+      });
+      expect(entry).toBeNull();
     });
   });
 });

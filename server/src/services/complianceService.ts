@@ -5,6 +5,7 @@ import { config } from '../config';
 import { AutoTagService } from './autoTagService';
 import { WebhookService } from './webhookService';
 import { buildQuietHoursReason, isWithinQuietHoursWindow } from './quietHoursWindow';
+import { normalizeTwilioErrorCode } from '../utils/twilioStatus';
 
 /**
  * ComplianceService - STOP/HELP handling, suppression, quiet hours
@@ -25,6 +26,8 @@ export class ComplianceService {
   static readonly OPT_IN_KEYWORDS = ['START', 'UNSTOP', 'SUBSCRIBE'];
   private static readonly PREFIX_OPT_OUT_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'QUIT']);
   private static readonly CACHE_TTL = 300; // 5 minutes
+  private static readonly AUTO_SUPPRESS_TWILIO_ERROR_CODES = new Set(['21614', '21617', '30005', '30006']);
+  private static readonly AUTO_SUPPRESS_REASONS = new Set(['INVALID_DESTINATION', 'NON_MOBILE_DESTINATION']);
 
   private static normalizeKeywordBody(body: string): { normalized: string; compact: string; firstToken: string } {
     const normalized = body
@@ -190,6 +193,111 @@ export class ComplianceService {
       deletedSuppressionEntry: shouldDeleteSuppressionEntry,
     });
     await this.invalidateCache(phone);
+  }
+
+  static async handleDeliveryFailure(
+    phone: string,
+    errorCode: unknown,
+    options?: { errorMessage?: string | null; source?: string },
+  ): Promise<boolean> {
+    if (!phone) {
+      return false;
+    }
+
+    const normalizedCode = normalizeTwilioErrorCode(errorCode);
+    if (!normalizedCode || !this.AUTO_SUPPRESS_TWILIO_ERROR_CODES.has(normalizedCode)) {
+      return false;
+    }
+
+    const suppressionReason =
+      normalizedCode === '21617' || normalizedCode === '30006' ? 'NON_MOBILE_DESTINATION' : 'INVALID_DESTINATION';
+    const suppressionSource = options?.source || 'twilio_delivery';
+
+    const [leads, suppressionEntry] = await Promise.all([
+      prisma.lead.findMany({
+        where: { phone },
+        select: {
+          id: true,
+          optedOut: true,
+          isSuppressed: true,
+          suppressReason: true,
+        },
+      }),
+      prisma.suppressionEntry.findUnique({
+        where: { phone },
+        select: {
+          reason: true,
+          source: true,
+        },
+      }),
+    ]);
+
+    if (suppressionEntry && !this.AUTO_SUPPRESS_REASONS.has(suppressionEntry.reason)) {
+      return false;
+    }
+
+    const leadIdsToUpdate = leads
+      .filter(
+        (lead) => !lead.optedOut && (!lead.isSuppressed || this.AUTO_SUPPRESS_REASONS.has(lead.suppressReason || '')),
+      )
+      .map((lead) => lead.id);
+
+    const operations = [];
+
+    if (leadIdsToUpdate.length > 0) {
+      operations.push(
+        prisma.lead.updateMany({
+          where: {
+            id: { in: leadIdsToUpdate },
+          },
+          data: {
+            isSuppressed: true,
+            suppressedAt: new Date(),
+            suppressReason: suppressionReason,
+          },
+        }),
+      );
+    }
+
+    if (!suppressionEntry) {
+      operations.push(
+        prisma.suppressionEntry.create({
+          data: {
+            phone,
+            reason: suppressionReason,
+            source: suppressionSource,
+          },
+        }),
+      );
+    } else if (suppressionEntry.reason !== suppressionReason || suppressionEntry.source !== suppressionSource) {
+      operations.push(
+        prisma.suppressionEntry.update({
+          where: { phone },
+          data: {
+            reason: suppressionReason,
+            source: suppressionSource,
+          },
+        }),
+      );
+    }
+
+    if (operations.length === 0) {
+      return false;
+    }
+
+    await prisma.$transaction(operations);
+
+    logger.warn('Auto-suppressed phone after Twilio delivery failure', {
+      phone,
+      errorCode: normalizedCode,
+      errorMessage: options?.errorMessage || null,
+      suppressionReason,
+      leadCount: leadIdsToUpdate.length,
+      source: suppressionSource,
+    });
+    await this.invalidateCache(phone);
+
+    return true;
   }
 
   /**

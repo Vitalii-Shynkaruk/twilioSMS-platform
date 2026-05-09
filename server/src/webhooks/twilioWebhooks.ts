@@ -933,6 +933,13 @@ const statusWorker = new Worker(
       },
     });
 
+    if (finalStatus === 'FAILED' || finalStatus === 'UNDELIVERED' || finalStatus === 'BLOCKED') {
+      await ComplianceService.handleDeliveryFailure(message.toNumber, errorCode, {
+        errorMessage,
+        source: 'twilio_status_callback',
+      });
+    }
+
     // Update campaign stats if applicable
     if (message.campaignId) {
       const updateField =

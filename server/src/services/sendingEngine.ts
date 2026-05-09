@@ -818,6 +818,11 @@ export class SendingEngine {
         }
       }
 
+      await ComplianceService.handleDeliveryFailure(toNumber, error.code, {
+        errorMessage: error.message,
+        source: 'twilio_send_error',
+      });
+
       await NumberService.recordSend(phoneNumberId, false, isBlocked);
 
       logger.error(`Message failed: ${messageId}`, {

@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { app } from '../src/app';
 import prisma from '../src/config/database';
+import { config } from '../src/config';
 import bcrypt from 'bcryptjs';
 
 const TEST_ADMIN = {
@@ -44,7 +45,7 @@ describe('Auth API', () => {
       where: { email: { in: ownEmails } },
       select: { id: true },
     });
-    const userIds = testUsers.map(u => u.id);
+    const userIds = testUsers.map((u) => u.id);
     if (userIds.length > 0) {
       await prisma.campaign.deleteMany({ where: { createdById: { in: userIds } } });
     }
@@ -81,27 +82,78 @@ describe('Auth API', () => {
     }, 15000);
 
     it('should reject non-existent email', async () => {
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ email: 'nonexistent@test.com', password: 'any' });
+      const res = await request(app).post('/api/auth/login').send({ email: 'nonexistent@test.com', password: 'any' });
 
       expect(res.status).toBe(401);
     });
 
     it('should reject missing email or password', async () => {
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ email: TEST_ADMIN.email });
+      const res = await request(app).post('/api/auth/login').send({ email: TEST_ADMIN.email });
 
       expect(res.status).toBe(400);
     });
   });
 
+  describe('POST /api/auth/tester-login', () => {
+    it('should login successfully with valid credentials and tester code', async () => {
+      const originalEnabled = config.testerLogin.enabled;
+      const originalCode = config.testerLogin.code;
+      config.testerLogin.enabled = true;
+      config.testerLogin.code = '778241';
+
+      const res = await request(app)
+        .post('/api/auth/tester-login')
+        .send({ email: TEST_ADMIN.email, password: TEST_ADMIN.password, testerCode: '778241' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body.user).toMatchObject({
+        email: TEST_ADMIN.email,
+        role: 'ADMIN',
+      });
+
+      config.testerLogin.enabled = originalEnabled;
+      config.testerLogin.code = originalCode;
+    });
+
+    it('should reject wrong tester code', async () => {
+      const originalEnabled = config.testerLogin.enabled;
+      const originalCode = config.testerLogin.code;
+      config.testerLogin.enabled = true;
+      config.testerLogin.code = '778241';
+
+      const res = await request(app)
+        .post('/api/auth/tester-login')
+        .send({ email: TEST_ADMIN.email, password: TEST_ADMIN.password, testerCode: '111111' });
+
+      expect(res.status).toBe(401);
+      expect(res.body).toHaveProperty('error');
+
+      config.testerLogin.enabled = originalEnabled;
+      config.testerLogin.code = originalCode;
+    });
+
+    it('should reject tester login when feature is disabled', async () => {
+      const originalEnabled = config.testerLogin.enabled;
+      const originalCode = config.testerLogin.code;
+      config.testerLogin.enabled = false;
+      config.testerLogin.code = '';
+
+      const res = await request(app)
+        .post('/api/auth/tester-login')
+        .send({ email: TEST_ADMIN.email, password: TEST_ADMIN.password, testerCode: '778241' });
+
+      expect(res.status).toBe(404);
+      expect(res.body).toHaveProperty('error');
+
+      config.testerLogin.enabled = originalEnabled;
+      config.testerLogin.code = originalCode;
+    });
+  });
+
   describe('GET /api/auth/me', () => {
     it('should return current user by token', async () => {
-      const res = await request(app)
-        .get('/api/auth/me')
-        .set('Authorization', `Bearer ${adminToken}`);
+      const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.user).toMatchObject({
@@ -117,9 +169,7 @@ describe('Auth API', () => {
     });
 
     it('should reject invalid token', async () => {
-      const res = await request(app)
-        .get('/api/auth/me')
-        .set('Authorization', 'Bearer invalid-token-here');
+      const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer invalid-token-here');
 
       expect(res.status).toBe(401);
     });
@@ -127,16 +177,13 @@ describe('Auth API', () => {
 
   describe('POST /api/auth/register', () => {
     it('should allow admin to create a new user', async () => {
-      const res = await request(app)
-        .post('/api/auth/register')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({
-          email: 'test-rep@test.com',
-          password: 'RepPass123!',
-          firstName: 'Test',
-          lastName: 'Rep',
-          role: 'REP',
-        });
+      const res = await request(app).post('/api/auth/register').set('Authorization', `Bearer ${adminToken}`).send({
+        email: 'test-rep@test.com',
+        password: 'RepPass123!',
+        firstName: 'Test',
+        lastName: 'Rep',
+        role: 'REP',
+      });
 
       expect(res.status).toBe(201);
       expect(res.body.user).toMatchObject({
@@ -146,28 +193,23 @@ describe('Auth API', () => {
     });
 
     it('should reject duplicate email', async () => {
-      const res = await request(app)
-        .post('/api/auth/register')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({
-          email: 'test-rep@test.com',
-          password: 'Pass123!',
-          firstName: 'Another',
-          lastName: 'Rep',
-        });
+      const res = await request(app).post('/api/auth/register').set('Authorization', `Bearer ${adminToken}`).send({
+        email: 'test-rep@test.com',
+        password: 'Pass123!',
+        firstName: 'Another',
+        lastName: 'Rep',
+      });
 
       expect(res.status).toBe(409);
     });
 
     it('should reject without authorization', async () => {
-      const res = await request(app)
-        .post('/api/auth/register')
-        .send({
-          email: 'test-new@test.com',
-          password: 'Pass123!',
-          firstName: 'New',
-          lastName: 'User',
-        });
+      const res = await request(app).post('/api/auth/register').send({
+        email: 'test-new@test.com',
+        password: 'Pass123!',
+        firstName: 'New',
+        lastName: 'User',
+      });
 
       expect(res.status).toBe(401);
     });
@@ -175,9 +217,7 @@ describe('Auth API', () => {
 
   describe('GET /api/auth/users', () => {
     it('should allow admin to list users', async () => {
-      const res = await request(app)
-        .get('/api/auth/users')
-        .set('Authorization', `Bearer ${adminToken}`);
+      const res = await request(app).get('/api/auth/users').set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.users).toBeInstanceOf(Array);

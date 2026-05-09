@@ -10,6 +10,7 @@ const TEST_PHONE = '+10005550001';
 const TEST_PHONE_2 = '+10005550002';
 const TEST_PHONE_3 = '+10005550003';
 const TEST_PHONE_4 = '+10005550004';
+const TEST_PHONE_5 = '+10005550005';
 const hasMysqlDatabaseUrl = (process.env.DATABASE_URL || '').startsWith('mysql://');
 const describeWithDb = hasMysqlDatabaseUrl ? describe : describe.skip;
 let quietHoursSpy: ReturnType<typeof vi.spyOn>;
@@ -219,6 +220,56 @@ describeWithDb('ComplianceService', () => {
       expect(suppressionEntry).toBeNull();
 
       const result = await ComplianceService.canSendTo(TEST_PHONE_3);
+      expect(result.allowed).toBe(true);
+    });
+
+    it('должен снимать stale NOT_INTERESTED suppression при повторном интересе', async () => {
+      const lead = await prisma.lead.create({
+        data: {
+          firstName: 'Reengaged',
+          phone: TEST_PHONE_5,
+          source: 'test',
+          status: 'INTERESTED',
+          optedOut: false,
+          isSuppressed: true,
+          suppressedAt: new Date(),
+          suppressReason: 'NOT_INTERESTED',
+        },
+      });
+
+      await prisma.suppressionEntry.create({
+        data: {
+          phone: TEST_PHONE_5,
+          reason: 'NOT_INTERESTED',
+          source: 'inbox_manual',
+        },
+      });
+
+      await ComplianceService.clearNotInterestedSuppression(TEST_PHONE_5);
+
+      const updatedLead = await prisma.lead.findUnique({
+        where: { id: lead.id },
+        select: {
+          status: true,
+          optedOut: true,
+          isSuppressed: true,
+          suppressReason: true,
+        },
+      });
+
+      const suppressionEntry = await prisma.suppressionEntry.findUnique({
+        where: { phone: TEST_PHONE_5 },
+      });
+
+      expect(updatedLead).toMatchObject({
+        status: 'INTERESTED',
+        optedOut: false,
+        isSuppressed: false,
+        suppressReason: null,
+      });
+      expect(suppressionEntry).toBeNull();
+
+      const result = await ComplianceService.canSendTo(TEST_PHONE_5);
       expect(result.allowed).toBe(true);
     });
   });

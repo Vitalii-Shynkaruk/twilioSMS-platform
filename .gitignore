@@ -39,11 +39,12 @@ Thumbs.db
 postgres_data/
 redis_data/
 
-# PDF и скриншоты (не код)
+# Documents and screenshots that are not source code
 *.pdf
 *.jpg
 *.jpeg
 *.png
+!client/public/scl-login/SCL-Login-BG.png
 *.zip
 *.rar
 ._*

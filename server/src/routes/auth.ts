@@ -9,6 +9,7 @@ import {
   loginSchema,
   registerSchema,
   requestOtpSchema,
+  testerLoginSchema,
   updateUserSchema,
   verifyOtpSchema,
 } from '../validation/schemas';
@@ -27,6 +28,7 @@ const loginLimiter = rateLimit({
 
 // Public
 router.post('/login', loginLimiter, validate(loginSchema), asyncHandler(AuthController.login));
+router.post('/tester-login', loginLimiter, validate(testerLoginSchema), asyncHandler(AuthController.testerLogin));
 router.post('/request-otp', loginLimiter, validate(requestOtpSchema), asyncHandler(AuthController.requestOtp));
 router.post('/verify-otp', loginLimiter, validate(verifyOtpSchema), asyncHandler(AuthController.verifyOtp));
 router.post('/dev-login', loginLimiter, validate(devModeLoginSchema), asyncHandler(AuthController.devModeLogin));

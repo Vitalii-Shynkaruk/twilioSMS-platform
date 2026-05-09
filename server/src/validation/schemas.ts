@@ -28,6 +28,15 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const testerLoginSchema = z.object({
+  email: z
+    .string()
+    .email()
+    .transform((s) => s.toLowerCase().trim()),
+  password: z.string().min(1),
+  testerCode: z.string().trim().min(1).max(256),
+});
+
 export const requestOtpSchema = z.object({
   email: z
     .string()

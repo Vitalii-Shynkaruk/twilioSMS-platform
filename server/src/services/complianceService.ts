@@ -130,6 +130,69 @@ export class ComplianceService {
   }
 
   /**
+   * Clear business-level NOT_INTERESTED suppression without touching legal STOP/DNC state.
+   */
+  static async clearNotInterestedSuppression(phone: string): Promise<void> {
+    const [leads, suppressionEntry] = await Promise.all([
+      prisma.lead.findMany({
+        where: { phone },
+        select: {
+          id: true,
+          isSuppressed: true,
+          suppressReason: true,
+          optedOut: true,
+        },
+      }),
+      prisma.suppressionEntry.findUnique({
+        where: { phone },
+        select: { reason: true },
+      }),
+    ]);
+
+    const leadIdsToClear = leads
+      .filter(
+        (lead) =>
+          lead.suppressReason === 'NOT_INTERESTED' ||
+          (!lead.suppressReason && lead.isSuppressed && suppressionEntry?.reason === 'NOT_INTERESTED'),
+      )
+      .map((lead) => lead.id);
+    const shouldDeleteSuppressionEntry = suppressionEntry?.reason === 'NOT_INTERESTED';
+
+    if (leadIdsToClear.length === 0 && !shouldDeleteSuppressionEntry) {
+      return;
+    }
+
+    await prisma.$transaction([
+      ...leadIdsToClear.map((leadId) =>
+        prisma.lead.update({
+          where: { id: leadId },
+          data: {
+            optedOut: false,
+            optedOutAt: null,
+            isSuppressed: false,
+            suppressedAt: null,
+            suppressReason: null,
+          },
+        }),
+      ),
+      prisma.suppressionEntry.deleteMany({
+        where: {
+          phone,
+          reason: 'NOT_INTERESTED',
+          source: 'inbox_manual',
+        },
+      }),
+    ]);
+
+    logger.info('Cleared NOT_INTERESTED suppression state', {
+      phone,
+      leadCount: leadIdsToClear.length,
+      deletedSuppressionEntry: shouldDeleteSuppressionEntry,
+    });
+    await this.invalidateCache(phone);
+  }
+
+  /**
    * Process an inbound message for compliance keywords
    */
   static async processInboundKeywords(

@@ -536,6 +536,40 @@ describe('AI suggestion policy', () => {
     );
   });
 
+  it('должна чинить stale funding-link suggestion, если lead уже дал monthly revenue', () => {
+    const suggestions = resolveAiSuggestions({
+      suggestions: [
+        {
+          type: 'BEST',
+          text: 'Perfect, I have your email. I am sending the Funding Link there now. While you review it, what problem are you trying to solve in the business, and about how much capital would actually fix it?',
+          cta: '→ SEND',
+        },
+      ],
+      classification: 'HOT',
+      signals: {
+        staleState: 'active',
+        revenueMonthly: 80000,
+      },
+      messages: [
+        {
+          direction: 'OUTBOUND',
+          body: 'Thanks Michael! Just sent the 10/30yr terms to mccallducati@gmail.com. Quick question - what is your monthly revenue and what would you use the funds for?',
+        },
+        {
+          direction: 'INBOUND',
+          body: '70 to 80 k Mr month',
+        },
+      ],
+      knownEmail: 'mccallducati@gmail.com',
+      emailReceived: true,
+    });
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].text).toMatch(/\$80k\/mo|monthly revenue/i);
+    expect(suggestions[0].text).toMatch(/what would you use|how much capital/i);
+    expect(suggestions[0].text).not.toMatch(/funding link|i have your email|while you review/i);
+  });
+
   it('должна в amount-context просить email, если email ещё не известен, но не повторять вопрос про сумму', () => {
     const suggestions = resolveAiSuggestions({
       suggestions: [],

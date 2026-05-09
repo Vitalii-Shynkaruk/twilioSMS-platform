@@ -29,6 +29,11 @@ export const config = {
     secret: env.DEV_MODE_LOGIN_SECRET,
   },
 
+  testerLogin: {
+    enabled: env.TESTER_LOGIN_ENABLED === 'true',
+    code: env.TESTER_LOGIN_CODE,
+  },
+
   // Alias for backward compatibility
   get jwtSecret() {
     return this.jwt.secret;

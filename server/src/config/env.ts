@@ -24,6 +24,8 @@ const envSchema = z.object({
   // Dev-only обход OTP. Production блокируется в коде даже при случайном включении.
   DEV_MODE_LOGIN_ENABLED: z.string().default('false'),
   DEV_MODE_LOGIN_SECRET: z.string().default(''),
+  TESTER_LOGIN_ENABLED: z.string().default('false'),
+  TESTER_LOGIN_CODE: z.string().default(''),
 
   // Twilio — optional in dev
   TWILIO_ACCOUNT_SID: z.string().default(''),

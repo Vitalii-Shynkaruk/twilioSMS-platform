@@ -3,36 +3,35 @@
 ## Twilio SMS Platform for Secure Credit Lines (SCL Capital)
 
 **Live URL:** https://app.sclcapital.io  
-**Server:** DigitalOcean Ubuntu 24.04 (198.199.91.174)  
-**Branch:** `deploy/mysql-hosting`
+**Hosting:** DigitalOcean Ubuntu 24.04, Nginx, PM2  
+**Production branch:** `main`
 
 ### Quick Start (Local Development)
 
 ```bash
-# 1. Start MySQL & Redis
+# 1. Start MySQL and Redis
 docker compose up -d
 
 # 2. Install dependencies
-cd server && npm install
-cd ../client && npm install
+npm install
+npm --prefix server install
+npm --prefix client install
 
 # 3. Setup database
-cd ../server
-npx prisma generate
-npx prisma db push
-npx prisma db seed
+npm --prefix server run prisma:generate
+npm --prefix server run prisma:migrate
+npm --prefix server run prisma:seed
 
 # 4. Start dev servers (in separate terminals)
-cd server && npm run dev    # → http://localhost:3001
-cd client && npm run dev    # → http://localhost:5173
+npm run dev:server    # http://localhost:3001
+npm run dev:client    # http://localhost:5173
 ```
 
 ### Login
 
 - **URL (production)**: https://app.sclcapital.io
 - **URL (local)**: http://localhost:5173
-- **Email**: admin@sclcapital.io
-- **Password**: admin123
+  Use the admin account configured in the server environment variables. Never commit production passwords to GitHub.
 
 ### Architecture
 
@@ -72,15 +71,19 @@ client/
 
 ```bash
 # SSH to server and pull latest
-ssh root@198.199.91.174
-cd /root/twilio-sms-platform
-git pull origin deploy/mysql-hosting
+ssh root@your-server-ip
+cd /opt/sms-platform
+git pull origin main
 
 # Build and restart
-cd client && npm run build && cd ..
-cd server && npm run build && cd ..
-pm2 restart all
+npm --prefix server run prisma:migrate:prod
+npm --prefix server run build
+npm --prefix client run build
+pm2 restart sms-api --update-env
+curl -f http://127.0.0.1:3001/api/health
 ```
+
+See [SERVER_INSTALLATION.md](SERVER_INSTALLATION.md) for full server setup, multi-instance deployment, and GitHub-as-source-of-truth workflow.
 
 ### Key Numbers
 

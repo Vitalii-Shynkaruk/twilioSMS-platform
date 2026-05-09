@@ -19,6 +19,7 @@ interface AuthState {
   isLoginLoading: boolean;
   initialized: boolean;
   login: (email: string, password: string) => Promise<void>;
+  testerLogin: (email: string, password: string, testerCode: string) => Promise<User>;
   requestOtp: (email: string, channel?: OtpChannel) => Promise<RequestOtpResponse>;
   verifyOtp: (email: string, code: string) => Promise<User>;
   devModeLogin: (email: string) => Promise<User>;
@@ -56,6 +57,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data } = await api.post('/auth/login', { email, password });
       persistSession(data, set);
+    } catch (err) {
+      set({ isLoginLoading: false });
+      throw err;
+    }
+  },
+
+  testerLogin: async (email: string, password: string, testerCode: string) => {
+    set({ isLoginLoading: true });
+    try {
+      const { data } = await api.post<{ token: string; refreshToken: string; user: User }>('/auth/tester-login', {
+        email,
+        password,
+        testerCode,
+      });
+      persistSession(data, set);
+      return data.user;
     } catch (err) {
       set({ isLoginLoading: false });
       throw err;

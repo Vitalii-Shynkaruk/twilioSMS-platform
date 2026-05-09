@@ -282,13 +282,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ksanyok/twilio-sms-platform.git"
+    "url": "git+https://github.com/Vitalii-Shynkaruk/twilioSMS-platform.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/ksanyok/twilio-sms-platform/issues"
+    "url": "https://github.com/Vitalii-Shynkaruk/twilioSMS-platform/issues"
   },
-  "homepage": "https://github.com/ksanyok/twilio-sms-platform#readme"
+  "homepage": "https://github.com/Vitalii-Shynkaruk/twilioSMS-platform#readme"
 }

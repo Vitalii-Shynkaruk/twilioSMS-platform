@@ -2105,6 +2105,10 @@ export class InboxController {
       }
     }
 
+    if (inboundCount > 0 && conversation.lead.phone) {
+      await ComplianceService.clearNotInterestedSuppression(conversation.lead.phone);
+    }
+
     const effectiveAssignedRepId =
       conversation.assignedRepId || conversation.lead.assignedRepId || (req.user?.role === 'REP' ? req.user.id : null);
 
@@ -2412,14 +2416,18 @@ export class InboxController {
         await ComplianceService.invalidateCache(lead.phone);
       }
     } else if (leadStatus === 'Interested') {
-      await prisma.lead.update({
+      const lead = await prisma.lead.update({
         where: { id: conversation.leadId },
         data: {
           status: 'INTERESTED',
           optedOut: false,
           optedOutAt: null,
         },
+        select: { phone: true },
       });
+      if (lead.phone) {
+        await ComplianceService.clearNotInterestedSuppression(lead.phone);
+      }
     } else if (leadStatus === 'Not Interested') {
       const lead = await prisma.lead.update({
         where: { id: conversation.leadId },

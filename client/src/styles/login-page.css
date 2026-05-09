@@ -191,6 +191,33 @@
   cursor: not-allowed;
 }
 
+.scl-login__tester-button {
+  position: absolute;
+  left: 4.5%;
+  bottom: 4.5%;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(138, 205, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(5, 16, 36, 0.88);
+  padding: 10px 14px;
+  color: #d8ebff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scl-login__tester-button:hover:not(:disabled) {
+  border-color: rgba(138, 205, 255, 0.54);
+  background: rgba(8, 24, 50, 0.94);
+}
+
+.scl-login__tester-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .scl-login__otp-card {
   position: absolute;
   left: 50%;
@@ -241,6 +268,26 @@
   gap: 18px;
 }
 
+.scl-login__tester-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.scl-login__tester-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scl-login__tester-field label {
+  color: rgba(199, 216, 241, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .scl-login__otp-row {
   display: flex;
   align-items: center;
@@ -289,6 +336,28 @@
 
 .scl-login__otp-input-wrap input::placeholder {
   color: rgba(125, 155, 201, 0.45);
+}
+
+.scl-login__tester-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 16px 0;
+  color: #eef4ff;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-family: Arial, sans-serif;
+  caret-color: #2aa8ff;
+}
+
+.scl-login__tester-input::placeholder {
+  color: rgba(125, 155, 201, 0.52);
+}
+
+.scl-login__tester-input--code {
+  letter-spacing: 0.12em;
 }
 
 .scl-login__otp-primary {
@@ -413,6 +482,11 @@
 
   .scl-login__dev-button {
     right: 16px;
+    bottom: 16px;
+  }
+
+  .scl-login__tester-button {
+    left: 16px;
     bottom: 16px;
   }
 }

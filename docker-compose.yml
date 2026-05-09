@@ -13,10 +13,10 @@ services:
       - .env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://scl:${POSTGRES_PASSWORD}@postgres:5432/scl_sms
+      DATABASE_URL: mysql://scl:${MYSQL_PASSWORD}@mysql:3306/scl_sms
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -39,18 +39,19 @@ services:
     networks:
       - internal
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: scl-postgres
+  mysql:
+    image: mysql:8.0
+    container_name: scl-mysql
     restart: unless-stopped
     environment:
-      POSTGRES_USER: scl
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: scl_sms
+      MYSQL_DATABASE: scl_sms
+      MYSQL_USER: scl
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U scl -d scl_sms']
+      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -u scl -p$${MYSQL_PASSWORD}']
       interval: 5s
       timeout: 5s
       retries: 5
@@ -73,7 +74,7 @@ services:
       - internal
 
 volumes:
-  postgres_data:
+  mysql_data:
   redis_data:
 
 networks:

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import prisma from '../src/config/database';
 import { InboxController } from '../src/controllers/inboxController';
+import { ComplianceService } from '../src/services/complianceService';
 import { SendingEngine } from '../src/services/sendingEngine';
 
 describe('InboxController.sendReply', () => {
@@ -26,6 +27,7 @@ describe('InboxController.sendReply', () => {
     vi.spyOn(prisma.conversation, 'update').mockResolvedValue({ id: 'conv-1' } as never);
     vi.spyOn(prisma.lead, 'update').mockResolvedValue({ id: 'lead-1' } as never);
     vi.spyOn(prisma.message, 'count').mockResolvedValue(1 as never);
+    vi.spyOn(ComplianceService, 'clearNotInterestedSuppression').mockResolvedValue();
 
     const queueSpy = vi.spyOn(SendingEngine, 'queueMessage').mockResolvedValue('msg-1');
     const triggerSpy = vi
@@ -86,6 +88,7 @@ describe('InboxController.sendReply', () => {
     vi.spyOn(prisma.conversation, 'update').mockResolvedValue({ id: 'conv-2' } as never);
     vi.spyOn(prisma.lead, 'update').mockResolvedValue({ id: 'lead-2' } as never);
     vi.spyOn(prisma.message, 'count').mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+    vi.spyOn(ComplianceService, 'clearNotInterestedSuppression').mockResolvedValue();
 
     const queueSpy = vi.spyOn(SendingEngine, 'queueMessage').mockResolvedValue('msg-2');
     const triggerSpy = vi
@@ -126,5 +129,65 @@ describe('InboxController.sendReply', () => {
     expect(toMock).toHaveBeenCalledWith('conversation:conv-2');
     expect(toMock).toHaveBeenCalledWith('inbox:rep-42');
     expect(res.json).toHaveBeenCalledWith({ messageId: 'msg-2', status: 'queued' });
+  });
+
+  it('должен очищать stale NOT_INTERESTED suppression перед reply в активном треде', async () => {
+    const conversation = {
+      id: 'conv-3',
+      assignedRepId: 'rep-3',
+      twilioNumberId: null,
+      stickyNumberId: null,
+      lead: {
+        id: 'lead-3',
+        phone: '+15550003333',
+        assignedRepId: 'rep-3',
+        status: 'INTERESTED',
+      },
+    };
+
+    vi.spyOn(prisma.conversation, 'findUnique').mockResolvedValue(conversation as never);
+    vi.spyOn(prisma.conversation, 'update').mockResolvedValue({ id: 'conv-3' } as never);
+    vi.spyOn(prisma.message, 'count').mockResolvedValue(1 as never);
+
+    const clearSpy = vi.spyOn(ComplianceService, 'clearNotInterestedSuppression').mockResolvedValue();
+    const queueSpy = vi.spyOn(SendingEngine, 'queueMessage').mockResolvedValue('msg-3');
+
+    const triggerSpy = vi
+      .spyOn(
+        InboxController as unknown as {
+          triggerOwnerActionReclassification: (
+            req: unknown,
+            conversationId: string,
+            reason: string,
+            repId: string | null,
+          ) => void;
+        },
+        'triggerOwnerActionReclassification',
+      )
+      .mockImplementation(() => {});
+
+    const emitMock = vi.fn();
+    const toMock = vi.fn().mockReturnValue({ emit: emitMock });
+    const req = {
+      params: { id: 'conv-3' },
+      body: { body: 'Following up on your message.' },
+      user: { id: 'admin-2', role: 'ADMIN' },
+      app: { get: vi.fn().mockReturnValue({ to: toMock }) },
+    };
+    const res = { json: vi.fn() };
+
+    await InboxController.sendReply(req as never, res as never);
+
+    expect(clearSpy).toHaveBeenCalledWith('+15550003333');
+    expect(queueSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toNumber: '+15550003333',
+        body: 'Following up on your message.',
+        leadId: 'lead-3',
+        sentByUserId: 'admin-2',
+      }),
+    );
+    expect(triggerSpy).toHaveBeenCalledWith(req, 'conv-3', 'reply_sent', 'rep-3');
+    expect(res.json).toHaveBeenCalledWith({ messageId: 'msg-3', status: 'queued' });
   });
 });

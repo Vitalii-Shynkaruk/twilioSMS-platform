@@ -9,6 +9,7 @@ import { AppError } from '../middleware/errorHandler';
 import logger, { authLogger } from '../config/logger';
 import { AuthDevModeLoginService } from '../services/authDevModeLoginService';
 import { AuthOtpService, OtpInvalidCodeError, OtpLockedError, OtpRateLimitError } from '../services/authOtpService';
+import { AuthTesterLoginService } from '../services/authTesterLoginService';
 
 export class AuthController {
   private static createSession(user: { id: string; email: string; firstName: string; lastName: string; role: string }) {
@@ -165,6 +166,18 @@ export class AuthController {
     const requestId = req.requestId || '-';
 
     const user = await AuthDevModeLoginService.login({ email, devKey, requestId, ip });
+    await invalidateUserCache(user.id);
+
+    res.json(AuthController.createSession(user));
+  }
+
+  static async testerLogin(req: AuthRequest, res: Response): Promise<void> {
+    const { email, password, testerCode } = req.body;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    const requestId = req.requestId || '-';
+
+    const user = await AuthTesterLoginService.login({ email, password, testerCode, requestId, ip, userAgent });
     await invalidateUserCache(user.id);
 
     res.json(AuthController.createSession(user));

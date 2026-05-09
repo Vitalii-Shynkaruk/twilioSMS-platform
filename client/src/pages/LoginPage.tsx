@@ -19,19 +19,23 @@ function getRedirectPath(role?: string) {
 
 const devModeLoginEnabled =
   String(import.meta.env.VITE_DEV_MODE_LOGIN_ENABLED || '').toLowerCase() === 'true' && !import.meta.env.PROD;
+const testerLoginEnabled = String(import.meta.env.VITE_TESTER_LOGIN_ENABLED || '').toLowerCase() === 'true';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [testerCode, setTesterCode] = useState('');
   const [step, setStep] = useState<LoginStep>('email');
   const [channel, setChannel] = useState<OtpChannel>('sms');
+  const [showTesterLogin, setShowTesterLogin] = useState(false);
   const [maskedDestination, setMaskedDestination] = useState('');
   const [expiresRemaining, setExpiresRemaining] = useState(0);
   const [resendRemaining, setResendRemaining] = useState(0);
   const [error, setError] = useState('');
-  const { requestOtp, verifyOtp, devModeLogin, isLoginLoading, isAuthenticated, user } = useAuthStore();
+  const { requestOtp, verifyOtp, devModeLogin, testerLogin, isLoginLoading, isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
-  const isEmailStep = step === 'email';
+  const isEmailStep = step === 'email' && !showTesterLogin;
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -127,6 +131,20 @@ export default function LoginPage() {
     }
   };
 
+  const handleTesterLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const normalizedEmail = email.trim().toLowerCase();
+    setEmail(normalizedEmail);
+
+    try {
+      const signedInUser = await testerLogin(normalizedEmail, password, testerCode.trim());
+      navigate(getRedirectPath(signedInUser.role), { replace: true });
+    } catch (err: any) {
+      setError(parseOtpError(err, 'Tester login is not available'));
+    }
+  };
+
   return (
     <main className="scl-login" aria-labelledby="scl-login-title">
       <h1 id="scl-login-title" className="scl-login__sr-only">
@@ -174,6 +192,21 @@ export default function LoginPage() {
                 </button>
               </form>
 
+              {testerLoginEnabled && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTesterLogin(true);
+                    setError('');
+                  }}
+                  disabled={isLoginLoading}
+                  className="scl-login__tester-button"
+                >
+                  <KeyRound aria-hidden="true" />
+                  Tester login
+                </button>
+              )}
+
               {devModeLoginEnabled && (
                 <button
                   type="button"
@@ -186,6 +219,106 @@ export default function LoginPage() {
                 </button>
               )}
             </>
+          ) : showTesterLogin ? (
+            <section className="scl-login__otp-card" aria-label="Tester login">
+              <div className="scl-login__otp-title">
+                <KeyRound aria-hidden="true" />
+                <h2>Tester access</h2>
+              </div>
+
+              <p className="scl-login__otp-copy">
+                Sign in with your email, password, and the shared tester access code.
+              </p>
+
+              <form onSubmit={handleTesterLogin} className="scl-login__tester-form">
+                <div className="scl-login__tester-field">
+                  <label htmlFor="tester-email">Email</label>
+                  <div className="scl-login__otp-input-wrap">
+                    <Mail aria-hidden="true" />
+                    <input
+                      id="tester-email"
+                      className="scl-login__tester-input"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="tester@example.com"
+                      required
+                      autoComplete="email"
+                      aria-invalid={!!error}
+                      aria-describedby={error ? 'login-error' : undefined}
+                    />
+                  </div>
+                </div>
+
+                <div className="scl-login__tester-field">
+                  <label htmlFor="tester-password">Password</label>
+                  <div className="scl-login__otp-input-wrap">
+                    <KeyRound aria-hidden="true" />
+                    <input
+                      id="tester-password"
+                      className="scl-login__tester-input"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      required
+                      autoComplete="current-password"
+                      aria-invalid={!!error}
+                      aria-describedby={error ? 'login-error' : undefined}
+                    />
+                  </div>
+                </div>
+
+                <div className="scl-login__tester-field">
+                  <label htmlFor="tester-code">Tester code</label>
+                  <div className="scl-login__otp-input-wrap">
+                    <KeyRound aria-hidden="true" />
+                    <input
+                      id="tester-code"
+                      className="scl-login__tester-input scl-login__tester-input--code"
+                      type="text"
+                      value={testerCode}
+                      onChange={(e) => setTesterCode(e.target.value)}
+                      placeholder="Enter tester code"
+                      required
+                      autoComplete="one-time-code"
+                      aria-invalid={!!error}
+                      aria-describedby={error ? 'login-error' : undefined}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoginLoading || !email.trim() || !password || !testerCode.trim()}
+                  className="scl-login__otp-primary"
+                >
+                  {isLoginLoading ? (
+                    <span className="scl-login__spinner" aria-label="Loading" />
+                  ) : (
+                    <>
+                      <span>Tester Sign In</span>
+                      <ArrowRight aria-hidden="true" />
+                    </>
+                  )}
+                </button>
+
+                <div className="scl-login__otp-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTesterLogin(false);
+                      setPassword('');
+                      setTesterCode('');
+                      setError('');
+                    }}
+                    className="scl-login__otp-link scl-login__otp-link--subtle"
+                  >
+                    Back to code login
+                  </button>
+                </div>
+              </form>
+            </section>
           ) : (
             <section className="scl-login__otp-card" aria-label="Verify sign-in code">
               <div className="scl-login__otp-title">

@@ -932,6 +932,23 @@ function extractAmountDisclosureFromContext(latestInboundText: string, previousO
   return null;
 }
 
+function extractRevenueDisclosureFromContext(latestInboundText: string, previousOutboundText: string): number | null {
+  const amount = extractDisclosedMoneyAmount(latestInboundText);
+  if (!amount) return null;
+
+  const inboundLower = String(latestInboundText || '').toLowerCase();
+  const previousOutboundLower = String(previousOutboundText || '').toLowerCase();
+  const outboundAsksRevenue =
+    /monthly\s+gross\s+revenue|monthly\s+revenue|gross\s+revenue|revenue\s+per\s+month|annual\s+revenue|yearly\s+revenue|what(?:'s| is)\s+your\s+monthly|what(?:'s| is)\s+the\s+monthly|doing\s+monthly|doing\s+per\s+month/.test(
+      previousOutboundLower,
+    );
+  const inboundRevenueCue = /\b(monthly|revenue|gross|sales|annual|yearly|per\s*month|per\s*year|month|mo)\b/.test(
+    inboundLower,
+  );
+
+  return outboundAsksRevenue || inboundRevenueCue ? amount : null;
+}
+
 function hasPaymentTermsContext(latestInboundLower: string): boolean {
   if (hasSendTermsIntent(latestInboundLower)) {
     return false;
@@ -1192,6 +1209,28 @@ function suggestionLooksStaleForAmountDisclosure(text: string): boolean {
   return true;
 }
 
+function suggestionLooksStaleForRevenueDisclosure(text: string): boolean {
+  const lower = String(text || '')
+    .trim()
+    .toLowerCase();
+  if (!lower) return false;
+
+  if (
+    /i have your email|i am sending|sending the funding link|funding link (?:there|now)|while you review|send the funding link/.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+  if (/what(?:'s| is)\s+your\s+monthly|monthly\s+revenue|gross\s+revenue|revenue\s+per\s+month/.test(lower)) {
+    return true;
+  }
+
+  return !/use of funds|what would you use|how much capital|amount|working capital|equipment|inventory|pay(?:ing)? down debt|debt payoff/.test(
+    lower,
+  );
+}
+
 function hasSubstantiveCurrentTopicContext(
   latestInboundLower: string,
   previousOutboundLower: string,
@@ -1201,6 +1240,7 @@ function hasSubstantiveCurrentTopicContext(
 
   return (
     extractAmountDisclosureFromContext(latestInboundLower, previousOutboundLower) != null ||
+    extractRevenueDisclosureFromContext(latestInboundLower, previousOutboundLower) != null ||
     hasPaymentTermsContext(latestInboundLower) ||
     hasPayoffPenaltyContext(latestInboundLower) ||
     hasPhoneCallLogisticsContext(latestInboundLower, previousOutboundLower, recentLower) ||
@@ -1223,6 +1263,7 @@ function buildDeterministicFallbackSuggestionText(input: {
   knownEmail?: string | null;
   emailReceived?: boolean;
   productContext?: string | null;
+  revenueMonthly?: number | null;
 }): string {
   const classification = String(input.classification || '').toUpperCase();
   const latestInboundText = String(input.latestInboundText || '').trim();
@@ -1248,6 +1289,10 @@ function buildDeterministicFallbackSuggestionText(input: {
     latestInboundText,
     String(input.previousOutboundText || ''),
   );
+  const disclosedRevenue =
+    typeof input.revenueMonthly === 'number' && Number.isFinite(input.revenueMonthly)
+      ? input.revenueMonthly
+      : extractRevenueDisclosureFromContext(latestInboundText, String(input.previousOutboundText || ''));
   const senderIntroName = extractSenderIntroName(String(input.previousOutboundText || ''));
   const hasCallContext = /\b(call|callback|call back|quick call|phone)\b/.test(
     `${recentInboundLower} ${previousOutboundLower}`,
@@ -1356,6 +1401,11 @@ function buildDeterministicFallbackSuggestionText(input: {
       return `Perfect, ${amountLabel} noted. I can send options to your email now. Is this mainly for working capital, equipment, or paying down debt?`;
     }
     return `Perfect, ${amountLabel} noted. What is the best email to send options to, and is this mainly for working capital, equipment, or paying down debt?`;
+  }
+
+  if (disclosedRevenue != null) {
+    const revenueLabel = `${formatCompactMoneyLabel(disclosedRevenue)}/mo`;
+    return `Perfect, around ${revenueLabel} in monthly revenue noted. What would you use the funds for, and about how much capital are you looking for?`;
   }
 
   if (
@@ -1548,6 +1598,7 @@ function repairSuggestionsForInboundContext(input: {
   knownEmail?: string | null;
   emailReceived?: boolean;
   productContext?: string | null;
+  revenueMonthly?: number | null;
 }): ResolvedAISuggestion[] {
   const latestInboundLower = String(input.latestInboundText || '').toLowerCase();
   const recentInboundLower = String(input.recentInboundContextText || input.latestInboundText || '').toLowerCase();
@@ -1573,6 +1624,12 @@ function repairSuggestionsForInboundContext(input: {
   const followupWindowContext = !!followupWindowLabel;
   const amountDisclosureContext =
     extractAmountDisclosureFromContext(
+      String(input.latestInboundText || ''),
+      String(input.previousOutboundText || ''),
+    ) != null;
+  const revenueDisclosureContext =
+    (typeof input.revenueMonthly === 'number' && Number.isFinite(input.revenueMonthly)) ||
+    extractRevenueDisclosureFromContext(
       String(input.latestInboundText || ''),
       String(input.previousOutboundText || ''),
     ) != null;
@@ -1615,6 +1672,7 @@ function repairSuggestionsForInboundContext(input: {
     scheduledCallContext ||
     followupWindowContext ||
     amountDisclosureContext ||
+    revenueDisclosureContext ||
     paymentTermsContext ||
     sendTermsIntentContext ||
     phoneCallLogisticsContext ||
@@ -1638,6 +1696,7 @@ function repairSuggestionsForInboundContext(input: {
       knownEmail,
       emailReceived: input.emailReceived,
       productContext: input.productContext,
+      revenueMonthly: input.revenueMonthly,
     }),
   );
   if (!repairedBestText) return input.suggestions;
@@ -1651,6 +1710,7 @@ function repairSuggestionsForInboundContext(input: {
       (scheduledCallContext && suggestionLooksContradictoryToScheduledCall(suggestion.text)) ||
       (followupWindowContext && suggestionLooksContradictoryToFollowupWindow(suggestion.text)) ||
       (amountDisclosureContext && suggestionLooksStaleForAmountDisclosure(suggestion.text)) ||
+      (revenueDisclosureContext && suggestionLooksStaleForRevenueDisclosure(suggestion.text)) ||
       (paymentTermsContext && suggestionLooksStaleForPaymentTerms(suggestion.text)) ||
       (sendTermsIntentContext && suggestionLooksStaleForSendTermsIntent(suggestion.text, hasKnownEmailContext)) ||
       (phoneCallLogisticsContext && suggestionLooksStaleForPhoneCallLogistics(suggestion.text)) ||
@@ -1709,6 +1769,11 @@ export function resolveAiSuggestions(input: {
   const sharedEmail = extractConversationEmail(chronologicalMessages);
   const noteBodies = normalizeAiNoteBodies(input.notes);
   const productContext = extractConversationProductContext(chronologicalMessages);
+  const signals = (input.signals || {}) as Record<string, unknown>;
+  const revenueMonthly =
+    typeof signals.revenueMonthly === 'number' && Number.isFinite(signals.revenueMonthly)
+      ? signals.revenueMonthly
+      : null;
 
   const directSuggestions = repairSuggestionsForInboundContext({
     suggestions: normalizeAiSuggestions(input.suggestions),
@@ -1721,6 +1786,7 @@ export function resolveAiSuggestions(input: {
     knownEmail: input.knownEmail,
     emailReceived: input.emailReceived,
     productContext,
+    revenueMonthly,
   });
   if (directSuggestions.length > 0) return directSuggestions;
 
@@ -1735,10 +1801,10 @@ export function resolveAiSuggestions(input: {
     knownEmail: input.knownEmail,
     emailReceived: input.emailReceived,
     productContext,
+    revenueMonthly,
   });
   if (preservedSuggestions.length > 0) return preservedSuggestions;
 
-  const signals = (input.signals || {}) as Record<string, unknown>;
   const signalSuggestions = repairSuggestionsForInboundContext({
     suggestions: normalizeAiSuggestions([
       {
@@ -1761,6 +1827,7 @@ export function resolveAiSuggestions(input: {
     knownEmail: input.knownEmail,
     emailReceived: input.emailReceived,
     productContext,
+    revenueMonthly,
   });
   if (signalSuggestions.length > 0) return signalSuggestions;
 
@@ -1775,6 +1842,7 @@ export function resolveAiSuggestions(input: {
       knownEmail: input.knownEmail,
       emailReceived: input.emailReceived,
       productContext,
+      revenueMonthly,
     }),
   );
 
@@ -2598,6 +2666,9 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     const finalRecentInboundLower = finalRecentInboundContextText.toLowerCase();
     const hasAmountDisclosureContext =
       extractAmountDisclosureFromContext(lastInboundBody, finalPreviousOutboundText) != null;
+    const hasRevenueDisclosureContext =
+      (typeof signals.revenueMonthly === 'number' && Number.isFinite(signals.revenueMonthly)) ||
+      extractRevenueDisclosureFromContext(lastInboundBody, finalPreviousOutboundText) != null;
     const hasSendTermsIntentContext = hasSendTermsIntent(finalLatestInboundLower);
     const hasKnownEmailForSendTerms = !!(
       extractConversationEmail(messageTextContext) ||
@@ -2606,6 +2677,7 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
     );
     const shouldForceCurrentTopicReply =
       (hasAmountDisclosureContext && suggestionLooksStaleForAmountDisclosure(finalSuggestedReplyText)) ||
+      (hasRevenueDisclosureContext && suggestionLooksStaleForRevenueDisclosure(finalSuggestedReplyText)) ||
       (hasPaymentTermsContext(finalLatestInboundLower) &&
         suggestionLooksStaleForPaymentTerms(finalSuggestedReplyText)) ||
       (hasSendTermsIntentContext &&
@@ -2633,6 +2705,10 @@ Respond with ONLY a single valid JSON object matching this exact schema (no mark
           knownEmail: conv.lead?.email || null,
           emailReceived: !!conv.emailReceived,
           productContext: extractConversationProductContext(messageTextContext),
+          revenueMonthly:
+            typeof signals.revenueMonthly === 'number' && Number.isFinite(signals.revenueMonthly)
+              ? signals.revenueMonthly
+              : null,
         }),
       );
 

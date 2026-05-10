@@ -1,0 +1,342 @@
+import { Worker, Job } from 'bullmq';
+import redis from '../config/redis';
+import prisma from '../config/database';
+import { SendingEngine } from '../services/sendingEngine';
+import { NumberService } from '../services/numberService';
+import logger from '../config/logger';
+
+const smsWorker = new Worker(
+  'sms-send',
+  async (job: Job) => {
+    const { messageId, fromNumber, toNumber, body, phoneNumberId, campaignId, leadId } = job.data;
+
+    if (campaignId) {
+      const shouldBreak = await SendingEngine.checkCircuitBreaker(campaignId);
+      if (shouldBreak) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: 'PAUSED' },
+        });
+        const updated = await prisma.message.updateMany({
+          where: { id: messageId, status: { in: ['QUEUED', 'SENDING'] } },
+          data: { status: 'FAILED', errorMessage: 'Campaign paused by circuit breaker — high failure rate' },
+        });
+        if (updated.count > 0) {
+          await prisma.campaign.update({
+            where: { id: campaignId },
+            data: { totalFailed: { increment: 1 } },
+          });
+          if (leadId) {
+            await prisma.campaignLead.updateMany({
+              where: { campaignId, leadId },
+              data: {
+                status: 'FAILED',
+                errorCode: 'CIRCUIT_BREAKER',
+              },
+            });
+          }
+        }
+        logger.warn(`Circuit breaker triggered for campaign ${campaignId} — auto-paused`);
+        return;
+      }
+    }
+
+    logger.debug(`Processing SMS job ${job.id}: ${messageId} → ${toNumber}`);
+
+    await SendingEngine.sendViaTwilio(messageId, fromNumber, toNumber, body, phoneNumberId);
+  },
+  {
+    connection: redis,
+    concurrency: 15, // Process 15 messages concurrently (safe for 35+ numbers)
+    limiter: {
+      max: 300, // 300/min = 5 msg/sec — safe for 35 A2P 10DLC numbers
+      duration: 60000,
+    },
+  },
+);
+
+smsWorker.on('completed', async (job: Job) => {
+  logger.debug(`SMS job ${job.id} completed`);
+
+  const campaignId = job.data?.campaignId;
+  if (campaignId) {
+    try {
+      const pending = await prisma.message.count({
+        where: { campaignId, status: { in: ['QUEUED', 'SENDING'] } },
+      });
+      if (pending === 0) {
+        const pendingLeads = await prisma.campaignLead.count({
+          where: { campaignId, status: 'PENDING' },
+        });
+        const campaign = await prisma.campaign.findUnique({
+          where: { id: campaignId },
+          select: { status: true },
+        });
+        if (campaign && campaign.status === 'SENDING') {
+          if (pendingLeads > 0) {
+            await prisma.campaign.update({
+              where: { id: campaignId },
+              data: { status: 'PAUSED' },
+            });
+            logger.info(
+              `Campaign ${campaignId} paused after queue drain: ${pendingLeads} pending leads remain for manual resume`,
+            );
+            return;
+          }
+
+          const stats = await prisma.message.groupBy({
+            by: ['status'],
+            where: { campaignId },
+            _count: true,
+          });
+          const delivered = stats.find((s) => s.status === 'DELIVERED')?._count ?? 0;
+          const sent = stats.find((s) => s.status === 'SENT')?._count ?? 0;
+          const failed =
+            (stats.find((s) => s.status === 'FAILED')?._count ?? 0) +
+            (stats.find((s) => s.status === 'UNDELIVERED')?._count ?? 0);
+          const blocked = stats.find((s) => s.status === 'BLOCKED')?._count ?? 0;
+
+          await prisma.$transaction([
+            prisma.campaign.update({
+              where: { id: campaignId },
+              data: {
+                status: 'COMPLETED',
+                completedAt: new Date(),
+                totalDelivered: delivered,
+                totalFailed: failed,
+                totalBlocked: blocked,
+                totalSent: sent + delivered + failed + blocked,
+              },
+            }),
+          ]);
+          logger.info(
+            `Campaign ${campaignId} auto-completed: ${sent + delivered + failed + blocked} sent, ${delivered} delivered, ${failed} failed, ${blocked} blocked`,
+          );
+        }
+      }
+    } catch (err: any) {
+      logger.error(`Campaign completion check error: ${err.message}`);
+    }
+  }
+});
+
+smsWorker.on('failed', (job: Job | undefined, error: Error) => {
+  logger.error(`SMS job ${job?.id} failed:`, {
+    error: error.message,
+    data: job?.data,
+    attemptsMade: job?.attemptsMade,
+  });
+});
+
+smsWorker.on('error', (error: Error) => {
+  logger.error('SMS worker error:', { error: error.message });
+});
+
+const campaignWorker = new Worker(
+  'campaign-process',
+  async (job: Job) => {
+    const { action, campaignId, options } = job.data;
+
+    switch (action) {
+      case 'start':
+        await processCampaignStart(campaignId, options);
+        break;
+      case 'pause':
+        await processCampaignPause(campaignId);
+        break;
+      default:
+        logger.warn(`Unknown campaign action: ${action}`);
+    }
+  },
+  {
+    connection: redis,
+    concurrency: 2,
+  },
+);
+
+async function processCampaignStart(campaignId: string, options: any): Promise<void> {
+  try {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        leads: {
+          where: { status: 'PENDING' },
+          include: { lead: true },
+        },
+        _count: {
+          select: { leads: true },
+        },
+      },
+    });
+
+    if (!campaign) return;
+
+    const leads = campaign.leads.map((cl) => ({
+      leadId: cl.lead.id,
+      phone: cl.lead.phone,
+      firstName: cl.lead.firstName,
+      lastName: cl.lead.lastName || undefined,
+      company: cl.lead.company || undefined,
+    }));
+
+    const leadsToSend = campaign.dailyLimit && campaign.dailyLimit > 0 ? leads.slice(0, campaign.dailyLimit) : leads;
+
+    if (leadsToSend.length < leads.length) {
+      logger.info(
+        `Campaign ${campaignId}: dailyLimit=${campaign.dailyLimit}, trimmed ${leads.length} → ${leadsToSend.length} leads`,
+      );
+    }
+
+    let restrictToPhoneNumberIds: string[] | undefined;
+    const creator = await prisma.user.findUnique({
+      where: { id: campaign.createdById },
+      select: { role: true },
+    });
+    const assignedActiveNumberIds = await NumberService.getActiveAssignedNumberIds(campaign.createdById);
+
+    if (creator?.role === 'REP') {
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
+      if (restrictToPhoneNumberIds.length === 0) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: 'DRAFT',
+            startedAt: null,
+            totalLeads: campaign._count.leads,
+            totalSent: 0,
+          },
+        });
+        logger.warn(
+          `Campaign ${campaignId} reverted to DRAFT: no active assigned numbers for rep ${campaign.createdById}`,
+        );
+        return;
+      }
+    } else if (assignedActiveNumberIds.length > 0) {
+      restrictToPhoneNumberIds = assignedActiveNumberIds;
+    }
+
+    const result = await SendingEngine.queueBulkSend({
+      leads: leadsToSend,
+      messageTemplate: campaign.messageTemplate,
+      campaignId: campaign.id,
+      poolId: campaign.numberPoolId || undefined,
+      restrictToPhoneNumberIds,
+      sendingSpeed: campaign.sendingSpeed,
+      sentByUserId: campaign.createdById,
+      isRetarget: Boolean((campaign as any).isRetarget),
+      bypassOwnershipCheck: creator?.role === 'ADMIN' || creator?.role === 'MANAGER',
+    });
+
+    if (result.queued === 0) {
+      const remainingPending = await prisma.campaignLead.count({
+        where: { campaignId, status: 'PENDING' },
+      });
+      if (remainingPending > 0) {
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: 'PAUSED', startedAt: null },
+        });
+        logger.warn(`Campaign ${campaignId} paused: 0 queued in this run, ${remainingPending} pending leads remain`);
+        return;
+      }
+
+      const existingMessages = await prisma.message.count({
+        where: { campaignId },
+      });
+
+      if (existingMessages > 0) {
+        const [pendingMessages, stats] = await Promise.all([
+          prisma.message.count({
+            where: { campaignId, status: { in: ['QUEUED', 'SENDING'] } },
+          }),
+          prisma.message.groupBy({
+            by: ['status'],
+            where: { campaignId },
+            _count: true,
+          }),
+        ]);
+
+        const delivered = stats.find((s) => s.status === 'DELIVERED')?._count ?? 0;
+        const sent = stats.find((s) => s.status === 'SENT')?._count ?? 0;
+        const failed =
+          (stats.find((s) => s.status === 'FAILED')?._count ?? 0) +
+          (stats.find((s) => s.status === 'UNDELIVERED')?._count ?? 0);
+        const blocked = stats.find((s) => s.status === 'BLOCKED')?._count ?? 0;
+
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: pendingMessages > 0 ? 'PAUSED' : 'COMPLETED',
+            completedAt: pendingMessages > 0 ? null : new Date(),
+            totalLeads: campaign._count.leads,
+            totalSent: sent + delivered + failed + blocked,
+            totalDelivered: delivered,
+            totalFailed: failed,
+            totalBlocked: blocked,
+          },
+        });
+        logger.warn(
+          `Campaign ${campaignId} queued 0 in this run; preserved stats from existing messages (${existingMessages})`,
+        );
+        return;
+      }
+
+      const reason =
+        result.errors.length > 0
+          ? result.errors.join('; ')
+          : result.skipped > 0
+            ? `All ${result.skipped} leads skipped (compliance/ownership rules)`
+            : 'No messages could be queued';
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: 'DRAFT',
+          startedAt: null,
+          totalLeads: campaign._count.leads,
+          totalSent: 0,
+        },
+      });
+      logger.warn(`Campaign ${campaignId} reverted to DRAFT: ${reason}`);
+      return;
+    }
+
+    const totalAttempted = await prisma.message.count({
+      where: { campaignId },
+    });
+
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        status: 'SENDING',
+        startedAt: new Date(),
+        totalLeads: campaign._count.leads,
+        totalSent: totalAttempted,
+      },
+    });
+
+    logger.info(`Campaign ${campaignId} started: ${result.queued} queued, ${result.skipped} skipped`);
+  } catch (error: any) {
+    logger.error(`Campaign ${campaignId} start error:`, { error: error.message });
+    throw error;
+  }
+}
+
+async function processCampaignPause(campaignId: string): Promise<void> {
+  await prisma.campaign.update({
+    where: { id: campaignId },
+    data: { status: 'PAUSED' },
+  });
+
+  logger.info(`Campaign ${campaignId} paused`);
+}
+
+logger.info('🚀 SMS Queue Worker started');
+logger.info('🚀 Campaign Queue Worker started');
+
+process.on('SIGTERM', async () => {
+  logger.info('Shutting down workers...');
+  await smsWorker.close();
+  await campaignWorker.close();
+});
+
+export { smsWorker, campaignWorker };

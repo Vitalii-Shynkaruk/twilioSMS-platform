@@ -1,0 +1,290 @@
+import { Router, Response } from 'express';
+import { AIService } from '../services/aiService';
+import { canUserAccessPipelineDeal, extractPipelineSignals, getPipelineAiLocalSkipReason, previewPipelineSignals } from '../services/pipelineAiService';
+import { authenticate } from '../middleware/auth';
+import { AuthRequest } from '../middleware/auth';
+import prisma from '../config/database';
+import { asyncHandler } from '../utils/asyncHandler';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
+
+const router = Router();
+
+router.post(
+  '/draft-reply',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { conversationId } = req.body;
+
+    if (!conversationId) {
+      res.status(400).json({ error: 'conversationId required' });
+      return;
+    }
+
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        lead: { select: { firstName: true, lastName: true, status: true } },
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          take: 20,
+          select: { direction: true, body: true },
+        },
+      },
+    });
+
+    if (!conversation) {
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
+
+    const draft = await AIService.generateDraftReply(
+      conversation.messages.map((m) => ({ direction: m.direction, body: m.body })),
+      {
+        firstName: conversation.lead.firstName || undefined,
+        lastName: conversation.lead.lastName || undefined,
+        status: conversation.lead.status,
+      },
+    );
+
+    if (!draft) {
+      res.status(503).json({ error: 'AI not configured or unavailable' });
+      return;
+    }
+
+    res.json({ draft });
+  }),
+);
+
+router.post(
+  '/classify',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { body } = req.body;
+    if (!body) {
+      res.status(400).json({ error: 'body required' });
+      return;
+    }
+
+    const category = await AIService.classifyMessage(body);
+    if (!category) {
+      res.status(503).json({ error: 'AI not configured or unavailable' });
+      return;
+    }
+
+    res.json({ category });
+  }),
+);
+
+router.post(
+  '/score-lead',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { leadId } = req.body;
+
+    if (!leadId) {
+      res.status(400).json({ error: 'leadId required' });
+      return;
+    }
+
+    const lead = await prisma.lead.findUnique({
+      where: { id: leadId },
+      include: {
+        conversations: {
+          include: {
+            messages: { select: { direction: true } },
+          },
+        },
+      },
+    });
+
+    if (!lead) {
+      res.status(404).json({ error: 'Lead not found' });
+      return;
+    }
+
+    const allMessages = lead.conversations.flatMap((c) => c.messages);
+    const messageCount = allMessages.filter((m) => m.direction === 'OUTBOUND').length;
+    const repliedCount = allMessages.filter((m) => m.direction === 'INBOUND').length;
+
+    const score = await AIService.scoreLead(
+      {
+        firstName: lead.firstName || undefined,
+        status: lead.status,
+        source: lead.source || undefined,
+        createdAt: lead.createdAt,
+      },
+      messageCount,
+      repliedCount,
+    );
+
+    if (score === null) {
+      res.status(503).json({ error: 'AI not configured or unavailable' });
+      return;
+    }
+
+    res.json({ score, leadId });
+  }),
+);
+
+router.post(
+  '/classify-inbound',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { conversationId } = req.body;
+    if (!conversationId || typeof conversationId !== 'string') {
+      res.status(400).json({ error: 'conversationId required' });
+      return;
+    }
+
+    const conv = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { id: true, assignedRepId: true, followupStatus: true },
+    });
+    if (!conv) {
+      res.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
+
+    if (req.user?.role !== 'ADMIN' && req.user?.role !== 'MANAGER') {
+      if (conv.assignedRepId !== req.user?.id) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+    }
+
+    const result = await AIService.classifyInbound(conversationId);
+    if (!result) {
+      res.status(503).json({ error: 'AI not configured or classification failed' });
+      return;
+    }
+
+    const signals = (result.signals || {}) as Record<string, unknown>;
+    const extractedIndustry = typeof signals.industry === 'string' && signals.industry.trim() ? signals.industry.trim() : null;
+    const helocFitFlag = typeof signals.helocFitFlag === 'boolean' ? signals.helocFitFlag : null;
+    const extractedRevenue = typeof signals.revenueMonthly === 'number' ? Math.round(signals.revenueMonthly) : null;
+    const extractedAsk = typeof signals.ask === 'string' && signals.ask.trim() ? signals.ask.trim() : null;
+
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: withInboxAiPriorityRank(
+        {
+          followupStatus: conv.followupStatus,
+        },
+        {
+          aiClassification: result.classification,
+          aiSignals: result.signals as object,
+          aiSuggestions: result.suggestions as object,
+          extractedIndustry,
+          helocFitFlag,
+          extractedRevenue,
+          extractedAsk,
+          isCaliforniaNumber: result.isCaliforniaNumber,
+          aiLeadScore: result.leadScore,
+          aiClassifiedAt: new Date(),
+        },
+      ),
+    });
+
+    res.json(result);
+  }),
+);
+
+router.post(
+  '/preview-pipeline',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { inputType, text } = req.body;
+    if (inputType !== 'rep_note' && inputType !== 'client_sms') {
+      res.status(400).json({ error: 'inputType must be rep_note or client_sms' });
+      return;
+    }
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ error: 'text required' });
+      return;
+    }
+
+    const localSkipReason = getPipelineAiLocalSkipReason(text);
+    if (localSkipReason) {
+      res.json({ skipped: true, reason: localSkipReason });
+      return;
+    }
+
+    const signals = await previewPipelineSignals({ inputType, text });
+    if (!signals) {
+      res.status(503).json({ error: 'AI not configured, skipped, or extraction failed' });
+      return;
+    }
+    if (signals.skip_reason) {
+      res.json({ skipped: true, reason: signals.skip_reason });
+      return;
+    }
+
+    res.json({ signals });
+  }),
+);
+
+router.post(
+  '/extract-pipeline',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { dealId, inputType, text } = req.body;
+    if (!dealId || typeof dealId !== 'string') {
+      res.status(400).json({ error: 'dealId required' });
+      return;
+    }
+    if (inputType !== 'rep_note' && inputType !== 'client_sms') {
+      res.status(400).json({ error: 'inputType must be rep_note or client_sms' });
+      return;
+    }
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ error: 'text required' });
+      return;
+    }
+
+    const deal = await prisma.deal.findUnique({
+      where: { id: dealId },
+      select: {
+        id: true,
+        assignedRepId: true,
+        assistingRepIds: true,
+        stage: true,
+        productType: true,
+      },
+    });
+    if (!deal) {
+      res.status(404).json({ error: 'Deal not found' });
+      return;
+    }
+    if (!canUserAccessPipelineDeal(req.user, deal)) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    const localSkipReason = getPipelineAiLocalSkipReason(text);
+    if (localSkipReason) {
+      res.json({ skipped: true, reason: localSkipReason });
+      return;
+    }
+
+    const signals = await extractPipelineSignals({
+      dealId,
+      inputType,
+      text,
+      stageAtTime: deal.stage,
+      productAtTime: deal.productType,
+    });
+
+    if (!signals) {
+      res.status(503).json({ error: 'AI not configured, skipped, or extraction failed' });
+      return;
+    }
+    if (signals.skip_reason) {
+      res.json({ skipped: true, reason: signals.skip_reason });
+      return;
+    }
+
+    res.json({ signals });
+  }),
+);
+
+export default router;

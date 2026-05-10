@@ -1,0 +1,2916 @@
+import { Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
+import prisma from '../config/database';
+import { DealStage, LeadStatus, ProductType, CommitSubStatus, RenewalTaskStatus, Prisma } from '@prisma/client';
+import { parse } from 'csv-parse/sync';
+import { OutboundGateService } from '../services/outboundGateService';
+import { extractPipelineSignals, getPipelineAiLocalSkipReason } from '../services/pipelineAiService';
+import {
+  canUseUnscopedTeamScope,
+  fundingRepScopeFilter,
+  isAdminLike,
+  repFilter,
+  repScopeFilter,
+} from '../services/dealScopePolicy';
+
+const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
+  NEW: DealStage.NEW_LEAD,
+  CONTACTED: DealStage.ENGAGED_INTERESTED,
+  REPLIED: DealStage.ENGAGED_INTERESTED,
+  INTERESTED: DealStage.QUALIFIED,
+  DOCS_REQUESTED: DealStage.QUALIFIED,
+  SUBMITTED: DealStage.SUBMITTED_IN_REVIEW,
+  FUNDED: DealStage.FUNDED,
+  NOT_INTERESTED: DealStage.NURTURE,
+  DNC: DealStage.CLOSED,
+};
+
+const DEAL_TO_LEAD: Record<DealStage, LeadStatus> = {
+  NEW_LEAD: LeadStatus.NEW,
+  ENGAGED_INTERESTED: LeadStatus.CONTACTED,
+  QUALIFIED: LeadStatus.INTERESTED,
+  SUBMITTED_IN_REVIEW: LeadStatus.SUBMITTED,
+  APPROVED_OFFERS: LeadStatus.SUBMITTED,
+  COMMITTED_FUNDING: LeadStatus.SUBMITTED,
+  FUNDED: LeadStatus.FUNDED,
+  NURTURE: LeadStatus.NOT_INTERESTED,
+  CLOSED: LeadStatus.DNC,
+};
+
+const STAGE_LABELS: Record<DealStage, string> = {
+  NEW_LEAD: 'New Lead',
+  ENGAGED_INTERESTED: 'Engaged / Interested',
+  QUALIFIED: 'Qualified',
+  SUBMITTED_IN_REVIEW: 'Submitted (In Review)',
+  APPROVED_OFFERS: 'Approved / Offers',
+  COMMITTED_FUNDING: 'Committed (Funding)',
+  FUNDED: 'Funded',
+  NURTURE: 'Nurture',
+  CLOSED: 'Closed',
+};
+
+const STAGE_ORDER: DealStage[] = [
+  DealStage.NEW_LEAD,
+  DealStage.ENGAGED_INTERESTED,
+  DealStage.QUALIFIED,
+  DealStage.SUBMITTED_IN_REVIEW,
+  DealStage.APPROVED_OFFERS,
+  DealStage.COMMITTED_FUNDING,
+  DealStage.FUNDED,
+  DealStage.NURTURE,
+  DealStage.CLOSED,
+];
+
+async function syncLinkedLeadStatusFromDealStage(input: {
+  dealId: string;
+  stage: DealStage;
+  leadId?: string | null;
+  clientPhone?: string | null;
+}): Promise<void> {
+  const newLeadStatus = DEAL_TO_LEAD[input.stage];
+  if (!newLeadStatus) return;
+
+  let resolvedLeadId = input.leadId || null;
+  if (!resolvedLeadId && input.clientPhone) {
+    const lead = await prisma.lead.findUnique({ where: { phone: input.clientPhone }, select: { id: true } });
+    if (lead) {
+      resolvedLeadId = lead.id;
+      await prisma.deal.update({ where: { id: input.dealId }, data: { leadId: lead.id } });
+    }
+  }
+
+  if (!resolvedLeadId) return;
+
+  await prisma.lead.update({ where: { id: resolvedLeadId }, data: { status: newLeadStatus } }).catch(() => {});
+}
+
+const SUBMITTED_AMOUNT_PRODUCTS = new Set<ProductType>([ProductType.SBA, ProductType.CRE, ProductType.EQUIPMENT]);
+
+const QUICK_LOG_KINDS = {
+  NO_ANSWER: 'no_answer',
+  TEXTED: 'texted',
+  VOICEMAIL: 'voicemail',
+  CONNECTED: 'connected',
+  NOT_INTERESTED: 'not_interested',
+} as const;
+
+type QuickLogKind = (typeof QUICK_LOG_KINDS)[keyof typeof QUICK_LOG_KINDS];
+
+const QUICK_LOG_LABELS: Record<QuickLogKind, string> = {
+  no_answer: 'No answer',
+  texted: 'Texted',
+  voicemail: 'Voicemail',
+  connected: 'Connected',
+  not_interested: 'Not interested',
+};
+
+const INCREMENT_ATTEMPT_KINDS = new Set<QuickLogKind>([
+  QUICK_LOG_KINDS.NO_ANSWER,
+  QUICK_LOG_KINDS.TEXTED,
+  QUICK_LOG_KINDS.VOICEMAIL,
+]);
+
+function addBusinessDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setUTCHours(12, 0, 0, 0);
+
+  let remaining = Math.max(0, days);
+  while (remaining > 0) {
+    result.setUTCDate(result.getUTCDate() + 1);
+    const day = result.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      remaining -= 1;
+    }
+  }
+
+  return result;
+}
+
+type RepIdentity = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  initials: string | null;
+};
+type DealAccessShape = {
+  assignedRepId?: string | null;
+  assistingRepIds?: unknown;
+};
+
+function isSubmittedAmountProduct(productType?: ProductType | null): boolean {
+  return !!productType && SUBMITTED_AMOUNT_PRODUCTS.has(productType);
+}
+
+function parseOptionalFloat(value: unknown): number | null {
+  if (value === undefined || value === null) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const parsed = parseFloat(str.replace(/[$,]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeProductType(value: unknown): ProductType | null {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim().toUpperCase();
+  if (!normalized) return null;
+
+  const aliases: Record<string, ProductType> = {
+    MCA: ProductType.MCA,
+    LOC: ProductType.LOC,
+    'LINE OF CREDIT': ProductType.LOC,
+    EQUIPMENT: ProductType.EQUIPMENT,
+    HELOC: ProductType.HELOC,
+    SBA: ProductType.SBA,
+    CRE: ProductType.CRE,
+    BRIDGE: ProductType.BRIDGE,
+  };
+
+  return aliases[normalized] || null;
+}
+
+function normalizeRepToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeInitials(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function matchRepByName(reps: RepIdentity[], repNameRaw: string): RepIdentity | null {
+  const repName = normalizeRepToken(repNameRaw);
+  if (!repName) return null;
+  const compact = normalizeInitials(repNameRaw);
+
+  const exactFull = reps.find((r) => normalizeRepToken(`${r.firstName} ${r.lastName}`) === repName);
+  if (exactFull) return exactFull;
+
+  const fullContained = reps.find((r) => repName.includes(normalizeRepToken(`${r.firstName} ${r.lastName}`)));
+  if (fullContained) return fullContained;
+
+  const exactInitials = reps.find((r) => r.initials && normalizeInitials(r.initials) === compact);
+  if (exactInitials) return exactInitials;
+
+  const tokens = repName.split(' ').filter(Boolean);
+  const tokenInitialMatches = reps.filter(
+    (r) => r.initials && tokens.some((t) => normalizeInitials(t) === normalizeInitials(r.initials || '')),
+  );
+  if (tokenInitialMatches.length === 1) return tokenInitialMatches[0];
+
+  if (tokens.length >= 2) {
+    for (let i = 0; i < tokens.length - 1; i++) {
+      const first = tokens[i];
+      const last = tokens[i + 1];
+      const exactNameParts = reps.find(
+        (r) => normalizeRepToken(r.firstName) === first && normalizeRepToken(r.lastName) === last,
+      );
+      if (exactNameParts) return exactNameParts;
+      const swapped = reps.find(
+        (r) => normalizeRepToken(r.lastName) === first && normalizeRepToken(r.firstName) === last,
+      );
+      if (swapped) return swapped;
+    }
+  }
+
+  return null;
+}
+
+async function autoResolveOpenTasksForClosingDeal(dealId: string): Promise<number> {
+  const result = await prisma.renewalTask.updateMany({
+    where: {
+      dealId,
+      status: { in: [RenewalTaskStatus.PENDING, RenewalTaskStatus.OVERDUE] },
+    },
+    data: {
+      status: RenewalTaskStatus.SKIPPED,
+      completedAt: new Date(),
+    },
+  });
+  return result.count;
+}
+
+function emitDealUpdatedScoped(
+  io: any,
+  payload: {
+    dealId: string;
+    stage: DealStage | string;
+    repId?: string | null;
+    assistingRepIds?: string[] | null;
+    actorUserId?: string | null;
+  },
+) {
+  if (!io) return;
+
+  const rooms = new Set<string>();
+  if (payload.repId) rooms.add(`inbox:${payload.repId}`);
+  if (Array.isArray(payload.assistingRepIds)) {
+    for (const repId of payload.assistingRepIds) {
+      if (repId) rooms.add(`inbox:${repId}`);
+    }
+  }
+  if (payload.actorUserId) rooms.add(`inbox:${payload.actorUserId}`);
+
+  for (const room of rooms) {
+    io.to(room).emit('deal:updated', {
+      dealId: payload.dealId,
+      stage: payload.stage,
+      repId: payload.repId || null,
+    });
+  }
+}
+
+function computeIsHot(deal: {
+  lastReplyAt: Date | null;
+  stage: DealStage;
+  lenderEngaged: boolean;
+  appSubmitted: boolean;
+}): boolean {
+  const now = Date.now();
+  const fortyEightHours = 48 * 60 * 60 * 1000;
+  if (deal.lastReplyAt && now - new Date(deal.lastReplyAt).getTime() < fortyEightHours) return true;
+  if (deal.stage === DealStage.APPROVED_OFFERS || deal.stage === DealStage.COMMITTED_FUNDING) return true;
+  if (deal.lenderEngaged && deal.appSubmitted) return true;
+  return false;
+}
+function canAccessDeal(user: AuthRequest['user'], deal: DealAccessShape): boolean {
+  if (isAdminLike(user)) return true;
+  if (!user?.id) return false;
+  if (deal.assignedRepId === user.id) return true;
+  const assistingIds = Array.isArray(deal.assistingRepIds)
+    ? deal.assistingRepIds.filter((repId): repId is string => typeof repId === 'string')
+    : [];
+  return assistingIds.includes(user.id);
+}
+
+function canAdminOrPrimary(user: AuthRequest['user'], deal: DealAccessShape): boolean {
+  return isAdminLike(user) || (!!user?.id && deal.assignedRepId === user.id);
+}
+
+export class DealController {
+  static async getDeals(req: AuthRequest, res: Response) {
+    const { stage, search, repId, view } = req.query;
+    const filter = repFilter(req.user);
+
+    const where: any = {
+      ...filter,
+    };
+
+    if (isAdminLike(req.user) && repId) {
+      Object.assign(where, repScopeFilter(repId as string, true));
+    }
+
+    if (stage) {
+      where.stage = stage as DealStage;
+    }
+
+    if (search) {
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { client: { businessName: { contains: search as string } } },
+            { client: { contactName: { contains: search as string } } },
+            { client: { phone: { contains: search as string } } },
+          ],
+        },
+      ];
+    }
+
+    if (view === 'team') {
+      where.stage = {
+        in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING, DealStage.FUNDED, DealStage.NURTURE],
+      };
+    }
+
+    const deals = await prisma.deal.findMany({
+      where,
+      include: {
+        client: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
+        },
+        offers: { orderBy: { createdAt: 'desc' } },
+        _count: { select: { dealEvents: true, fundingEvents: true } },
+      },
+      orderBy: { lastActivityAt: 'desc' },
+    });
+
+    const visibleDealCountByClient = deals.reduce((counts, deal) => {
+      counts.set(deal.clientId, (counts.get(deal.clientId) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+
+    const enrichedDeals = deals.map((deal) => ({
+      ...deal,
+      isHot: computeIsHot(deal),
+      stageLabel: STAGE_LABELS[deal.stage] || deal.stage,
+      linkedDealsCount: Math.max((visibleDealCountByClient.get(deal.clientId) || 1) - 1, 0),
+    }));
+
+    res.json(enrichedDeals);
+  }
+
+  static async getBoard(req: AuthRequest, res: Response) {
+    const { repId, teamView, primaryOnly } = req.query;
+    const primaryOnlyParam = String(primaryOnly ?? '').toLowerCase();
+    const forcePrimaryOnly = primaryOnlyParam === 'true';
+    const includeAssistForBoard = !forcePrimaryOnly;
+
+    const filter = canUseUnscopedTeamScope(req.user, teamView)
+      ? {}
+      : repFilter(req.user, { primaryOnly: forcePrimaryOnly });
+    const where: any = { ...filter };
+    const requestedRepId = repId ? String(repId) : '';
+    const canScopeToRep = !!requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id);
+    if (canScopeToRep) {
+      Object.assign(where, repScopeFilter(requestedRepId, includeAssistForBoard));
+    }
+
+    const deals = await prisma.deal.findMany({
+      where,
+      include: {
+        client: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
+        },
+        offers: { orderBy: { createdAt: 'desc' }, take: 3 },
+        fundingEvents: {
+          orderBy: [{ fundedDate: 'desc' }, { createdAt: 'desc' }],
+          take: 1,
+        },
+      },
+      orderBy: { lastActivityAt: 'desc' },
+    });
+
+    const visibleDealCountByClient = deals.reduce((counts, deal) => {
+      counts.set(deal.clientId, (counts.get(deal.clientId) || 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+
+    const board: Record<string, any[]> = {};
+    for (const stage of STAGE_ORDER) {
+      board[stage] = [];
+    }
+
+    for (const deal of deals) {
+      const enriched = {
+        ...deal,
+        isHot: computeIsHot(deal),
+        stageLabel: STAGE_LABELS[deal.stage] || deal.stage,
+        linkedDealsCount: Math.max((visibleDealCountByClient.get(deal.clientId) || 1) - 1, 0),
+      };
+      if (board[deal.stage]) {
+        board[deal.stage].push(enriched);
+      }
+    }
+
+    const NO_AMOUNT_STAGES = ['NEW_LEAD', 'ENGAGED_INTERESTED', 'QUALIFIED'];
+    const stages = STAGE_ORDER.map((stage, index) => {
+      const deals = board[stage] || [];
+      const prevOfferSubtotal =
+        stage === DealStage.NURTURE ? deals.reduce((sum: number, d: any) => sum + (d.prevOffer || 0), 0) : 0;
+      let value = 0;
+      if (!NO_AMOUNT_STAGES.includes(stage)) {
+        if (stage === 'FUNDED') {
+          value = deals.reduce((sum: number, d: any) => sum + (d.dealAmount || 0), 0);
+        } else if (stage === 'NURTURE') {
+          value = 0;
+        } else if (stage === 'SUBMITTED_IN_REVIEW') {
+          value = deals.reduce((sum: number, d: any) => {
+            if (!isSubmittedAmountProduct(d.productType)) return sum;
+            return sum + (d.submittedAmount || d.dealAmount || 0);
+          }, 0);
+        } else {
+          value = deals.reduce((sum: number, d: any) => {
+            const bestOffer = (d.offers || []).reduce(
+              (best: any, o: any) => (!best || o.amount > best.amount ? o : best),
+              null,
+            );
+            return sum + (bestOffer?.amount || d.dealAmount || 0);
+          }, 0);
+        }
+      }
+      return {
+        stage,
+        label: STAGE_LABELS[stage],
+        order: index,
+        deals,
+        count: deals.length,
+        value,
+        prevOfferSubtotal,
+      };
+    });
+
+    res.json({ stages });
+  }
+
+  static async getDeal(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const filter = repFilter(req.user);
+
+    const deal = await prisma.deal.findFirst({
+      where: { id, ...filter },
+      include: {
+        client: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
+        },
+        offers: { orderBy: { createdAt: 'desc' } },
+        fundingEvents: { orderBy: { createdAt: 'desc' } },
+        dealEvents: {
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+          include: { rep: { select: { id: true, firstName: true, lastName: true, initials: true } } },
+        },
+        renewalTasks: { orderBy: { dueDate: 'asc' } },
+      },
+    });
+
+    if (!deal) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    const linkedDeals = await prisma.deal.findMany({
+      where: {
+        ...filter,
+        clientId: deal.clientId,
+        id: { not: deal.id },
+      },
+      select: {
+        id: true,
+        clientId: true,
+        assignedRepId: true,
+        assistingRepIds: true,
+        stage: true,
+        stageLabel: true,
+        productType: true,
+        dealAmount: true,
+        submittedAmount: true,
+        prevOffer: true,
+        nextAction: true,
+        nextActionDue: true,
+        lastActivityAt: true,
+        lastReplyAt: true,
+        lenderEngaged: true,
+        appSubmitted: true,
+        createdAt: true,
+        updatedAt: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true, role: true },
+        },
+        offers: { orderBy: { createdAt: 'desc' }, take: 3 },
+      },
+      orderBy: { lastActivityAt: 'desc' },
+    });
+
+    const fundedDeals = await prisma.deal.findMany({
+      where: {
+        ...filter,
+        clientId: deal.clientId,
+        stage: DealStage.FUNDED,
+      },
+      select: {
+        id: true,
+        productType: true,
+        dealAmount: true,
+        fundedDate: true,
+        lender: true,
+        createdAt: true,
+        assignedRep: {
+          select: { id: true, firstName: true, lastName: true, initials: true },
+        },
+        fundingEvents: {
+          orderBy: [{ fundedDate: 'desc' }, { createdAt: 'desc' }],
+          select: {
+            id: true,
+            amountFunded: true,
+            lender: true,
+            productType: true,
+            fundedDate: true,
+            notes: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: [{ fundedDate: 'desc' }, { updatedAt: 'desc' }],
+    });
+
+    const fundingHistory = fundedDeals
+      .flatMap((fundedDeal) => {
+        const fundingEvents = fundedDeal.fundingEvents || [];
+
+        if (fundingEvents.length > 0) {
+          return fundingEvents.map((event) => ({
+            id: event.id,
+            dealId: fundedDeal.id,
+            amountFunded: event.amountFunded,
+            lender: event.lender || fundedDeal.lender || null,
+            productType: event.productType || fundedDeal.productType || null,
+            fundedDate: event.fundedDate || fundedDeal.fundedDate || null,
+            notes: event.notes || null,
+            createdAt: event.createdAt,
+            repName: fundedDeal.assignedRep
+              ? `${fundedDeal.assignedRep.firstName} ${fundedDeal.assignedRep.lastName}`.trim()
+              : null,
+            isCurrentDeal: fundedDeal.id === deal.id,
+          }));
+        }
+
+        if (!fundedDeal.dealAmount && !fundedDeal.fundedDate && !fundedDeal.lender) return [];
+        return [
+          {
+            id: `deal-${fundedDeal.id}`,
+            dealId: fundedDeal.id,
+            amountFunded: fundedDeal.dealAmount || 0,
+            lender: fundedDeal.lender || null,
+            productType: fundedDeal.productType || null,
+            fundedDate: fundedDeal.fundedDate || null,
+            notes: null,
+            createdAt: fundedDeal.createdAt,
+            repName: fundedDeal.assignedRep
+              ? `${fundedDeal.assignedRep.firstName} ${fundedDeal.assignedRep.lastName}`.trim()
+              : null,
+            isCurrentDeal: fundedDeal.id === deal.id,
+          },
+        ];
+      })
+      .sort((a, b) => {
+        const aTime = new Date(a.fundedDate || a.createdAt).getTime();
+        const bTime = new Date(b.fundedDate || b.createdAt).getTime();
+        return bTime - aTime;
+      });
+
+    res.json({
+      ...deal,
+      isHot: computeIsHot(deal),
+      stageLabel: STAGE_LABELS[deal.stage] || deal.stage,
+      linkedDealsCount: linkedDeals.length,
+      fundingHistory,
+      linkedDeals: linkedDeals.map((linkedDeal) => ({
+        ...linkedDeal,
+        isHot: computeIsHot(linkedDeal),
+        stageLabel: STAGE_LABELS[linkedDeal.stage] || linkedDeal.stage,
+      })),
+    });
+  }
+
+  static async createDeal(req: AuthRequest, res: Response) {
+    const {
+      businessName,
+      contactName,
+      phone,
+      email,
+      state,
+      productType,
+      dealAmount,
+      submittedAmount,
+      assignedRepId,
+      nextAction,
+      nextActionDue,
+      notes,
+      pipelineAiSignals,
+      clientId: existingClientId,
+    } = req.body;
+
+    let client;
+    if (existingClientId) {
+      client = await prisma.client.findUnique({ where: { id: existingClientId } });
+      if (!client) return res.status(400).json({ error: 'Client not found' });
+    } else if (phone) {
+      client = await prisma.client.upsert({
+        where: { phone },
+        update: { businessName: businessName || undefined, contactName, email, state },
+        create: { businessName: businessName || 'Unknown Business', contactName, phone, email, state },
+      });
+    } else {
+      client = await prisma.client.create({
+        data: { businessName: businessName || 'Unknown Business', contactName, email, state },
+      });
+    }
+
+    let linkedLeadId: string | undefined;
+    if (phone) {
+      const existingLead = await prisma.lead.findUnique({ where: { phone }, select: { id: true } });
+      if (existingLead) {
+        const alreadyLinked = await prisma.deal.findFirst({ where: { leadId: existingLead.id }, select: { id: true } });
+        if (!alreadyLinked) linkedLeadId = existingLead.id;
+      }
+    }
+
+    const effectiveRepId = isAdminLike(req.user) && assignedRepId ? assignedRepId : req.user!.id;
+
+    const parsedProductType = normalizeProductType(productType);
+    if (productType !== undefined && productType !== null && !parsedProductType) {
+      return res.status(400).json({ error: 'Invalid product type' });
+    }
+
+    const initialStage = isSubmittedAmountProduct(parsedProductType)
+      ? DealStage.SUBMITTED_IN_REVIEW
+      : DealStage.NEW_LEAD;
+
+    const parsedDealAmount = parseOptionalFloat(dealAmount);
+    const parsedSubmittedAmount =
+      parseOptionalFloat(submittedAmount) ?? (isSubmittedAmountProduct(parsedProductType) ? parsedDealAmount : null);
+
+    const initialNotes = typeof notes === 'string' ? notes.trim() : '';
+    const initialPipelineAiSignals =
+      pipelineAiSignals && typeof pipelineAiSignals === 'object' && !Array.isArray(pipelineAiSignals)
+        ? (pipelineAiSignals as Prisma.InputJsonObject)
+        : undefined;
+
+    const defaultNextAction =
+      initialStage === DealStage.SUBMITTED_IN_REVIEW
+        ? 'Follow up lender — app in review'
+        : 'Make first contact within 24h';
+
+    const deal = await prisma.deal.create({
+      data: {
+        clientId: client.id,
+        assignedRepId: effectiveRepId,
+        leadId: linkedLeadId || null,
+        stage: initialStage,
+        stageLabel: STAGE_LABELS[initialStage],
+        productType: parsedProductType,
+        dealAmount: isSubmittedAmountProduct(parsedProductType) ? null : parsedDealAmount,
+        submittedAmount: isSubmittedAmountProduct(parsedProductType) ? parsedSubmittedAmount : null,
+        needsAmount: isSubmittedAmountProduct(parsedProductType) ? !parsedSubmittedAmount : !parsedDealAmount,
+        appSubmitted: initialStage === DealStage.SUBMITTED_IN_REVIEW,
+        nextAction: nextAction || defaultNextAction,
+        nextActionDue: nextActionDue ? new Date(nextActionDue) : new Date(Date.now() + 24 * 60 * 60 * 1000),
+        notes: initialNotes || null,
+        pipelineAiSignals: initialPipelineAiSignals,
+        pipelineAiUpdatedAt: initialPipelineAiSignals ? new Date() : null,
+      } as any,
+      include: { client: true, assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } } },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: deal.id,
+        repId: req.user!.id,
+        eventType: 'deal_created',
+        toStage: initialStage,
+        note: `Deal created for ${client.businessName}`,
+      },
+    });
+
+    if (linkedLeadId) {
+      const [campaignLead, campaignMessage, importListTag, linkedLead] = await Promise.all([
+        prisma.campaignLead.findFirst({
+          where: { leadId: linkedLeadId },
+          orderBy: { createdAt: 'desc' },
+          include: { campaign: { select: { name: true } } },
+        }),
+        prisma.message.findFirst({
+          where: {
+            campaignId: { not: null },
+            conversation: {
+              leadId: linkedLeadId,
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          include: { campaign: { select: { name: true } } },
+        }),
+        prisma.tag.findFirst({
+          where: {
+            isImportList: true,
+            leads: {
+              some: {
+                leadId: linkedLeadId,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { name: true },
+        }),
+        prisma.lead.findUnique({
+          where: { id: linkedLeadId },
+          select: { source: true },
+        }),
+      ]);
+
+      const normalizedLeadSource = (() => {
+        const raw = (linkedLead?.source || '').trim();
+        if (!raw) return '';
+        const token = raw.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        return ['csvimport', 'import', 'inbox', 'sms', 'smsinbox'].includes(token) ? '' : raw;
+      })();
+      const resolvedSource =
+        campaignLead?.campaign?.name?.trim() ||
+        campaignMessage?.campaign?.name?.trim() ||
+        importListTag?.name?.trim() ||
+        normalizedLeadSource;
+
+      if (resolvedSource) {
+        const sourceNote = `Source: SMS — ${resolvedSource}`;
+        await prisma.deal.update({
+          where: { id: deal.id },
+          data: { clientNotes: sourceNote },
+        });
+      }
+    }
+
+    if (initialNotes) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: deal.id,
+          repId: req.user!.id,
+          eventType: 'note_added',
+          note: initialNotes,
+        },
+      });
+
+      if (!getPipelineAiLocalSkipReason(initialNotes)) {
+        void extractPipelineSignals({
+          dealId: deal.id,
+          inputType: 'rep_note',
+          text: initialNotes,
+          stageAtTime: deal.stage,
+          productAtTime: deal.productType,
+        });
+      }
+    }
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.status(201).json(deal);
+  }
+
+  static async updateDeal(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const updateData: any = { ...req.body };
+    const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(updateData, key);
+
+    if (
+      updateData.nextActionDue &&
+      typeof updateData.nextActionDue === 'string' &&
+      !updateData.nextActionDue.includes('T')
+    ) {
+      updateData.nextActionDue = new Date(updateData.nextActionDue + 'T12:00:00.000Z');
+    }
+    if (
+      updateData.followUpDate &&
+      typeof updateData.followUpDate === 'string' &&
+      !updateData.followUpDate.includes('T')
+    ) {
+      updateData.followUpDate = new Date(updateData.followUpDate + 'T12:00:00.000Z');
+    }
+    if (updateData.fundedDate && typeof updateData.fundedDate === 'string' && !updateData.fundedDate.includes('T')) {
+      updateData.fundedDate = new Date(updateData.fundedDate + 'T12:00:00.000Z');
+    }
+
+    const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+
+    const fundingEventUpdate = hasOwn('fundingEventUpdate') ? updateData.fundingEventUpdate : null;
+    delete updateData.fundingEventUpdate;
+
+    const notesProvided = hasOwn('notes');
+    const previousNotes = (existing.notes || '').trim();
+    let nextNotes = previousNotes;
+    if (notesProvided) {
+      nextNotes = typeof updateData.notes === 'string' ? updateData.notes.trim() : '';
+      updateData.notes = nextNotes || null;
+    }
+
+    if (existing.stage === DealStage.CLOSED && !isAdminLike(req.user)) {
+      return res.status(403).json({ error: 'Closed deals are locked. Ask an admin to unlock.' });
+    }
+
+    if (!isAdminLike(req.user)) {
+      if (!canAccessDeal(req.user, existing)) return res.status(403).json({ error: 'Access denied' });
+      delete updateData.assignedRepId;
+      delete updateData.assistingRepIds;
+    }
+
+    const contactAttemptsProvided = hasOwn('contactAttempts');
+    const contactAttemptThresholdProvided = hasOwn('contactAttemptThreshold');
+    let manualAttemptEvent: { eventType: string; note: string; metadata: Prisma.InputJsonObject } | null = null;
+    if (contactAttemptsProvided || contactAttemptThresholdProvided) {
+      if (!isAdminLike(req.user)) {
+        return res.status(403).json({ error: 'Only admin/manager can override contact attempt counters' });
+      }
+
+      const nextThreshold = contactAttemptThresholdProvided
+        ? Number.parseInt(String(updateData.contactAttemptThreshold), 10)
+        : existing.contactAttemptThreshold || 10;
+      if (!Number.isInteger(nextThreshold) || nextThreshold < 1 || nextThreshold > 50) {
+        return res.status(400).json({ error: 'Contact attempt threshold must be between 1 and 50' });
+      }
+      updateData.contactAttemptThreshold = nextThreshold;
+
+      if (contactAttemptsProvided) {
+        const nextAttempts = Number.parseInt(String(updateData.contactAttempts), 10);
+        if (!Number.isInteger(nextAttempts) || nextAttempts < 0 || nextAttempts > nextThreshold) {
+          return res.status(400).json({ error: 'Contact attempts must be between 0 and threshold' });
+        }
+        updateData.contactAttempts = nextAttempts;
+
+        if (nextAttempts === 0) {
+          updateData.lastEngagementAt = new Date();
+        }
+
+        manualAttemptEvent = {
+          eventType: nextAttempts === 0 ? 'engagement_reset' : 'contact_attempt_override',
+          note:
+            nextAttempts === 0
+              ? 'Contact attempts reset by admin override'
+              : 'Contact attempts adjusted by admin override',
+          metadata: {
+            reason: 'manual_override',
+            previousAttempts: existing.contactAttempts || 0,
+            contactAttempts: nextAttempts,
+            threshold: nextThreshold,
+          },
+        };
+      } else {
+        manualAttemptEvent = {
+          eventType: 'contact_attempt_override',
+          note: 'Contact attempt threshold adjusted by admin override',
+          metadata: {
+            reason: 'manual_override',
+            previousThreshold: existing.contactAttemptThreshold || 10,
+            threshold: nextThreshold,
+          },
+        };
+      }
+    }
+
+    const productTypeProvided = hasOwn('productType');
+    const dealAmountProvided = hasOwn('dealAmount');
+    const submittedAmountProvided = hasOwn('submittedAmount');
+    if (productTypeProvided || dealAmountProvided || submittedAmountProvided) {
+      let effectiveProductType = existing.productType;
+
+      if (productTypeProvided) {
+        if (updateData.productType === '' || updateData.productType === null) {
+          updateData.productType = null;
+          effectiveProductType = null;
+        } else {
+          const normalizedProductType = normalizeProductType(updateData.productType);
+          if (!normalizedProductType) {
+            return res.status(400).json({ error: 'Invalid product type' });
+          }
+          updateData.productType = normalizedProductType;
+          effectiveProductType = normalizedProductType;
+        }
+      }
+
+      if (dealAmountProvided) {
+        updateData.dealAmount = parseOptionalFloat(updateData.dealAmount);
+      }
+      if (submittedAmountProvided) {
+        updateData.submittedAmount = parseOptionalFloat(updateData.submittedAmount);
+      }
+
+      if (isSubmittedAmountProduct(effectiveProductType)) {
+        const effectiveSubmittedAmount = submittedAmountProvided
+          ? updateData.submittedAmount
+          : dealAmountProvided
+            ? updateData.dealAmount
+            : ((existing as any).submittedAmount ?? existing.dealAmount ?? null);
+        updateData.submittedAmount = effectiveSubmittedAmount;
+        updateData.dealAmount = null;
+        updateData.needsAmount = !effectiveSubmittedAmount;
+      } else {
+        const effectiveDealAmount = dealAmountProvided
+          ? updateData.dealAmount
+          : submittedAmountProvided
+            ? updateData.submittedAmount
+            : (existing.dealAmount ?? (existing as any).submittedAmount ?? null);
+        updateData.dealAmount = effectiveDealAmount;
+        updateData.submittedAmount = null;
+        updateData.needsAmount = !effectiveDealAmount;
+      }
+    }
+
+    if (updateData.followUpDate || updateData.followUpType || updateData.followUpNote) {
+      if (!updateData.followUpDate || !updateData.followUpType || !updateData.followUpNote) {
+        return res.status(400).json({ error: 'Follow-up requires type, date, and note (all three are required)' });
+      }
+      updateData.followUpDate = new Date(updateData.followUpDate);
+
+      const typeLabels: Record<string, string> = {
+        renewal: 'Renewal follow-up',
+        nurture: 'Nurture check-in',
+        statement: 'Statement refresh',
+        statement_refresh: 'Statement refresh',
+        timing: 'Check timing',
+        check_timing: 'Check timing',
+        reengage: 'Re-engage',
+        re_engage: 'Re-engage',
+      };
+      const actionLabel = typeLabels[updateData.followUpType] || 'Follow up';
+      updateData.nextAction = `${actionLabel} — ${updateData.followUpNote}`;
+      updateData.nextActionDue = updateData.followUpDate;
+
+      if (!['NURTURE', 'FUNDED', 'CLOSED'].includes(existing.stage)) {
+        updateData.stage = DealStage.NURTURE;
+        updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
+        updateData.daysInStage = 0;
+
+        await prisma.dealEvent.create({
+          data: {
+            dealId: id,
+            repId: req.user!.id,
+            eventType: 'stage_change',
+            fromStage: existing.stage,
+            toStage: DealStage.NURTURE,
+            note: `Follow-up scheduled: ${actionLabel}`,
+          },
+        });
+      }
+
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'follow_up',
+          note: `${actionLabel}: ${updateData.followUpNote} (due ${updateData.followUpDate.toISOString().split('T')[0]})`,
+        },
+      });
+    }
+
+    const advancedStages: DealStage[] = [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING, DealStage.FUNDED];
+    if (
+      updateData.appSubmitted === true &&
+      !existing.appSubmitted &&
+      !advancedStages.includes(existing.stage) &&
+      !advancedStages.includes(updateData.stage)
+    ) {
+      updateData.stage = DealStage.SUBMITTED_IN_REVIEW;
+      updateData.stageLabel = STAGE_LABELS[DealStage.SUBMITTED_IN_REVIEW];
+      updateData.daysInStage = 0;
+      updateData.nextAction = 'Follow up lender — app in review';
+
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'stage_change',
+          fromStage: existing.stage,
+          toStage: DealStage.SUBMITTED_IN_REVIEW,
+          note: 'Auto-moved: app submitted',
+        },
+      });
+    }
+
+    if (updateData.stage === DealStage.COMMITTED_FUNDING && existing.stage === DealStage.APPROVED_OFFERS) {
+      updateData.stageLabel = STAGE_LABELS[DealStage.COMMITTED_FUNDING];
+      updateData.commitSubStatus = CommitSubStatus.DOCS_REQUESTED;
+      updateData.daysInSubStatus = 0;
+      updateData.nextAction = 'Send doc checklist to client';
+
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'stage_change',
+          fromStage: DealStage.APPROVED_OFFERS,
+          toStage: DealStage.COMMITTED_FUNDING,
+          note: 'Client accepted terms',
+        },
+      });
+    }
+
+    if (updateData.stage && updateData.stage !== existing.stage) {
+      updateData.stageLabel = STAGE_LABELS[updateData.stage as DealStage] || updateData.stage;
+      if (!updateData.daysInStage && updateData.daysInStage !== 0) {
+        updateData.daysInStage = 0;
+      }
+
+      if (updateData.stage !== DealStage.SUBMITTED_IN_REVIEW && updateData.stage !== DealStage.COMMITTED_FUNDING) {
+        await prisma.dealEvent.create({
+          data: {
+            dealId: id,
+            repId: req.user!.id,
+            eventType: 'stage_change',
+            fromStage: existing.stage,
+            toStage: updateData.stage,
+            note: `Stage changed to ${STAGE_LABELS[updateData.stage as DealStage] || updateData.stage}`,
+          },
+        });
+      }
+    }
+
+    if (fundingEventUpdate?.id) {
+      const existingFundingEvent = await prisma.fundingEvent.findFirst({
+        where: { id: String(fundingEventUpdate.id), dealId: id },
+      });
+      if (!existingFundingEvent) {
+        return res.status(404).json({ error: 'Funding event not found' });
+      }
+
+      const nextAmount = parseOptionalFloat(fundingEventUpdate.amountFunded) ?? existingFundingEvent.amountFunded;
+      if (nextAmount <= 0) {
+        return res.status(400).json({ error: 'Funded amount must be greater than 0' });
+      }
+
+      const nextProductType =
+        normalizeProductType(fundingEventUpdate.productType) ||
+        existingFundingEvent.productType ||
+        existing.productType;
+
+      let nextFundedDate: Date | null = existingFundingEvent.fundedDate || null;
+      if (fundingEventUpdate.fundedDate !== undefined) {
+        if (!fundingEventUpdate.fundedDate) {
+          nextFundedDate = null;
+        } else if (
+          typeof fundingEventUpdate.fundedDate === 'string' &&
+          !String(fundingEventUpdate.fundedDate).includes('T')
+        ) {
+          nextFundedDate = new Date(String(fundingEventUpdate.fundedDate) + 'T12:00:00.000Z');
+        } else {
+          nextFundedDate = new Date(fundingEventUpdate.fundedDate);
+        }
+        if (nextFundedDate && isNaN(nextFundedDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid funded date' });
+        }
+      }
+
+      let nextTermMonths = existingFundingEvent.termMonths;
+      if (fundingEventUpdate.termMonths !== undefined) {
+        const rawTerm = String(fundingEventUpdate.termMonths ?? '').trim();
+        if (!rawTerm) {
+          nextTermMonths = null;
+        } else {
+          const parsedTerm = parseInt(rawTerm, 10);
+          if (!Number.isFinite(parsedTerm)) {
+            return res.status(400).json({ error: 'Invalid term months' });
+          }
+          nextTermMonths = parsedTerm;
+        }
+      }
+      const nextRate =
+        fundingEventUpdate.rate !== undefined ? parseOptionalFloat(fundingEventUpdate.rate) : existingFundingEvent.rate;
+      const nextLender =
+        fundingEventUpdate.lender !== undefined
+          ? String(fundingEventUpdate.lender || '').trim() || null
+          : existingFundingEvent.lender;
+      const nextFundingNotes =
+        fundingEventUpdate.notes !== undefined
+          ? String(fundingEventUpdate.notes || '').trim() || null
+          : existingFundingEvent.notes;
+
+      await prisma.fundingEvent.update({
+        where: { id: existingFundingEvent.id },
+        data: {
+          amountFunded: nextAmount,
+          lender: nextLender,
+          termMonths: nextTermMonths,
+          rate: nextRate,
+          productType: nextProductType || null,
+          fundedDate: nextFundedDate,
+          notes: nextFundingNotes,
+        },
+      });
+
+      const amountDelta = nextAmount - existingFundingEvent.amountFunded;
+      if (amountDelta !== 0 && existing.clientId) {
+        await prisma.client.update({
+          where: { id: existing.clientId },
+          data: { totalFunded: { increment: amountDelta } },
+        });
+      }
+
+      if (existing.stage === DealStage.FUNDED) {
+        updateData.dealAmount = nextAmount;
+        updateData.fundedDate = nextFundedDate;
+        if (nextProductType) updateData.productType = nextProductType;
+      }
+
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'funding_event_updated',
+          note: `Funding event updated: $${existingFundingEvent.amountFunded.toLocaleString()} → $${nextAmount.toLocaleString()}`,
+        },
+      });
+    }
+
+    const noteEventType =
+      notesProvided && nextNotes !== previousNotes
+        ? !previousNotes && nextNotes
+          ? 'note_added'
+          : !nextNotes
+            ? 'note_cleared'
+            : 'note_updated'
+        : null;
+
+    updateData.lastActivityAt = new Date();
+
+    const clientFields = updateData.clientUpdate;
+    if (clientFields && existing.clientId) {
+      const allowedClientFields: Record<string, string | null> = {};
+      if (clientFields.businessName !== undefined) allowedClientFields.businessName = clientFields.businessName;
+      if (clientFields.contactName !== undefined) allowedClientFields.contactName = clientFields.contactName;
+      if (clientFields.email !== undefined) allowedClientFields.email = clientFields.email;
+      if (clientFields.phone !== undefined) allowedClientFields.phone = clientFields.phone;
+      if (clientFields.monthlyRevenue !== undefined) {
+        const monthlyRevenue = String(clientFields.monthlyRevenue || '').trim();
+        allowedClientFields.monthlyRevenue = monthlyRevenue || null;
+      }
+      if (Object.keys(allowedClientFields).length > 0) {
+        await prisma.client.update({ where: { id: existing.clientId }, data: allowedClientFields });
+      }
+    }
+
+    delete updateData.id;
+    delete updateData.createdAt;
+    delete updateData.client;
+    delete updateData.clientUpdate;
+    delete updateData.assignedRep;
+    delete updateData.offers;
+    delete updateData.fundingEvents;
+    delete updateData.dealEvents;
+    delete updateData.renewalTasks;
+    delete updateData.isHot;
+
+    const deal = await prisma.deal.update({
+      where: { id },
+      data: updateData,
+      include: {
+        client: true,
+        assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
+      },
+    });
+
+    if (noteEventType) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: noteEventType,
+          note: nextNotes ? nextNotes : 'Note cleared',
+        },
+      });
+
+      if ((noteEventType === 'note_added' || noteEventType === 'note_updated') && nextNotes) {
+        void extractPipelineSignals({
+          dealId: id,
+          inputType: 'rep_note',
+          text: nextNotes,
+          stageAtTime: deal.stage,
+          productAtTime: deal.productType,
+        });
+      }
+    }
+
+    if (manualAttemptEvent) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: manualAttemptEvent.eventType,
+          fromStage: existing.stage,
+          toStage: deal.stage,
+          note: manualAttemptEvent.note,
+          metadata: manualAttemptEvent.metadata,
+        },
+      });
+    }
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json({ ...deal, isHot: computeIsHot(deal), stageLabel: STAGE_LABELS[deal.stage] });
+  }
+
+  static async moveDeal(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { stage } = req.body;
+    const targetStage = stage as DealStage;
+
+    if (!stage || !STAGE_ORDER.includes(targetStage)) {
+      return res.status(400).json({ error: 'Invalid stage' });
+    }
+
+    const existing = await prisma.deal.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, existing)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (existing.stage === DealStage.CLOSED && !isAdminLike(req.user)) {
+      return res.status(403).json({ error: 'Closed deals are locked. Ask an admin to unlock.' });
+    }
+
+    if (stage === 'NURTURE' && (!req.body.lostReason || !req.body.followUpDate)) {
+      return res.status(400).json({ error: 'Nurture stage requires lost reason and follow-up date' });
+    }
+
+    if (stage === 'CLOSED' && !req.body.disqualReason) {
+      return res.status(400).json({ error: 'Closed stage requires disqualification reason' });
+    }
+
+    const now = new Date();
+    const previousAttempts = existing.contactAttempts || 0;
+    const shouldResetEngagement =
+      previousAttempts > 0 &&
+      STAGE_ORDER.indexOf(targetStage) > STAGE_ORDER.indexOf(existing.stage) &&
+      targetStage !== DealStage.NURTURE &&
+      targetStage !== DealStage.CLOSED;
+    const updateData: any = {
+      stage: targetStage,
+      stageLabel: STAGE_LABELS[targetStage],
+      daysInStage: 0,
+      lastActivityAt: now,
+    };
+
+    if (shouldResetEngagement) {
+      updateData.contactAttempts = 0;
+      updateData.lastEngagementAt = now;
+    }
+
+    let autoResolvedTasks = 0;
+    if (stage === 'CLOSED' || stage === 'NURTURE') {
+      autoResolvedTasks = await autoResolveOpenTasksForClosingDeal(id);
+    }
+
+    const stageDefaultActions: Record<string, string> = {
+      NEW_LEAD: 'Make first contact within 24h',
+      SUBMITTED_IN_REVIEW: 'Follow up lender — app in review',
+      APPROVED_OFFERS: 'Call client — present offer now',
+      COMMITTED_FUNDING: 'Send doc checklist to client',
+    };
+    const genericDefaults = Object.values(stageDefaultActions);
+    if (existing.nextAction && genericDefaults.includes(existing.nextAction)) {
+      const newDefault = stageDefaultActions[stage as string];
+      if (newDefault) {
+        updateData.nextAction = newDefault;
+      }
+    }
+
+    if (req.body.lostReason) updateData.lostReason = req.body.lostReason;
+    if (req.body.disqualReason) updateData.disqualReason = req.body.disqualReason;
+    if (req.body.followUpDate) {
+      const parsedFollowUpDate =
+        typeof req.body.followUpDate === 'string' && !req.body.followUpDate.includes('T')
+          ? new Date(req.body.followUpDate + 'T12:00:00.000Z')
+          : new Date(req.body.followUpDate);
+      if (Number.isNaN(parsedFollowUpDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid follow-up date' });
+      }
+      updateData.followUpDate = parsedFollowUpDate;
+    }
+    if (req.body.followUpType) updateData.followUpType = req.body.followUpType;
+    if (req.body.followUpNote) updateData.followUpNote = req.body.followUpNote;
+
+    if (stage === 'NURTURE') {
+      const followUpType = req.body.followUpType || updateData.followUpType || existing.followUpType || 'reengage';
+      updateData.followUpType = followUpType;
+
+      const lostReasonText = (req.body.lostReason || updateData.lostReason || existing.lostReason || '').trim();
+      updateData.nextAction = lostReasonText ? `Re-engage — ${lostReasonText}` : 'Re-engage';
+
+      if (updateData.followUpDate) {
+        updateData.nextActionDue = updateData.followUpDate;
+      }
+    }
+
+    if (stage === 'CLOSED') {
+      updateData.nextAction = null;
+      updateData.nextActionDue = null;
+      updateData.followUpDate = null;
+      updateData.followUpType = null;
+    }
+
+    if (stage === 'FUNDED') {
+      updateData.fundedDate = new Date();
+    }
+
+    if (existing.stage === DealStage.FUNDED && stage !== 'FUNDED') {
+      updateData.fundedDate = null;
+
+      const fundingEvents = await prisma.fundingEvent.findMany({ where: { dealId: id } });
+      if (fundingEvents.length > 0) {
+        await prisma.renewalTask.deleteMany({ where: { dealId: id } });
+        const totalRolledBack = fundingEvents.reduce((s, fe) => s + (fe.amountFunded || 0), 0);
+        await prisma.fundingEvent.deleteMany({ where: { dealId: id } });
+
+        if (existing.clientId && totalRolledBack > 0) {
+          await prisma.client.update({
+            where: { id: existing.clientId },
+            data: {
+              totalFunded: { decrement: totalRolledBack },
+              fundingCount: { decrement: fundingEvents.length },
+            },
+          });
+        }
+      }
+    }
+
+    if (stage === 'NURTURE' && ['APPROVED_OFFERS', 'COMMITTED_FUNDING'].includes(existing.stage)) {
+      const offers = await prisma.offer.findMany({ where: { dealId: id }, orderBy: { amount: 'desc' }, take: 1 });
+      if (offers[0] && !existing.prevOffer) {
+        updateData.prevOffer = offers[0].amount;
+      }
+    }
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'stage_change',
+        fromStage: existing.stage,
+        toStage: stage,
+        note:
+          `Moved to ${STAGE_LABELS[stage as DealStage]}` +
+          (autoResolvedTasks > 0 ? ` · ${autoResolvedTasks} open task(s) auto-resolved` : ''),
+      },
+    });
+
+    if (shouldResetEngagement) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'engagement_reset',
+          fromStage: existing.stage,
+          toStage: targetStage,
+          note: 'Contact attempts reset after forward stage move',
+          metadata: {
+            reason: 'forward_stage_move',
+            previousAttempts,
+            contactAttempts: 0,
+          },
+        },
+      });
+    }
+
+    const deal = await prisma.deal.update({
+      where: { id },
+      data: updateData,
+      include: {
+        client: true,
+        assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
+      },
+    });
+
+    await syncLinkedLeadStatusFromDealStage({
+      dealId: id,
+      stage: stage as DealStage,
+      leadId: existing.leadId,
+      clientPhone: deal.client?.phone || null,
+    });
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json({ ...deal, isHot: computeIsHot(deal), stageLabel: STAGE_LABELS[deal.stage] });
+  }
+
+  static async addOffer(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { lenderName, amount, terms, termMonths, rateFactor, notes, expiryDays, productType } = req.body;
+
+    const deal = await prisma.deal.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        stage: true,
+        assignedRepId: true,
+        assistingRepIds: true,
+        productType: true,
+        dealAmount: true,
+      },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+    if (!isAdminLike(req.user)) {
+      const assistingIds = (deal.assistingRepIds as string[]) || [];
+      const canAccess = deal.assignedRepId === req.user?.id || (!!req.user?.id && assistingIds.includes(req.user.id));
+      if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!lenderName || !String(lenderName).trim()) {
+      return res.status(400).json({ error: 'Lender name is required' });
+    }
+
+    const parsedAmount = parseOptionalFloat(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      return res.status(400).json({ error: 'Offer amount must be greater than 0' });
+    }
+
+    const parsedTermMonths =
+      termMonths !== undefined && termMonths !== null && String(termMonths).trim() !== ''
+        ? parseInt(String(termMonths), 10)
+        : null;
+    if (parsedTermMonths !== null && (!Number.isFinite(parsedTermMonths) || parsedTermMonths <= 0)) {
+      return res.status(400).json({ error: 'Term months must be a positive number' });
+    }
+
+    const parsedRateFactor = parseOptionalFloat(rateFactor);
+
+    const normalizedTerms =
+      typeof terms === 'string' && terms.trim()
+        ? terms.trim()
+        : [parsedTermMonths ? `${parsedTermMonths} mo` : null, parsedRateFactor ? `${parsedRateFactor}` : null]
+            .filter(Boolean)
+            .join(' · ') || null;
+
+    const normalizedOfferProductType = normalizeProductType(productType) || deal.productType;
+
+    const offer = await prisma.offer.create({
+      data: {
+        dealId: id,
+        lenderName,
+        amount: parsedAmount,
+        termMonths: parsedTermMonths,
+        rateFactor: parsedRateFactor,
+        terms: normalizedTerms,
+        expiryDays: expiryDays ? parseInt(expiryDays) : null,
+        productType: normalizedOfferProductType,
+      },
+    });
+
+    const earlierStages: DealStage[] = [
+      DealStage.NEW_LEAD,
+      DealStage.ENGAGED_INTERESTED,
+      DealStage.QUALIFIED,
+      DealStage.SUBMITTED_IN_REVIEW,
+    ];
+    const shouldAutoMove = earlierStages.includes(deal.stage) || deal.stage === DealStage.NURTURE;
+
+    const updateData: any = {
+      appSubmitted: true,
+      lastActivityAt: new Date(),
+      ...(deal.dealAmount ? {} : { dealAmount: parsedAmount }),
+    };
+
+    if (shouldAutoMove) {
+      updateData.stage = DealStage.APPROVED_OFFERS;
+      updateData.stageLabel = STAGE_LABELS[DealStage.APPROVED_OFFERS];
+      updateData.daysInStage = 0;
+      updateData.nextAction = 'Call client — present offer now';
+      updateData.nextActionDue = new Date();
+    }
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'offer_added',
+        note: `Offer from ${lenderName}: $${parsedAmount.toLocaleString()}${notes ? ` · ${String(notes).trim()}` : ''}`,
+      },
+    });
+
+    if (shouldAutoMove) {
+      await prisma.dealEvent.create({
+        data: {
+          dealId: id,
+          repId: req.user!.id,
+          eventType: 'stage_change',
+          fromStage: deal.stage,
+          toStage: DealStage.APPROVED_OFFERS,
+          note: 'Auto-moved: offer added',
+        },
+      });
+    }
+
+    await prisma.deal.update({ where: { id }, data: updateData });
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: updateData.stage || deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.status(201).json(offer);
+  }
+
+  static async deleteOffer(req: AuthRequest, res: Response) {
+    const { id, offerId } = req.params;
+
+    const deal = await prisma.deal.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        stage: true,
+        assignedRepId: true,
+        assistingRepIds: true,
+        productType: true,
+      },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!isAdminLike(req.user)) {
+      const assistingIds = (deal.assistingRepIds as string[]) || [];
+      const canAccess = deal.assignedRepId === req.user?.id || (!!req.user?.id && assistingIds.includes(req.user.id));
+      if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (deal.stage === DealStage.FUNDED || deal.stage === DealStage.CLOSED) {
+      return res.status(400).json({ error: 'Offers cannot be deleted for funded/closed deals' });
+    }
+
+    const offer = await prisma.offer.findFirst({
+      where: { id: offerId, dealId: id },
+      select: { id: true, lenderName: true, amount: true },
+    });
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+
+    await prisma.offer.delete({ where: { id: offerId } });
+
+    const [bestRemainingOffer, remainingCount] = await Promise.all([
+      prisma.offer.findFirst({ where: { dealId: id }, orderBy: { amount: 'desc' }, select: { amount: true } }),
+      prisma.offer.count({ where: { dealId: id } }),
+    ]);
+
+    const dealUpdate: any = { lastActivityAt: new Date() };
+    if (bestRemainingOffer) {
+      dealUpdate.dealAmount = bestRemainingOffer.amount;
+    } else if (!isSubmittedAmountProduct(deal.productType)) {
+      dealUpdate.dealAmount = null;
+      dealUpdate.needsAmount = true;
+    }
+    await prisma.deal.update({ where: { id }, data: dealUpdate });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'offer_deleted',
+        note: `Offer removed: ${offer.lenderName} ($${offer.amount.toLocaleString()})`,
+      },
+    });
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json({ deleted: true, offerId, remainingOffers: remainingCount });
+  }
+
+  static async markFunded(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { amountFunded, lender, notes, productType, fundedDate } = req.body;
+
+    const deal = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const amount = parseFloat(amountFunded);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Amount funded must be greater than 0' });
+    }
+
+    const fDateRaw =
+      typeof fundedDate === 'string' && fundedDate && !fundedDate.includes('T')
+        ? `${fundedDate}T12:00:00.000Z`
+        : fundedDate;
+    const fDate = fDateRaw ? new Date(fDateRaw) : new Date();
+    if (Number.isNaN(fDate.getTime())) {
+      return res.status(400).json({ error: 'Invalid funded date' });
+    }
+
+    const firstCheckinDate = new Date(fDate.getTime() + 35 * 24 * 60 * 60 * 1000);
+
+    let cycleTime: number | null = null;
+    if (deal.appSubmitted && deal.createdAt) {
+      cycleTime = Math.ceil((fDate.getTime() - new Date(deal.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    }
+
+    const normalizedFundingProductType = normalizeProductType(productType) || deal.productType || null;
+
+    const fundingEvent = await prisma.fundingEvent.create({
+      data: {
+        dealId: id,
+        repId: deal.assignedRepId,
+        amountFunded: amount,
+        lender: lender || deal.lender,
+        productType: normalizedFundingProductType,
+        fundedDate: fDate,
+        notes,
+      },
+    });
+
+    const renewalTaskDates = [
+      { taskType: '35d_checkin', dueDate: new Date(fDate.getTime() + 35 * 24 * 60 * 60 * 1000) },
+      { taskType: 'midpoint', dueDate: new Date(fDate.getTime() + 90 * 24 * 60 * 60 * 1000) },
+      { taskType: 'payoff_30d', dueDate: new Date(fDate.getTime() + 150 * 24 * 60 * 60 * 1000) },
+    ];
+
+    await prisma.renewalTask.createMany({
+      data: renewalTaskDates.map((t) => ({
+        dealId: id,
+        repId: deal.assignedRepId,
+        taskType: t.taskType,
+        dueDate: t.dueDate,
+      })),
+    });
+
+    await prisma.deal.update({
+      where: { id },
+      data: {
+        stage: DealStage.FUNDED,
+        stageLabel: STAGE_LABELS[DealStage.FUNDED],
+        productType: normalizedFundingProductType,
+        fundedDate: fDate,
+        cycleTime,
+        dealAmount: amount,
+        nextAction: 'Funded check-in',
+        nextActionDue: firstCheckinDate,
+        lastActivityAt: new Date(),
+        staleDays: 0,
+        daysInStage: 0,
+      },
+    });
+
+    await syncLinkedLeadStatusFromDealStage({
+      dealId: id,
+      stage: DealStage.FUNDED,
+      leadId: deal.leadId,
+      clientPhone: deal.client?.phone || null,
+    });
+
+    await prisma.client.update({
+      where: { id: deal.clientId },
+      data: {
+        totalFunded: { increment: amount },
+        fundingCount: { increment: 1 },
+        lastFundedDate: fDate,
+      },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'funded',
+        note: `Deal funded: $${amount.toLocaleString()} via ${lender || 'N/A'}`,
+      },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'stage_change',
+        fromStage: deal.stage,
+        toStage: DealStage.FUNDED,
+        note: 'Marked as funded',
+      },
+    });
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: DealStage.FUNDED,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json({ fundingEvent, message: 'Deal marked as funded, 3 renewal tasks created' });
+  }
+
+  static async completeAction(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { actionType, nextAction, nextActionDue, note } = req.body;
+
+    if (!actionType) return res.status(400).json({ error: 'Action type is required' });
+    if (!nextAction) return res.status(400).json({ error: 'Next action is required' });
+    if (!nextActionDue) return res.status(400).json({ error: 'Next action due date is required' });
+
+    const deal = await prisma.deal.findUnique({ where: { id } });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'action_completed',
+        note: `${actionType}${note ? ' — ' + note : ''} → Next: ${nextAction}`,
+        metadata: { actionType, nextAction, nextActionDue },
+      },
+    });
+
+    const dueDateNormalized =
+      typeof nextActionDue === 'string' && !nextActionDue.includes('T')
+        ? new Date(nextActionDue + 'T12:00:00.000Z')
+        : new Date(nextActionDue);
+
+    const updated = await prisma.deal.update({
+      where: { id },
+      data: {
+        lastActivityAt: new Date(),
+        nextAction,
+        nextActionDue: dueDateNormalized,
+        staleDays: 0,
+      },
+      include: { client: true, assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } } },
+    });
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json(updated);
+  }
+
+  static async shareDeal(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { assistingRepIds, assignedRepId } = req.body;
+
+    const deal = await prisma.deal.findUnique({ where: { id } });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAdminOrPrimary(req.user, deal)) {
+      return res.status(403).json({ error: 'Only the primary rep or admin can share deals' });
+    }
+
+    const currentAssists = Array.isArray(deal.assistingRepIds)
+      ? ((deal.assistingRepIds as string[]) || []).filter(Boolean)
+      : [];
+    const requestedPrimary =
+      typeof assignedRepId === 'string' && assignedRepId.trim() ? assignedRepId.trim() : undefined;
+
+    if (assistingRepIds !== undefined && !Array.isArray(assistingRepIds)) {
+      return res.status(400).json({ error: 'assistingRepIds must be an array' });
+    }
+
+    let normalizedAssists: string[] | undefined =
+      assistingRepIds !== undefined
+        ? Array.from(
+            new Set(
+              (assistingRepIds || [])
+                .filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+                .map((v: string) => v.trim()),
+            ),
+          )
+        : undefined;
+
+    if (requestedPrimary) {
+      const primaryUser = await prisma.user.findFirst({
+        where: { id: requestedPrimary, isActive: true },
+        select: { id: true },
+      });
+      if (!primaryUser) return res.status(400).json({ error: 'Assigned rep must be an active user' });
+      if (normalizedAssists) normalizedAssists = normalizedAssists.filter((repId) => repId !== requestedPrimary);
+    }
+
+    if (normalizedAssists && normalizedAssists.length > 0) {
+      const validAssistCount = await prisma.user.count({
+        where: { id: { in: normalizedAssists }, isActive: true },
+      });
+      if (validAssistCount !== normalizedAssists.length) {
+        return res.status(400).json({ error: 'All assisting reps must be active users' });
+      }
+    }
+
+    const sameIds = (a: string[], b: string[]) => {
+      const sa = [...a].sort();
+      const sb = [...b].sort();
+      return sa.length === sb.length && sa.every((id, idx) => id === sb[idx]);
+    };
+
+    const assignedChanged = requestedPrimary !== undefined && requestedPrimary !== deal.assignedRepId;
+    const assistsChanged = normalizedAssists !== undefined && !sameIds(currentAssists, normalizedAssists);
+
+    if (!assignedChanged && !assistsChanged) {
+      const unchanged = await prisma.deal.findUnique({ where: { id } });
+      return res.json(unchanged);
+    }
+
+    const updateData: any = {};
+    if (assistsChanged) updateData.assistingRepIds = normalizedAssists || [];
+    if (assignedChanged) updateData.assignedRepId = requestedPrimary;
+
+    const updated = await prisma.deal.update({
+      where: { id },
+      data: updateData,
+    });
+
+    const noteFragments: string[] = [];
+    if (assignedChanged) {
+      noteFragments.push(`Primary rep changed`);
+    }
+    if (assistsChanged) {
+      noteFragments.push(`Shared with ${(normalizedAssists || []).length} rep(s)`);
+    }
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'deal_shared',
+        note: noteFragments.join('; ') || 'Deal sharing updated',
+      },
+    });
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: id,
+      stage: updated.stage,
+      repId: updated.assignedRepId,
+      assistingRepIds: (updated as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json(updated);
+  }
+
+  static async logAttempt(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { kind, note } = req.body as { kind?: QuickLogKind; note?: string };
+
+    if (!kind || !Object.values(QUICK_LOG_KINDS).includes(kind)) {
+      return res.status(400).json({ error: 'Invalid attempt kind' });
+    }
+
+    const existing = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
+    if (!existing) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, existing)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (existing.stage === DealStage.FUNDED || existing.stage === DealStage.CLOSED) {
+      return res.status(400).json({ error: 'Cannot log contact attempts on funded or closed deals' });
+    }
+
+    const now = new Date();
+    const previousAttempts = existing.contactAttempts || 0;
+    const threshold = existing.contactAttemptThreshold || 10;
+    let nextAttempts = previousAttempts;
+    let eventType = 'contact_attempt_logged';
+    let eventNote = `${QUICK_LOG_LABELS[kind]} logged`;
+    const updateData: any = {
+      lastActivityAt: now,
+      staleDays: 0,
+    };
+
+    if (INCREMENT_ATTEMPT_KINDS.has(kind)) {
+      nextAttempts = previousAttempts + 1;
+      updateData.contactAttempts = nextAttempts;
+      updateData.nextActionDue = addBusinessDays(now, 1);
+      eventNote = `${QUICK_LOG_LABELS[kind]} logged (${nextAttempts}/${threshold} attempts)`;
+
+      if (nextAttempts >= threshold && existing.stage !== DealStage.NURTURE) {
+        updateData.stage = DealStage.NURTURE;
+        updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
+        updateData.daysInStage = 0;
+        updateData.lostReason = `Auto-nurture after ${nextAttempts} contact attempts`;
+        updateData.followUpType = existing.followUpType || 'reengage';
+        updateData.followUpDate = existing.followUpDate || new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+        updateData.nextAction = 'Re-engage after contact attempts';
+        updateData.nextActionDue = updateData.followUpDate;
+        eventType = 'auto_nurture_attempt_threshold';
+        eventNote = `Auto-moved to Nurture after ${nextAttempts}/${threshold} contact attempts`;
+      }
+    }
+
+    if (kind === QUICK_LOG_KINDS.CONNECTED) {
+      nextAttempts = 0;
+      updateData.contactAttempts = 0;
+      updateData.lastEngagementAt = now;
+      updateData.nextActionDue = null;
+      eventNote = 'Connected with client; contact attempts reset';
+    }
+
+    if (kind === QUICK_LOG_KINDS.NOT_INTERESTED) {
+      nextAttempts = 0;
+      updateData.contactAttempts = 0;
+      updateData.stage = DealStage.NURTURE;
+      updateData.stageLabel = STAGE_LABELS[DealStage.NURTURE];
+      updateData.daysInStage = 0;
+      updateData.lostReason = 'Not interested';
+      updateData.followUpType = existing.followUpType || 'nurture';
+      updateData.followUpDate = existing.followUpDate || new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      updateData.nextAction = 'Nurture check-in — Not interested';
+      updateData.nextActionDue = updateData.followUpDate;
+      eventType = 'not_interested_nurture';
+      eventNote = 'Marked not interested and moved to Nurture';
+    }
+
+    const customNote = typeof note === 'string' ? note.trim() : '';
+
+    const deal = await prisma.deal.update({
+      where: { id },
+      data: updateData,
+      include: {
+        client: true,
+        assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true, avatarColor: true } },
+      },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType,
+        fromStage: existing.stage,
+        toStage: deal.stage,
+        note: customNote || eventNote,
+        metadata: {
+          kind,
+          previousAttempts,
+          contactAttempts: nextAttempts,
+          threshold,
+          autoMovedToNurture: existing.stage !== DealStage.NURTURE && deal.stage === DealStage.NURTURE,
+        },
+      },
+    });
+
+    if (deal.stage === DealStage.NURTURE && existing.leadId) {
+      await prisma.lead.update({
+        where: { id: existing.leadId },
+        data: { status: LeadStatus.NOT_INTERESTED },
+      });
+    }
+
+    const io = (req.app as any).io;
+    emitDealUpdatedScoped(io, {
+      dealId: deal.id,
+      stage: deal.stage,
+      repId: deal.assignedRepId,
+      assistingRepIds: (deal as any).assistingRepIds || [],
+      actorUserId: req.user?.id || null,
+    });
+
+    res.json({ ...deal, isHot: computeIsHot(deal), stageLabel: STAGE_LABELS[deal.stage] });
+  }
+
+  static async logCall(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const deal = await prisma.deal.findUnique({ where: { id }, include: { client: true } });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'call_logged',
+        note: `Call initiated to ${deal.client.businessName}`,
+      },
+    });
+
+    await prisma.deal.update({ where: { id }, data: { lastActivityAt: new Date(), staleDays: 0 } });
+
+    res.json({ phoneNumber: deal.client.phone, message: 'Call logged' });
+  }
+
+  static async completeRenewalTask(req: AuthRequest, res: Response) {
+    const { taskId } = req.params;
+    const { note } = req.body;
+
+    const task = await prisma.renewalTask.findUnique({
+      where: { id: taskId },
+      include: { deal: { select: { id: true, assignedRepId: true, assistingRepIds: true } } },
+    });
+    if (!task) return res.status(404).json({ error: 'Renewal task not found' });
+
+    if (!canAccessDeal(req.user, task.deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const updated = await prisma.renewalTask.update({
+      where: { id: taskId },
+      data: { status: RenewalTaskStatus.COMPLETED, completedAt: new Date() },
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: task.dealId,
+        repId: req.user!.id,
+        eventType: 'renewal_completed',
+        note: note || `Renewal task completed: ${task.taskType}`,
+      },
+    });
+
+    res.json(updated);
+  }
+
+  static async getOutboundGate(req: AuthRequest, res: Response) {
+    const gate = await OutboundGateService.getGateStatus(req.user);
+    res.json(gate);
+  }
+
+  static async getStats(req: AuthRequest, res: Response) {
+    const { repId, teamView } = req.query;
+    const requestedRepId = repId ? String(repId) : null;
+    const selectedRepId =
+      requestedRepId && (isAdminLike(req.user) || requestedRepId === req.user?.id) ? requestedRepId : null;
+    const isUnscopedTeamView = canUseUnscopedTeamScope(req.user, teamView, selectedRepId);
+    const where: any = selectedRepId
+      ? repScopeFilter(selectedRepId, true)
+      : isUnscopedTeamView
+        ? {}
+        : repFilter(req.user);
+    const fundingScopedRepId = selectedRepId || (!isUnscopedTeamView && !isAdminLike(req.user) ? req.user!.id : null);
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const fundingEventScope = fundingScopedRepId ? fundingRepScopeFilter(fundingScopedRepId) : {};
+
+    const [deals, fundedMTD, fundedMTDCount, allDeals] = await Promise.all([
+      prisma.deal.findMany({
+        where: { ...where, stage: { in: [DealStage.APPROVED_OFFERS, DealStage.COMMITTED_FUNDING] } },
+        select: {
+          dealAmount: true,
+          stage: true,
+          nextActionDue: true,
+          nextAction: true,
+          lastActivityAt: true,
+          offers: { select: { amount: true } },
+        },
+      }),
+      prisma.fundingEvent.aggregate({
+        where: {
+          ...fundingEventScope,
+          fundedDate: { gte: startOfMonth, lt: endOfMonth },
+        },
+        _sum: { amountFunded: true },
+      }),
+      prisma.fundingEvent.groupBy({
+        by: ['dealId'],
+        where: {
+          ...fundingEventScope,
+          fundedDate: { gte: startOfMonth, lt: endOfMonth },
+        },
+      }),
+      prisma.deal.findMany({
+        where: { ...where, stage: { notIn: [DealStage.FUNDED, DealStage.CLOSED] } },
+        select: {
+          lastReplyAt: true,
+          stage: true,
+          lenderEngaged: true,
+          appSubmitted: true,
+          nextAction: true,
+          nextActionDue: true,
+          followUpDate: true,
+          dealAmount: true,
+          lastActivityAt: true,
+          prevOffer: true,
+        },
+      }),
+    ]);
+
+    const lifetimeFunded = await prisma.fundingEvent.aggregate({
+      where: fundingEventScope,
+      _sum: { amountFunded: true },
+    });
+
+    const bestOfferValue = (d: any) => {
+      const best = (d.offers || []).reduce((b: any, o: any) => (!b || o.amount > b.amount ? o : b), null);
+      return best?.amount || d.dealAmount || 0;
+    };
+    const activePipeline = deals.reduce((sum, d) => sum + bestOfferValue(d), 0);
+
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const atRisk = deals
+      .filter(
+        (d) =>
+          (d.nextActionDue && new Date(d.nextActionDue) < now) ||
+          !d.nextAction ||
+          (d.lastActivityAt && new Date(d.lastActivityAt) < fortyEightHoursAgo),
+      )
+      .reduce((sum, d) => sum + bestOfferValue(d), 0);
+
+    const hotCount = allDeals.filter((d) => computeIsHot(d)).length;
+
+    const noNextAction = allDeals.filter((d) => !d.nextAction).length;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const queueToday = allDeals.filter((d) => {
+      const dueDate = d.nextActionDue || d.followUpDate;
+      return !!dueDate && new Date(dueDate) <= tomorrow;
+    }).length;
+
+    const nurtureDeals = await prisma.deal.findMany({
+      where: { ...where, stage: DealStage.NURTURE, prevOffer: { gt: 0 } },
+      select: { prevOffer: true },
+    });
+    const nurtureValue = nurtureDeals.reduce((sum, d) => sum + (d.prevOffer || 0), 0);
+
+    const renewalsDue = await prisma.renewalTask.count({
+      where: {
+        ...(fundingScopedRepId ? { repId: fundingScopedRepId } : {}),
+        status: { in: [RenewalTaskStatus.PENDING, RenewalTaskStatus.OVERDUE] },
+        dueDate: { lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) },
+      },
+    });
+
+    const committedValue = deals
+      .filter((d) => d.stage === DealStage.COMMITTED_FUNDING)
+      .reduce((sum, d) => sum + bestOfferValue(d), 0);
+
+    let monthlyGoal = 0;
+    if (fundingScopedRepId) {
+      const repUser = await prisma.user.findUnique({
+        where: { id: fundingScopedRepId },
+        select: { monthlyGoal: true },
+      });
+      monthlyGoal = repUser?.monthlyGoal || 0;
+    } else if (isUnscopedTeamView) {
+      const teamGoal = await prisma.goal.findUnique({
+        where: {
+          entityType_entityId: {
+            entityType: 'team',
+            entityId: 'team',
+          },
+        },
+        select: { monthlyGoal: true },
+      });
+
+      if (teamGoal) {
+        monthlyGoal = teamGoal.monthlyGoal || 0;
+      } else {
+        const allReps = await prisma.user.aggregate({
+          where: { role: { in: ['REP', 'ADMIN', 'MANAGER'] }, isActive: true },
+          _sum: { monthlyGoal: true },
+        });
+        monthlyGoal = allReps._sum.monthlyGoal || 0;
+      }
+    } else {
+      const allReps = await prisma.user.aggregate({
+        where: { role: { in: ['REP', 'ADMIN', 'MANAGER'] }, isActive: true },
+        _sum: { monthlyGoal: true },
+      });
+      monthlyGoal = allReps._sum.monthlyGoal || 0;
+    }
+
+    res.json({
+      activePipeline,
+      activeCount: allDeals.length,
+      fundedMTD: fundedMTD._sum.amountFunded || 0,
+      fundedThisMonthCount: fundedMTDCount.length,
+      lifetimeFunded: lifetimeFunded._sum.amountFunded || 0,
+      monthlyGoal,
+      atRisk,
+      hotCount,
+      noNextAction,
+      queueToday,
+      pipelineValue: activePipeline + nurtureValue,
+      renewalsDue,
+      committedValue,
+    });
+  }
+
+  static async getReviveQueue(req: AuthRequest, res: Response) {
+    const { repId, primaryOnly } = req.query;
+    const forcePrimary = String(primaryOnly || '').toLowerCase() === 'true';
+    let filter: any = repFilter(req.user, { primaryOnly: forcePrimary });
+
+    if (isAdminLike(req.user) && repId) {
+      filter = repScopeFilter(String(repId), !forcePrimary);
+    }
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const twentyOneDaysAgo = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
+    const oneHundredFiftyDaysAgo = new Date(now.getTime() - 150 * 24 * 60 * 60 * 1000);
+
+    const [renewalCandidates, reviveCandidates, statementRefresh, followUpDue, overdueActions] = await Promise.all([
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          stage: DealStage.FUNDED,
+          fundedDate: { lte: oneHundredFiftyDaysAgo },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          stage: { in: [DealStage.NURTURE, DealStage.APPROVED_OFFERS] },
+          lastActivityAt: { lte: thirtyDaysAgo },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          stage: DealStage.SUBMITTED_IN_REVIEW,
+          lastActivityAt: { lte: twentyOneDaysAgo },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          followUpDate: { lte: now },
+          stage: { notIn: [DealStage.CLOSED] },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+      prisma.deal.findMany({
+        where: {
+          ...filter,
+          nextActionDue: { lt: now },
+          stage: { notIn: [DealStage.CLOSED] },
+        },
+        include: {
+          client: true,
+          assignedRep: { select: { id: true, firstName: true, lastName: true, initials: true } },
+        },
+      }),
+    ]);
+
+    const seen = new Set<string>();
+    const all: any[] = [];
+    for (const d of renewalCandidates) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'renewal' });
+      }
+    }
+    for (const d of reviveCandidates) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'revive' });
+      }
+    }
+    for (const d of statementRefresh) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'statement_refresh' });
+      }
+    }
+    for (const d of followUpDue) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'follow_up' });
+      }
+    }
+    for (const d of overdueActions) {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        all.push({ ...d, reviveSource: 'overdue_action' });
+      }
+    }
+
+    all.sort((a, b) => {
+      const sourcePriority: Record<string, number> = {
+        overdue_action: 0,
+        follow_up: 1,
+        statement_refresh: 2,
+        revive: 3,
+        renewal: 4,
+      };
+      const ap = sourcePriority[a.reviveSource] ?? 99;
+      const bp = sourcePriority[b.reviveSource] ?? 99;
+      if (ap !== bp) return ap - bp;
+      return (b.dealAmount || 0) - (a.dealAmount || 0);
+    });
+
+    res.json(all);
+  }
+
+  static async importCSV(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required' });
+    }
+
+    const csvContent = req.file.buffer.toString('utf-8');
+    const records = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true });
+
+    const reps: RepIdentity[] = await prisma.user.findMany({
+      select: { id: true, firstName: true, lastName: true, initials: true },
+    });
+
+    const assignToRepId = req.body?.assignToRepId || null;
+    if (assignToRepId) {
+      const repExists = reps.some((r) => r.id === assignToRepId);
+      if (!repExists) return res.status(400).json({ error: 'Invalid rep ID' });
+    }
+
+    const batchId = `import_${Date.now()}`;
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const row of records) {
+      const businessName =
+        row.business_name || row.BusinessName || row['Business Name'] || row.company || row.Company || '';
+      const contactName = row.contact_name || row.ContactName || row.Contact || '';
+      const repName = row.rep_name || row.RepName || row.rep || row.originator || row['FDR Originator'] || '';
+      const productRaw = (row.product_type || row.ProductType || row.product || '').toUpperCase();
+      const amountStr = (
+        row.funded_amount ||
+        row.FundedAmount ||
+        row.amount ||
+        row['Funded Amount (last)'] ||
+        '0'
+      ).replace(/[$,]/g, '');
+      const dateStr =
+        row.funded_date || row.FundedDate || row['Funded Date'] || row['Funded Date (last)'] || row.date || '';
+      const phone = row.phone || row.Phone || row['Contact Phone Number'] || null;
+      const email = row.email || row.Email || row['Contact Email'] || null;
+      const lender = row.lender || row.Lender || row['FDR Funded By'] || undefined;
+      const state = row.state || row.State || row['State of Incorporation'] || undefined;
+
+      if (!businessName && !contactName) {
+        skipped++;
+        errors.push('Row missing business_name / Contact');
+        continue;
+      }
+
+      const effectiveBusinessName = businessName || contactName;
+
+      const amount = parseFloat(amountStr) || 0;
+      const fundedDate = dateStr ? new Date(dateStr) : new Date();
+      if (dateStr && isNaN(fundedDate.getTime())) {
+        skipped++;
+        errors.push(`Invalid date: ${dateStr}`);
+        continue;
+      }
+
+      const repMatch = repName ? matchRepByName(reps, repName) : null;
+      if (!assignToRepId && repName && !repMatch) {
+        skipped++;
+        errors.push(`Unknown rep "${repName}" for "${effectiveBusinessName}"`);
+        continue;
+      }
+      const repId = assignToRepId || repMatch?.id || req.user!.id;
+
+      const productMap: Record<string, ProductType> = {
+        MCA: ProductType.MCA,
+        LOC: ProductType.LOC,
+        'LINE OF CREDIT': ProductType.LOC,
+        EQUIPMENT: ProductType.EQUIPMENT,
+        HELOC: ProductType.HELOC,
+        SBA: ProductType.SBA,
+        CRE: ProductType.CRE,
+        BRIDGE: ProductType.BRIDGE,
+      };
+      const productType = productMap[productRaw] || null;
+
+      const normalizedPhone = phone ? phone.replace(/[^\d+]/g, '').replace(/^(\d{10})$/, '+1$1') : null;
+
+      let client;
+      if (normalizedPhone) {
+        client = await prisma.client.findFirst({ where: { phone: normalizedPhone } });
+        if (client && !client.businessName && effectiveBusinessName !== client.contactName) {
+          await prisma.client.update({ where: { id: client.id }, data: { businessName: effectiveBusinessName } });
+        }
+      }
+
+      try {
+        if (client) {
+          await prisma.client.update({
+            where: { id: client.id },
+            data: {
+              totalFunded: { increment: amount },
+              fundingCount: { increment: 1 },
+              lastFundedDate: fundedDate,
+              state: state || undefined,
+            },
+          });
+        } else {
+          client = await prisma.client.create({
+            data: {
+              businessName: effectiveBusinessName,
+              contactName,
+              phone: normalizedPhone,
+              email,
+              state: state || undefined,
+              totalFunded: amount,
+              fundingCount: 1,
+              lastFundedDate: fundedDate,
+            },
+          });
+        }
+
+        const deal = await prisma.deal.create({
+          data: {
+            clientId: client.id,
+            assignedRepId: repId,
+            stage: DealStage.FUNDED,
+            stageLabel: STAGE_LABELS[DealStage.FUNDED],
+            productType,
+            dealAmount: amount,
+            fundedDate,
+            lastActivityAt: fundedDate,
+            importBatch: batchId,
+            originatorName: repName || undefined,
+            lender,
+            notes: row.notes || row.Notes || undefined,
+          },
+        });
+
+        await prisma.fundingEvent.create({
+          data: {
+            dealId: deal.id,
+            repId,
+            amountFunded: amount,
+            productType,
+            fundedDate,
+            lender,
+          },
+        });
+
+        const ms = (d: number) => d * 24 * 60 * 60 * 1000;
+        await prisma.renewalTask.createMany({
+          data: [
+            { dealId: deal.id, taskType: '35d_checkin', dueDate: new Date(fundedDate.getTime() + ms(35)) },
+            { dealId: deal.id, taskType: 'midpoint', dueDate: new Date(fundedDate.getTime() + ms(90)) },
+            { dealId: deal.id, taskType: 'payoff_30d', dueDate: new Date(fundedDate.getTime() + ms(150)) },
+          ],
+        });
+
+        imported++;
+      } catch (err: any) {
+        skipped++;
+        errors.push(`${businessName}: ${err.message}`);
+      }
+    }
+
+    res.json({ imported, skipped, total: records.length, batchId, errors: errors.slice(0, 20) });
+  }
+
+  static async importLeads(req: AuthRequest, res: Response) {
+    if (!req.file) {
+      return res.status(400).json({ error: 'CSV file is required' });
+    }
+
+    const csvContent = req.file.buffer.toString('utf-8');
+    const records = parse(csvContent, { columns: true, skip_empty_lines: true, trim: true });
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: 'CSV file is empty' });
+    }
+
+    const user = req.user!;
+    const isAdmin = user.role === 'ADMIN';
+    const duplicateModeRaw = String(req.body?.duplicateMode || 'skip').toLowerCase();
+    const duplicateMode: 'skip' | 'add_to_existing' =
+      duplicateModeRaw === 'add_to_existing' ? 'add_to_existing' : 'skip';
+
+    let assignRepId = user.id;
+    if (isAdmin && req.body?.assignToRepId) {
+      const repExists = await prisma.user.findFirst({ where: { id: req.body.assignToRepId } });
+      if (!repExists) return res.status(400).json({ error: 'Invalid rep ID' });
+      assignRepId = req.body.assignToRepId;
+    }
+
+    const batchId = `leads_${Date.now()}`;
+    let imported = 0;
+    let duplicates = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    const productMap: Record<string, ProductType> = {
+      MCA: ProductType.MCA,
+      LOC: ProductType.LOC,
+      EQUIPMENT: ProductType.EQUIPMENT,
+      HELOC: ProductType.HELOC,
+      SBA: ProductType.SBA,
+      CRE: ProductType.CRE,
+      BRIDGE: ProductType.BRIDGE,
+    };
+
+    const STAGE_MAP: Record<string, DealStage> = {
+      new: DealStage.NEW_LEAD,
+      engaged: DealStage.ENGAGED_INTERESTED,
+      interested: DealStage.ENGAGED_INTERESTED,
+      qualified: DealStage.QUALIFIED,
+      submitted: DealStage.SUBMITTED_IN_REVIEW,
+    };
+    const BATCH_SIZE = 100;
+
+    for (let batchStart = 0; batchStart < records.length; batchStart += BATCH_SIZE) {
+      const chunk = records.slice(batchStart, batchStart + BATCH_SIZE);
+
+      for (const row of chunk) {
+        const businessName = String(
+          row.business_name || row['Business Name'] || row.BusinessName || row.company || row.Company || '',
+        ).trim();
+        const contactName = String(
+          row.contact_name || row['Contact Name'] || row.Contact || row.name || row.Name || '',
+        ).trim();
+        const phone = String(row.phone || row.Phone || row['Phone Number'] || row.mobile || '').replace(/\D/g, '');
+        const email = String(row.email || row.Email || '').trim();
+        const notes = String(row.notes || row.Notes || '').trim();
+        const productRaw = String(row.product_type || row['Product Type'] || row.product || '').toUpperCase();
+        const productType = productMap[productRaw] || ProductType.MCA;
+        const stageRaw = String(row.stage || row.Stage || row.Status || row.status || '').trim();
+        const source = String(row.source || row.Source || '').trim() || 'CSV Import';
+        const monthlyRevenue = String(row.monthly_revenue || row['Monthly Revenue'] || '').trim();
+        const nextActionRaw = String(row.next_action || row['Next Action'] || row.nextAction || '').trim();
+        const nextAction = nextActionRaw || 'Call merchant';
+
+        if (!businessName) {
+          skipped++;
+          errors.push('Row missing required business_name');
+          continue;
+        }
+        if (!contactName) {
+          skipped++;
+          errors.push(`"${businessName}" missing required contact_name`);
+          continue;
+        }
+        if (!phone) {
+          skipped++;
+          errors.push(`"${businessName}" missing required phone`);
+          continue;
+        }
+
+        const normalizedPhone = phone.startsWith('1') ? `+${phone}` : `+1${phone}`;
+
+        let existingClientByPhone: {
+          id: string;
+          businessName: string;
+          contactName: string | null;
+          email: string | null;
+        } | null = null;
+
+        existingClientByPhone = await prisma.client.findFirst({
+          where: { phone: normalizedPhone },
+          select: { id: true, businessName: true, contactName: true, email: true },
+        });
+        if (existingClientByPhone) {
+          const activeDeal = await prisma.deal.findFirst({
+            where: {
+              clientId: existingClientByPhone.id,
+              assignedRepId: assignRepId,
+              stage: { notIn: [DealStage.CLOSED, DealStage.NURTURE] },
+            },
+          });
+          if (activeDeal) {
+            duplicates++;
+            if (duplicateMode === 'skip') continue;
+          }
+        }
+
+        const stage = (stageRaw ? STAGE_MAP[stageRaw.toLowerCase()] : null) || DealStage.ENGAGED_INTERESTED;
+
+        try {
+          let client;
+          if (existingClientByPhone) {
+            client = await prisma.client.update({
+              where: { id: existingClientByPhone.id },
+              data: {
+                businessName: businessName || existingClientByPhone.businessName,
+                contactName: contactName || existingClientByPhone.contactName || undefined,
+                email: email || existingClientByPhone.email || undefined,
+              },
+            });
+          } else {
+            client = await prisma.client.upsert({
+              where: { phone: normalizedPhone },
+              update: { businessName },
+              create: {
+                businessName,
+                contactName: contactName || undefined,
+                phone: normalizedPhone,
+                email: email || undefined,
+              },
+            });
+          }
+
+          const clientNotesBits = [`Source: ${source}`];
+          if (monthlyRevenue) clientNotesBits.push(`Monthly revenue: ${monthlyRevenue}`);
+
+          await prisma.deal.create({
+            data: {
+              clientId: client.id,
+              assignedRepId: assignRepId,
+              stage,
+              stageLabel: STAGE_LABELS[stage],
+              productType,
+              needsAmount: true,
+              importBatch: batchId,
+              notes: notes || undefined,
+              clientNotes: clientNotesBits.join(' · '),
+              nextAction,
+              isHot: false,
+            } as any,
+          });
+
+          imported++;
+        } catch (err: any) {
+          skipped++;
+          errors.push(`${businessName}: ${err.message}`);
+        }
+      }
+    }
+
+    res.json({
+      imported,
+      duplicates,
+      skipped,
+      total: records.length,
+      batchId,
+      duplicateMode,
+      errors: errors.slice(0, 20),
+    });
+  }
+
+  static async getDealSms(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const deal = await prisma.deal.findFirst({
+      where: { id },
+      select: { leadId: true, assignedRepId: true, assistingRepIds: true, client: { select: { phone: true } } },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    let leadId = deal.leadId;
+    if (!leadId && deal.client?.phone) {
+      const lead = await prisma.lead.findFirst({ where: { phone: deal.client.phone }, select: { id: true } });
+      if (lead) leadId = lead.id;
+    }
+    if (!leadId) return res.json({ messages: [] });
+
+    const conversations = await prisma.conversation.findMany({
+      where: { leadId },
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            body: true,
+            direction: true,
+            status: true,
+            createdAt: true,
+            fromNumber: true,
+            toNumber: true,
+          },
+        },
+      },
+    });
+
+    const messages = conversations.flatMap((c) => c.messages);
+    messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const conversationId = conversations.length > 0 ? conversations[0].id : null;
+    res.json({ messages, conversationId });
+  }
+
+  static async sendDealSms(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const { body } = req.body;
+
+    if (!body || !body.trim()) {
+      return res.status(400).json({ error: 'Message body is required' });
+    }
+
+    const deal = await prisma.deal.findFirst({
+      where: { id },
+      select: { leadId: true, assignedRepId: true, assistingRepIds: true, client: { select: { phone: true } } },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+
+    if (!canAccessDeal(req.user, deal)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    let leadId = deal.leadId;
+    if (!leadId && deal.client?.phone) {
+      const lead = await prisma.lead.findFirst({ where: { phone: deal.client.phone }, select: { id: true } });
+      if (lead) leadId = lead.id;
+    }
+    if (!leadId) return res.status(400).json({ error: 'No lead linked to this deal — cannot send SMS' });
+
+    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { phone: true } });
+    if (!lead?.phone) return res.status(400).json({ error: 'Lead has no phone number' });
+
+    const conversation = await prisma.conversation.findFirst({ where: { leadId } });
+
+    const inboundCount = conversation
+      ? await prisma.message.count({
+          where: { conversationId: conversation.id, direction: 'INBOUND' },
+        })
+      : 0;
+
+    if (req.user?.role === 'REP') {
+      if (inboundCount === 0) {
+        await OutboundGateService.ensureCanLaunchOutbound(req.user);
+      }
+    }
+
+    const { SendingEngine } = await import('../services/sendingEngine');
+    const messageId = await SendingEngine.queueMessage({
+      toNumber: lead.phone,
+      body: body.trim(),
+      leadId,
+      sentByUserId: req.user!.id,
+      preferredNumberId: conversation?.stickyNumberId || undefined,
+      priority: 10,
+      enforceQuietHours: inboundCount === 0,
+    });
+
+    await prisma.dealEvent.create({
+      data: {
+        dealId: id,
+        repId: req.user!.id,
+        eventType: 'sms_sent',
+        note: body.trim(),
+        metadata: { messageId },
+      },
+    });
+
+    if (conversation) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date(), lastDirection: 'outbound' },
+      });
+    }
+
+    res.json({ messageId });
+  }
+
+  static async deleteImportBatch(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { batchId } = req.params;
+    if (!batchId || (!batchId.startsWith('import_') && !batchId.startsWith('leads_'))) {
+      return res.status(400).json({ error: 'Invalid batch ID' });
+    }
+
+    const deals = await prisma.deal.findMany({ where: { importBatch: batchId }, select: { id: true, clientId: true } });
+    if (deals.length === 0) return res.status(404).json({ error: 'No deals found for this batch' });
+
+    const dealIds = deals.map((d) => d.id);
+
+    await prisma.fundingEvent.deleteMany({ where: { dealId: { in: dealIds } } });
+    await prisma.offer.deleteMany({ where: { dealId: { in: dealIds } } });
+    await prisma.renewalTask.deleteMany({ where: { dealId: { in: dealIds } } });
+    await prisma.deal.deleteMany({ where: { importBatch: batchId } });
+
+    const clientIds = [...new Set(deals.map((d) => d.clientId))];
+    for (const cid of clientIds) {
+      const remainingDeals = await prisma.deal.count({ where: { clientId: cid } });
+      if (remainingDeals === 0) {
+        await prisma.client.delete({ where: { id: cid } }).catch(() => {});
+        continue;
+      }
+
+      const remainingFunding = await prisma.fundingEvent.aggregate({
+        where: { deal: { clientId: cid } },
+        _sum: { amountFunded: true },
+        _count: { id: true },
+        _max: { fundedDate: true },
+      });
+
+      await prisma.client.update({
+        where: { id: cid },
+        data: {
+          totalFunded: remainingFunding._sum.amountFunded || 0,
+          fundingCount: remainingFunding._count.id || 0,
+          lastFundedDate: remainingFunding._max.fundedDate || null,
+        },
+      });
+    }
+
+    res.json({ deleted: deals.length, batchId });
+  }
+
+  static async getImportBatches(req: AuthRequest, res: Response) {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const batches = await prisma.deal.groupBy({
+      by: ['importBatch'],
+      where: { importBatch: { not: null } },
+      _count: { id: true },
+      _min: { createdAt: true },
+    });
+    res.json(
+      batches.map((b) => ({
+        batchId: b.importBatch,
+        count: b._count.id,
+        importedAt: b._min.createdAt,
+      })),
+    );
+  }
+
+  static async deleteDeal(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+    const deal = await prisma.deal.findUnique({
+      where: { id },
+      select: { id: true, clientId: true, stage: true, assignedRepId: true },
+    });
+    if (!deal) return res.status(404).json({ error: 'Deal not found' });
+    if (!isAdminLike(req.user)) {
+      return res.status(403).json({ error: 'Only admin/manager can delete deals' });
+    }
+    if (deal.stage === DealStage.FUNDED) {
+      return res.status(400).json({ error: 'Funded deals cannot be deleted' });
+    }
+
+    await prisma.fundingEvent.deleteMany({ where: { dealId: id } });
+    await prisma.offer.deleteMany({ where: { dealId: id } });
+    await prisma.renewalTask.deleteMany({ where: { dealId: id } });
+    await prisma.deal.delete({ where: { id } });
+
+    const remaining = await prisma.deal.count({ where: { clientId: deal.clientId } });
+    if (remaining === 0) await prisma.client.delete({ where: { id: deal.clientId } }).catch(() => {});
+
+    res.json({ deleted: true });
+  }
+}

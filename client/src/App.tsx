@@ -1,0 +1,140 @@
+import { useEffect, lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'react-hot-toast';
+import { useAuthStore } from './stores/authStore';
+import { useThemeStore } from './stores/themeStore';
+import ErrorBoundary from './components/ErrorBoundary';
+import AppLayout from './components/layout/AppLayout';
+import LoginPage from './pages/LoginPage';
+
+const CampaignsPage = lazy(() => import('./pages/CampaignsPage'));
+const CampaignDetailPage = lazy(() => import('./pages/CampaignDetailPage'));
+const InboxPage = lazy(() => import('./pages/InboxPageV2'));
+const PipelinePage = lazy(() => import('./pages/PipelinePageV2'));
+const CommandCenterPage = lazy(() => import('./pages/CommandCenterPage'));
+const LeadsPage = lazy(() => import('./pages/LeadsPage'));
+const NumbersPage = lazy(() => import('./pages/NumbersPage'));
+const AutomationPage = lazy(() => import('./pages/AutomationPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const TwilioAccountPage = lazy(() => import('./pages/TwilioAccountPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+    },
+  },
+});
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading, initialized, checkAuth } = useAuthStore();
+
+  useEffect(() => {
+    if (!initialized) {
+      checkAuth();
+    }
+  }, [initialized, checkAuth]);
+
+  if (isLoading || !initialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg-primary)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-scl-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Loading...
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function PageLoader() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-scl-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
+export default function App() {
+  const { resolved } = useThemeStore();
+  const isDark = resolved === 'dark';
+
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <Suspense fallback={<PageLoader />}>
+                      <Routes>
+                        <Route path="/" element={<Navigate to="command-center" replace />} />
+                        <Route path="command-center" element={<CommandCenterPage />} />
+                        <Route path="dashboard" element={<Navigate to="/command-center" replace />} />
+                        <Route path="campaigns" element={<CampaignsPage />} />
+                        <Route path="campaigns/:id" element={<CampaignDetailPage />} />
+                        <Route path="inbox" element={<InboxPage />} />
+                        <Route path="pipeline" element={<PipelinePage />} />
+                        <Route path="leads" element={<LeadsPage />} />
+                        <Route path="numbers" element={<NumbersPage />} />
+                        <Route path="automation" element={<AutomationPage />} />
+                        <Route path="analytics" element={<AnalyticsPage />} />
+                        <Route path="twilio" element={<TwilioAccountPage />} />
+                        <Route path="settings" element={<SettingsPage />} />
+                        <Route path="*" element={<NotFoundPage />} />
+                      </Routes>
+                    </Suspense>
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </BrowserRouter>
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              background: isDark ? '#1c1c26' : '#ffffff',
+              color: isDark ? '#e2e2ea' : '#1e293b',
+              border: isDark ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid rgba(226, 232, 240, 0.8)',
+              borderLeft: '3px solid #b8963e',
+              borderRadius: '6px',
+              fontSize: '13px',
+              padding: '10px 14px',
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+              boxShadow: isDark
+                ? '0 6px 20px rgba(0, 0, 0, 0.4)'
+                : '0 4px 12px rgba(0, 0, 0, 0.08)',
+            },
+            success: {
+              style: { borderLeft: '3px solid #22c55e' },
+              iconTheme: { primary: '#22c55e', secondary: '#fff' },
+            },
+            error: {
+              style: { borderLeft: '3px solid #ff4444' },
+              iconTheme: { primary: '#ff4444', secondary: '#fff' },
+            },
+          }}
+        />
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
+}

@@ -1,0 +1,678 @@
+import { Response } from 'express';
+import prisma from '../config/database';
+import { AuthRequest } from '../middleware/auth';
+import { subDays, subHours, startOfDay } from 'date-fns';
+import { getActiveTwilioClient, getSmsMode } from '../config/twilio';
+import redis from '../config/redis';
+import { config } from '../config';
+import logger from '../config/logger';
+
+const TWILIO_ERROR_LABELS: Record<string, string> = {
+  '21408': 'SMS not enabled for region (e.g. Puerto Rico, USVI)',
+  '21610': 'Recipient unsubscribed (STOP)',
+  '21611': 'SMS queue overflow',
+  '21612': 'Trial account — unverified number',
+  '21614': 'Invalid mobile number',
+  '21617': 'Non-mobile number (landline)',
+  '30001': 'Queue overflow',
+  '30002': 'Account suspended',
+  '30003': 'Unreachable — phone off or invalid',
+  '30004': 'Message blocked by carrier',
+  '30005': 'Unknown destination — invalid number',
+  '30006': 'Landline or unreachable',
+  '30007': 'Carrier filtering (spam)',
+  '30008': 'Unknown error from carrier',
+  '30010': 'Message price exceeds max',
+  '30034': 'T-Mobile EcoSystem violation',
+  '63003': 'A2P 10DLC — campaign not approved',
+  '63016': 'A2P rate limit exceeded',
+};
+
+export class DashboardController {
+  static async getStats(req: AuthRequest, res: Response): Promise<void> {
+    const now = new Date();
+    const last24h = subDays(now, 1);
+    const last7d = subDays(now, 7);
+
+    const [
+      sentLast24h,
+      deliveredLast24h,
+      totalLeads,
+      repliesLast7d,
+      sentLast7d,
+      pipelineSnapshot,
+      recentCampaigns,
+      numberHealth,
+      activeAutomations,
+    ] = await Promise.all([
+      prisma.message.count({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: last24h },
+        },
+      }),
+
+      prisma.message.count({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: last24h },
+          status: 'DELIVERED',
+        },
+      }),
+
+      prisma.lead.count(),
+
+      prisma.message.count({
+        where: {
+          direction: 'INBOUND',
+          createdAt: { gte: last7d },
+        },
+      }),
+
+      prisma.message.count({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: last7d },
+        },
+      }),
+
+      prisma.deal.groupBy({
+        by: ['stage'],
+        _count: { _all: true },
+        _sum: { dealAmount: true },
+        _avg: { dealAmount: true },
+      }),
+
+      prisma.campaign.findMany({
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          totalSent: true,
+          totalDelivered: true,
+          totalFailed: true,
+          totalBlocked: true,
+          totalReplied: true,
+          createdAt: true,
+        },
+      }),
+
+      prisma.phoneNumber.groupBy({
+        by: ['status'],
+        _count: true,
+      }),
+
+      prisma.automationRun.count({
+        where: { isActive: true, isPaused: false },
+      }),
+    ]);
+
+    const dailyVolume = await prisma.$queryRaw`
+      SELECT 
+        DATE(createdAt) as date,
+        COUNT(*) as sent,
+        SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) as delivered,
+        SUM(CASE WHEN status IN ('FAILED', 'UNDELIVERED') THEN 1 ELSE 0 END) as failed,
+        SUM(CASE WHEN status = 'BLOCKED' THEN 1 ELSE 0 END) as blocked
+      FROM messages 
+      WHERE direction = 'OUTBOUND' 
+        AND createdAt >= ${last7d}
+      GROUP BY DATE(createdAt)
+      ORDER BY date ASC
+    `;
+
+    const replyRate = sentLast7d > 0 ? ((repliesLast7d / sentLast7d) * 100).toFixed(1) : '0';
+
+    const safeDailyVolume = (dailyVolume as any[]).map((row: any) => ({
+      date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date).split('T')[0],
+      sent: Number(row.sent || 0),
+      delivered: Number(row.delivered || 0),
+      failed: Number(row.failed || 0),
+      blocked: Number(row.blocked || 0),
+    }));
+
+    res.json({
+      overview: {
+        sentLast24h,
+        deliveredLast24h,
+        totalLeads,
+        replyRate: parseFloat(replyRate),
+        activeAutomations,
+      },
+      pipelineSnapshot: (() => {
+        const DEAL_STAGES = [
+          { key: 'NEW_LEAD', label: 'New Lead', color: '#4A9EE8' },
+          { key: 'ENGAGED_INTERESTED', label: 'Engaged / Interested', color: '#9B72E8' },
+          { key: 'QUALIFIED', label: 'Qualified', color: '#C9952A' },
+          { key: 'SUBMITTED_IN_REVIEW', label: 'Submitted (In Review)', color: '#4A9EE8' },
+          { key: 'APPROVED_OFFERS', label: 'Approved / Offers', color: '#FF8C00' },
+          { key: 'COMMITTED_FUNDING', label: 'Committed (Funding)', color: '#3AB97A' },
+          { key: 'FUNDED', label: 'Funded', color: '#3AB97A' },
+          { key: 'NURTURE', label: 'Nurture', color: '#4A9EE8' },
+          { key: 'CLOSED', label: 'Closed', color: '#536070' },
+        ];
+        const aggMap = new Map(
+          pipelineSnapshot.map((s: any) => [
+            s.stage,
+            {
+              count: s._count?._all ?? 0,
+              totalValue: Number(s._sum?.dealAmount ?? 0),
+              avgValue: Number(s._avg?.dealAmount ?? 0),
+            },
+          ]),
+        );
+        return DEAL_STAGES.map((s) => {
+          const agg = aggMap.get(s.key) || { count: 0, totalValue: 0, avgValue: 0 };
+          return {
+            id: s.key,
+            name: s.label,
+            color: s.color,
+            count: agg.count,
+            totalValue: agg.totalValue,
+            avgValue: Math.round(agg.avgValue),
+          };
+        });
+      })(),
+      recentCampaigns,
+      numberHealth: numberHealth.map((g) => ({
+        status: g.status,
+        count: g._count,
+      })),
+      dailyVolume: safeDailyVolume,
+    });
+  }
+
+  static async getDeliveryMetrics(req: AuthRequest, res: Response): Promise<void> {
+    const days = parseInt(req.query.days as string) || 7;
+    const since = subDays(new Date(), days);
+
+    const stats = await prisma.dailyNumberStats.findMany({
+      where: { date: { gte: since } },
+      orderBy: { date: 'asc' },
+    });
+
+    const aggregated = new Map<string, any>();
+    const totals = { sent: 0, delivered: 0, failed: 0, blocked: 0, replies: 0, optOuts: 0 };
+    for (const stat of stats) {
+      const date = stat.date.toISOString().split('T')[0];
+      if (!aggregated.has(date)) {
+        aggregated.set(date, {
+          date,
+          sent: 0,
+          delivered: 0,
+          failed: 0,
+          blocked: 0,
+          replies: 0,
+          optOuts: 0,
+        });
+      }
+      const agg = aggregated.get(date);
+      agg.sent += stat.sent;
+      agg.delivered += stat.delivered;
+      agg.failed += stat.failed;
+      agg.blocked += stat.blocked;
+      agg.replies += stat.replies;
+      agg.optOuts += stat.optOuts;
+      totals.sent += stat.sent;
+      totals.delivered += stat.delivered;
+      totals.failed += stat.failed;
+      totals.blocked += stat.blocked;
+      totals.replies += stat.replies;
+      totals.optOuts += stat.optOuts;
+    }
+
+    res.json({
+      metrics: Array.from(aggregated.values()),
+      totals,
+    });
+  }
+
+  static async getDiagnostics(req: AuthRequest, res: Response): Promise<void> {
+    const now = new Date();
+    const last24h = subDays(now, 1);
+    const last1h = subHours(now, 1);
+    const last7d = subDays(now, 7);
+
+    const smsMode = await getSmsMode();
+
+    const [
+      errorBreakdown,
+      sentLastHour,
+      pendingMessages,
+      numberStats,
+      totalConversations,
+      lastMessage,
+      stats24h,
+      stats7d,
+      recentErrors,
+      optOuts24h,
+    ] = await Promise.all([
+      prisma.message.groupBy({
+        by: ['errorCode'],
+        where: {
+          status: { in: ['FAILED', 'UNDELIVERED', 'BLOCKED'] },
+          createdAt: { gte: last24h },
+          errorCode: { not: null },
+        },
+        _count: true,
+        orderBy: { _count: { errorCode: 'desc' } },
+        take: 10,
+      }),
+
+      prisma.message.count({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: last1h },
+          status: { in: ['SENT', 'DELIVERED', 'SENDING'] },
+        },
+      }),
+
+      prisma.message.count({
+        where: { status: { in: ['QUEUED', 'SENDING'] } },
+      }),
+
+      prisma.phoneNumber.groupBy({
+        by: ['status'],
+        _count: true,
+      }),
+
+      prisma.conversation.count(),
+
+      prisma.message.findFirst({
+        where: { direction: 'OUTBOUND' },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, status: true },
+      }),
+
+      prisma.message.groupBy({
+        by: ['status'],
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: last24h },
+        },
+        _count: true,
+      }),
+
+      prisma.message.groupBy({
+        by: ['status'],
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: last7d },
+        },
+        _count: true,
+      }),
+
+      prisma.message.findMany({
+        where: {
+          status: { in: ['FAILED', 'UNDELIVERED', 'BLOCKED'] },
+          createdAt: { gte: last24h },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          status: true,
+          errorCode: true,
+          errorMessage: true,
+          createdAt: true,
+          failedAt: true,
+          conversation: {
+            select: { lead: { select: { phone: true } } },
+          },
+        },
+      }),
+
+      prisma.lead.count({
+        where: {
+          status: 'DNC',
+          updatedAt: { gte: last24h },
+        },
+      }),
+    ]);
+
+    const aggregate = (groups: Array<{ status: string; _count: number }>) => {
+      const m: Record<string, number> = {};
+      for (const g of groups) m[g.status] = g._count;
+      const delivered = m.DELIVERED || 0;
+      const failed = (m.FAILED || 0) + (m.UNDELIVERED || 0);
+      const blocked = m.BLOCKED || 0;
+      return {
+        sent: (m.QUEUED || 0) + (m.SENDING || 0) + (m.SENT || 0) + delivered + failed + blocked,
+        delivered,
+        failed,
+        blocked,
+        queued: m.QUEUED || 0,
+        sending: m.SENDING || 0,
+      };
+    };
+
+    const agg24h = aggregate(stats24h.map((s) => ({ status: s.status, _count: s._count })));
+    const agg7d = aggregate(stats7d.map((s) => ({ status: s.status, _count: s._count })));
+
+    const numberSummary: Record<string, number> = {};
+    for (const g of numberStats) {
+      numberSummary[g.status] = g._count;
+    }
+
+    let redisOk = false;
+    try {
+      await redis.ping();
+      redisOk = true;
+    } catch {
+    }
+
+    res.json({
+      smsMode,
+      serverTime: now.toISOString(),
+      uptime: process.uptime(),
+      health: {
+        database: true,
+        redis: redisOk,
+        twilio: smsMode === 'live',
+      },
+      sending: {
+        velocityPerHour: sentLastHour,
+        pendingInQueue: pendingMessages,
+        lastMessageAt: lastMessage?.createdAt || null,
+        lastMessageStatus: lastMessage?.status || null,
+      },
+      stats24h: {
+        ...agg24h,
+        optOuts: optOuts24h,
+        deliveryRate: agg24h.sent > 0 ? +Math.min(100, (agg24h.delivered / agg24h.sent) * 100).toFixed(1) : 0,
+        errorRate:
+          agg24h.sent > 0 ? +Math.min(100, ((agg24h.failed + agg24h.blocked) / agg24h.sent) * 100).toFixed(1) : 0,
+      },
+      stats7d: {
+        ...agg7d,
+        deliveryRate: agg7d.sent > 0 ? +Math.min(100, (agg7d.delivered / agg7d.sent) * 100).toFixed(1) : 0,
+        errorRate: agg7d.sent > 0 ? +Math.min(100, ((agg7d.failed + agg7d.blocked) / agg7d.sent) * 100).toFixed(1) : 0,
+      },
+      numbers: {
+        total: Object.values(numberSummary).reduce((a, b) => a + b, 0),
+        active: numberSummary.ACTIVE || 0,
+        warming: numberSummary.WARMING || 0,
+        cooling: numberSummary.COOLING || 0,
+        disabled: numberSummary.DISABLED || 0,
+      },
+      conversations: totalConversations,
+      errorBreakdown: errorBreakdown.map((e) => ({
+        code: e.errorCode,
+        count: e._count,
+        label: TWILIO_ERROR_LABELS[e.errorCode || ''] || 'Unknown error',
+      })),
+      recentErrors: recentErrors.map((e) => ({
+        id: e.id,
+        status: e.status,
+        errorCode: e.errorCode,
+        errorMessage: e.errorMessage,
+        phone: e.conversation?.lead?.phone || null,
+        createdAt: e.createdAt,
+        failedAt: e.failedAt,
+      })),
+    });
+  }
+
+  static async getTwilioDiagnostics(req: AuthRequest, res: Response): Promise<void> {
+    const client = await getActiveTwilioClient();
+    if (!client) {
+      res.status(503).json({ error: 'Twilio client not configured' });
+      return;
+    }
+
+    const smsMode = await getSmsMode();
+    const diagnostics: Record<string, any> = {
+      timestamp: new Date().toISOString(),
+      smsMode,
+      configuredSid: config.twilio.accountSid?.slice(0, 8) + '...',
+    };
+
+    try {
+      const account = await client.api.accounts(config.twilio.accountSid).fetch();
+      diagnostics.account = {
+        friendlyName: account.friendlyName,
+        status: account.status, // active, suspended, closed
+        type: account.type, // Full, Trial
+        dateCreated: account.dateCreated,
+        ownerAccountSid: account.ownerAccountSid,
+      };
+    } catch (err: any) {
+      diagnostics.account = { error: err.message };
+    }
+
+    try {
+      const balance = await client.api.accounts(config.twilio.accountSid).balance.fetch();
+      diagnostics.balance = {
+        currency: balance.currency,
+        balance: balance.balance,
+        accountSid: balance.accountSid,
+      };
+    } catch (err: any) {
+      diagnostics.balance = { error: err.message };
+    }
+
+    try {
+      const numbers = await client.incomingPhoneNumbers.list({ limit: 100 });
+      diagnostics.phoneNumbers = numbers.map((n) => ({
+        sid: n.sid,
+        phoneNumber: n.phoneNumber,
+        friendlyName: n.friendlyName,
+        smsEnabled: n.capabilities?.sms ?? false,
+        mmsEnabled: n.capabilities?.mms ?? false,
+        voiceEnabled: n.capabilities?.voice ?? false,
+        statusCallback: n.statusCallback,
+        smsUrl: n.smsUrl,
+      }));
+      diagnostics.phoneNumberCount = numbers.length;
+    } catch (err: any) {
+      diagnostics.phoneNumbers = { error: err.message };
+    }
+
+    try {
+      const services = await client.messaging.v1.services.list({ limit: 20 });
+      diagnostics.messagingServices = services.map((s) => ({
+        sid: s.sid,
+        friendlyName: s.friendlyName,
+        inboundRequestUrl: s.inboundRequestUrl,
+        statusCallback: s.statusCallback,
+        useInboundWebhookOnNumber: s.useInboundWebhookOnNumber,
+        usecase: s.usecase,
+        areaToBind: s.areaCodeGeomatch,
+        stickySender: s.stickySender,
+        fallbackToLongCode: s.fallbackToLongCode,
+      }));
+    } catch (err: any) {
+      diagnostics.messagingServices = { error: err.message };
+    }
+
+    try {
+      const brands = await client.messaging.v1.brandRegistrations.list({ limit: 20 });
+      diagnostics.a2pBrands = brands.map((b) => ({
+        sid: b.sid,
+        brandName: b.customerProfileBundleSid,
+        status: (b as any).brandRegistrationStatus || (b as any).status,
+        brandType: b.brandType,
+        dateCreated: b.dateCreated,
+        dateUpdated: b.dateUpdated,
+        failureReason: (b as any).failureReason || null,
+      }));
+    } catch (err: any) {
+      diagnostics.a2pBrands = { error: err.message };
+    }
+
+    try {
+      if (diagnostics.messagingServices && Array.isArray(diagnostics.messagingServices)) {
+        const campaigns: any[] = [];
+        for (const svc of diagnostics.messagingServices) {
+          try {
+            const usAppToPersonList = await client.messaging.v1.services(svc.sid).usAppToPerson.list({ limit: 10 });
+            for (const c of usAppToPersonList) {
+              campaigns.push({
+                sid: c.sid,
+                messagingServiceSid: svc.sid,
+                brandRegistrationSid: c.brandRegistrationSid,
+                description: c.description,
+                usecase: (c as any).usecase,
+                campaignStatus: (c as any).campaignStatus,
+                dateCreated: c.dateCreated,
+                dateUpdated: c.dateUpdated,
+              });
+            }
+          } catch {
+          }
+        }
+        diagnostics.a2pCampaigns = campaigns;
+      }
+    } catch (err: any) {
+      diagnostics.a2pCampaigns = { error: err.message };
+    }
+
+    try {
+      const usage = await client.usage.records.list({
+        category: 'sms' as any,
+        startDate: subDays(new Date(), 30),
+        endDate: new Date(),
+        limit: 5,
+      });
+      diagnostics.usage = usage.map((u) => ({
+        category: u.category,
+        description: u.description,
+        count: u.count,
+        countUnit: u.countUnit,
+        price: u.price,
+        priceUnit: u.priceUnit,
+        startDate: u.startDate,
+        endDate: u.endDate,
+      }));
+    } catch (err: any) {
+      diagnostics.usage = { error: err.message };
+    }
+
+    try {
+      const tfVerifications = await (client as any).messaging.v1.tollfreeVerifications.list({ limit: 10 });
+      diagnostics.tollFreeVerifications = tfVerifications.map((v: any) => ({
+        sid: v.sid,
+        status: v.status,
+        phoneNumber: v.phoneNumber?.toString(),
+        dateCreated: v.dateCreated,
+        dateUpdated: v.dateUpdated,
+      }));
+    } catch (err: any) {
+      diagnostics.tollFreeVerifications = { error: err.message };
+    }
+
+    try {
+      const today = new Date();
+      const startOfToday = startOfDay(today);
+      const sentToday = await prisma.message.count({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: startOfToday },
+          status: { in: ['SENT', 'DELIVERED', 'SENDING'] },
+        },
+      });
+      const failedToday = await prisma.message.count({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: startOfToday },
+          status: 'FAILED',
+        },
+      });
+      diagnostics.todayVolume = {
+        sent: sentToday,
+        failed: failedToday,
+        total: sentToday + failedToday,
+        failureRate: sentToday + failedToday > 0 ? +((failedToday / (sentToday + failedToday)) * 100).toFixed(2) : 0,
+      };
+    } catch (err: any) {
+      diagnostics.todayVolume = { error: err.message };
+    }
+
+    try {
+      const bundles = await client.numbers.v2.regulatoryCompliance.bundles.list({ limit: 10 });
+      diagnostics.complianceBundles = bundles.map((b) => ({
+        sid: b.sid,
+        friendlyName: b.friendlyName,
+        status: b.status,
+        regulationSid: b.regulationSid,
+        dateCreated: b.dateCreated,
+        dateUpdated: b.dateUpdated,
+      }));
+    } catch (err: any) {
+      diagnostics.complianceBundles = { error: err.message };
+    }
+
+    logger.info('Twilio diagnostics fetched', { by: req.user?.email });
+
+    try {
+      const profiles = await (client as any).trusthub.v1.customerProfiles.list({ limit: 10 });
+      diagnostics.trustHubProfiles = profiles.map((p: any) => ({
+        sid: p.sid,
+        friendlyName: p.friendlyName,
+        status: p.status,
+        statusCallback: p.statusCallback,
+        policySid: p.policySid,
+        dateCreated: p.dateCreated,
+        dateUpdated: p.dateUpdated,
+      }));
+    } catch (err: any) {
+      diagnostics.trustHubProfiles = { error: err.message };
+    }
+
+    try {
+      const subAccounts = await client.api.accounts.list({ limit: 20 });
+      diagnostics.subAccounts = subAccounts
+        .filter((a: any) => a.sid !== config.twilio.accountSid)
+        .map((a: any) => ({
+          sid: a.sid,
+          friendlyName: a.friendlyName,
+          status: a.status,
+          type: a.type,
+          dateCreated: a.dateCreated,
+        }));
+    } catch (err: any) {
+      diagnostics.subAccounts = { error: err.message };
+    }
+
+    try {
+      const allUsage = await client.usage.records.list({
+        startDate: subDays(new Date(), 30),
+        endDate: new Date(),
+        limit: 30,
+      });
+      diagnostics.usageByCategory = allUsage
+        .filter((u: any) => parseFloat(u.price || '0') !== 0 || parseInt(u.count || '0', 10) > 0)
+        .map((u: any) => ({
+          category: u.category,
+          description: u.description,
+          count: u.count,
+          price: u.price,
+          priceUnit: u.priceUnit,
+        }));
+    } catch (err: any) {
+      diagnostics.usageByCategory = { error: err.message };
+    }
+
+    try {
+      const recentMessages = await client.messages.list({
+        dateSentAfter: subDays(new Date(), 1),
+        limit: 20,
+      });
+      const statusMap: Record<string, number> = {};
+      for (const m of recentMessages) {
+        const s = m.status;
+        statusMap[s] = (statusMap[s] || 0) + 1;
+      }
+      diagnostics.twilioMessageStats24h = {
+        sample: recentMessages.length,
+        statuses: statusMap,
+      };
+    } catch (err: any) {
+      diagnostics.twilioMessageStats24h = { error: err.message };
+    }
+
+    res.json(diagnostics);
+  }
+}

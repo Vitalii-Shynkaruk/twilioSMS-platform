@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Runtime/generated exports (production data, not source code)
+exports/
+
+# PM2 deployment config may contain environment secrets
+ecosystem.config.js
+
+# Environment files (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# SSL certificates
+ssl/
+certbot/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes
+postgres_data/
+redis_data/
+
+# Documents and screenshots that are not source code
+*.pdf
+*.jpg
+*.jpeg
+*.png
+!client/public/scl-login/SCL-Login-BG.png
+*.zip
+*.rar
+._*
+**/._*
+
+# Server credentials
+.server-credentials

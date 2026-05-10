@@ -1,0 +1,850 @@
+import prisma from '../config/database';
+import { getActiveMessagingServiceSid, getActiveTwilioClient, getSmsMode } from '../config/twilio';
+import { config } from '../config';
+import logger from '../config/logger';
+import { NumberService } from './numberService';
+import { ComplianceService } from './complianceService';
+import { validateOutboundMessageBody } from './outboundMessageGuard';
+import { shouldSuppressRetargetForRecentInbound } from './retargetSuppression';
+import { buildTwilioStatusCallbackUrl } from './sendingUrlBuilder';
+import { withInboxAiPriorityRank } from '../utils/inboxAiPriority';
+import { Queue } from 'bullmq';
+import redis from '../config/redis';
+
+
+export const smsQueue = new Queue('sms-send', {
+  connection: redis,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
+    removeOnComplete: {
+      age: 86400, // 24 hours
+      count: 10000,
+    },
+    removeOnFail: {
+      age: 604800, // 7 days
+    },
+  },
+});
+
+export const campaignQueue = new Queue('campaign-process', {
+  connection: redis,
+  defaultJobOptions: {
+    attempts: 2,
+    removeOnComplete: { age: 86400 },
+  },
+});
+
+interface SendMessageOptions {
+  toNumber: string;
+  body: string;
+  leadId: string;
+  campaignId?: string;
+  automationRunId?: string;
+  sentByUserId?: string;
+  preferredNumberId?: string;
+  priority?: number;
+  enforceQuietHours?: boolean;
+}
+
+interface BulkSendOptions {
+  leads: Array<{
+    leadId: string;
+    phone: string;
+    firstName?: string;
+    lastName?: string;
+    company?: string;
+    customFields?: Record<string, string>;
+  }>;
+  messageTemplate: string;
+  campaignId?: string;
+  sentByUserId?: string;
+  poolId?: string;
+  restrictToPhoneNumberIds?: string[];
+  sendingSpeed?: number; // messages per minute
+  isRetarget?: boolean;
+  bypassOwnershipCheck?: boolean;
+}
+
+export class SendingEngine {
+  private static startOfDayUtc(input: Date = new Date()): Date {
+    return new Date(Date.UTC(input.getUTCFullYear(), input.getUTCMonth(), input.getUTCDate()));
+  }
+
+  private static async trackRepOutbound(
+    repId: string | undefined,
+    count: number,
+    mode: 'manual' | 'campaign',
+  ): Promise<void> {
+    if (!repId || count <= 0) return;
+    const day = this.startOfDayUtc();
+    await prisma.repOutboundDaily.upsert({
+      where: {
+        repId_day: {
+          repId,
+          day,
+        },
+      },
+      create: {
+        repId,
+        day,
+        totalMessages: count,
+        manualMessages: mode === 'manual' ? count : 0,
+        campaignMessages: mode === 'campaign' ? count : 0,
+      },
+      update: {
+        totalMessages: { increment: count },
+        manualMessages: mode === 'manual' ? { increment: count } : undefined,
+        campaignMessages: mode === 'campaign' ? { increment: count } : undefined,
+      },
+    });
+  }
+
+  private static async movePipelineCard(leadId: string, status: string): Promise<void> {
+    try {
+      const targetStage = await prisma.pipelineStage.findFirst({
+        where: { mappedStatus: status as any },
+      });
+      if (!targetStage) return;
+
+      const card = await prisma.pipelineCard.findFirst({
+        where: { leadId },
+      });
+      if (card) {
+        await prisma.pipelineCard.update({
+          where: { id: card.id },
+          data: { stageId: targetStage.id },
+        });
+      } else {
+        await prisma.pipelineCard.create({
+          data: { leadId, stageId: targetStage.id },
+        });
+      }
+    } catch (err) {
+      logger.warn(`Failed to move pipeline card for lead ${leadId}: ${err}`);
+    }
+  }
+
+  static async isSimulationMode(): Promise<boolean> {
+    return (await getSmsMode()) === 'simulation';
+  }
+
+  static async queueMessage(options: SendMessageOptions): Promise<string> {
+    const guardCheck = validateOutboundMessageBody(options.body);
+    if (!guardCheck.allowed) {
+      logger.warn('Message blocked by outbound guard', {
+        toNumber: options.toNumber,
+        reason: guardCheck.reason,
+      });
+      throw new Error(`Cannot send: ${guardCheck.reason}`);
+    }
+
+    const complianceCheck = await ComplianceService.canSendTo(options.toNumber, {
+      enforceQuietHours: options.enforceQuietHours ?? true,
+    });
+    if (!complianceCheck.allowed) {
+      logger.warn(`Message blocked by compliance: ${complianceCheck.reason}`, {
+        toNumber: options.toNumber,
+      });
+      throw new Error(`Cannot send: ${complianceCheck.reason}`);
+    }
+
+    const conversation = await this.getOrCreateConversation(options.leadId, options.sentByUserId);
+
+    let fromNumber = options.preferredNumberId
+      ? await prisma.phoneNumber.findUnique({ where: { id: options.preferredNumberId } })
+      : null;
+
+    if (!fromNumber && conversation.twilioNumberId) {
+      fromNumber = await prisma.phoneNumber.findUnique({ where: { id: conversation.twilioNumberId } });
+    }
+    if (!fromNumber && conversation.stickyNumberId) {
+      fromNumber = await prisma.phoneNumber.findUnique({ where: { id: conversation.stickyNumberId } });
+    }
+    if (!fromNumber) {
+      fromNumber = await NumberService.getStickyNumber(options.toNumber, options.sentByUserId);
+    }
+
+    const smsMode = await getSmsMode();
+    const activeMessagingServiceSid = await getActiveMessagingServiceSid();
+    const enforceMessagingRoute = smsMode === 'live' && Boolean(activeMessagingServiceSid);
+
+    if (enforceMessagingRoute && fromNumber && fromNumber.messagingServiceSid !== activeMessagingServiceSid) {
+      logger.warn('Selected sender is not linked to active Messaging Service, trying service-linked fallback', {
+        selectedNumber: fromNumber.phoneNumber,
+        selectedNumberId: fromNumber.id,
+        activeMessagingServiceSid,
+      });
+      fromNumber = await NumberService.getBestAvailableNumber([fromNumber.phoneNumber]);
+    }
+
+    if (!fromNumber) {
+      throw new Error('No available phone numbers for sending');
+    }
+
+    if (enforceMessagingRoute && fromNumber.messagingServiceSid !== activeMessagingServiceSid) {
+      throw new Error(`No eligible sender linked to active Messaging Service (${activeMessagingServiceSid})`);
+    }
+
+    if (conversation.twilioNumberId !== fromNumber.id || conversation.stickyNumberId !== fromNumber.id) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          twilioNumberId: fromNumber.id,
+          stickyNumberId: fromNumber.id,
+        },
+      });
+    }
+
+    const message = await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'OUTBOUND',
+        status: 'QUEUED',
+        fromNumber: fromNumber.phoneNumber,
+        toNumber: options.toNumber,
+        body: options.body,
+        campaignId: options.campaignId,
+        automationRunId: options.automationRunId,
+        sentByUserId: options.sentByUserId,
+        phoneNumberId: fromNumber.id,
+      },
+    });
+
+    await this.trackRepOutbound(options.sentByUserId, 1, options.campaignId ? 'campaign' : 'manual');
+
+    await smsQueue.add(
+      'send-sms',
+      {
+        messageId: message.id,
+        fromNumber: fromNumber.phoneNumber,
+        toNumber: options.toNumber,
+        body: options.body,
+        phoneNumberId: fromNumber.id,
+      },
+      {
+        priority: options.priority || 0,
+        delay: 0,
+      },
+    );
+
+    return message.id;
+  }
+
+  static async queueBulkSend(options: BulkSendOptions): Promise<{
+    queued: number;
+    skipped: number;
+    errors: string[];
+  }> {
+    let queued = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    const sendingSpeed = options.sendingSpeed || config.sms.maxPerMinute;
+    const baseDelayBetweenMs = Math.ceil(60000 / sendingSpeed);
+
+    const phones = options.leads.map((l) => l.phone);
+    const [suppressedEntries, leadsStatus] = await Promise.all([
+      prisma.suppressionEntry.findMany({
+        where: { phone: { in: phones } },
+        select: { phone: true },
+      }),
+      prisma.lead.findMany({
+        where: { phone: { in: phones }, OR: [{ optedOut: true }, { isSuppressed: true }] },
+        select: { phone: true },
+      }),
+    ]);
+    const blockedPhones = new Set([...suppressedEntries.map((s) => s.phone), ...leadsStatus.map((l) => l.phone)]);
+
+    if (await ComplianceService.isQuietHours()) {
+      return { queued: 0, skipped: options.leads.length, errors: ['Quiet hours — all skipped'] };
+    }
+
+    const leadIds = options.leads.map((l) => l.leadId);
+    const [existingConvos, leadOwners] = await Promise.all([
+      prisma.conversation.findMany({
+        where: { leadId: { in: leadIds } },
+        select: {
+          id: true,
+          leadId: true,
+          assignedRepId: true,
+          _count: { select: { messages: { where: { direction: 'INBOUND' } } } },
+        },
+      }),
+      prisma.lead.findMany({
+        where: { id: { in: leadIds } },
+        select: { id: true, assignedRepId: true, lastRepliedAt: true },
+      }),
+    ]);
+    const preExistingThreadLeadIds = new Set(
+      existingConvos.filter((c) => (c._count?.messages || 0) > 0).map((c) => c.leadId),
+    );
+    const convoMetaByLead = new Map(existingConvos.map((c) => [c.leadId, c]));
+    const convoMap = new Map(existingConvos.map((c) => [c.leadId, c.id]));
+    const leadOwnerById = new Map(leadOwners.map((lead) => [lead.id, lead.assignedRepId]));
+    const leadLastReplyAtById = new Map(leadOwners.map((lead) => [lead.id, lead.lastRepliedAt]));
+
+    if (options.sentByUserId && options.campaignId && !options.bypassOwnershipCheck && existingConvos.length > 0) {
+      const nonRepliedLeadIds = existingConvos
+        .filter((c) => (c._count?.messages || 0) === 0)
+        .map((c) => c.leadId)
+        .filter(Boolean) as string[];
+
+      if (nonRepliedLeadIds.length > 0) {
+        await Promise.all([
+          prisma.conversation.updateMany({
+            where: { leadId: { in: nonRepliedLeadIds } },
+            data: { assignedRepId: options.sentByUserId },
+          }),
+          prisma.lead.updateMany({
+            where: { id: { in: nonRepliedLeadIds } },
+            data: { assignedRepId: options.sentByUserId },
+          }),
+        ]);
+      }
+
+      const unassignedLeadIds = existingConvos
+        .filter((c) => !c.assignedRepId)
+        .map((c) => c.leadId)
+        .filter((id) => !nonRepliedLeadIds.includes(id as string)) as string[];
+
+      if (unassignedLeadIds.length > 0) {
+        await prisma.conversation.updateMany({
+          where: { leadId: { in: unassignedLeadIds } },
+          data: { assignedRepId: options.sentByUserId },
+        });
+      }
+    }
+
+    const jobsToQueue: Array<{ name: string; data: any; opts: any }> = [];
+    const missingConvoLeads: string[] = [];
+
+    for (const lead of options.leads) {
+      if (!convoMap.has(lead.leadId)) {
+        missingConvoLeads.push(lead.leadId);
+      }
+    }
+
+    if (missingConvoLeads.length > 0) {
+      await prisma.conversation.createMany({
+        data: missingConvoLeads.map((leadId) => ({
+          leadId,
+          assignedRepId: options.sentByUserId,
+          isActive: true,
+        })),
+        skipDuplicates: true,
+      });
+      const newConvos = await prisma.conversation.findMany({
+        where: { leadId: { in: missingConvoLeads } },
+        select: { id: true, leadId: true, assignedRepId: true, _count: { select: { messages: true } } },
+      });
+      for (const c of newConvos) {
+        convoMap.set(c.leadId, c.id);
+        convoMetaByLead.set(c.leadId, c);
+      }
+    }
+
+    let jobIndex = 0;
+    const skippedLeadIds: string[] = [];
+    const messageDataToCreate: Array<{
+      conversationId: string;
+      direction: 'OUTBOUND';
+      status: 'QUEUED';
+      fromNumber: string;
+      toNumber: string;
+      body: string;
+      campaignId?: string;
+      sentByUserId?: string;
+      phoneNumberId: string;
+      leadId: string; // temp: used for job mapping, not stored
+    }> = [];
+
+    for (const lead of options.leads) {
+      if (options.campaignId && !options.isRetarget && preExistingThreadLeadIds.has(lead.leadId)) {
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
+        continue;
+      }
+
+      if (options.campaignId && options.isRetarget) {
+        const lastRepliedAt = leadLastReplyAtById.get(lead.leadId);
+        if (shouldSuppressRetargetForRecentInbound(lastRepliedAt, new Date(), 7)) {
+          skipped++;
+          skippedLeadIds.push(lead.leadId);
+          errors.push(`Lead ${lead.leadId}: Retarget suppressed (inbound within last 7 days)`);
+          continue;
+        }
+      }
+
+      if (options.sentByUserId && !options.bypassOwnershipCheck) {
+        const convoMeta = convoMetaByLead.get(lead.leadId);
+        const hasReplied = (convoMeta?._count?.messages || 0) > 0; // _count already filtered to INBOUND
+        if (hasReplied) {
+          const conversationOwnerId = convoMeta?.assignedRepId || null;
+          const leadOwnerId = leadOwnerById.get(lead.leadId) || null;
+          const effectiveOwnerId = conversationOwnerId || leadOwnerId;
+          if (effectiveOwnerId && effectiveOwnerId !== options.sentByUserId) {
+            skipped++;
+            skippedLeadIds.push(lead.leadId);
+            continue;
+          }
+        }
+      }
+
+      if (blockedPhones.has(lead.phone)) {
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
+        continue;
+      }
+
+      const body = this.interpolateTemplate(options.messageTemplate, {
+        firstName: lead.firstName || '',
+        lastName: lead.lastName || '',
+        company: lead.company || '',
+        ...lead.customFields,
+      });
+
+      const guardCheck = validateOutboundMessageBody(body);
+      if (!guardCheck.allowed) {
+        errors.push(`Lead ${lead.leadId}: ${guardCheck.reason}`);
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
+        continue;
+      }
+
+      const fromNumber = await NumberService.getBestAvailableNumber(
+        [],
+        options.poolId,
+        options.restrictToPhoneNumberIds,
+      );
+      if (!fromNumber) {
+        errors.push(`No available numbers for lead ${lead.leadId}`);
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
+        continue;
+      }
+
+      const conversationId = convoMap.get(lead.leadId);
+      if (!conversationId) {
+        errors.push(`No conversation for lead ${lead.leadId}`);
+        skipped++;
+        skippedLeadIds.push(lead.leadId);
+        continue;
+      }
+
+      messageDataToCreate.push({
+        conversationId,
+        direction: 'OUTBOUND',
+        status: 'QUEUED',
+        fromNumber: fromNumber.phoneNumber,
+        toNumber: lead.phone,
+        body,
+        campaignId: options.campaignId,
+        sentByUserId: options.sentByUserId,
+        phoneNumberId: fromNumber.id,
+        leadId: lead.leadId,
+      });
+    }
+
+    if (options.campaignId && skippedLeadIds.length > 0) {
+      await prisma.campaignLead.updateMany({
+        where: { campaignId: options.campaignId, leadId: { in: skippedLeadIds } },
+        data: { status: 'SKIPPED' },
+      });
+    }
+
+    if (messageDataToCreate.length > 0) {
+      const messages = await prisma.$transaction(
+        messageDataToCreate.map(({ leadId, ...data }) => prisma.message.create({ data })),
+      );
+
+      await this.trackRepOutbound(options.sentByUserId, messages.length, options.campaignId ? 'campaign' : 'manual');
+
+      for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
+        const msgData = messageDataToCreate[i];
+
+        const jitteredDelay = this.calculateJitteredDelay(baseDelayBetweenMs);
+        const timeDistDelay = this.calculateTimeDistributedDelay(jobIndex, messageDataToCreate.length);
+        const totalDelay = timeDistDelay > 0 ? timeDistDelay : (jobIndex + 1) * jitteredDelay;
+
+        jobsToQueue.push({
+          name: 'send-sms',
+          data: {
+            messageId: message.id,
+            fromNumber: msgData.fromNumber,
+            toNumber: msgData.toNumber,
+            body: msgData.body,
+            phoneNumberId: msgData.phoneNumberId,
+            campaignId: options.campaignId,
+            leadId: msgData.leadId,
+          },
+          opts: {
+            delay: totalDelay,
+          },
+        });
+
+        jobIndex++;
+        queued++;
+      }
+    }
+
+    if (jobsToQueue.length > 0) {
+      const firstDelay = jobsToQueue[0]?.opts?.delay ?? 0;
+      const lastDelay = jobsToQueue[jobsToQueue.length - 1]?.opts?.delay ?? 0;
+      logger.info(
+        `[BulkSend] Queuing ${jobsToQueue.length} jobs, speed=${sendingSpeed}/min, ` +
+          `baseDelay=${baseDelayBetweenMs}ms, firstDelay=${firstDelay}ms, lastDelay=${lastDelay}ms ` +
+          `(~${Math.round(lastDelay / 60000)}min total)`,
+      );
+      await smsQueue.addBulk(jobsToQueue);
+    }
+
+    return { queued, skipped, errors };
+  }
+
+  static async sendViaTwilio(
+    messageId: string,
+    fromNumber: string,
+    toNumber: string,
+    body: string,
+    phoneNumberId: string,
+  ): Promise<void> {
+    try {
+      await prisma.message.update({
+        where: { id: messageId },
+        data: { status: 'SENDING' },
+      });
+
+      const smsMode = await getSmsMode();
+      const testMode = smsMode === 'simulation';
+      if (testMode) {
+        const fakeSid = `TEST_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+        await new Promise((r) => setTimeout(r, 50 + Math.random() * 100));
+
+        await prisma.message.update({
+          where: { id: messageId },
+          data: {
+            twilioMessageSid: fakeSid,
+            status: 'SENT',
+            sentAt: new Date(),
+          },
+        });
+
+        await NumberService.recordSend(phoneNumberId, true);
+
+        const msg = await prisma.message.findUnique({
+          where: { id: messageId },
+          include: { conversation: { include: { lead: true } } },
+        });
+
+        if (msg?.conversation?.leadId) {
+          if (msg.campaignId) {
+            await prisma.campaignLead.updateMany({
+              where: {
+                campaignId: msg.campaignId,
+                leadId: msg.conversation.leadId,
+                status: { in: ['PENDING', 'FAILED'] },
+              },
+              data: {
+                status: 'SENT',
+                sentAt: new Date(),
+                fromNumber,
+                errorCode: null,
+              },
+            });
+          }
+
+          const isFirstContact = msg.conversation.lead?.status === 'NEW';
+          await prisma.lead.update({
+            where: { id: msg.conversation.leadId },
+            data: {
+              lastContactedAt: new Date(),
+              contactCount: { increment: 1 },
+              ...(isFirstContact && { status: 'CONTACTED' }),
+            },
+          });
+          await prisma.conversation.update({
+            where: { id: msg.conversationId },
+            data: withInboxAiPriorityRank(
+              {
+                aiClassification: msg.conversation.aiClassification,
+                followupStatus: msg.conversation.followupStatus,
+              },
+              {
+                lastMessageAt: new Date(),
+                lastDirection: 'outbound',
+                nextFollowupAt: null,
+                followupTime: null,
+                followupStatus: 'completed',
+              },
+            ),
+          });
+
+          if (isFirstContact) {
+            await this.movePipelineCard(msg.conversation.leadId, 'CONTACTED');
+          }
+        }
+
+        logger.info(`[SIMULATION] Message simulated: ${messageId} → ${toNumber}`, {
+          fakeSid,
+          fromNumber,
+        });
+        return;
+      }
+
+      const client = await getActiveTwilioClient();
+      if (!client) {
+        throw new Error('Twilio client not configured');
+      }
+
+      const twilioTestActive = smsMode === 'twilio_test';
+
+      const messagingServiceSid = await getActiveMessagingServiceSid();
+      if (smsMode === 'live' && !messagingServiceSid) {
+        throw new Error(
+          'Twilio Messaging Service SID is not configured in Settings → Integrations (twilioMessagingServiceSid)',
+        );
+      }
+      const twilioMessage = await client.messages.create({
+        body,
+        ...(messagingServiceSid ? { messagingServiceSid, from: fromNumber } : { from: fromNumber }),
+        to: toNumber,
+        statusCallback: buildTwilioStatusCallbackUrl(config.webhookBaseUrl),
+      });
+
+      await prisma.message.update({
+        where: { id: messageId },
+        data: {
+          twilioMessageSid: twilioMessage.sid,
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+      });
+
+      await NumberService.recordSend(phoneNumberId, true);
+
+      const msg = await prisma.message.findUnique({
+        where: { id: messageId },
+        include: { conversation: { include: { lead: true } } },
+      });
+
+      if (msg?.conversation?.leadId) {
+        if (msg.campaignId) {
+          await prisma.campaignLead.updateMany({
+            where: {
+              campaignId: msg.campaignId,
+              leadId: msg.conversation.leadId,
+              status: { in: ['PENDING', 'FAILED'] },
+            },
+            data: {
+              status: 'SENT',
+              sentAt: new Date(),
+              fromNumber,
+              errorCode: null,
+            },
+          });
+        }
+
+        const isFirstContact = msg.conversation.lead?.status === 'NEW';
+        await prisma.lead.update({
+          where: { id: msg.conversation.leadId },
+          data: {
+            lastContactedAt: new Date(),
+            contactCount: { increment: 1 },
+            ...(isFirstContact && { status: 'CONTACTED' }),
+          },
+        });
+        await prisma.conversation.update({
+          where: { id: msg.conversationId },
+          data: withInboxAiPriorityRank(
+            {
+              aiClassification: msg.conversation.aiClassification,
+              followupStatus: msg.conversation.followupStatus,
+            },
+            {
+              lastMessageAt: new Date(),
+              lastDirection: 'outbound',
+              nextFollowupAt: null,
+              followupTime: null,
+              followupStatus: 'completed',
+            },
+          ),
+        });
+
+        if (isFirstContact) {
+          await this.movePipelineCard(msg.conversation.leadId, 'CONTACTED');
+        }
+      }
+
+      logger.info(`${twilioTestActive ? '[TWILIO TEST] ' : ''}Message sent: ${messageId} → ${toNumber}`, {
+        twilioSid: twilioMessage.sid,
+        fromNumber,
+        twilioTestMode: twilioTestActive,
+      });
+    } catch (error: any) {
+      const isBlocked = error.code === 30007 || error.code === 30034;
+
+      const nextStatus = isBlocked ? 'BLOCKED' : 'FAILED';
+      const updated = await prisma.message.updateMany({
+        where: { id: messageId, status: { in: ['QUEUED', 'SENDING'] } },
+        data: {
+          status: nextStatus,
+          errorCode: error.code?.toString(),
+          errorMessage: error.message,
+          failedAt: new Date(),
+        },
+      });
+
+      if (updated.count > 0) {
+        const failedMessage = await prisma.message.findUnique({
+          where: { id: messageId },
+          select: {
+            campaignId: true,
+            conversation: { select: { leadId: true } },
+          },
+        });
+        if (failedMessage?.campaignId) {
+          if (isBlocked) {
+            await prisma.campaign.update({
+              where: { id: failedMessage.campaignId },
+              data: { totalBlocked: { increment: 1 } },
+            });
+          } else {
+            await prisma.campaign.update({
+              where: { id: failedMessage.campaignId },
+              data: { totalFailed: { increment: 1 } },
+            });
+          }
+
+          if (failedMessage.conversation?.leadId) {
+            await prisma.campaignLead.updateMany({
+              where: {
+                campaignId: failedMessage.campaignId,
+                leadId: failedMessage.conversation.leadId,
+              },
+              data: {
+                status: 'FAILED',
+                ...(error.code && { errorCode: error.code.toString() }),
+              },
+            });
+          }
+        }
+      }
+
+      await ComplianceService.handleDeliveryFailure(toNumber, error.code, {
+        errorMessage: error.message,
+        source: 'twilio_send_error',
+      });
+
+      await NumberService.recordSend(phoneNumberId, false, isBlocked);
+
+      logger.error(`Message failed: ${messageId}`, {
+        error: error.message,
+        code: error.code,
+        toNumber,
+      });
+
+      throw error; // Let BullMQ handle retry
+    }
+  }
+
+  static interpolateTemplate(template: string, variables: Record<string, string>): string {
+    const lowerVars = Object.fromEntries(Object.entries(variables).map(([k, v]) => [k.toLowerCase(), v]));
+    let result = template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+      return variables[key] ?? lowerVars[key.toLowerCase()] ?? match;
+    });
+
+    if (config.sms.spintaxEnabled) {
+      result = this.resolveSpintax(result);
+    }
+
+    return result;
+  }
+
+  static resolveSpintax(text: string): string {
+    const spintaxRegex = /\{([^{}]+)\}/g;
+    let result = text;
+    let iterations = 0;
+
+    while (spintaxRegex.test(result) && iterations < 10) {
+      result = result.replace(spintaxRegex, (_, options) => {
+        if (!options.includes('|')) return `{${options}}`;
+        const choices = options.split('|');
+        return choices[Math.floor(Math.random() * choices.length)];
+      });
+      iterations++;
+    }
+
+    return result;
+  }
+
+  static calculateJitteredDelay(baseDelayMs: number): number {
+    const jitter = config.sms.jitterPercent / 100;
+    const min = baseDelayMs * (1 - jitter);
+    const max = baseDelayMs * (1 + jitter);
+    return Math.round(min + Math.random() * (max - min));
+  }
+
+  static calculateTimeDistributedDelay(index: number, totalMessages: number): number {
+    if (!config.sms.timeDistributionEnabled || totalMessages < 100) {
+      return 0; // Don't distribute small batches
+    }
+
+    const now = new Date();
+    const endHour = config.sms.businessHoursEnd;
+    const endTime = new Date(now);
+    endTime.setHours(endHour, 0, 0, 0);
+
+    if (now >= endTime) return 0;
+
+    const remainingMs = endTime.getTime() - now.getTime();
+    const spreadWindow = remainingMs * 0.8;
+    const baseDelay = (spreadWindow / totalMessages) * index;
+
+    return Math.round(baseDelay + (Math.random() - 0.5) * (spreadWindow / totalMessages));
+  }
+
+  static async checkCircuitBreaker(campaignId: string): Promise<boolean> {
+    const recentMessages = await prisma.message.findMany({
+      where: { campaignId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: { status: true },
+    });
+
+    if (recentMessages.length < 20) return false; // Not enough data
+
+    const failedCount = recentMessages.filter((m) => m.status === 'FAILED' || m.status === 'BLOCKED').length;
+
+    const failRate = (failedCount / recentMessages.length) * 100;
+    return failRate >= config.sms.circuitBreakerThreshold;
+  }
+
+  private static async getOrCreateConversation(leadId: string, repId?: string) {
+    let conversation = await prisma.conversation.findUnique({
+      where: { leadId },
+    });
+
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          leadId,
+          assignedRepId: repId,
+          isActive: true,
+        },
+      });
+    } else if (!conversation.assignedRepId && repId) {
+      conversation = await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { assignedRepId: repId },
+      });
+    }
+
+    return conversation;
+  }
+}

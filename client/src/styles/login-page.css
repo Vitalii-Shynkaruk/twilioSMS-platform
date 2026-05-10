@@ -1,0 +1,499 @@
+.scl-login {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  background: #020712;
+}
+
+.scl-login__stage {
+  --scl-login-field-top: 55.92%;
+  --scl-login-field-width: 34.68%;
+  --scl-login-field-height: 5.85%;
+  --scl-login-button-top: 64.62%;
+  --scl-login-button-width: 35.11%;
+  position: relative;
+  width: 1440px;
+  height: 900px;
+  max-width: 100vw;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+.scl-login__bg,
+.scl-login__overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.scl-login__bg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: -webkit-optimize-contrast;
+  transform: translateZ(0);
+  user-select: none;
+  pointer-events: none;
+}
+
+.scl-login__overlay {
+  z-index: 1;
+}
+
+.scl-login__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.scl-login__error-banner {
+  position: absolute;
+  top: 7.2%;
+  left: 50%;
+  z-index: 4;
+  width: min(520px, calc(100% - 48px));
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 118, 118, 0.38);
+  border-radius: 10px;
+  background: rgba(66, 11, 18, 0.78);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+  padding: 12px 16px;
+  color: #ffe3e3;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.scl-login__hotspots {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+
+.scl-login__email-shell {
+  position: absolute;
+  left: 50%;
+  top: var(--scl-login-field-top);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: var(--scl-login-field-width);
+  height: var(--scl-login-field-height);
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  border: 1px solid rgba(61, 96, 145, 0.62);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(8, 18, 35, 0.97), rgba(7, 14, 27, 0.98));
+  padding: 0 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(121, 162, 228, 0.1),
+    0 0 0 1px rgba(13, 34, 67, 0.24);
+}
+
+.scl-login__email-shell:focus-within {
+  border-color: rgba(67, 126, 219, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(121, 162, 228, 0.12),
+    0 0 0 1px rgba(13, 34, 67, 0.28),
+    0 0 0 3px rgba(24, 132, 255, 0.14);
+}
+
+.scl-login__email-shell svg {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  color: rgba(109, 148, 207, 0.86);
+}
+
+.scl-login__send-button {
+  position: absolute;
+  left: 50%;
+  top: var(--scl-login-button-top);
+  width: var(--scl-login-button-width);
+  height: 6%;
+  transform: translateX(-50%);
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scl-login__send-button:hover:not(:disabled),
+.scl-login__send-button:focus-visible {
+  box-shadow: 0 0 0 2px rgba(146, 192, 255, 0.16);
+  outline: none;
+}
+
+.scl-login__send-button:disabled {
+  cursor: not-allowed;
+}
+
+.scl-login__email-input {
+  position: static;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: #eef4ff;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+  font-family: Arial, sans-serif;
+  caret-color: #2aa8ff;
+}
+
+.scl-login__email-input::placeholder {
+  color: rgba(122, 144, 181, 0.84);
+}
+
+.scl-login__email-input:-webkit-autofill,
+.scl-login__email-input:-webkit-autofill:hover,
+.scl-login__email-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #eef4ff;
+  caret-color: #2aa8ff;
+  box-shadow: inset 0 0 0 1000px rgba(7, 16, 31, 0.96);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+.scl-login__dev-button {
+  position: absolute;
+  right: 4.5%;
+  bottom: 4.5%;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(42, 168, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(5, 16, 36, 0.88);
+  padding: 10px 14px;
+  color: #c6ddff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scl-login__dev-button:hover:not(:disabled) {
+  border-color: rgba(42, 168, 255, 0.58);
+  background: rgba(8, 24, 50, 0.94);
+}
+
+.scl-login__dev-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scl-login__tester-button {
+  position: absolute;
+  left: 4.5%;
+  bottom: 4.5%;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(138, 205, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(5, 16, 36, 0.88);
+  padding: 10px 14px;
+  color: #d8ebff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scl-login__tester-button:hover:not(:disabled) {
+  border-color: rgba(138, 205, 255, 0.54);
+  background: rgba(8, 24, 50, 0.94);
+}
+
+.scl-login__tester-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.scl-login__otp-card {
+  position: absolute;
+  left: 50%;
+  top: 58.2%;
+  z-index: 4;
+  width: min(507px, calc(100% - 48px));
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(67, 108, 161, 0.3);
+  border-radius: 24px;
+  background: rgba(4, 12, 28, 0.94);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.44),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 28px;
+  color: #e7f0ff;
+}
+
+.scl-login__otp-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.scl-login__otp-title svg {
+  width: 18px;
+  height: 18px;
+  color: #2d8cff;
+}
+
+.scl-login__otp-title h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.scl-login__otp-copy {
+  margin: 0 0 20px;
+  color: rgba(223, 235, 255, 0.74);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.scl-login__otp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.scl-login__tester-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.scl-login__tester-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scl-login__tester-field label {
+  color: rgba(199, 216, 241, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.scl-login__otp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: rgba(199, 216, 241, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.scl-login__otp-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(57, 88, 130, 0.4);
+  border-radius: 16px;
+  background: rgba(9, 21, 43, 0.92);
+  padding: 0 16px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.scl-login__otp-input-wrap:focus-within {
+  border-color: rgba(48, 141, 255, 0.8);
+  box-shadow: 0 0 0 4px rgba(24, 132, 255, 0.16);
+}
+
+.scl-login__otp-input-wrap svg {
+  width: 18px;
+  height: 18px;
+  color: rgba(104, 156, 231, 0.8);
+}
+
+.scl-login__otp-input-wrap input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 18px 0;
+  color: #eef4ff;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+
+.scl-login__otp-input-wrap input::placeholder {
+  color: rgba(125, 155, 201, 0.45);
+}
+
+.scl-login__tester-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 16px 0;
+  color: #eef4ff;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-family: Arial, sans-serif;
+  caret-color: #2aa8ff;
+}
+
+.scl-login__tester-input::placeholder {
+  color: rgba(125, 155, 201, 0.52);
+}
+
+.scl-login__tester-input--code {
+  letter-spacing: 0.12em;
+}
+
+.scl-login__otp-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #1765ff 0%, #0c42bc 100%);
+  padding: 18px 20px;
+  color: #f5f9ff;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 20px 34px rgba(11, 86, 207, 0.26);
+}
+
+.scl-login__otp-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.scl-login__otp-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.scl-login__otp-primary svg {
+  width: 18px;
+  height: 18px;
+}
+
+.scl-login__otp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scl-login__otp-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #82b8ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.scl-login__otp-link:hover:not(:disabled) {
+  color: #b7d4ff;
+}
+
+.scl-login__otp-link:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.scl-login__otp-link svg {
+  width: 15px;
+  height: 15px;
+}
+
+.scl-login__otp-link--subtle {
+  color: rgba(203, 217, 239, 0.64);
+}
+
+.scl-login__spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  border-radius: 999px;
+  animation: sclLoginSpin 0.8s linear infinite;
+}
+
+@keyframes sclLoginSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .scl-login__stage {
+    width: 100vw;
+    height: calc(100vw * 0.625);
+    max-height: 100vh;
+  }
+
+  .scl-login__email-shell {
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .scl-login__email-shell svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .scl-login__email-input {
+    font-size: 14px;
+  }
+
+  .scl-login__otp-card {
+    width: min(507px, calc(100% - 32px));
+    padding: 22px 18px;
+  }
+
+  .scl-login__otp-title h2 {
+    font-size: 24px;
+  }
+
+  .scl-login__otp-input-wrap input {
+    font-size: 20px;
+  }
+
+  .scl-login__dev-button {
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .scl-login__tester-button {
+    left: 16px;
+    bottom: 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .scl-login__error-banner {
+    top: 12px;
+    width: calc(100% - 24px);
+  }
+}

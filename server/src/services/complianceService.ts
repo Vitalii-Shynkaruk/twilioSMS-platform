@@ -1,0 +1,487 @@
+import prisma from '../config/database';
+import redis from '../config/redis';
+import logger from '../config/logger';
+import { config } from '../config';
+import { AutoTagService } from './autoTagService';
+import { WebhookService } from './webhookService';
+import { buildQuietHoursReason, isWithinQuietHoursWindow } from './quietHoursWindow';
+import { normalizeTwilioErrorCode } from '../utils/twilioStatus';
+
+export class ComplianceService {
+  static readonly OPT_OUT_KEYWORDS = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
+  static readonly HELP_KEYWORDS = ['HELP', 'INFO'];
+  static readonly OPT_IN_KEYWORDS = ['START', 'UNSTOP', 'SUBSCRIBE'];
+  private static readonly PREFIX_OPT_OUT_KEYWORDS = new Set(['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'QUIT']);
+  private static readonly CACHE_TTL = 300; // 5 minutes
+  private static readonly AUTO_SUPPRESS_TWILIO_ERROR_CODES = new Set(['21614', '21617', '30005', '30006']);
+  private static readonly AUTO_SUPPRESS_REASONS = new Set(['INVALID_DESTINATION', 'NON_MOBILE_DESTINATION']);
+
+  private static normalizeKeywordBody(body: string): { normalized: string; compact: string; firstToken: string } {
+    const normalized = body
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/g, ' ');
+    const compact = normalized.replace(/\s+/g, '');
+    const firstToken = normalized.split(' ')[0] || '';
+    return { normalized, compact, firstToken };
+  }
+
+  private static isOptOutKeyword(body: string): boolean {
+    const { normalized, compact, firstToken } = this.normalizeKeywordBody(body);
+    if (!normalized) return false;
+    if (this.OPT_OUT_KEYWORDS.includes(compact)) return true;
+    if (this.PREFIX_OPT_OUT_KEYWORDS.has(firstToken)) return true;
+    return /\bOPT\s*OUT\b/.test(normalized);
+  }
+
+  private static isHelpKeyword(body: string): boolean {
+    const { compact, firstToken } = this.normalizeKeywordBody(body);
+    return this.HELP_KEYWORDS.includes(compact) || this.HELP_KEYWORDS.includes(firstToken);
+  }
+
+  private static isOptInKeyword(body: string): boolean {
+    const { compact, firstToken } = this.normalizeKeywordBody(body);
+    return this.OPT_IN_KEYWORDS.includes(compact) || this.OPT_IN_KEYWORDS.includes(firstToken);
+  }
+
+  static classifyInboundKeyword(body: string): 'opt_out' | 'help' | 'opt_in' | null {
+    if (this.isOptOutKeyword(body)) return 'opt_out';
+    if (this.isHelpKeyword(body)) return 'help';
+    if (this.isOptInKeyword(body)) return 'opt_in';
+    return null;
+  }
+
+  static async canSendTo(
+    phone: string,
+    options?: { enforceQuietHours?: boolean },
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    const enforceQuietHours = options?.enforceQuietHours ?? true;
+
+    const cacheKey = enforceQuietHours ? `compliance:${phone}` : `compliance:${phone}:noq`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    const suppressed = await prisma.suppressionEntry.findUnique({
+      where: { phone },
+    });
+
+    if (suppressed) {
+      const result = { allowed: false, reason: `Suppressed: ${suppressed.reason}` };
+      await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+      return result;
+    }
+
+    const lead = await prisma.lead.findUnique({
+      where: { phone },
+      select: { optedOut: true, isSuppressed: true },
+    });
+
+    if (lead?.optedOut) {
+      const result = { allowed: false, reason: 'Lead opted out' };
+      await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+      return result;
+    }
+
+    if (lead?.isSuppressed) {
+      const result = { allowed: false, reason: 'Lead suppressed' };
+      await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+      return result;
+    }
+
+    if (enforceQuietHours) {
+      const quietHours = await this.getQuietHoursStatus();
+      if (quietHours.active) {
+        return { allowed: false, reason: quietHours.reason };
+      }
+    }
+
+    const result = { allowed: true };
+    await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(result));
+    return result;
+  }
+
+  static async invalidateCache(phone: string): Promise<void> {
+    await redis.del(`compliance:${phone}`, `compliance:${phone}:noq`);
+  }
+
+  static async clearNotInterestedSuppression(phone: string): Promise<void> {
+    const [leads, suppressionEntry] = await Promise.all([
+      prisma.lead.findMany({
+        where: { phone },
+        select: {
+          id: true,
+          isSuppressed: true,
+          suppressReason: true,
+          optedOut: true,
+        },
+      }),
+      prisma.suppressionEntry.findUnique({
+        where: { phone },
+        select: { reason: true },
+      }),
+    ]);
+
+    const leadIdsToClear = leads
+      .filter(
+        (lead) =>
+          lead.suppressReason === 'NOT_INTERESTED' ||
+          (!lead.suppressReason && lead.isSuppressed && suppressionEntry?.reason === 'NOT_INTERESTED'),
+      )
+      .map((lead) => lead.id);
+    const shouldDeleteSuppressionEntry = suppressionEntry?.reason === 'NOT_INTERESTED';
+
+    if (leadIdsToClear.length === 0 && !shouldDeleteSuppressionEntry) {
+      return;
+    }
+
+    await prisma.$transaction([
+      ...leadIdsToClear.map((leadId) =>
+        prisma.lead.update({
+          where: { id: leadId },
+          data: {
+            optedOut: false,
+            optedOutAt: null,
+            isSuppressed: false,
+            suppressedAt: null,
+            suppressReason: null,
+          },
+        }),
+      ),
+      prisma.suppressionEntry.deleteMany({
+        where: {
+          phone,
+          reason: 'NOT_INTERESTED',
+          source: 'inbox_manual',
+        },
+      }),
+    ]);
+
+    logger.info('Cleared NOT_INTERESTED suppression state', {
+      phone,
+      leadCount: leadIdsToClear.length,
+      deletedSuppressionEntry: shouldDeleteSuppressionEntry,
+    });
+    await this.invalidateCache(phone);
+  }
+
+  static async handleDeliveryFailure(
+    phone: string,
+    errorCode: unknown,
+    options?: { errorMessage?: string | null; source?: string },
+  ): Promise<boolean> {
+    if (!phone) {
+      return false;
+    }
+
+    const normalizedCode = normalizeTwilioErrorCode(errorCode);
+    if (!normalizedCode || !this.AUTO_SUPPRESS_TWILIO_ERROR_CODES.has(normalizedCode)) {
+      return false;
+    }
+
+    const suppressionReason =
+      normalizedCode === '21617' || normalizedCode === '30006' ? 'NON_MOBILE_DESTINATION' : 'INVALID_DESTINATION';
+    const suppressionSource = options?.source || 'twilio_delivery';
+
+    const [leads, suppressionEntry] = await Promise.all([
+      prisma.lead.findMany({
+        where: { phone },
+        select: {
+          id: true,
+          optedOut: true,
+          isSuppressed: true,
+          suppressReason: true,
+        },
+      }),
+      prisma.suppressionEntry.findUnique({
+        where: { phone },
+        select: {
+          reason: true,
+          source: true,
+        },
+      }),
+    ]);
+
+    if (suppressionEntry && !this.AUTO_SUPPRESS_REASONS.has(suppressionEntry.reason)) {
+      return false;
+    }
+
+    const leadIdsToUpdate = leads
+      .filter(
+        (lead) => !lead.optedOut && (!lead.isSuppressed || this.AUTO_SUPPRESS_REASONS.has(lead.suppressReason || '')),
+      )
+      .map((lead) => lead.id);
+
+    const operations = [];
+
+    if (leadIdsToUpdate.length > 0) {
+      operations.push(
+        prisma.lead.updateMany({
+          where: {
+            id: { in: leadIdsToUpdate },
+          },
+          data: {
+            isSuppressed: true,
+            suppressedAt: new Date(),
+            suppressReason: suppressionReason,
+          },
+        }),
+      );
+    }
+
+    if (!suppressionEntry) {
+      operations.push(
+        prisma.suppressionEntry.create({
+          data: {
+            phone,
+            reason: suppressionReason,
+            source: suppressionSource,
+          },
+        }),
+      );
+    } else if (suppressionEntry.reason !== suppressionReason || suppressionEntry.source !== suppressionSource) {
+      operations.push(
+        prisma.suppressionEntry.update({
+          where: { phone },
+          data: {
+            reason: suppressionReason,
+            source: suppressionSource,
+          },
+        }),
+      );
+    }
+
+    if (operations.length === 0) {
+      return false;
+    }
+
+    await prisma.$transaction(operations);
+
+    logger.warn('Auto-suppressed phone after Twilio delivery failure', {
+      phone,
+      errorCode: normalizedCode,
+      errorMessage: options?.errorMessage || null,
+      suppressionReason,
+      leadCount: leadIdsToUpdate.length,
+      source: suppressionSource,
+    });
+    await this.invalidateCache(phone);
+
+    return true;
+  }
+
+  static async processInboundKeywords(
+    fromNumber: string,
+    body: string,
+  ): Promise<{ isKeyword: boolean; action?: string; response?: string }> {
+    const action = this.classifyInboundKeyword(body);
+
+    if (action === 'opt_out') {
+      await this.handleOptOut(fromNumber);
+      return {
+        isKeyword: true,
+        action: 'opt_out',
+        response: 'You have been unsubscribed. Reply START to re-subscribe.',
+      };
+    }
+
+    if (action === 'help') {
+      return {
+        isKeyword: true,
+        action: 'help',
+        response: `Secure Credit Lines. For help, call us at ${config.compliance.supportPhone}. Reply STOP to opt out.`,
+      };
+    }
+
+    if (action === 'opt_in') {
+      await this.handleOptIn(fromNumber);
+      return {
+        isKeyword: true,
+        action: 'opt_in',
+        response: 'You have been re-subscribed to messages from Secure Credit Lines.',
+      };
+    }
+
+    return { isKeyword: false };
+  }
+
+  static async handleOptOut(phone: string): Promise<void> {
+    await prisma.lead.updateMany({
+      where: { phone },
+      data: {
+        optedOut: true,
+        optedOutAt: new Date(),
+        status: 'DNC',
+      },
+    });
+
+    await prisma.suppressionEntry.upsert({
+      where: { phone },
+      create: {
+        phone,
+        reason: 'STOP',
+        source: 'sms_keyword',
+      },
+      update: {
+        reason: 'STOP',
+        source: 'sms_keyword',
+      },
+    });
+
+    const leads = await prisma.lead.findMany({
+      where: { phone },
+      select: { id: true },
+    });
+
+    for (const lead of leads) {
+      await prisma.automationRun.updateMany({
+        where: { leadId: lead.id, isActive: true },
+        data: {
+          isActive: false,
+          isPaused: true,
+          pauseReason: 'opted_out',
+        },
+      });
+      await AutoTagService.onOptOut(lead.id);
+    }
+
+    await WebhookService.onOptOut({ phone, leadId: leads[0]?.id });
+
+    logger.info(`Opt-out processed: ${phone}`);
+    await this.invalidateCache(phone);
+  }
+
+  static async handleOptIn(phone: string): Promise<void> {
+    const leads = await prisma.lead.findMany({
+      where: { phone },
+      select: { id: true, status: true },
+    });
+
+    for (const lead of leads) {
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          optedOut: false,
+          optedOutAt: null,
+          isSuppressed: false,
+          suppressedAt: null,
+          suppressReason: null,
+          ...(lead.status === 'DNC' ? { status: 'REPLIED' } : {}),
+        },
+      });
+    }
+
+    if (leads.length > 0) {
+      await prisma.conversation.updateMany({
+        where: {
+          leadId: { in: leads.map((lead) => lead.id) },
+          leadStatus: 'DNC',
+        },
+        data: {
+          leadStatus: null,
+        },
+      });
+    }
+
+    await prisma.suppressionEntry.deleteMany({
+      where: {
+        phone,
+        OR: [
+          { reason: { in: ['STOP', 'DNC', 'NOT_INTERESTED'] } },
+          { source: { in: ['sms_keyword', 'inbox_manual'] } },
+        ],
+      },
+    });
+
+    logger.info(`Opt-in processed: ${phone}`);
+    await this.invalidateCache(phone);
+  }
+
+  private static async getQuietHoursConfig(): Promise<{
+    quietHoursStart: number;
+    quietHoursEnd: number;
+    timezone: string;
+  }> {
+    let quietHoursStart = config.compliance.quietHoursStart;
+    let quietHoursEnd = config.compliance.quietHoursEnd;
+    let timezone = config.compliance.timezone;
+
+    try {
+      const cacheKey = 'compliance:quiet_hours_config';
+      const cached = await redis.get(cacheKey);
+
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        quietHoursStart = parsed.start;
+        quietHoursEnd = parsed.end;
+        timezone = parsed.timezone;
+      } else {
+        const settings = await prisma.systemSetting.findMany({
+          where: {
+            key: { in: ['quietHoursStart', 'quietHoursEnd', 'quietHoursTimezone'] },
+          },
+        });
+
+        const settingsMap = Object.fromEntries(settings.map((s) => [s.key, String(s.value)]));
+
+        if (settingsMap.quietHoursStart) {
+          const startStr = settingsMap.quietHoursStart;
+          quietHoursStart = parseInt(startStr.includes(':') ? startStr.split(':')[0] : startStr, 10);
+        }
+        if (settingsMap.quietHoursEnd) {
+          const endStr = settingsMap.quietHoursEnd;
+          quietHoursEnd = parseInt(endStr.includes(':') ? endStr.split(':')[0] : endStr, 10);
+        }
+        if (settingsMap.quietHoursTimezone) {
+          timezone = settingsMap.quietHoursTimezone;
+        }
+
+        await redis.set(cacheKey, JSON.stringify({ start: quietHoursStart, end: quietHoursEnd, timezone }), 'EX', 60);
+      }
+    } catch (err) {
+      logger.warn('Failed to read quiet hours from DB, using env config', { error: (err as Error).message });
+    }
+
+    return { quietHoursStart, quietHoursEnd, timezone };
+  }
+
+  static async getQuietHoursStatus(now = new Date()): Promise<{ active: boolean; reason: string; timezone: string }> {
+    const { quietHoursStart, quietHoursEnd, timezone } = await this.getQuietHoursConfig();
+
+    const timeStr = now.toLocaleTimeString('en-US', {
+      timeZone: timezone,
+      hour12: false,
+      hour: '2-digit',
+    });
+    const currentHour = parseInt(timeStr, 10);
+    const active = isWithinQuietHoursWindow(currentHour, quietHoursStart, quietHoursEnd);
+
+    return {
+      active,
+      reason: buildQuietHoursReason(quietHoursEnd, timezone),
+      timezone,
+    };
+  }
+
+  static async isQuietHours(): Promise<boolean> {
+    return (await this.getQuietHoursStatus()).active;
+  }
+
+  static async bulkSuppress(phones: string[], reason: string, source: string): Promise<number> {
+    const entries = phones.map((phone) => ({
+      phone,
+      reason,
+      source,
+    }));
+
+    const result = await prisma.suppressionEntry.createMany({
+      data: entries,
+      skipDuplicates: true,
+    });
+
+    return result.count;
+  }
+}

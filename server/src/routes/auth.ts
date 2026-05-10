@@ -1,0 +1,55 @@
+import { Router } from 'express';
+import { AuthController } from '../controllers/authController';
+import { authenticate, requireRole } from '../middleware/auth';
+import rateLimit from 'express-rate-limit';
+import { asyncHandler } from '../utils/asyncHandler';
+import { validate } from '../validation/middleware';
+import {
+  devModeLoginSchema,
+  loginSchema,
+  registerSchema,
+  requestOtpSchema,
+  testerLoginSchema,
+  updateUserSchema,
+  verifyOtpSchema,
+} from '../validation/schemas';
+
+const router = Router();
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many login attempts, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+});
+
+router.post('/login', loginLimiter, validate(loginSchema), asyncHandler(AuthController.login));
+router.post('/tester-login', loginLimiter, validate(testerLoginSchema), asyncHandler(AuthController.testerLogin));
+router.post('/request-otp', loginLimiter, validate(requestOtpSchema), asyncHandler(AuthController.requestOtp));
+router.post('/verify-otp', loginLimiter, validate(verifyOtpSchema), asyncHandler(AuthController.verifyOtp));
+router.post('/dev-login', loginLimiter, validate(devModeLoginSchema), asyncHandler(AuthController.devModeLogin));
+router.post('/refresh', asyncHandler(AuthController.refresh));
+
+router.get('/me', authenticate, asyncHandler(AuthController.getMe));
+router.put('/change-password', authenticate, asyncHandler(AuthController.changePassword));
+router.get('/users', authenticate, requireRole('ADMIN', 'MANAGER'), asyncHandler(AuthController.getUsers));
+router.post(
+  '/register',
+  authenticate,
+  requireRole('ADMIN'),
+  validate(registerSchema),
+  asyncHandler(AuthController.register),
+);
+router.put(
+  '/users/:id',
+  authenticate,
+  requireRole('ADMIN'),
+  validate(updateUserSchema),
+  asyncHandler(AuthController.updateUser),
+);
+router.post('/users/:id/unlock-otp', authenticate, requireRole('ADMIN'), asyncHandler(AuthController.unlockOtp));
+router.delete('/users/:id', authenticate, requireRole('ADMIN'), asyncHandler(AuthController.deleteUser));
+
+export default router;

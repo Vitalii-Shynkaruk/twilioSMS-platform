@@ -33,6 +33,7 @@ router.post(
   upload.single('file'),
   asyncHandler(LeadController.importMappedCSV),
 );
+router.get('/import-jobs/:id', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(LeadController.getImportJob));
 router.post(
   '/bulk',
   requireRole('ADMIN', 'MANAGER', 'REP'),
@@ -41,6 +42,7 @@ router.post(
 );
 router.get('/:id', asyncHandler(LeadController.get));
 router.put('/:id', requireRole('ADMIN', 'MANAGER', 'REP'), asyncHandler(LeadController.update));
+router.post('/:id/override-suppression', requireRole('ADMIN'), asyncHandler(LeadController.overrideSuppression));
 router.delete('/:id', requireRole('ADMIN'), asyncHandler(LeadController.delete));
 router.post('/:id/tags', asyncHandler(LeadController.addTag));
 router.delete('/:id/tags/:tagId', asyncHandler(LeadController.removeTag));

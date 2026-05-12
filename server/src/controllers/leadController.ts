@@ -5,6 +5,11 @@ import { AppError } from '../middleware/errorHandler';
 import { parse } from 'csv-parse/sync';
 import { DealStage, LeadStatus, Prisma } from '@prisma/client';
 import { buildLeadStatusWhere } from '../utils/leadStatusFilter';
+import { csvImportQueue } from '../jobs/lookupQueues';
+import { LeadCsvImportService, CsvImportMapping } from '../services/leadCsvImportService';
+import { ComplianceService } from '../services/complianceService';
+
+const ASYNC_CSV_IMPORT_THRESHOLD = 500;
 
 // Lead status to deal stage mapping
 const LEAD_TO_DEAL: Record<LeadStatus, DealStage> = {
@@ -86,8 +91,7 @@ function importLeadEnrichmentFields(fields: {
   annualRevenue?: unknown;
 }): Partial<Prisma.LeadUncheckedCreateInput> {
   const industry = nullableLeadValue(fields.industry, 100);
-  const monthlyRevenue =
-    parseMonthlyRevenue(fields.monthlyRevenue) ?? parseMonthlyRevenue(fields.annualRevenue, true);
+  const monthlyRevenue = parseMonthlyRevenue(fields.monthlyRevenue) ?? parseMonthlyRevenue(fields.annualRevenue, true);
 
   return {
     ...(industry ? { industry } : {}),
@@ -108,7 +112,9 @@ function normalizePersistedRevenue(value: unknown): number | null {
 }
 
 function normalizeRevenueSource(value: unknown): 'AI' | 'MANUAL' | 'CSV' | null {
-  const source = String(value || '').trim().toLowerCase();
+  const source = String(value || '')
+    .trim()
+    .toLowerCase();
   if (source === 'ai_extracted' || source === 'ai') return 'AI';
   if (source === 'manual') return 'MANUAL';
   if (source === 'csv_import' || source === 'csv') return 'CSV';
@@ -214,6 +220,29 @@ async function resolveScopedLeadIds(leadIds: string[], req: AuthRequest): Promis
   });
 
   return leads.map((lead) => lead.id);
+}
+
+async function enqueueCsvImportJob(input: {
+  csvContent: string;
+  records: Record<string, unknown>[];
+  mapping?: CsvImportMapping | null;
+  listName?: string;
+  req: AuthRequest;
+}): Promise<{ id: string; totalRows: number }> {
+  const job = await prisma.csvImportJob.create({
+    data: {
+      userId: input.req.user?.id || null,
+      userRole: input.req.user?.role || null,
+      listName: input.listName?.trim() || null,
+      csvContent: input.csvContent,
+      mapping: (input.mapping || null) as Prisma.InputJsonValue,
+      totalRows: input.records.length,
+    },
+  });
+
+  await csvImportQueue.add('process-csv-import', { importJobId: job.id }, { jobId: `csv-import:${job.id}` });
+
+  return { id: job.id, totalRows: input.records.length };
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -989,184 +1018,25 @@ export class LeadController {
 
     const listName = req.body.listName as string | undefined;
     const csvContent = req.file.buffer.toString('utf-8');
-    const records = parse(csvContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-    });
+    const records = LeadCsvImportService.parseCsvContent(csvContent);
 
-    let imported = 0;
-    let duplicates = 0;
-    let errors = 0;
-    const errorDetails: string[] = [];
-    const allLeadIds = new Set<string>();
-    const importAssignedRepId = req.user?.role === 'REP' ? req.user.id : undefined;
-
-    // Query default stage ONCE before the loop (with fallback to first stage)
-    const defaultStage =
-      (await prisma.pipelineStage.findFirst({
-        where: { isDefault: true },
-      })) || (await prisma.pipelineStage.findFirst({ orderBy: { order: 'asc' } }));
-
-    // Process in chunks of 500 for better DB performance
-    const CHUNK_SIZE = 500;
-    for (let chunk = 0; chunk < records.length; chunk += CHUNK_SIZE) {
-      const batch = records.slice(chunk, chunk + CHUNK_SIZE);
-      const leadsToUpsert: LeadUpsertPayload[] = [];
-
-      // Parse and validate the batch
-      for (const record of batch) {
-        const phone = normalizeCell(record.phone || record.Phone || record.PHONE).replace(/\D/g, '');
-        if (!phone) {
-          errors++;
-          errorDetails.push('Row missing phone number');
-          continue;
-        }
-
-        const e164Phone = phone.startsWith('1') ? `+${phone}` : `+1${phone}`;
-        const firstName = requiredLeadValue(
-          record.firstName || record.first_name || record.FirstName || record.FIRST_NAME,
-          'Unknown',
-        );
-        const lastName = requiredLeadValue(
-          record.lastName || record.last_name || record.LastName || record.LAST_NAME,
-          '',
-        );
-
-        leadsToUpsert.push({
-          phone: e164Phone,
-          firstName,
-          lastName,
-          email: nullableLeadValue(record.email || record.Email || record.EMAIL),
-          company: nullableLeadValue(record.company || record.Company || record.COMPANY),
-          state: nullableLeadValue(record.state || record.State || record.STATE),
-          // Preserve the original source value from CSV imports.
-          source: requiredLeadValue(record.source || record.Source, listName?.trim() || 'csv_import'),
-          notes: nullableLeadValue(record.notes || record.Notes || record.NOTE || record.COMMENTS, 4000),
-          customFields: importCustomFields({
-            industry: record.industry || record.Industry || record.INDUSTRY,
-            monthlyRevenue:
-              record.monthlyRevenue ||
-              record.monthly_revenue ||
-              record['Monthly Revenue'] ||
-              record.revenue ||
-              record.Revenue,
-            annualRevenue: record.annualRevenue || record.annual_revenue || record['Annual Revenue'],
-          }),
-          ...importLeadEnrichmentFields({
-            industry: record.industry || record.Industry || record.INDUSTRY,
-            monthlyRevenue:
-              record.monthlyRevenue ||
-              record.monthly_revenue ||
-              record['Monthly Revenue'] ||
-              record.revenue ||
-              record.Revenue,
-            annualRevenue: record.annualRevenue || record.annual_revenue || record['Annual Revenue'],
-          }),
-          ...(importAssignedRepId ? { assignedRepId: importAssignedRepId } : {}),
-        });
-      }
-
-      // Batch upsert leads using a transaction
-      if (leadsToUpsert.length > 0) {
-        const { uniqueLeadsToUpsert, duplicateRows } = dedupeLeadUpserts(leadsToUpsert);
-        duplicates += duplicateRows;
-
-        // Check which phones already exist to distinguish new vs duplicate
-        const phones = uniqueLeadsToUpsert.map((lead) => lead.phone);
-        const existingLeads = await prisma.lead.findMany({
-          where: { phone: { in: phones } },
-          select: {
-            id: true,
-            phone: true,
-            deletedAt: true,
-            assignedRepId: true,
-            industry: true,
-            monthlyRevenue: true,
-            monthlyRevenueSource: true,
-          },
-        });
-        const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
-
-        const results = await prisma.$transaction(
-          uniqueLeadsToUpsert.map((lead) => {
-            const existing = existingPhoneMap.get(lead.phone);
-            const restoreOwnerPatch =
-              existing?.deletedAt && !existing.assignedRepId && importAssignedRepId
-                ? { assignedRepId: importAssignedRepId }
-                : {};
-            const enrichmentPatch = buildImportEnrichmentUpdate(lead, existing);
-
-            return prisma.lead.upsert({
-              where: { phone: lead.phone },
-              create: lead,
-              update: { deletedAt: null, ...restoreOwnerPatch, ...enrichmentPatch },
-            });
-          }),
-        );
-
-        const newLeadIds: string[] = [];
-        for (const result of results) {
-          allLeadIds.add(result.id);
-          const existing = existingPhoneMap.get(result.phone);
-          if (!existing) {
-            newLeadIds.push(result.id);
-            imported++;
-          } else if (existing.deletedAt !== null) {
-            newLeadIds.push(result.id);
-            imported++;
-          } else {
-            duplicates++;
-          }
-        }
-
-        if (defaultStage && newLeadIds.length > 0) {
-          await prisma.pipelineCard.createMany({
-            data: newLeadIds.map((leadId) => ({
-              leadId,
-              stageId: defaultStage.id,
-            })),
-            skipDuplicates: true,
-          });
-        }
-      }
+    if (records.length > ASYNC_CSV_IMPORT_THRESHOLD) {
+      const job = await enqueueCsvImportJob({ csvContent, records, listName, req });
+      res.status(202).json({ queued: true, jobId: job.id, status: 'PENDING', total: job.totalRows });
+      return;
     }
 
-    // Auto-tag all imported leads with list name
-    const uniqueLeadIds = Array.from(allLeadIds);
-
-    if (listName && uniqueLeadIds.length > 0) {
-      const tagName = listName.trim();
-      const userId = req.user!.id;
-      const tag = await prisma.tag.upsert({
-        where: { name_createdById: { name: tagName, createdById: userId } },
-        create: { name: tagName, color: '#3b82f6', createdById: userId, isImportList: true },
-        update: {},
-      });
-      await prisma.leadTag.createMany({
-        data: uniqueLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
-        skipDuplicates: true,
-      });
-    }
-
-    const eligibleLeadIds = await getEligibleLeadIds(uniqueLeadIds, req.user);
-
-    res.json({
-      imported,
-      duplicates,
-      errors,
-      total: records.length,
-      leadIds: uniqueLeadIds,
-      uniqueLeadCount: uniqueLeadIds.length,
-      eligibleLeadIds,
-      campaignReadyLeadCount: eligibleLeadIds.length,
-      suppressedExcluded: uniqueLeadIds.length - eligibleLeadIds.length,
-      errorDetails: errorDetails.slice(0, 10),
+    const result = await LeadCsvImportService.importRecords({
+      records,
+      listName,
+      user: LeadCsvImportService.userFromAuth(req.user),
     });
+
+    res.json(result);
   }
 
   /**
-  * POST /leads/preview - Parse first N rows of CSV for preview + column detection
+   * POST /leads/preview - Parse first N rows of CSV for preview + column detection
    * Returns detected columns, sample data rows, and auto-mapping suggestions.
    */
   static async previewCSV(req: AuthRequest, res: Response): Promise<void> {
@@ -1237,7 +1107,7 @@ export class LeadController {
   }
 
   /**
-  * POST /leads/import-mapped - Import CSV with explicit column mapping from frontend
+   * POST /leads/import-mapped - Import CSV with explicit column mapping from frontend
    */
   static async importMappedCSV(req: AuthRequest, res: Response): Promise<void> {
     if (!req.file) {
@@ -1262,164 +1132,58 @@ export class LeadController {
     }
 
     const csvContent = req.file.buffer.toString('utf-8');
-    const records = parse(csvContent, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
+    const records = LeadCsvImportService.parseCsvContent(csvContent);
+    const csvMapping = mapping as CsvImportMapping;
+
+    if (records.length > ASYNC_CSV_IMPORT_THRESHOLD) {
+      const job = await enqueueCsvImportJob({ csvContent, records, mapping: csvMapping, listName, req });
+      res.status(202).json({ queued: true, jobId: job.id, status: 'PENDING', total: job.totalRows });
+      return;
+    }
+
+    const result = await LeadCsvImportService.importRecords({
+      records,
+      mapping: csvMapping,
+      listName,
+      user: LeadCsvImportService.userFromAuth(req.user),
     });
 
-    let imported = 0;
-    let duplicates = 0;
-    let errors = 0;
-    const errorDetails: string[] = [];
-    const allLeadIds = new Set<string>();
-    const importAssignedRepId = req.user?.role === 'REP' ? req.user.id : undefined;
+    res.json(result);
+  }
 
-    const defaultStage =
-      (await prisma.pipelineStage.findFirst({
-        where: { isDefault: true },
-      })) || (await prisma.pipelineStage.findFirst({ orderBy: { order: 'asc' } }));
-
-    const CHUNK_SIZE = 500;
-    for (let chunk = 0; chunk < records.length; chunk += CHUNK_SIZE) {
-      const batch = records.slice(chunk, chunk + CHUNK_SIZE);
-      const leadsToUpsert: LeadUpsertPayload[] = [];
-
-      for (const record of batch) {
-        const rawPhone = normalizeCell(mapping.phone ? record[mapping.phone] : '').replace(/\D/g, '');
-        if (!rawPhone) {
-          errors++;
-          errorDetails.push('Row missing phone number');
-          continue;
-        }
-
-        const e164Phone = rawPhone.startsWith('1') ? `+${rawPhone}` : `+1${rawPhone}`;
-
-        // Combine city+state into state field (Lead model has no city column)
-        const city = normalizeCell(mapping.city ? record[mapping.city] : '');
-        const state = normalizeCell(mapping.state ? record[mapping.state] : '');
-        const combinedState = [city, state].filter(Boolean).join(', ');
-
-        leadsToUpsert.push({
-          phone: e164Phone,
-          firstName: requiredLeadValue(mapping.firstName ? record[mapping.firstName] : '', 'Unknown'),
-          lastName: requiredLeadValue(mapping.lastName ? record[mapping.lastName] : '', ''),
-          email: nullableLeadValue(mapping.email ? record[mapping.email] : ''),
-          company: nullableLeadValue(mapping.company ? record[mapping.company] : ''),
-          state: nullableLeadValue(combinedState),
-          // Preserve the original source value from CSV imports.
-          source: requiredLeadValue(mapping.source ? record[mapping.source] : '', listName?.trim() || 'csv_import'),
-          notes: nullableLeadValue(mapping.notes ? record[mapping.notes] : '', 4000),
-          customFields: importCustomFields({
-            industry: mapping.industry ? record[mapping.industry] : '',
-            monthlyRevenue: mapping.monthlyRevenue ? record[mapping.monthlyRevenue] : '',
-            annualRevenue: mapping.annualRevenue ? record[mapping.annualRevenue] : '',
-          }),
-          ...importLeadEnrichmentFields({
-            industry: mapping.industry ? record[mapping.industry] : '',
-            monthlyRevenue: mapping.monthlyRevenue ? record[mapping.monthlyRevenue] : '',
-            annualRevenue: mapping.annualRevenue ? record[mapping.annualRevenue] : '',
-          }),
-          ...(importAssignedRepId ? { assignedRepId: importAssignedRepId } : {}),
-        });
-      }
-
-      if (leadsToUpsert.length > 0) {
-        const { uniqueLeadsToUpsert, duplicateRows } = dedupeLeadUpserts(leadsToUpsert);
-        duplicates += duplicateRows;
-
-        // Check which phones already exist to distinguish new vs duplicate
-        const phones = uniqueLeadsToUpsert.map((lead) => lead.phone);
-        const existingLeads = await prisma.lead.findMany({
-          where: { phone: { in: phones } },
-          select: {
-            id: true,
-            phone: true,
-            deletedAt: true,
-            assignedRepId: true,
-            industry: true,
-            monthlyRevenue: true,
-            monthlyRevenueSource: true,
-          },
-        });
-        const existingPhoneMap = new Map(existingLeads.map((l) => [l.phone, l]));
-
-        const results = await prisma.$transaction(
-          uniqueLeadsToUpsert.map((lead) => {
-            const existing = existingPhoneMap.get(lead.phone);
-            const restoreOwnerPatch =
-              existing?.deletedAt && !existing.assignedRepId && importAssignedRepId
-                ? { assignedRepId: importAssignedRepId }
-                : {};
-            const enrichmentPatch = buildImportEnrichmentUpdate(lead, existing);
-
-            return prisma.lead.upsert({
-              where: { phone: lead.phone },
-              create: lead,
-              update: { deletedAt: null, ...restoreOwnerPatch, ...enrichmentPatch },
-            });
-          }),
-        );
-
-        const newLeadIds: string[] = [];
-        for (const result of results) {
-          // Track ALL lead IDs (new + existing) so they can be added to campaigns
-          allLeadIds.add(result.id);
-          const existing = existingPhoneMap.get(result.phone);
-          if (!existing) {
-            newLeadIds.push(result.id);
-            imported++;
-          } else if (existing.deletedAt !== null) {
-            newLeadIds.push(result.id);
-            imported++;
-          } else {
-            duplicates++;
-          }
-        }
-
-        if (defaultStage && newLeadIds.length > 0) {
-          await prisma.pipelineCard.createMany({
-            data: newLeadIds.map((leadId) => ({
-              leadId,
-              stageId: defaultStage.id,
-            })),
-            skipDuplicates: true,
-          });
-        }
-      }
+  static async getImportJob(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    const job = await prisma.csvImportJob.findUnique({ where: { id } });
+    if (!job) throw new AppError('Import job not found', 404);
+    if (req.user?.role === 'REP' && job.userId !== req.user.id) {
+      throw new AppError('Access denied: you can only view your own import jobs', 403);
     }
-
-    // Auto-tag all imported leads (new + existing) with list name
-    const uniqueLeadIds = Array.from(allLeadIds);
-
-    if (listName && uniqueLeadIds.length > 0) {
-      const tagName = listName.trim();
-      const userId = req.user!.id;
-      const tag = await prisma.tag.upsert({
-        where: { name_createdById: { name: tagName, createdById: userId } },
-        create: { name: tagName, color: '#3b82f6', createdById: userId, isImportList: true },
-        update: {},
-      });
-      await prisma.leadTag.createMany({
-        data: uniqueLeadIds.map((leadId) => ({ leadId, tagId: tag.id })),
-        skipDuplicates: true,
-      });
-    }
-
-    const eligibleLeadIds = await getEligibleLeadIds(uniqueLeadIds, req.user);
 
     res.json({
-      imported,
-      duplicates,
-      errors,
-      total: records.length,
-      leadIds: uniqueLeadIds,
-      uniqueLeadCount: uniqueLeadIds.length,
-      eligibleLeadIds,
-      campaignReadyLeadCount: eligibleLeadIds.length,
-      suppressedExcluded: uniqueLeadIds.length - eligibleLeadIds.length,
-      errorDetails: errorDetails.slice(0, 10),
+      job: {
+        id: job.id,
+        status: job.status,
+        totalRows: job.totalRows,
+        processedRows: job.processedRows,
+        result: job.result,
+        errorMessage: job.errorMessage,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        createdAt: job.createdAt,
+      },
     });
+  }
+
+  static async overrideSuppression(req: AuthRequest, res: Response): Promise<void> {
+    const { id } = req.params;
+    try {
+      const result = await ComplianceService.overrideAutoSuppression(id, req.user?.id);
+      res.json({ success: true, ...result });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Suppression override failed';
+      const status = message === 'Lead not found' ? 404 : 400;
+      throw new AppError(message, status);
+    }
   }
 
   static async addTag(req: AuthRequest, res: Response): Promise<void> {
@@ -1587,7 +1351,7 @@ export class LeadController {
   }
 
   /**
-  * GET /leads/export - Export leads as streaming CSV (cursor-based, OOM-safe)
+   * GET /leads/export - Export leads as streaming CSV (cursor-based, OOM-safe)
    */
   static async exportCSV(req: AuthRequest, res: Response): Promise<void> {
     const { status, tags, assignedRepId, search, source, state, revenueMin, lastContactedBefore } = req.query;
@@ -1697,7 +1461,10 @@ export class LeadController {
 
       for (const l of leads) {
         const enrichment = resolveLeadEnrichment(l);
-        if (revenueMinThreshold > 0 && (!enrichment.monthlyRevenue || enrichment.monthlyRevenue < revenueMinThreshold)) {
+        if (
+          revenueMinThreshold > 0 &&
+          (!enrichment.monthlyRevenue || enrichment.monthlyRevenue < revenueMinThreshold)
+        ) {
           continue;
         }
         const row = [

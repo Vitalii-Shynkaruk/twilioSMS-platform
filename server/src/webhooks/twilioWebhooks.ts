@@ -938,6 +938,10 @@ const statusWorker = new Worker(
         errorMessage,
         source: 'twilio_status_callback',
       });
+      await ComplianceService.handleTransientDeliveryFailure(message.toNumber, errorCode, {
+        errorMessage,
+        source: 'twilio_status_callback',
+      });
     }
 
     // Update campaign stats if applicable

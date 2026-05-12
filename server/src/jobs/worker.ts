@@ -1,9 +1,14 @@
 import { Worker, Job } from 'bullmq';
+import { Prisma } from '@prisma/client';
 import redis from '../config/redis';
 import prisma from '../config/database';
 import { SendingEngine } from '../services/sendingEngine';
 import { NumberService } from '../services/numberService';
 import logger from '../config/logger';
+import { csvImportQueue, lookupErrorQueue, CsvImportJobData, LookupRetryJobData } from './lookupQueues';
+import { LeadCsvImportService, CsvImportMapping } from '../services/leadCsvImportService';
+import { LookupValidationService } from '../services/lookupValidationService';
+import { SUPPRESSION_REASONS } from '../services/suppressionReasons';
 
 /**
  * SMS Queue Worker
@@ -165,6 +170,180 @@ const campaignWorker = new Worker(
     concurrency: 2,
   },
 );
+
+const csvImportWorker = new Worker<CsvImportJobData>(
+  'csv-import',
+  async (job) => {
+    const { importJobId } = job.data;
+    const importJob = await prisma.csvImportJob.findUnique({ where: { id: importJobId } });
+    if (!importJob || !importJob.csvContent) return;
+
+    await prisma.csvImportJob.update({
+      where: { id: importJobId },
+      data: { status: 'PROCESSING', startedAt: new Date(), processedRows: 0, errorMessage: null },
+    });
+
+    try {
+      const records = LeadCsvImportService.parseCsvContent(importJob.csvContent);
+      const mapping = (importJob.mapping || null) as CsvImportMapping | null;
+      const user = importJob.userId ? { id: importJob.userId, role: importJob.userRole || 'ADMIN' } : null;
+      const result = await LeadCsvImportService.importRecords({
+        records,
+        mapping,
+        listName: importJob.listName || undefined,
+        user,
+        onProgress: async (processedRows) => {
+          await prisma.csvImportJob.update({
+            where: { id: importJobId },
+            data: { processedRows },
+          });
+        },
+      });
+
+      await prisma.csvImportJob.update({
+        where: { id: importJobId },
+        data: {
+          status: 'COMPLETED',
+          processedRows: records.length,
+          result: result as unknown as Prisma.InputJsonValue,
+          csvContent: null,
+          completedAt: new Date(),
+        },
+      });
+    } catch (error: any) {
+      await prisma.csvImportJob.update({
+        where: { id: importJobId },
+        data: {
+          status: 'FAILED',
+          errorMessage: error?.message || 'CSV import failed',
+          completedAt: new Date(),
+        },
+      });
+      throw error;
+    }
+  },
+  {
+    connection: redis,
+    concurrency: 1,
+  },
+);
+
+const lookupRetryWorker = new Worker<LookupRetryJobData>(
+  'lookup-error-retry',
+  async (job) => {
+    const { leadId, phone, requestedByUserId } = job.data;
+    const decision = await LookupValidationService.validatePhone(phone);
+
+    if (decision.status === 'PASS') {
+      await prisma.lead.update({
+        where: { id: leadId },
+        data: {
+          lineType: decision.lineType || null,
+          carrierName: decision.carrierName || null,
+          validatedAt: decision.validatedAt || new Date(),
+        },
+      });
+      await LookupValidationService.clearLookupSuppression(phone, leadId);
+      await prisma.activityLog.create({
+        data: {
+          userId: requestedByUserId || null,
+          action: 'lead.lookup_retry_passed',
+          entityType: 'lead',
+          entityId: leadId,
+          metadata: { phone, lineType: decision.lineType || null, carrierName: decision.carrierName || null },
+        },
+      });
+      return;
+    }
+
+    const reason = decision.reason || SUPPRESSION_REASONS.LOOKUP_QUARANTINE;
+    const metadata = {
+      lineType: decision.lineType || null,
+      carrierName: decision.carrierName || null,
+      validatedAt: decision.validatedAt || new Date(),
+    };
+
+    if (await LookupValidationService.hasProtectedSuppression(phone, leadId)) {
+      await prisma.$transaction([
+        prisma.lead.update({
+          where: { id: leadId },
+          data: metadata,
+        }),
+        prisma.activityLog.create({
+          data: {
+            userId: requestedByUserId || null,
+            action: 'lead.lookup_retry_resolved',
+            entityType: 'lead',
+            entityId: leadId,
+            metadata: {
+              phone,
+              reason,
+              suppressionApplied: false,
+              protectedSuppression: true,
+              lineType: decision.lineType || null,
+              carrierName: decision.carrierName || null,
+            },
+          },
+        }),
+      ]);
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.lead.update({
+        where: { id: leadId },
+        data: {
+          isSuppressed: true,
+          suppressedAt: new Date(),
+          suppressReason: reason,
+          ...metadata,
+        },
+      }),
+      prisma.suppressionEntry.upsert({
+        where: { phone },
+        create: { phone, reason, source: 'lookup_retry' },
+        update: { reason, source: 'lookup_retry' },
+      }),
+      prisma.activityLog.create({
+        data: {
+          userId: requestedByUserId || null,
+          action: 'lead.lookup_retry_resolved',
+          entityType: 'lead',
+          entityId: leadId,
+          metadata: { phone, reason, lineType: decision.lineType || null, carrierName: decision.carrierName || null },
+        },
+      }),
+    ]);
+  },
+  {
+    connection: redis,
+    concurrency: 3,
+  },
+);
+
+lookupRetryWorker.on('failed', async (job, error) => {
+  const attempts = job?.opts.attempts || 3;
+  if (!job || job.attemptsMade < attempts) return;
+
+  await LookupValidationService.escalateLookupFailureToReview({
+    leadId: job.data.leadId,
+    phone: job.data.phone,
+    requestedByUserId: job.data.requestedByUserId || null,
+    errorMessage: error.message,
+  });
+});
+
+csvImportWorker.on('failed', (job, error) => {
+  logger.error(`CSV import job ${job?.id} failed:`, { error: error.message, data: job?.data });
+});
+
+lookupRetryWorker.on('error', (error: Error) => {
+  logger.error('Lookup retry worker error:', { error: error.message });
+});
+
+csvImportWorker.on('error', (error: Error) => {
+  logger.error('CSV import worker error:', { error: error.message });
+});
 
 async function processCampaignStart(campaignId: string, options: any): Promise<void> {
   try {
@@ -357,12 +536,18 @@ async function processCampaignPause(campaignId: string): Promise<void> {
 
 logger.info('🚀 SMS Queue Worker started');
 logger.info('🚀 Campaign Queue Worker started');
+logger.info('🚀 CSV Import Queue Worker started');
+logger.info('🚀 Lookup Retry Queue Worker started');
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('Shutting down workers...');
   await smsWorker.close();
   await campaignWorker.close();
+  await csvImportWorker.close();
+  await lookupRetryWorker.close();
+  await csvImportQueue.close();
+  await lookupErrorQueue.close();
 });
 
-export { smsWorker, campaignWorker };
+export { smsWorker, campaignWorker, csvImportWorker, lookupRetryWorker };

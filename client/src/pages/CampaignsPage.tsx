@@ -88,6 +88,20 @@ type AiCohortsResponse = {
   summary: { cohortCount: number; expectedFunded: number };
 };
 
+type LookupImportSummary = {
+  valid: number;
+  suppressed: number;
+  quarantined: number;
+  retryPending: number;
+  failedReview: number;
+  lookupErrors: number;
+  shadowModeActive: boolean;
+  shadowModeStartedAt: string | null;
+  shadowModeEndsAt: string | null;
+  applied: boolean;
+  validationLine: string;
+};
+
 function getAiCohortMeta(cohort: AiCohort): { categoryLabel: string; description: string } {
   if (cohort.categoryLabel && cohort.description) {
     return { categoryLabel: cohort.categoryLabel, description: cohort.description };
@@ -1043,7 +1057,8 @@ function AiRetargetSection({
                           <div className="text-[11px] uppercase tracking-wide text-dark-500">Primary Industry</div>
                           <div className="text-sm font-medium text-dark-100">{primaryIndustry.industry}</div>
                           <div className="text-xs text-dark-400">
-                            {formatCompactNumber(primaryIndustry.leadCount)} leads · {formatIndustryRevenue(primaryIndustry.totalRevenue)}
+                            {formatCompactNumber(primaryIndustry.leadCount)} leads ·{' '}
+                            {formatIndustryRevenue(primaryIndustry.totalRevenue)}
                           </div>
                         </div>
                         {secondaryIndustries.length > 0 ? (
@@ -1055,7 +1070,8 @@ function AiRetargetSection({
                     </div>
                   ) : cohort.industrySignals && cohort.industrySignals.length > 0 ? (
                     <div className="rounded-lg border border-dark-700/60 bg-dark-950/40 px-3 py-2 text-xs text-dark-400">
-                      Focus industries: <span className="text-dark-200">{cohort.industrySignals.slice(0, 3).join(' · ')}</span>
+                      Focus industries:{' '}
+                      <span className="text-dark-200">{cohort.industrySignals.slice(0, 3).join(' · ')}</span>
                     </div>
                   ) : null}
 
@@ -1152,21 +1168,30 @@ function AiCohortPreviewModal({ cohortId, onClose }: { cohortId: string; onClose
                   </div>
                   <div className="divide-y divide-dark-700/50">
                     {cohort.industryGroups.slice(0, 5).map((group, index) => (
-                      <div key={`${group.industry}-${index}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                      <div
+                        key={`${group.industry}-${index}`}
+                        className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                      >
                         <div className="min-w-0">
-                          <p className="text-dark-200 truncate">{index + 1}. {group.industry}</p>
+                          <p className="text-dark-200 truncate">
+                            {index + 1}. {group.industry}
+                          </p>
                           <p className="text-xs text-dark-500">
-                            {formatCompactNumber(group.leadCount)} leads · avg {formatIndustryRevenue(group.averageRevenue)}
+                            {formatCompactNumber(group.leadCount)} leads · avg{' '}
+                            {formatIndustryRevenue(group.averageRevenue)}
                           </p>
                         </div>
-                        <span className="text-xs text-dark-400 whitespace-nowrap">{formatIndustryRevenue(group.totalRevenue)}</span>
+                        <span className="text-xs text-dark-400 whitespace-nowrap">
+                          {formatIndustryRevenue(group.totalRevenue)}
+                        </span>
                       </div>
                     ))}
                   </div>
                 </div>
               ) : cohort.industrySignals && cohort.industrySignals.length > 0 ? (
                 <div className="rounded-lg border border-dark-700/60 bg-dark-900/40 px-3 py-2 text-xs text-dark-400">
-                  Funded-history industries: <span className="text-dark-200">{cohort.industrySignals.slice(0, 5).join(' · ')}</span>
+                  Funded-history industries:{' '}
+                  <span className="text-dark-200">{cohort.industrySignals.slice(0, 5).join(' · ')}</span>
                 </div>
               ) : null}
               <div className="rounded-lg border border-dark-700/60 overflow-hidden">
@@ -1463,6 +1488,15 @@ function CreateCampaignModal({
     uniqueLeadCount: number;
     duplicates: number;
     suppressedExcluded: number;
+    lookupSummary?: LookupImportSummary;
+  } | null>(null);
+  const [csvImportJobId, setCsvImportJobId] = useState<string | null>(null);
+  const [csvImportJobStatus, setCsvImportJobStatus] = useState<{
+    status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+    totalRows: number;
+    processedRows: number;
+    result?: any;
+    errorMessage?: string | null;
   } | null>(null);
   const [csvListName, setCsvListName] = useState('');
 
@@ -1604,6 +1638,8 @@ function CreateCampaignModal({
   const handleCsvSelect = async (file: File) => {
     setCsvFile(file);
     setCsvImported(null);
+    setCsvImportJobId(null);
+    setCsvImportJobStatus(null);
     // Auto-fill list name from filename (without .csv extension)
     if (!csvListName) setCsvListName(file.name.replace(/\.csv$/i, ''));
     const fd = new FormData();
@@ -1626,33 +1662,22 @@ function CreateCampaignModal({
       fd.append('mapping', JSON.stringify(csvMapping));
       if (csvListName.trim()) fd.append('listName', csvListName.trim());
       const { data } = await api.post('/leads/import-mapped', fd);
-      const leadIds = Array.isArray(data.leadIds) ? data.leadIds : [];
-      const eligibleLeadIds = Array.isArray(data.eligibleLeadIds) ? data.eligibleLeadIds : leadIds;
-      const uniqueLeadCount = typeof data.uniqueLeadCount === 'number' ? data.uniqueLeadCount : leadIds.length;
-      const count =
-        typeof data.campaignReadyLeadCount === 'number' ? data.campaignReadyLeadCount : eligibleLeadIds.length;
-      const duplicates = typeof data.duplicates === 'number' ? data.duplicates : 0;
-      const suppressedExcluded =
-        typeof data.suppressedExcluded === 'number' ? data.suppressedExcluded : Math.max(uniqueLeadCount - count, 0);
+      if (data.queued && data.jobId) {
+        setCsvImportJobId(data.jobId);
+        setCsvImportJobStatus({
+          status: data.status || 'PENDING',
+          totalRows: typeof data.total === 'number' ? data.total : csvPreview?.totalRows || 0,
+          processedRows: 0,
+        });
+        toast.success('CSV import queued');
+        return;
+      }
 
-      setCsvImported({
-        ids: eligibleLeadIds,
-        count,
-        totalRows: typeof data.total === 'number' ? data.total : csvPreview?.totalRows || eligibleLeadIds.length,
-        uniqueLeadCount,
-        duplicates,
-        suppressedExcluded,
-      });
-      queryClient.invalidateQueries({ queryKey: ['leads'] });
-      toast.success(
-        `${count} leads ready for campaign, ${uniqueLeadCount} unique phones, ${duplicates} duplicate rows or existing leads reused${
-          suppressedExcluded > 0 ? `, ${suppressedExcluded} suppressed/DNC excluded` : ''
-        }`,
-      );
+      applyCsvImportResult(data);
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Import failed');
     } finally {
-      setCsvUploading(false);
+      if (!csvImportJobId) setCsvUploading(false);
     }
   };
 
@@ -1701,6 +1726,82 @@ function CreateCampaignModal({
           : selectedLeadIds.size;
   const cooldownOverrideSampleLeads = (resolvedAiCohort?.sampleLeads || []).filter((lead) => lead.cooldownOverride);
   const cooldownOverrideTotal = resolvedAiCohort?.cooldownOverrideCount || cooldownOverrideSampleLeads.length;
+  const csvImportInProgress = csvUploading || !!csvImportJobId;
+
+  const applyCsvImportResult = useCallback(
+    (data: any) => {
+      const leadIds = Array.isArray(data.leadIds) ? data.leadIds : [];
+      const eligibleLeadIds = Array.isArray(data.eligibleLeadIds) ? data.eligibleLeadIds : leadIds;
+      const uniqueLeadCount = typeof data.uniqueLeadCount === 'number' ? data.uniqueLeadCount : leadIds.length;
+      const count =
+        typeof data.campaignReadyLeadCount === 'number' ? data.campaignReadyLeadCount : eligibleLeadIds.length;
+      const duplicates = typeof data.duplicates === 'number' ? data.duplicates : 0;
+      const suppressedExcluded =
+        typeof data.suppressedExcluded === 'number' ? data.suppressedExcluded : Math.max(uniqueLeadCount - count, 0);
+      const lookupSummary = data.lookupSummary as LookupImportSummary | undefined;
+
+      setCsvImported({
+        ids: eligibleLeadIds,
+        count,
+        totalRows: typeof data.total === 'number' ? data.total : csvPreview?.totalRows || eligibleLeadIds.length,
+        uniqueLeadCount,
+        duplicates,
+        suppressedExcluded,
+        lookupSummary,
+      });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      toast.success(
+        lookupSummary?.validationLine ||
+          `${count} leads ready for campaign, ${uniqueLeadCount} unique phones, ${duplicates} duplicate rows or existing leads reused${
+            suppressedExcluded > 0 ? `, ${suppressedExcluded} suppressed/DNC excluded` : ''
+          }`,
+      );
+    },
+    [csvPreview?.totalRows, queryClient],
+  );
+
+  useEffect(() => {
+    if (!csvImportJobId) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const { data } = await api.get(`/leads/import-jobs/${csvImportJobId}`);
+        if (cancelled) return;
+        const job = data.job;
+        setCsvImportJobStatus(job);
+
+        if (job.status === 'COMPLETED' && job.result) {
+          applyCsvImportResult(job.result);
+          setCsvImportJobId(null);
+          setCsvUploading(false);
+          toast.success('CSV import completed');
+        }
+
+        if (job.status === 'FAILED') {
+          setCsvImportJobId(null);
+          setCsvUploading(false);
+          toast.error(job.errorMessage || 'CSV import failed');
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setCsvImportJobId(null);
+          setCsvUploading(false);
+          toast.error(error.response?.data?.error || 'Failed to check import status');
+        }
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => {
+      void poll();
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [applyCsvImportResult, csvImportJobId]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-8">
@@ -1833,8 +1934,8 @@ function CreateCampaignModal({
                       className="mt-0.5 h-4 w-4 rounded border-yellow-500/40 bg-dark-900 text-yellow-400 focus:ring-yellow-500"
                     />
                     <span>
-                      Include leads inside the {resolvedAiCohort?.cooldownDays || aiCohort.cooldownDays}d cooldown.
-                      This override is admin-only and is recorded on the draft campaign.
+                      Include leads inside the {resolvedAiCohort?.cooldownDays || aiCohort.cooldownDays}d cooldown. This
+                      override is admin-only and is recorded on the draft campaign.
                     </span>
                   </label>
                 )}
@@ -1849,7 +1950,12 @@ function CreateCampaignModal({
                     <div className="max-h-28 space-y-1 overflow-y-auto pr-1">
                       {cooldownOverrideSampleLeads.slice(0, 25).map((lead) => (
                         <div key={lead.id} className="flex items-center justify-between gap-2 text-xs text-dark-300">
-                          <span className="truncate">{lead.company || `${lead.firstName} ${lead.lastName || ''}`.trim() || lead.source || lead.id}</span>
+                          <span className="truncate">
+                            {lead.company ||
+                              `${lead.firstName} ${lead.lastName || ''}`.trim() ||
+                              lead.source ||
+                              lead.id}
+                          </span>
                           <span className="shrink-0 rounded border border-yellow-400/35 bg-yellow-500/10 px-1.5 py-0.5 text-[10px] text-yellow-200">
                             cooldown
                           </span>
@@ -2078,11 +2184,25 @@ function CreateCampaignModal({
                         <button
                           type="button"
                           onClick={handleCsvImport}
-                          disabled={!csvMapping.phone || csvUploading}
+                          disabled={!csvMapping.phone || csvImportInProgress}
                           className="btn-primary w-full text-sm"
                         >
-                          {csvUploading ? 'Importing...' : `Import ${csvPreview.totalRows} Rows`}
+                          {csvImportJobId
+                            ? `Processing ${csvImportJobStatus?.processedRows || 0}/${csvImportJobStatus?.totalRows || csvPreview.totalRows}`
+                            : csvUploading
+                              ? 'Importing...'
+                              : `Import ${csvPreview.totalRows} Rows`}
                         </button>
+                        {csvImportJobStatus && (
+                          <div className="rounded-lg border border-dark-700/60 bg-dark-900/60 px-3 py-2 text-xs text-dark-300">
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{csvImportJobStatus.status.toLowerCase()}</span>
+                              <span className="font-mono text-dark-400">
+                                {csvImportJobStatus.processedRows}/{csvImportJobStatus.totalRows}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
@@ -2090,6 +2210,16 @@ function CreateCampaignModal({
                   <div className="text-center py-4">
                     <CheckCircle className="w-8 h-8 text-green-400 mx-auto mb-2" />
                     <p className="text-sm text-dark-200 font-medium">{csvImported.count} leads ready for campaign</p>
+                    {csvImported.lookupSummary?.shadowModeActive && (
+                      <span className="mt-2 inline-flex items-center rounded border border-yellow-400/40 bg-yellow-500/10 px-2 py-0.5 text-[10px] uppercase text-yellow-200">
+                        Shadow mode active
+                      </span>
+                    )}
+                    {csvImported.lookupSummary?.validationLine && (
+                      <p className="text-xs text-dark-300 mt-2" aria-live="polite">
+                        {csvImported.lookupSummary.validationLine}
+                      </p>
+                    )}
                     <p className="text-xs text-dark-500 mt-1">
                       {csvImported.totalRows} rows processed, {csvImported.uniqueLeadCount} unique phones,{' '}
                       {csvImported.duplicates} duplicate rows or existing leads reused

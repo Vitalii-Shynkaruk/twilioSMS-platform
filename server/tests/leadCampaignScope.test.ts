@@ -4,6 +4,7 @@ import { CampaignController } from '../src/controllers/campaignController';
 import { LeadController } from '../src/controllers/leadController';
 import prisma from '../src/config/database';
 import type { AuthRequest } from '../src/middleware/auth';
+import { LookupValidationService } from '../src/services/lookupValidationService';
 
 function createRequest(overrides: Partial<AuthRequest> = {}): AuthRequest {
   return {
@@ -125,10 +126,21 @@ describe('M2.1 lead/campaign scope policy', () => {
 
   it('assigns newly imported mapped CSV leads to the current rep and filters eligible IDs by rep scope', async () => {
     vi.spyOn(prisma.pipelineStage, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(LookupValidationService, 'validatePhone').mockResolvedValue({
+      phone: '+15551234567',
+      status: 'PASS',
+      reason: null,
+      lineType: 'mobile',
+      carrierName: 'Test Carrier',
+      validatedAt: new Date(),
+      source: 'twilio',
+    });
+    vi.spyOn(LookupValidationService, 'clearLookupSuppression').mockResolvedValue();
     const leadFindMany = vi
       .spyOn(prisma.lead, 'findMany')
       .mockResolvedValueOnce([] as never)
       .mockResolvedValueOnce([{ id: 'lead-new' }] as never);
+    vi.spyOn(prisma.suppressionEntry, 'findMany').mockResolvedValue([] as never);
     const upsert = vi
       .spyOn(prisma.lead, 'upsert')
       .mockReturnValue(Promise.resolve({ id: 'lead-new', phone: '+15551234567', assignedRepId: 'rep-1' }) as never);

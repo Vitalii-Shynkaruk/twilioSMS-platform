@@ -247,6 +247,11 @@ model Lead {
   suppressReason  String?
   optedOut        Boolean    @default(false)
   optedOutAt      DateTime?
+
+  // Twilio Lookup validation cache
+  lineType        String?    @db.VarChar(50) @map("line_type")
+  carrierName     String?    @db.VarChar(191) @map("carrier_name")
+  validatedAt     DateTime?  @map("validated_at")
   
   // Tracking
   lastContactedAt DateTime?
@@ -280,6 +285,7 @@ model Lead {
   @@index([status])
   @@index([assignedRepId])
   @@index([isSuppressed, optedOut])
+  @@index([validatedAt])
   @@index([lastContactedAt])
   @@index([lastContactedByUserId])
   @@index([industry])
@@ -287,6 +293,35 @@ model Lead {
   @@index([source])
   @@index([deletedAt])
   @@map("leads")
+}
+
+enum CsvImportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model CsvImportJob {
+  id           String             @id @default(cuid())
+  userId       String?            @map("user_id")
+  userRole     String?            @db.VarChar(50) @map("user_role")
+  listName     String?            @db.VarChar(191) @map("list_name")
+  csvContent   String?            @db.LongText @map("csv_content")
+  mapping      Json?
+  status       CsvImportJobStatus @default(PENDING)
+  totalRows    Int                @default(0) @map("total_rows")
+  processedRows Int               @default(0) @map("processed_rows")
+  result       Json?
+  errorMessage String?            @db.Text @map("error_message")
+  startedAt    DateTime?          @map("started_at")
+  completedAt  DateTime?          @map("completed_at")
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@map("csv_import_jobs")
 }
 
 model Tag {

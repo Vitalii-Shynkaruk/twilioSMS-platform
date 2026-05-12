@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../services/api';
 import {
   X,
@@ -15,10 +15,13 @@ import {
   ChevronRight,
   User,
   Layers,
+  ShieldOff,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { useAuthStore } from '../../stores/authStore';
 
 const STATUS_COLORS: Record<string, string> = {
   NEW: 'bg-blue-500/20 text-blue-400',
@@ -32,6 +35,19 @@ const STATUS_COLORS: Record<string, string> = {
   DNC: 'bg-red-500/20 text-red-400',
 };
 
+const AUTO_OVERRIDE_REASONS = new Set([
+  'AUTO_BAD_NUMBER',
+  'INVALID_DESTINATION',
+  'NON_MOBILE_DESTINATION',
+  'LOOKUP_INVALID',
+  'LOOKUP_QUARANTINE',
+  'LOOKUP_RETRY_PENDING',
+  'LOOKUP_FAILED_REVIEW',
+  'QUARANTINE_TRANSIENT',
+]);
+
+const LOCKED_OVERRIDE_REASONS = new Set(['STOP', 'DNC', 'NOT_INTERESTED']);
+
 interface LeadDetailDrawerProps {
   leadId: string;
   onClose: () => void;
@@ -39,6 +55,8 @@ interface LeadDetailDrawerProps {
 
 export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['lead-detail', leadId],
@@ -49,6 +67,29 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
   });
 
   const lead = data;
+  const effectiveSuppressReason = lead?.suppressReason || null;
+  const overrideLocked =
+    !!lead &&
+    (lead.optedOut || lead.status === 'DNC' || LOCKED_OVERRIDE_REASONS.has(String(effectiveSuppressReason || '')));
+  const canOverrideSuppression =
+    user?.role === 'ADMIN' &&
+    !!lead?.isSuppressed &&
+    !!effectiveSuppressReason &&
+    AUTO_OVERRIDE_REASONS.has(String(effectiveSuppressReason)) &&
+    !overrideLocked;
+
+  const overrideMutation = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post(`/leads/${leadId}/override-suppression`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead-detail', leadId] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      toast.success('Suppression cleared');
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error || 'Override failed'),
+  });
 
   return (
     <>
@@ -81,7 +122,8 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
               <div className="p-6 space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 rounded-full bg-dark-700 flex items-center justify-center text-xl font-bold text-dark-300">
-                    {lead.firstName?.[0]}{lead.lastName?.[0] || ''}
+                    {lead.firstName?.[0]}
+                    {lead.lastName?.[0] || ''}
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-xl font-bold text-dark-50 truncate">
@@ -99,11 +141,47 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
                   {lead.company && <InfoRow icon={Building} label="Company" value={lead.company} />}
                   {lead.state && <InfoRow icon={MapPin} label="State" value={lead.state} />}
                   {lead.source && <InfoRow icon={Layers} label="Source" value={lead.source} />}
+                  {lead.lineType && <InfoRow icon={ShieldOff} label="Line" value={lead.lineType} />}
+                  {lead.carrierName && <InfoRow icon={Phone} label="Carrier" value={lead.carrierName} />}
+                  {lead.validatedAt && (
+                    <InfoRow icon={Calendar} label="Lookup" value={format(new Date(lead.validatedAt), 'MMM d, yyyy')} />
+                  )}
                   <InfoRow icon={Calendar} label="Added" value={format(new Date(lead.createdAt), 'MMM d, yyyy')} />
                   {lead.assignedRep && (
-                    <InfoRow icon={User} label="Rep" value={`${lead.assignedRep.firstName} ${lead.assignedRep.lastName}`} />
+                    <InfoRow
+                      icon={User}
+                      label="Rep"
+                      value={`${lead.assignedRep.firstName} ${lead.assignedRep.lastName}`}
+                    />
                   )}
                 </div>
+
+                {(lead.isSuppressed || lead.suppressReason || lead.optedOut) && (
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase text-yellow-200">Suppression</p>
+                        <p className="mt-1 text-sm text-yellow-100">
+                          {lead.suppressReason || (lead.optedOut ? 'STOP/opt-out' : 'Suppressed')}
+                        </p>
+                        {overrideLocked && (
+                          <p className="mt-1 text-xs text-yellow-300/80">Override locked for legal/business opt-out.</p>
+                        )}
+                      </div>
+                      {canOverrideSuppression && (
+                        <button
+                          type="button"
+                          onClick={() => overrideMutation.mutate()}
+                          disabled={overrideMutation.isPending}
+                          className="btn-secondary flex items-center gap-2 px-3 py-1.5 text-xs disabled:opacity-50"
+                        >
+                          <ShieldOff className="h-3.5 w-3.5" />
+                          {overrideMutation.isPending ? 'Clearing...' : 'Override'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {lead.notes && (
                   <div className="bg-dark-800/50 rounded-lg p-3 border border-dark-700/50">
@@ -137,8 +215,14 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
                   <SectionHeader icon={Target} label="Pipeline" count={lead.pipelineCards.length} />
                   <div className="space-y-2 mt-3">
                     {lead.pipelineCards.map((pc: any) => (
-                      <div key={pc.id} className="flex items-center gap-2 bg-dark-800/50 rounded-lg px-3 py-2 border border-dark-700/50">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: pc.stage?.color || '#6366f1' }} />
+                      <div
+                        key={pc.id}
+                        className="flex items-center gap-2 bg-dark-800/50 rounded-lg px-3 py-2 border border-dark-700/50"
+                      >
+                        <div
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: pc.stage?.color || '#6366f1' }}
+                        />
                         <span className="text-sm text-dark-200 font-medium">{pc.stage?.name || 'Unknown'}</span>
                       </div>
                     ))}
@@ -152,14 +236,15 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
                   <SectionHeader icon={Zap} label="Active Automations" count={lead.automationRuns.length} />
                   <div className="space-y-2 mt-3">
                     {lead.automationRuns.map((run: any) => (
-                      <div key={run.id} className="flex items-center justify-between bg-dark-800/50 rounded-lg px-3 py-2 border border-dark-700/50">
+                      <div
+                        key={run.id}
+                        className="flex items-center justify-between bg-dark-800/50 rounded-lg px-3 py-2 border border-dark-700/50"
+                      >
                         <div className="flex items-center gap-2">
                           <Zap className="w-3.5 h-3.5 text-purple-400" />
                           <span className="text-sm text-dark-200">{run.automationRule?.name || 'Unnamed'}</span>
                         </div>
-                        <span className="text-xs text-dark-500">
-                          Step {run.currentStep + 1}
-                        </span>
+                        <span className="text-xs text-dark-500">Step {run.currentStep + 1}</span>
                       </div>
                     ))}
                   </div>
@@ -172,13 +257,21 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
                   <SectionHeader icon={MessageSquare} label="Campaigns" count={lead.campaignLeads.length} />
                   <div className="space-y-2 mt-3">
                     {lead.campaignLeads.map((cl: any) => (
-                      <div key={cl.id} className="flex items-center justify-between bg-dark-800/50 rounded-lg px-3 py-2 border border-dark-700/50">
+                      <div
+                        key={cl.id}
+                        className="flex items-center justify-between bg-dark-800/50 rounded-lg px-3 py-2 border border-dark-700/50"
+                      >
                         <span className="text-sm text-dark-200">{cl.campaign?.name || 'Unknown'}</span>
-                        <span className={clsx('badge text-[10px]',
-                          cl.campaign?.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-                          cl.campaign?.status === 'SENDING' ? 'bg-yellow-500/20 text-yellow-400' :
-                          'bg-dark-600 text-dark-400'
-                        )}>
+                        <span
+                          className={clsx(
+                            'badge text-[10px]',
+                            cl.campaign?.status === 'COMPLETED'
+                              ? 'bg-green-500/20 text-green-400'
+                              : cl.campaign?.status === 'SENDING'
+                                ? 'bg-yellow-500/20 text-yellow-400'
+                                : 'bg-dark-600 text-dark-400',
+                          )}
+                        >
                           {cl.campaign?.status || cl.status}
                         </span>
                       </div>
@@ -202,9 +295,7 @@ export default function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerPr
                           {conv.messages && conv.messages.length > 0 && (
                             <p className="text-sm text-dark-300 truncate">{conv.messages[0].body}</p>
                           )}
-                          <p className="text-xs text-dark-500 mt-0.5">
-                            {conv.messages?.length || 0} messages
-                          </p>
+                          <p className="text-xs text-dark-500 mt-0.5">{conv.messages?.length || 0} messages</p>
                         </div>
                         <ChevronRight className="w-4 h-4 text-dark-500 shrink-0 ml-2" />
                       </button>

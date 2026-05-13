@@ -40,6 +40,7 @@ export async function resetDealEngagement(args: {
       contactAttempts: 0,
       lastEngagementAt: now,
       lastActivityAt: now,
+      ...(args.reason === 'inbound_sms' ? { lastReplyAt: now } : {}),
       staleDays: 0,
     },
     select: {

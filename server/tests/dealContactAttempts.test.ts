@@ -215,7 +215,9 @@ describe('M1.5 deal contact attempts', () => {
     vi.spyOn(prisma.deal, 'findUnique').mockResolvedValue(createDealFixture({ contactAttempts: 5 }) as never);
     const update = vi
       .spyOn(prisma.deal, 'update')
-      .mockResolvedValue(createDealFixture({ contactAttempts: 0, lastEngagementAt: new Date() }) as never);
+      .mockResolvedValue(
+        createDealFixture({ contactAttempts: 0, lastEngagementAt: new Date(), lastReplyAt: new Date() }) as never,
+      );
     const eventCreate = vi.spyOn(prisma.dealEvent, 'create').mockResolvedValue({ id: 'event-1' } as never);
 
     const resetDeals = await resetDealEngagementForConversation({
@@ -227,7 +229,11 @@ describe('M1.5 deal contact attempts', () => {
     expect(resetDeals).toHaveLength(1);
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ contactAttempts: 0, lastEngagementAt: expect.any(Date) }),
+        data: expect.objectContaining({
+          contactAttempts: 0,
+          lastEngagementAt: expect.any(Date),
+          lastReplyAt: expect.any(Date),
+        }),
       }),
     );
     expect(eventCreate).toHaveBeenCalledWith(

@@ -46,6 +46,7 @@ type InboxFilter =
 type InboxSort = 'ai_priority' | 'newest_activity' | 'oldest_untouched' | 'unread_first' | 'hot_first';
 
 const INBOX_VISUAL_MODE_KEY = 'scl_inbox_visual_mode';
+const INBOX_SORT_KEY = 'scl_inbox_sort';
 
 // Pixel-perfect: 1:1 с прототипом scl-inbox-v11.html
 // Одна строка-flex-wrap, как в .inbox-filters прототипа
@@ -68,6 +69,10 @@ const SORT_OPTIONS: Array<{ id: InboxSort; label: string }> = [
   { id: 'unread_first', label: 'Unread First' },
   { id: 'hot_first', label: 'Hot First' },
 ];
+
+function isInboxSort(value: string | null): value is InboxSort {
+  return SORT_OPTIONS.some((option) => option.id === value);
+}
 
 const PIPELINE_STAGE_OPTIONS: Array<{ label: string; value: string }> = [
   { label: 'New Lead', value: 'NEW_LEAD' },
@@ -126,7 +131,11 @@ function getConversationAiPriorityRank(conv: Conversation): number {
 
   if (followupStatus === 'due_now') return 1;
 
-  switch (String(conv.aiClassification || '').trim().toUpperCase()) {
+  switch (
+    String(conv.aiClassification || '')
+      .trim()
+      .toUpperCase()
+  ) {
     case 'HOT':
       return 2;
     case 'WARM':
@@ -199,7 +208,10 @@ export default function InboxPage() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 250);
   const [filter, setFilter] = useState<InboxFilter>('all');
-  const [sort, setSort] = useState<InboxSort>('ai_priority');
+  const [sort, setSort] = useState<InboxSort>(() => {
+    const saved = localStorage.getItem(INBOX_SORT_KEY);
+    return isInboxSort(saved) ? saved : 'ai_priority';
+  });
   const [sortOpen, setSortOpen] = useState(false);
   const [page, setPage] = useState(1);
   const sortRef = useRef<HTMLDivElement | null>(null);
@@ -216,6 +228,10 @@ export default function InboxPage() {
   useEffect(() => {
     localStorage.setItem(INBOX_VISUAL_MODE_KEY, visualMode);
   }, [visualMode]);
+
+  useEffect(() => {
+    localStorage.setItem(INBOX_SORT_KEY, sort);
+  }, [sort]);
 
   // Обработка ?campaign=ID и ?lead=ID — очищаем URL после считывания
   useEffect(() => {
@@ -260,21 +276,26 @@ export default function InboxPage() {
     // unread-summary и открытый тред (раньше была только подзвучка → задержка до 4с).
     const onNewMessage = (payload: { direction?: string; conversationId?: string; conversation?: { id?: string } }) => {
       const convId = payload?.conversationId || payload?.conversation?.id;
-      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
-      queryClient.invalidateQueries({ queryKey: ['inbox-unread-summary'] });
       if (convId) {
         queryClient.invalidateQueries({ queryKey: ['conversation', convId] });
       }
       if (payload?.direction === 'INBOUND') {
+        queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['inbox-unread-summary'] });
         playNewReplyTone();
+        return;
+      }
+      if (!convId || convId !== selectedId) {
+        queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
       }
     };
     // Backend шлёт `message` в room `conversation:<id>` для участников открытого треда.
+    // Для активного треда обновляем сам thread, но не дёргаем left list,
+    // чтобы reply не уводил пользователя наверх из текущего scroll-контекста.
     const onConversationMessage = (payload: { conversationId?: string }) => {
       if (payload?.conversationId) {
         queryClient.invalidateQueries({ queryKey: ['conversation', payload.conversationId] });
       }
-      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
     };
     socket.on('new-message', onNewMessage);
     socket.on('message', onConversationMessage);
@@ -284,7 +305,7 @@ export default function InboxPage() {
       socket.off('new-message', onNewMessage);
       socket.off('message', onConversationMessage);
     };
-  }, [socket, queryClient]);
+  }, [socket, queryClient, selectedId]);
 
   useEffect(() => {
     function onDocClick(event: MouseEvent) {
@@ -756,7 +777,6 @@ function MessageThread({
     onSuccess: () => {
       setReplyText('');
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['inbox-conversations'] });
     },
     onError: (err: Error & { response?: { data?: { error?: string } } }) =>
       toast.error(err.response?.data?.error || 'Failed to send'),

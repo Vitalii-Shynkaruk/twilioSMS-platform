@@ -2454,7 +2454,11 @@ export class CampaignController {
 
   static async retargetCreate(req: AuthRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const { name, messageTemplate } = req.body as { name: string; messageTemplate: string };
+    const { name, messageTemplate, sendingSpeed } = req.body as {
+      name: string;
+      messageTemplate: string;
+      sendingSpeed?: number;
+    };
 
     const preview = await CampaignController.buildRetargetPreview(id);
     CampaignController.ensureRetargetAccess(preview.sourceCampaign, req);
@@ -2499,7 +2503,7 @@ export class CampaignController {
           name,
           messageTemplate,
           numberPoolId: preview.sourceCampaign.numberPoolId || null,
-          sendingSpeed: preview.sourceCampaign.sendingSpeed || 60,
+          sendingSpeed: sendingSpeed ?? 4,
           dailyLimit: preview.sourceCampaign.dailyLimit,
           createdById: req.user!.id,
           status: 'DRAFT',

@@ -189,6 +189,7 @@ export const updateCampaignSchema = createCampaignSchema.partial();
 export const retargetCampaignSchema = z.object({
   name: z.string().min(1).max(200).trim(),
   messageTemplate: z.string().min(1).max(1600),
+  sendingSpeed: z.number().int().min(1).max(600).default(4),
 });
 
 export const buildAiCohortSchema = z.object({

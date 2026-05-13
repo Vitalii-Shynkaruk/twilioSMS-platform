@@ -1283,6 +1283,7 @@ function RetargetCampaignModal({
 }) {
   const [nameDraft, setNameDraft] = useState('');
   const [messageDraft, setMessageDraft] = useState('');
+  const [sendingSpeed, setSendingSpeed] = useState(4);
   const [nameEdited, setNameEdited] = useState(false);
   const [messageEdited, setMessageEdited] = useState(false);
 
@@ -1310,6 +1311,7 @@ function RetargetCampaignModal({
       return api.post(`/campaigns/${campaign.id}/retarget`, {
         name: resolvedName.trim(),
         messageTemplate: resolvedMessageTemplate.trim(),
+        sendingSpeed,
       });
     },
     onSuccess: () => {
@@ -1427,6 +1429,21 @@ function RetargetCampaignModal({
             <div className="flex justify-end mt-1">
               <SmsCounter text={resolvedMessageTemplate} />
             </div>
+          </div>
+
+          <div>
+            <label className="label">Sending Speed</label>
+            <select className="input" value={sendingSpeed} onChange={(e) => setSendingSpeed(Number(e.target.value))}>
+              <option value="1">1 / min (Safest)</option>
+              <option value="2">2 / min</option>
+              <option value="4">4 / min</option>
+              <option value="10">10 / min</option>
+              <option value="30">30 / min (Slow)</option>
+              <option value="60">60 / min (Normal)</option>
+            </select>
+            <p className="mt-1 text-xs text-dark-500">
+              New retarget campaigns default to 4/min so fresh numbers do not inherit the original campaign speed.
+            </p>
           </div>
 
           <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
